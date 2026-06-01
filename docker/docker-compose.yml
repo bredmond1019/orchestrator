@@ -1,0 +1,9 @@
+include:
+  - path: ./docker-compose.ai-event-system.yml
+  - path: ./docker-compose.supabase.yml
+
+networks:
+  default:
+    driver: bridge
+    external: true
+    name: "${PROJECT_NAME}_network"

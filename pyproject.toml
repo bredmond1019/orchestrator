@@ -1,0 +1,36 @@
+[project]
+name = "ai-event-system"
+version = "1.0.0"
+description = "AI Event Driven System"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.15.2",
+    "celery>=5.5.1",
+    "fastapi>=0.115.12",
+    "instructor>=1.7.9",
+    "psycopg2-binary>=2.9.10",
+    "pydantic>=2.11.3",
+    "pydantic-ai>=0.1.5",
+    "python-dotenv>=1.1.0",
+    "python-frontmatter>=1.1.0",
+    "redis>=5.2.1",
+    "tiktoken>=0.9.0",
+    "uvicorn>=0.34.2",
+]
+
+[dependency-groups]
+dev = [
+    "graphviz>=0.20.3",
+    "ipykernel>=6.29.5",
+    "ipython>=9.2.0",
+    "nest-asyncio>=1.6.0",
+]
+
+[tool.ruff]
+exclude = [".venv", "app/core/commands", "app/alembic", ".sh"]
+
+[project.scripts]
+createworkflow = "app.core.commands.init_workflow:main"
+
+[tool.setuptools]
+packages = ["app"]
