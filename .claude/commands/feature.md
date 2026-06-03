@@ -92,11 +92,12 @@ Include writing tests throughout — do not leave them to the end.
 
 ## Validation Commands
 ```
+uv run pylint app/
 uv run pytest
 cd app && uv run python -c "from main import app"
 cd app && uv run python -c "from worker.config import celery_app"
 ```
-<add any feature-specific end-to-end or integration checks above the three standard lines>
+<add any feature-specific end-to-end or integration checks above the four standard lines>
 
 ## Notes
 <dependencies, new libraries needed (`uv add <pkg>`), future considerations, known constraints>

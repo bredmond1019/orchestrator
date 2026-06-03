@@ -17,6 +17,7 @@ $ARGUMENTS — description of the task to implement.
    - Register any new workflow in `app/workflows/workflow_registry.py`.
 6. Run the standard validation checks:
    ```
+   uv run pylint app/
    uv run pytest
    cd app && uv run python -c "from main import app"
    cd app && uv run python -c "from worker.config import celery_app"

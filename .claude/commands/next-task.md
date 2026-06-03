@@ -50,11 +50,12 @@
 
 ## Validation Commands
 ```
+uv run pylint app/
 uv run pytest
 cd app && uv run python -c "from main import app"
 cd app && uv run python -c "from worker.config import celery_app"
 ```
-<!-- Add any workflow- or feature-specific checks above the three standard lines. -->
+<!-- Add any workflow- or feature-specific checks above the four standard lines. -->
 
 ## Notes
 <filled in as work happens>
