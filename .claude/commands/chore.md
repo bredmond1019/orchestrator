@@ -56,11 +56,12 @@ IMPORTANT: Execute every step in order, top to bottom.
 
 ## Validation Commands
 ```
+uv run pylint app/
 uv run pytest
 cd app && uv run python -c "from main import app"
 cd app && uv run python -c "from worker.config import celery_app"
 ```
-<add any chore-specific checks above the three standard lines>
+<add any chore-specific checks above the four standard lines>
 
 ## Notes
 <optional context, edge cases, or gotchas>

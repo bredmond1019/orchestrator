@@ -138,17 +138,18 @@ _No variables._
 ## Health & Housekeeping
 
 ### `/check`
-**Run the full test suite and verify the app and worker construct cleanly.**
+**Lint, run the full test suite, and verify the app and worker construct cleanly.**
 
-Runs three commands inline (no servers started, no ports bound, no manual interruption needed):
+Runs four commands inline (no servers started, no ports bound, no manual interruption needed):
 
 ```
+uv run pylint app/
 uv run pytest
 cd app && uv run python -c "from main import app"
 cd app && uv run python -c "from worker.config import celery_app"
 ```
 
-Reports failing test names or construction errors concisely; one line if everything passes.
+Reports pylint errors, failing test names, or construction errors concisely; one line if everything passes.
 
 _No variables._
 

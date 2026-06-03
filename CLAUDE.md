@@ -48,6 +48,9 @@ cd app && uv run celery -A worker.config.celery_app worker --loglevel=info
 # Apply DB migrations (from app/)
 cd app && alembic upgrade head
 
+# Lint
+uv run pylint app/
+
 # Run tests
 uv run pytest
 
@@ -83,5 +86,5 @@ After scaffolding:
 ## What NOT to touch
 
 - `app/workflows/customer_care_workflow*` — reference implementation, frozen
-- `app/core/commands/` — excluded from ruff, do not reformat
-- `app/alembic/` — migration history, never hand-edit generated files
+- `app/core/commands/` — excluded from ruff and pylint, do not reformat
+- `app/alembic/` — migration history, excluded from pylint, never hand-edit generated files

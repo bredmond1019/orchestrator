@@ -1,20 +1,24 @@
-# Check — Run the full test suite and verify the app and worker construct cleanly.
+# Check — Lint, run the full test suite, and verify the app and worker construct cleanly.
 
 ## Instructions
 
-1. Run the full test suite:
+1. Run the linter:
+   ```
+   uv run pylint app/
+   ```
+2. Run the full test suite:
    ```
    uv run pytest
    ```
-2. Verify the ASGI app object constructs (no port binding):
+3. Verify the ASGI app object constructs (no port binding):
    ```
    cd app && uv run python -c "from main import app"
    ```
-3. Verify the Celery app object constructs (no worker process):
+4. Verify the Celery app object constructs (no worker process):
    ```
    cd app && uv run python -c "from worker.config import celery_app"
    ```
-4. Report failures concisely: list failing test names, import errors, or construction errors. If everything passes, say so in one line.
+5. Report failures concisely: list pylint errors, failing test names, or construction errors. If everything passes, say so in one line.
 
 ## Context / Files to Read
 

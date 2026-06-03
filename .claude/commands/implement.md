@@ -17,6 +17,7 @@ $ARGUMENTS — path to the plan file to implement (e.g. `planning/tasks/feature-
    - Register any new workflow in `app/workflows/workflow_registry.py`.
 6. After all steps, run the plan's Validation Commands exactly as written. If no plan-specific commands exist, run the standard checks:
    ```
+   uv run pylint app/
    uv run pytest
    cd app && uv run python -c "from main import app"
    cd app && uv run python -c "from worker.config import celery_app"

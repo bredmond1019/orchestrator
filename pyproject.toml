@@ -24,10 +24,22 @@ dev = [
     "ipykernel>=6.29.5",
     "ipython>=9.2.0",
     "nest-asyncio>=1.6.0",
+    "pylint>=3.0.0",
 ]
 
 [tool.ruff]
 exclude = [".venv", "app/core/commands", "app/alembic", ".sh"]
+
+[tool.pylint.main]
+ignore-paths = ["app/alembic", "app/core/commands"]
+
+[tool.pylint.messages_control]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",
+]
 
 [project.scripts]
 createworkflow = "app.core.commands.init_workflow:main"
