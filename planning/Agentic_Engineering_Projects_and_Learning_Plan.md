@@ -426,24 +426,32 @@ If, much later, you lean so heavily on local models that the *serving runtime* (
 
 ---
 
-## Parallel Track — Rust Harness CLI
-### The control plane for your practice. Where Rust stays warm through daily use.
+## Parallel Track — Rust Infrastructure CLI
+### The control plane for *your* infrastructure. Where Rust stays warm through daily use.
 
 *Not a numbered project — a parallel track you develop alongside the harness work whenever you want a Rust session. No fixed slot.*
 
+### Reframed (June 2026): what Claude Code now does for you, so you don't build it
+On May 28, 2026 Anthropic shipped **Agent View** (`claude agents` — a terminal dashboard across background Claude Code sessions, run by a per-user supervisor process so work survives terminal/shell closure), **Dynamic Workflows** (Claude Code writes its own orchestration scripts and spins up many parallel subagents within a session), and the older **subagents** (`/agents` — reusable YAML configs in `.claude/agents/`). **This commoditizes the "trigger and watch Claude Code coding runs" job.** Do not rebuild it in Rust. Use the built-ins (`claude agents`, `claude --bg "<task>"`, Claude Code Web for sessions that survive machine sleep) for the *coding-agent* case.
+
+What Anthropic did **not** build — and structurally will not, because it isn't their product — is a control plane for *your* infrastructure: your Python orchestration system, your Celery workflows, your Postgres tables, your **Project H eval runs**, and your **deployed client appliances running local models**. That is what this CLI is for. The line the old version drew was right; the emphasis was wrong.
+
 ### What it is, and how it differs from Claude Code
-**Claude Code is the agent that does the work** (point it at a repo, it edits/runs/iterates). **This CLI is the control plane that commands and observes that agent — and your own systems — from the terminal where you live.** They're stacked, not competing: Claude Code does coding tasks; the CLI is the operational interface to *your specific infrastructure* — the Mac Mini harness, your workflows, your deployed projects, your eval runs, your remote triggers. The CLI is the *local* counterpart to the phone-based remote triggers (GitHub issues / webhooks / Telegram) from the Master Plan's harness block.
+**Claude Code is the agent that does the work, and now also manages its own coding sessions** (Agent View / Dynamic Workflows / subagents). **This CLI is the operational interface to *your specific infrastructure* and your cost-optimization layer** — not a wrapper around Claude Code. They're stacked, not competing: let Claude Code orchestrate Claude Code; this CLI commands and observes *your* systems.
 
-### What it does
-- **Trigger and manage remote agent runs** — kick off a Claude Code run on the Mini, check status, tail output, cancel.
-- **Operate your workflows** — trigger a content-pipeline run on a URL, generate a proposal for a prospect, run the eval harness (Project H) on a node, inspect the `LearningArtifact` table. Replaces ad-hoc `curl`/DB queries with first-class commands.
-- **Observe deployed projects** — status of what's running on the Mini, recent runs, failures, logs. One pane over your own infrastructure.
+### What it does — re-aimed
+- **(Demoted to thin convenience) Remote coding triggers.** The only seam the built-ins don't cover is *phone → your own Mac Mini, surviving sleep*. Agent View is local and sessions don't survive shutdown (you run `claude respawn --all` on wake); Claude Code Web survives but runs in Anthropic's cloud, not on your hardware. Keep a thin remote-trigger command **only if you still want phone-to-Mini-on-your-hardware after trying the built-ins.** Don't lead with it.
+- **(Now the spine) Operate your workflows.** Trigger a content-pipeline run on a URL, generate a proposal for a prospect, **run the Project H eval harness on a node**, inspect the `LearningArtifact` table. First-class commands over ad-hoc `curl`/DB queries. Untouched by anything Anthropic ships.
+- **(Now the spine) Observe your infrastructure and the cost layer.** Status of what's running on the Mini, recent runs, failures, logs — and, wired to Project H, **per-node model routing decisions and measured cost/quality**: which nodes are safe on local-9B/local-70B, what a given workflow run cost, what local-vs-paid saved. This is the surface that becomes a *client-facing appliance* (see below).
+- **(Product seed) The single-binary client appliance.** The same binary a non-technical client runs on their own hardware to operate and observe their automation — and to see, in plain numbers, what it cost and what local models saved them. This is the delivery vehicle for the cost-optimization thesis, not a dev-only tool.
 
-### Why Rust is an unambiguous fit here (unlike orchestration)
-A CLI you invoke dozens of times a day wants instant startup (no interpreter spin-up) and single-static-binary deployment (copy one file to the Mini — no environment, no dependency hell). The Rust CLI ecosystem (`clap`, optionally `ratatui` for a TUI dashboard) is among the most mature parts of the language. Clean language boundary: **Rust commands, Python executes**, over HTTP/the API — no FFI, no rewriting working Python. This is where Rust's advantages are immediate rather than situational, which makes it the right place to keep the skill warm *through genuine use* rather than forced practice.
+### Why Rust is an unambiguous fit here (unlike orchestration, and unlike re-wrapping Claude Code)
+A CLI you invoke dozens of times a day wants instant startup and single-static-binary deployment (copy one file — no environment, no dependency hell). For the **client appliance**, the single binary is the entire value proposition: "copy one file, double-click, it runs, your data never leaves the building" is a thing you can say to a gym or a clinic that a Python-on-Kubernetes stack never can. The Rust CLI ecosystem (`clap`, optionally `ratatui` for a TUI) is among the most mature parts of the language. Clean language boundary: **Rust commands and observes, Python executes**, over HTTP/the API — no FFI, no rewriting working Python.
+
+**Honest limit on the Rust bet:** Rust compounds in the places the model vendors won't go — long-running runtimes (the WhatsApp/SMB service), single-binary appliances for non-technical operators, and the local-model hot path. It is *not* an advantage in "a nicer way to launch Claude Code" — that layer is now built-in and being commoditized by Anthropic itself. Keep Rust where it compounds.
 
 ### Scope discipline
-First version is one command: trigger a remote run and tail output. It earns its next command only when you reach for one that isn't there. Same just-in-time rule as everything else — the "control plane for my whole practice" framing is the destination, not the first commit.
+First version is one command that does something the built-ins don't: e.g. **run a Project H eval on one node and print the cost/quality result.** It earns its next command only when you reach for one that isn't there. The "control plane for my whole practice" framing — and the "client appliance" framing — are the destination, not the first commit.
 
 ---
 

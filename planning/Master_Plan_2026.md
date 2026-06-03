@@ -18,6 +18,10 @@ This reframes the old "build, ship, get paid" plan. The build *is* the point now
 
 Both a studio and a job are served by identical work. The plan doesn't choose between them. It produces evidence of expertise that reads equally well to a client or a hiring manager.
 
+### The destination, stated plainly (added June 2026)
+
+The "endgame is open" framing below was the right call when this plan was written and you were less sure. You're more sure now, so name it: **you're building a teaching-led studio where cost-optimized, single-binary AI automation is the product, SMB work is the proof, and teaching is how clients adopt and how you grow in São Paulo.** The teaching isn't a separate future — it starts as teaching customers to use what you build for them, and may grow from there. A job remains a fine outcome and the same work serves it, so nothing is foreclosed; but decisions get pruned faster against a stated destination than against three open doors. The differentiator inside this destination is specific: not "I can build an automation," but "I can build it *cheaply and privately, on your own hardware*." That edge — measured cost/quality, local models where they thrive, delivered as a single binary a non-technical operator can run — is the spine, not a side-feature. (See the reframed Project H emphasis and the Rust appliance in the Projects plan.)
+
 ### The through-line you're building on
 
 You are not pivoting into AI. You have been building adopted, practical AI-and-automation tools for years, and you have the judgment to know what's worth shipping. State that story as one arc, because it's true and it holds up:
@@ -31,6 +35,8 @@ That arc serves a studio and a job hunt equally. Lead with it.
 You are ready to sell — or to walk into a senior interview with confidence — when:
 
 > **You can walk into an SMB you've never seen and name three automatable workflows in 30 minutes, and explain how you'd build each one on your own infrastructure.**
+
+**Sharpened (June 2026):** name three workflows *and*, for at least one, say which steps are safe on a local model and roughly what that saves. This bakes your differentiation into the readiness bar itself, rather than leaving it as a Project H footnote — the thing that makes you the person who builds it cheaply and privately on the client's hardware, not just another person who can build it.
 
 Confidence is pegged to *that skill*, not to finishing the project list. If you finish the core projects and still feel "not ready," that's the signal to send one diagnostic offer anyway and learn from the discomfort — not to add a ninth project. (And note: between the Dashboard and Helpscout, you have already *done* versions of this in production. You are closer to ready than the "about to build" framing suggests.)
 
@@ -135,6 +141,8 @@ This is **harness engineering** — a named target expertise — and the artifac
 - DNS for `learn-agentic-ai.com` via Cloudflare (free, DDoS protection, hides home IP). Dynamic DNS if no static IP.
 - **Revive `learn-agentic-ai.com` on the Mini as the first real thing the harness hosts.** The site is down because you hit the Vercel limit — that's the forcing function. **Revive, don't redesign.** Get the existing bilingual (PT/EN) site back up largely as-is; a redesign is a someday item. A live old site beats a perfect unlaunched one.
 - **The harness layer — the actual point:** stand up async **Claude Code** triggerable remotely. Wire one path end-to-end first (GitHub issue → Claude Code run → result back). Expand over time to webhooks, Dispatch, Telegram. Goal: kick off work from your phone, away from the desk.
+
+  **Note (June 2026):** Claude Code now ships **Agent View** (`claude agents`, background sessions run by a per-user supervisor that survive terminal/shell closure), `claude --bg`, and **Claude Code Web** (sessions that survive machine sleep, run in Anthropic's cloud). For the *coding-agent* case, lean on these built-ins first rather than building your own trigger plumbing. The only seam they don't cover is *phone → your own Mac Mini, surviving sleep* — build custom remote-trigger plumbing only if you still want that after trying the built-ins. This thins (doesn't delete) the original justification for the harness's remote-trigger work and the Rust CLI's first job; see the reframed CLI section in the Projects plan.
 - **The recursion is the story:** the site is hosted on your self-built harness and partly fed by your own agentic pipeline. That *is* the portfolio, demonstrated rather than claimed.
 
 **Visibility:** Publish the **bilingual return post** using the safe framing above. This answers the year-long gap head-on as a deliberate chapter, not silence. Then a first LinkedIn post: rebuilding your practice around agentic and harness engineering, documenting in the open.
@@ -224,8 +232,10 @@ Kept separate from A on purpose — the *before/after* is the lesson that lets y
 ### Block 6 — Project F: Semantic Search Over Your Corpus
 Mostly D's components. `GET /knowledge/search?q=...` → top-k artifacts + optional synthesis. The tool you'll actually use to study. Seeds the #1 client-memory product.
 
-### Block 6.5 — Project H: Model Evaluation & Routing Harness *(flexible placement)*
-Best after Project D (needs real nodes to evaluate) and pairs naturally with G. An offline tool that runs each node against frontier and local models, scores the outputs (deterministic for structured nodes, bias-corrected LLM-as-judge for prose), and produces empirical per-node routing decisions — "this node is safe on local-70B." Proves the local-models thesis with data, and is directly sellable as substantial cost reduction with measured quality retention. **Offline eval, not a runtime router.** Lettered H for now; actual timing may shift with priorities. (Full detail in the Projects plan.)
+### Block 6.5 — Project H: Model Evaluation & Routing Harness *(the spine, not a side-quest)*
+**Reframed (June 2026): this is the centerpiece of your differentiation, not a flexible add-on.** Still best built after Project D (needs real nodes to evaluate) and pairs naturally with G — so the *build order* doesn't change — but it is the project that earns the deep blog post and that the client appliance is built around. An offline tool that runs each node against frontier and local models, scores the outputs (deterministic for structured nodes, bias-corrected LLM-as-judge for prose), and produces empirical per-node routing decisions — "this node is safe on local-70B." Proves the local-models thesis with data, and is directly sellable as substantial cost reduction with measured quality retention. **Offline eval, not a runtime router.** Projects A–D partly exist to give H real nodes to measure. (Full detail in the Projects plan.)
+
+**Funding discipline (the 2+3 trap):** the local-model bet may be a year ahead of where most SMBs feel the pain. That's fine *only if services revenue funds it.* Let the studio (warm leads, paid diagnostics) pay the bills while H and the appliance mature; don't let the bet jump ahead of the revenue that buys time for it.
 
 ### Parallel Track — Rust Harness CLI *(whenever you want a Rust session)*
 A single-binary terminal control plane for triggering and observing remote agent runs and workflows — the local counterpart to the phone-based remote triggers. **Distinct from Claude Code:** Claude Code does the coding work; this CLI commands and observes your infrastructure. This is where Rust stays warm through genuine daily use (instant startup, single binary, mature CLI ecosystem). Rust commands, Python executes — clean language boundary, no rewriting working Python. Start with one command; let it grow just-in-time.
