@@ -1,0 +1,30 @@
+# Start Block — Mark a block as in-progress in STATUS.md.
+
+## Variables
+
+$ARGUMENTS — optional block identifier to start (e.g. `phase1-block2`). If omitted, defaults to the first block that is not `done` in STATUS.md.
+
+## Instructions
+
+1. Read `planning/STATUS.md`.
+2. Identify the target block:
+   - If `$ARGUMENTS` is provided, find that block by identifier. If not found, say so and stop.
+   - If `$ARGUMENTS` is omitted, find the first block that is not `done`.
+3. Check preconditions:
+   - If the block is already `in_progress`, report that and stop.
+   - If the block is `done`, report that and stop.
+   - If any block that must precede this one (all blocks above it in the sequence) is not `done`, report which ones are incomplete and stop — do not skip the sequence.
+4. Update the block's status to `in_progress` in STATUS.md. Preserve all other content and formatting.
+5. Update the **Current focus** line to reflect this block.
+6. Bump the **Last updated** date.
+7. Write the updated STATUS.md.
+
+## Context / Files to Read
+
+- `planning/STATUS.md`
+
+## Report
+
+- Which block was marked in-progress.
+- The updated Current focus line.
+- Success or failure of the file write.
