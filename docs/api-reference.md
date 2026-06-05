@@ -1,0 +1,807 @@
+# Core Engine API Reference
+
+Precise class-level reference for every public abstraction a developer must understand
+and subclass when writing a new workflow. All information is derived from source files
+in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
+
+---
+
+## Table of Contents
+
+1. [Workflow](#workflow)
+2. [WorkflowSchema and NodeConfig](#workflowschema-and-nodeconfig)
+3. [WorkflowValidator](#workflowvalidator)
+4. [TaskContext](#taskcontext)
+5. [Node](#node)
+6. [AgentNode](#agentnode)
+7. [ParallelNode](#parallelnode)
+8. [BaseRouter and RouterNode](#baserouter-and-routernode)
+9. [GenericRepository](#genericrepository)
+10. [PromptManager](#promptmanager)
+11. [WorkflowRegistry](#workflowregistry)
+12. [Event SQLAlchemy Model](#event-sqlalchemy-model)
+13. [createworkflow CLI](#createworkflow-cli)
+
+---
+
+## Workflow
+
+**Source:** `app/core/workflow.py`
+
+Abstract base class for all workflow implementations. Subclasses declare a
+`workflow_schema` class variable and inherit the full execution loop.
+
+### Class Variable
+
+```python
+workflow_schema: ClassVar[WorkflowSchema]
+```
+
+Every concrete subclass **must** assign this at the class level before the class
+is instantiated. It is read during `__init__` by the validator and during `run()`
+by the execution loop.
+
+### `__init__` Validation Sequence
+
+When a `Workflow` instance is created, four steps execute in order:
+
+1. `WorkflowValidator(self.workflow_schema)` — constructs a validator bound to the schema.
+2. `self.validator.validate()` — runs the full DAG + connection check; raises `ValueError` on failure.
+3. `self._initialize_nodes()` — builds `self.nodes: Dict[Type[Node], NodeConfig]` from every
+   `NodeConfig` listed in the schema, including nodes that appear only as connection targets.
+4. `load_dotenv()` — loads environment variables from `.env`.
+
+### `run(event: Any) -> TaskContext`
+
+Main entry point called by the Celery worker.
+
+```python
+def run(self, event: Any) -> TaskContext:
+```
+
+Execution steps:
+
+1. Construct `TaskContext(event=event)`.
+2. Re-parse the raw event dict through the schema's Pydantic model:
+   `task_context.event = self.workflow_schema.event_schema(**event)`.
+3. Write the nodes registry into `task_context.metadata["nodes"]`.
+4. Set `current_node_class = self.workflow_schema.start`.
+5. Loop while `current_node_class` is not `None`:
+   - Look up the node class via `self.nodes[current_node_class].node`, then
+     instantiate it and call `process(task_context)` inside `node_context()`.
+   - Resolve the next node via `_get_next_node_class()`.
+6. Remove `"nodes"` from `task_context.metadata` before returning.
+7. Return the final `TaskContext`.
+
+### `_get_next_node_class(current_node_class, task_context) -> Optional[Type[Node]]`
+
+Resolves the successor after each node completes.
+
+- Looks up `current_node_class` in `self.workflow_schema.nodes`.
+- Returns `None` if no `NodeConfig` exists for it, or if `connections` is empty.
+- If `node_config.is_router` is `True`: instantiates the router again and delegates
+  to `_handle_router()`, which calls `router.route(task_context)` and returns the
+  class of the returned node instance (`next_node.__class__`).
+- Otherwise: returns `node_config.connections[0]` — the single linear successor.
+
+### `node_context(node_name: str)` — Context Manager
+
+```python
+@contextmanager
+def node_context(self, node_name: str):
+```
+
+Wraps every node execution. Emits `logging.info` on entry and exit, and
+`logging.error` on exception before re-raising. No return value is yielded.
+
+---
+
+## WorkflowSchema and NodeConfig
+
+**Source:** `app/core/schema.py`
+
+Both classes are Pydantic `BaseModel` subclasses — all fields are validated at
+construction time.
+
+### `WorkflowSchema`
+
+```python
+class WorkflowSchema(BaseModel):
+    description: Optional[str] = None
+    event_schema: Type[BaseModel]
+    start: Type[Node]
+    nodes: List[NodeConfig]
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `description` | `Optional[str]` | No | Human-readable description of the workflow. |
+| `event_schema` | `Type[BaseModel]` | Yes | Pydantic model class used to validate the raw event dict at run time. |
+| `start` | `Type[Node]` | Yes | The node class that receives control first when `run()` executes. |
+| `nodes` | `List[NodeConfig]` | Yes | Ordered list of every node configuration in the workflow. |
+
+`event_schema` is called as `event_schema(**event)` inside `Workflow.run()`, so the
+incoming event dict must match the schema's field names exactly.
+
+### `NodeConfig`
+
+```python
+class NodeConfig(BaseModel):
+    node: Type[Node]
+    connections: List[Type[Node]] = Field(default_factory=list)
+    is_router: bool = False
+    description: Optional[str] = None
+    parallel_nodes: Optional[List[Type[Node]]] = Field(default_factory=list)
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `node` | `Type[Node]` | required | The node class this config describes. |
+| `connections` | `List[Type[Node]]` | `[]` | Successor node classes in declaration order. |
+| `is_router` | `bool` | `False` | When `True`, routing is delegated to the node's `route()` logic rather than taking `connections[0]`. |
+| `description` | `Optional[str]` | `None` | Documentation string; not used at runtime. |
+| `parallel_nodes` | `Optional[List[Type[Node]]]` | `[]` | Node classes launched concurrently by a `ParallelNode`; distinct from `connections`. |
+
+**`parallel_nodes` vs `connections`:** `connections` defines the DAG edge that the
+workflow engine traverses sequentially. `parallel_nodes` is a separate list consumed
+only by `ParallelNode.execute_nodes_in_parallel()` — the workflow engine does not
+traverse these edges automatically.
+
+**`is_router` semantics:** A node config with `is_router=True` may list multiple
+`connections`. `WorkflowValidator` rejects any non-router config that declares more
+than one connection. When `is_router=True`, `_get_next_node_class` re-instantiates
+the node and calls `route()` to select which connection to follow at run time.
+
+---
+
+## WorkflowValidator
+
+**Source:** `app/core/validate.py`
+
+```python
+class WorkflowValidator:
+    def __init__(self, workflow_schema: WorkflowSchema): ...
+```
+
+Constructed with a `WorkflowSchema` instance and called once in `Workflow.__init__`.
+
+### `validate()`
+
+Calls `_validate_dag()` then `_validate_connections()`. Raises `ValueError` on the
+first failure.
+
+### `_validate_dag()` — DFS Cycle Detection + BFS Reachability
+
+Two checks run in sequence:
+
+1. **Cycle detection (`_has_cycle`)** — iterative DFS using a visited set and a
+   recursion stack set. For each unvisited node in the schema, a recursive DFS
+   function marks the node in both sets, recurses into each neighbor listed in
+   `connections`, and removes the node from the recursion stack on the way back.
+   If a neighbor is already in the recursion stack, a cycle is detected.
+   Raises `ValueError("Workflow schema contains a cycle")`.
+
+2. **Reachability check (`_get_reachable_nodes`)** — BFS starting from
+   `workflow_schema.start`. Every node reachable by following `connections` edges
+   is collected into a set. Any node declared in `workflow_schema.nodes` but absent
+   from that set triggers:
+   `ValueError("The following nodes are unreachable: {unreachable_nodes}")`.
+
+### `_validate_connections()`
+
+Iterates every `NodeConfig`. If `len(node_config.connections) > 1` and
+`node_config.is_router` is `False`, raises:
+
+```
+ValueError("Node {name} has multiple connections but is not marked as a router.")
+```
+
+---
+
+## TaskContext
+
+**Source:** `app/core/task.py`
+
+```python
+class TaskContext(BaseModel):
+    event: Any
+    nodes: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+```
+
+The single shared state object threaded through every node in the workflow.
+
+| Field | Type | Description |
+|---|---|---|
+| `event` | `Any` | Initially the raw event dict; replaced with the parsed Pydantic schema instance by `Workflow.run()`. |
+| `nodes` | `Dict[str, Any]` | Accumulates per-node results. Each node writes its output under its own name. |
+| `metadata` | `Dict[str, Any]` | Workflow-level data. During execution, `"nodes"` key holds the full `Dict[Type[Node], NodeConfig]` registry; this key is removed before `run()` returns. |
+
+### `update_node(node_name: str, **kwargs)`
+
+```python
+def update_node(self, node_name: str, **kwargs):
+    self.nodes[node_name] = {**self.nodes.get(node_name, {}), **kwargs}
+```
+
+Merges `kwargs` into the dict stored at `self.nodes[node_name]`. If no entry exists
+for `node_name`, it is created. Existing keys for that node are preserved unless
+overwritten by a kwarg with the same key.
+
+**Usage pattern inside a node:**
+
+```python
+def process(self, task_context: TaskContext) -> TaskContext:
+    result = self._run_analysis(task_context.event)
+    task_context.update_node(self.node_name, score=result.score, label=result.label)
+    return task_context
+```
+
+Downstream nodes read the accumulated results directly from `task_context.nodes`.
+
+---
+
+## Node
+
+**Source:** `app/core/nodes/base.py`
+
+```python
+class Node(ABC):
+```
+
+Abstract base for all processing steps. Implements the Chain of Responsibility
+pattern: each node receives the context, mutates it, and returns it.
+
+### `node_name` property
+
+```python
+@property
+def node_name(self) -> str:
+    return self.__class__.__name__
+```
+
+Returns the class name. This is the key used when writing results into
+`task_context.nodes`. Consistent with how routers record routing decisions.
+
+### `process(task_context: TaskContext) -> TaskContext` — Abstract
+
+```python
+@abstractmethod
+def process(self, task_context: TaskContext) -> TaskContext:
+```
+
+**Contract:**
+
+- Receives the shared `TaskContext`.
+- Performs the node's work.
+- Stores results into `task_context.nodes[self.node_name]` (typically via
+  `task_context.update_node(self.node_name, ...)`).
+- Returns the (modified) `TaskContext`. The workflow engine replaces its reference
+  with the returned value, so the return must not be `None`.
+
+Every concrete class — whether it extends `Node`, `AgentNode`, `ParallelNode`, or
+any router variant — must implement this method.
+
+---
+
+## AgentNode
+
+**Source:** `app/core/nodes/agent.py`
+
+```python
+class AgentNode(Node, ABC):
+```
+
+Extends `Node` with pydantic-ai `Agent` wiring. Subclasses implement
+`get_agent_config()` to declare which model to use and what the system prompt is.
+
+### Inner Classes
+
+```python
+class DepsType(BaseModel):
+    pass
+
+class OutputType(BaseModel):
+    pass
+```
+
+Both are stubs. Subclasses override `DepsType` to declare injectable dependencies
+and `OutputType` to declare the structured response schema passed to pydantic-ai
+as `output_type`.
+
+### `AgentConfig` Dataclass
+
+```python
+@dataclass
+class AgentConfig:
+    system_prompt: str
+    output_type: Optional[Type[Any]]
+    deps_type: Optional[Type[Any]]
+    model_provider: ModelProvider
+    model_name: Union[OpenAIModelName, AnthropicModelName, GeminiModelName, BedrockModelName]
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `system_prompt` | `str` | Rendered system prompt string (obtain via `PromptManager.get_prompt()`). |
+| `output_type` | `Optional[Type[Any]]` | Pydantic model class for structured output; `None` for plain text. |
+| `deps_type` | `Optional[Type[Any]]` | Dependency injection type for the agent. |
+| `model_provider` | `ModelProvider` | Enum value selecting the provider backend. |
+| `model_name` | union of provider name types | Provider-specific model identifier string. |
+
+### `ModelProvider` Enum
+
+```python
+class ModelProvider(str, Enum):
+    OPENAI        = "openai"
+    AZURE_OPENAI  = "azure_openai"
+    ANTHROPIC     = "anthropic"
+    GEMINI        = "gemini"
+    OLLAMA        = "ollama"
+    BEDROCK       = "bedrock"
+```
+
+### `get_agent_config() -> AgentConfig` — Abstract
+
+```python
+@abstractmethod
+def get_agent_config(self) -> AgentConfig:
+```
+
+Called once in `__init__`. Must return a fully populated `AgentConfig`. The system
+prompt should be loaded from a `.j2` file via `PromptManager.get_prompt()`.
+
+### `__init__` — Agent Wiring
+
+```python
+def __init__(self):
+    self.__async_client = AsyncClient()
+    agent_wrapper = self.get_agent_config()
+    self.agent = Agent(
+        system_prompt=agent_wrapper.system_prompt,
+        output_type=agent_wrapper.output_type,
+        model=self.__get_model_instance(agent_wrapper.model_provider, agent_wrapper.model_name),
+    )
+```
+
+A single `httpx.AsyncClient` is shared across all provider calls made from this
+node instance.
+
+### Provider-Specific Model Construction
+
+| Provider | Constructor | Env Vars Required |
+|---|---|---|
+| `OPENAI` | `OpenAIModel(model_name, provider=OpenAIProvider(http_client=...))` | `OPENAI_API_KEY` (standard pydantic-ai default) |
+| `AZURE_OPENAI` | `OpenAIModel(model_name, provider=OpenAIProvider(openai_client=AsyncAzureOpenAI()))` | Azure SDK env vars |
+| `ANTHROPIC` | `AnthropicModel(model_name=..., provider=AnthropicProvider(http_client=...))` | `ANTHROPIC_API_KEY` |
+| `GEMINI` | `GeminiModel(model_name=..., provider=GoogleGLAProvider(http_client=...))` | `GOOGLE_API_KEY` |
+| `OLLAMA` | `OpenAIModel(model_name=..., provider=OpenAIProvider(base_url=...))` | `OLLAMA_BASE_URL` |
+| `BEDROCK` | `BedrockConverseModel(model_name=..., provider=BedrockProvider(bedrock_client=...))` | `BEDROCK_AWS_ACCESS_KEY_ID`, `BEDROCK_AWS_SECRET_ACCESS_KEY`, `BEDROCK_AWS_REGION` |
+
+If `model_provider` does not match any enum value, the implementation falls back to
+`OpenAIModel("gpt-4.1")`.
+
+For Ollama: if `OLLAMA_BASE_URL` is not set in the environment, `__init__` raises
+`KeyError("OLLAMA_BASE_URL not set in .env")` immediately.
+
+---
+
+## ParallelNode
+
+**Source:** `app/core/nodes/parallel.py`
+
+```python
+class ParallelNode(Node, ABC):
+```
+
+Extends `Node` to add concurrent sub-node execution. The subclass `process()` method
+calls `execute_nodes_in_parallel()` and then decides what to do with the results.
+
+### `execute_nodes_in_parallel(task_context: TaskContext) -> List[TaskContext]`
+
+```python
+def execute_nodes_in_parallel(self, task_context: TaskContext):
+    node_config: NodeConfig = task_context.metadata["nodes"][self.__class__]
+    future_list = []
+    with ThreadPoolExecutor() as executor:
+        for node in node_config.parallel_nodes:
+            future = executor.submit(node().process, task_context)
+            future_list.append(future)
+        results = [future.result() for future in future_list]
+    return results
+```
+
+**Mechanics:**
+
+1. Reads `task_context.metadata["nodes"][self.__class__]` to obtain the `NodeConfig`
+   for this node — which is why `Workflow.run()` populates `metadata["nodes"]` before
+   the loop starts.
+2. Iterates `node_config.parallel_nodes`, instantiating each class and submitting
+   `node.process(task_context)` to a `ThreadPoolExecutor`.
+3. Collects results by calling `.result()` on every future in submission order.
+4. Returns the list of `TaskContext` objects returned by each sub-node.
+
+**Caution:** All sub-nodes receive the **same** `task_context` reference concurrently.
+Sub-nodes that write to `task_context.nodes` under their own key are safe as long as
+their keys do not collide. Sub-nodes that modify shared keys will race.
+
+The parallel nodes listed in `NodeConfig.parallel_nodes` are **not** traversed by
+the workflow engine's main loop — they execute only when the owning `ParallelNode`
+explicitly calls `execute_nodes_in_parallel()`.
+
+---
+
+## BaseRouter and RouterNode
+
+**Source:** `app/core/nodes/router.py`
+
+Two cooperating classes implement routing:
+
+- `BaseRouter` — a concrete `Node` subclass that drives the routing loop and writes
+  the decision to `TaskContext`.
+- `RouterNode` — an abstract helper that encapsulates a single routing condition.
+
+### `BaseRouter`
+
+```python
+class BaseRouter(Node):
+    routes: ...       # List of RouterNode instances
+    fallback: ...     # Optional Node instance
+```
+
+`routes` and `fallback` are not declared with type annotations in the source; concrete
+subclasses must define them as instance attributes.
+
+#### `process(task_context: TaskContext) -> TaskContext`
+
+```python
+def process(self, task_context: TaskContext) -> TaskContext:
+    next_node = self.route(task_context)
+    task_context.nodes[self.node_name] = {"next_node": next_node.node_name}
+    return task_context
+```
+
+Writes the routing decision as `{"next_node": "<ClassName>"}` under the router's
+own key in `task_context.nodes`, then returns the context.
+
+#### `route(task_context: TaskContext) -> Node`
+
+```python
+def route(self, task_context: TaskContext) -> Node:
+    for route_node in self.routes:
+        next_node = route_node.determine_next_node(task_context)
+        if next_node:
+            return next_node
+    return self.fallback if self.fallback else None
+```
+
+First-match evaluation: iterates `self.routes` in order, returns the first non-`None`
+result from `determine_next_node()`. If no route matches, returns `self.fallback` or
+`None`. When `route()` returns `None`, `Workflow._handle_router()` returns `None`,
+terminating the execution loop.
+
+### `RouterNode`
+
+```python
+class RouterNode(ABC):
+    @abstractmethod
+    def determine_next_node(self, task_context: TaskContext) -> Optional[Node]:
+        pass
+
+    @property
+    def node_name(self):
+        return self.__class__.__name__
+```
+
+Each `RouterNode` subclass implements one routing condition. Return a `Node` instance
+to claim the route; return `None` to pass to the next `RouterNode` in the list.
+
+**Important:** `Workflow._handle_router()` calls `router.route()` and then reads
+`next_node.__class__` to get the node type for the main execution loop. The returned
+`Node` instance from `determine_next_node()` is used only for its class — the workflow
+engine instantiates a fresh instance when executing the next node.
+
+---
+
+## GenericRepository
+
+**Source:** `app/database/repository.py`
+
+```python
+T = TypeVar("T")
+
+class GenericRepository(Generic[T]):
+    def __init__(self, session: Session, model: Type[T]): ...
+```
+
+Type-safe wrapper around a SQLAlchemy `Session`. Instantiated per request with the
+model class it manages.
+
+### Constructor
+
+| Parameter | Type | Description |
+|---|---|---|
+| `session` | `sqlalchemy.orm.Session` | Active SQLAlchemy session, typically injected via `db_session()`. |
+| `model` | `Type[T]` | The SQLAlchemy model class (e.g., `Event`). |
+
+### Method Signatures and Return Types
+
+| Method | Signature | Returns | Notes |
+|---|---|---|---|
+| `create` | `create(obj: T) -> T` | The persisted object | Calls `session.add()` + `session.commit()`. |
+| `get` | `get(id: str) -> Optional[T]` | Single instance or `None` | Filters by `model.id == id`. |
+| `get_all` | `get_all() -> List[T]` | All rows | No ordering guarantee. |
+| `update` | `update(obj: T) -> T` | The original `obj` passed in | Calls `session.merge(obj)` (return value discarded) + `session.commit()`; returns the original object. |
+| `delete` | `delete(id: str) -> None` | `None` | Fetches then deletes; no-op if not found. |
+| `get_latest` | `get_latest(n: int = 1) -> List[T]` | Up to `n` rows | Orders by `model.id DESC`. |
+| `count` | `count() -> int` | Row count | Uses SQLAlchemy `count()`. |
+| `exists` | `exists(**kwargs) -> bool` | Boolean | **Broken — do not use.** |
+
+### Known Bug: `exists()`
+
+```python
+def exists(self, **kwargs) -> bool:
+    return self.session.query(
+        self.model.query.filter_by(**kwargs).exists()
+    ).scalar()
+```
+
+`self.model.query` is a SQLAlchemy 1.x legacy pattern that raises `AttributeError`
+under SQLAlchemy 2.x. The correct 2.x approach uses `select(...).where(...)`. Do not
+call this method until it is rewritten.
+
+---
+
+## PromptManager
+
+**Source:** `app/services/prompt_loader.py`
+
+```python
+class PromptManager:
+    _env = None  # class-level singleton Jinja2 Environment
+```
+
+Loads `.j2` templates from `app/prompts/`, parses YAML frontmatter, and renders the
+Jinja2 body with caller-supplied variables.
+
+### `get_prompt(template: str, **kwargs) -> str`
+
+```python
+@staticmethod
+def get_prompt(template: str, **kwargs) -> str:
+```
+
+| Parameter | Description |
+|---|---|
+| `template` | Template name **without** the `.j2` extension (e.g., `"ticket_analysis"`). |
+| `**kwargs` | Variables substituted into the Jinja2 template body. |
+
+Returns the fully rendered string.
+
+Raises `ValueError` if Jinja2 rendering fails (e.g., an undefined variable is
+referenced and `StrictUndefined` is active). Raises `FileNotFoundError` if the
+template does not exist in `app/prompts/`.
+
+**`StrictUndefined` behavior:** The environment is created with
+`undefined=StrictUndefined`. Any variable referenced in the template body that is not
+supplied via `**kwargs` and has no `| default(...)` filter will raise a `ValueError`
+at render time, not silently produce an empty string.
+
+### `get_template_info(template: str) -> dict`
+
+```python
+@staticmethod
+def get_template_info(template: str) -> dict:
+```
+
+Returns a dict with these keys:
+
+| Key | Source | Type |
+|---|---|---|
+| `name` | The `template` argument | `str` |
+| `description` | `frontmatter.metadata["description"]` | `str` (default: `"No description provided"`) |
+| `author` | `frontmatter.metadata["author"]` | `str` (default: `"Unknown"`) |
+| `variables` | `jinja2.meta.find_undeclared_variables` on the template AST | `list` |
+| `frontmatter` | Full raw `post.metadata` dict | `dict` |
+
+### `.j2` Frontmatter Schema
+
+Templates use YAML frontmatter delimited by `---`. Only two fields are read by
+`PromptManager`:
+
+```yaml
+---
+description: Human-readable description of what this prompt does
+author: Author or team name
+---
+```
+
+The remainder of the file is the Jinja2 template body rendered by `get_prompt()`.
+Example from `ticket_analysis.j2`:
+
+```
+---
+description: A template for analyzing incoming {{ pipeline | default('customer support') }} tickets
+author: TechGear AI Team
+---
+
+You're an AI assistant named {{ name | default('Emma') }}, working for {{ company | default('TechGear') }}.
+```
+
+---
+
+## WorkflowRegistry
+
+**Source:** `app/workflows/workflow_registry.py`
+
+```python
+from enum import Enum
+from workflows.customer_care_workflow import CustomerCareWorkflow
+
+class WorkflowRegistry(Enum):
+    CUSTOMER_CARE = CustomerCareWorkflow
+```
+
+A plain `Enum` mapping string workflow type identifiers to workflow classes. The
+Celery worker resolves the correct `Workflow` subclass by looking up the
+`Event.workflow_type` string value against this enum.
+
+### Adding a New Entry
+
+1. Import the new workflow class at the top of the file.
+2. Add an enum member whose name matches the intended `workflow_type` string (by
+   convention, `UPPER_SNAKE_CASE`).
+
+```python
+from workflows.my_new_workflow import MyNewWorkflow
+
+class WorkflowRegistry(Enum):
+    CUSTOMER_CARE = CustomerCareWorkflow
+    MY_NEW       = MyNewWorkflow
+```
+
+### Naming Convention
+
+The enum member name corresponds to the `workflow_type` column value stored on the
+`Event` row. When the API endpoint creates an event, it writes a `workflow_type` string
+(e.g., `"MY_NEW"`) into the database. The worker reads that string, looks up
+`WorkflowRegistry["MY_NEW"].value`, and instantiates the returned class.
+
+---
+
+## Event SQLAlchemy Model
+
+**Source:** `app/database/event.py`
+
+```python
+class Event(Base):
+    __tablename__ = "events"
+```
+
+Primary persistence record. Stores both the raw inbound payload and the final
+workflow output.
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid1` | Primary key, UUID v1 generated at insert time. |
+| `workflow_type` | `String(150)` | No | — | Matches a `WorkflowRegistry` enum member name. Max 150 characters. |
+| `data` | `JSON` | Yes | — | Raw event dict as received from the API endpoint. |
+| `task_context` | `JSON` | Yes | — | Serialized `TaskContext` written back after workflow completes. |
+| `created_at` | `DateTime` | Yes | `datetime.now` | Set on insert; not updated thereafter. |
+| `updated_at` | `DateTime` | Yes | `datetime.now` | Refreshed by SQLAlchemy `onupdate=datetime.now` on every update. |
+
+### Data vs Task Context Population
+
+- `data` is populated by the API endpoint when the event is first received, before
+  the Celery task runs. It holds the original request body as-is.
+- `task_context` is written back by the worker after `Workflow.run()` completes,
+  storing the serialized `TaskContext` (including `nodes` output from every step).
+
+**Known bug:** The API endpoint commits the `Event` row before calling
+`send_task()`. If `send_task()` fails, the row exists in the database with no
+corresponding Celery task — a ghost row. See `app/api/endpoint.py`.
+
+### Session and Base
+
+`Event` inherits from `Base = declarative_base()` defined in `app/database/session.py`.
+The engine is created at module import time (`create_engine(...)` at module level),
+which is a known side effect. See `app/database/session.py` line 15.
+
+---
+
+## createworkflow CLI
+
+**Source:** `app/core/commands/init_workflow.py`
+
+### Invocation
+
+```bash
+# From the repo root
+uv run createworkflow
+```
+
+The entry point is registered as `createworkflow` in `pyproject.toml`. Running it
+invokes `WorkflowInitCommand().run()`, which prompts interactively for the workflow
+name.
+
+### Input Validation
+
+The command accepts a `snake_case` name at the prompt. Rules:
+
+- Must match `^[a-z][a-z0-9_]*[a-z0-9]$`.
+- Any trailing `_workflow` or `workflow` suffix is stripped automatically before
+  validation (e.g., `ticket_workflow` becomes `ticket`).
+- The loop re-prompts until a valid name is entered.
+
+### What `WorkflowInitCommand.run()` Generates
+
+Four files are created. Existing files are skipped (never overwritten).
+
+#### 1. `app/workflows/<name>_workflow_nodes/__init__.py`
+
+Empty file. Creates the nodes subpackage.
+
+#### 2. `app/workflows/<name>_workflow_nodes/initial_node.py`
+
+```python
+from core.nodes.base import Node
+from core.task import TaskContext
+
+
+class InitialNode(Node):
+    def process(self, task_context: TaskContext) -> TaskContext:
+        return task_context
+```
+
+A pass-through stub. Replace the body with real processing logic.
+
+#### 3. `app/workflows/<name>_workflow.py`
+
+```python
+from core.schema import WorkflowSchema, NodeConfig
+from core.workflow import Workflow
+from schemas.<name>_schema import <Name>EventSchema
+from workflows.<name>_workflow_nodes.initial_node import InitialNode
+
+
+class <Name>Workflow(Workflow):
+    workflow_schema = WorkflowSchema(
+        description="",
+        event_schema=<Name>EventSchema,
+        start=InitialNode,
+        nodes=[
+            NodeConfig(
+                node=InitialNode,
+                connections=[],
+                description="",
+                parallel_nodes=[],
+            ),
+        ],
+    )
+```
+
+#### 4. `app/schemas/<name>_schema.py`
+
+```python
+from pydantic import BaseModel
+
+
+class <Name>EventSchema(BaseModel):
+    pass
+```
+
+### Required Edits After Scaffolding
+
+The scaffolded files are stubs. The following steps must be completed before the
+workflow is functional:
+
+| Step | Action |
+|---|---|
+| 1 | Add fields to `<Name>EventSchema` in `app/schemas/<name>_schema.py`. |
+| 2 | Add real node files under `app/workflows/<name>_workflow_nodes/`. |
+| 3 | Wire `WorkflowSchema`: set `start`, populate `nodes` with real `NodeConfig` entries and their `connections`. |
+| 4 | Register in `app/workflows/workflow_registry.py`: import the class and add an enum member. |
+| 5 | Add at least one `.j2` prompt file in `app/prompts/` for every system prompt the workflow uses. |
+| 6 | Write tests before marking the workflow complete (see `planning/Test_Plan.md`). |

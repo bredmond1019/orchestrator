@@ -97,3 +97,10 @@ orchestration/
 ├── requests/                 Sample event payloads + send script
 └── pyproject.toml
 ```
+
+## Documentation
+
+| File | Contents |
+|---|---|
+| [docs/api-reference.md](docs/api-reference.md) | Precise class-level reference for every public abstraction in app/core/, app/database/, app/services/, and app/workflows/ that a developer must understand and subclass when writing a new workflow. |
+| [docs/configuration.md](docs/configuration.md) | Complete reference for every environment variable, connection string assembly, and Docker service topology so a developer can configure the stack for local development or a Docker deployment without guessing. |

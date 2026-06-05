@@ -153,12 +153,21 @@ Reports pylint errors, failing test names, or construction errors concisely; one
 
 _No variables._
 
-### `/update-docs`
+### `/log-work`
 **Sync STATUS.md and append a dated DEVLOG entry for completed work.**
 
 Reads `STATUS.md`, the current task spec, and `DEVLOG.md`; runs `git diff --stat`. Updates `STATUS.md` (flips statuses, advances Current focus, bumps Last updated, logs deviations) and appends a new entry to `DEVLOG.md`. Will prompt you to add settled architectural choices to `DECISIONS.md` — never edits it directly. Never touches the master plan files.
 
 _No variables._
+
+### `/update-docs`
+**Patch docs/*.md to reflect recent source changes.**
+
+Surgically updates existing reference docs when code has changed. Determines changed source files from `git diff`, maps them to the docs that reference them, and rewrites only the affected sections. Reports what was updated, what was clean, and anything too large for surgical patching (flagged `NEEDS_REVIEW`). Never rewrites a doc wholesale — use `/generate-new-docs` for that.
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | Optional. Git ref or range to diff against (e.g. `HEAD~3`, `main..HEAD`). Defaults to `HEAD~1` plus unstaged changes. |
 
 ### `/commit`
 **Stage and commit changes with a conventional message.**

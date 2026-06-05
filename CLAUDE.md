@@ -90,3 +90,14 @@ After scaffolding:
 - `app/workflows/customer_care_workflow*` — reference implementation, frozen
 - `app/core/commands/` — excluded from ruff and pylint, do not reformat
 - `app/alembic/` — migration history, excluded from pylint, never hand-edit generated files
+
+---
+
+## Documentation
+
+Developer reference docs in `docs/`:
+
+| File | Contents |
+|---|---|
+| [docs/api-reference.md](docs/api-reference.md) | Precise class-level reference for every public abstraction in app/core/, app/database/, app/services/, and app/workflows/ that a developer must understand and subclass when writing a new workflow. |
+| [docs/configuration.md](docs/configuration.md) | Complete reference for every environment variable, connection string assembly, and Docker service topology so a developer can configure the stack for local development or a Docker deployment without guessing. |
