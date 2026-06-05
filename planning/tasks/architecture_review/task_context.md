@@ -126,8 +126,7 @@ def update_node(self, node_name: str, **kwargs):
     self.nodes[node_name] = {**self.nodes.get(node_name, {}), **kwargs}
 ```
 
-This is the only method on `TaskContext`. It's how nodes write their output back into
-the shared ledger.
+This is how most nodes write their output back into the shared ledger. Exception: `BaseRouter.process()` (`router.py`) writes directly to `task_context.nodes[self.node_name] = {'next_node': next_node.node_name}` without calling `update_node` — bypassing the merge semantics. For all non-router nodes, `update_node` is the correct and idiomatic write interface.
 
 **How it works:**
 
@@ -195,14 +194,22 @@ When the workflow finishes, the caller (the Celery task) serializes the final
 table in PostgreSQL:
 
 ```python
-# app/worker/tasks.py (conceptually)
-task_context = workflow.run(event)
-repo.update(event_id, task_context=task_context.model_dump())
+# Conceptual — actual tasks.py chains the call:
+task_context = workflow.run(db_event.data).model_dump(mode="json")
+db_event.task_context = task_context
+repository.update(obj=db_event)
 ```
 
-Because `TaskContext` is a Pydantic model, `.model_dump()` produces a plain Python
-dict that is JSON-serializable — the full ledger of every node's output, the parsed
-event, and any residual metadata.
+Because `TaskContext` is a Pydantic model, `.model_dump(mode='json')` produces a
+JSON-serializable dict. The `mode='json'` argument is required — without it, Pydantic
+returns Python-native types (datetime, UUID, Enum, nested model instances) that are
+not guaranteed to be JSON-serializable. The actual production code in tasks.py uses
+`.model_dump(mode='json')` explicitly.
+
+> **Note on `mode='json'`:** The `mode='json'` argument to `.model_dump()` is what
+> actually enforces JSON safety. This is not a detail — it is the mechanism. A bare
+> `.model_dump()` call returns Python-native types that will cause JSON serialization
+> to fail downstream.
 
 This is how you inspect a run after the fact: query the `events` table, pull the
 `task_context` JSON column, and you have a complete audit trail of what every node

@@ -93,17 +93,17 @@ Three things happen before the workflow can be used:
 3. **Load env** — `load_dotenv()` ensures any `.env` file is loaded so that API keys
    and config values are available to nodes when they run.
 
-`WorkflowValidator.validate()` runs three distinct checks (not two):
+`WorkflowValidator.validate()` calls two methods, which together run three sub-checks:
 
 ```python
 def validate(self):
-    self._validate_dag()          # cycle detection + reachability
-    self._validate_connections()  # connection-count rule
+    self._validate_dag()          # sub-checks: cycle detection + reachability
+    self._validate_connections()  # sub-check: connection-count rule
 ```
 
 - `_validate_dag()`:
-  - `_has_cycle()` — DFS traversal; raises if any node is its own ancestor.
-  - `_get_reachable_nodes()` — BFS from `start`; raises if any declared node is unreachable.
+  - `_has_cycle()` — DFS traversal; returns True if a cycle is detected. The raise ValueError('Workflow schema contains a cycle') is in its caller, _validate_dag() (validate.py), which raises when _has_cycle() returns True.
+  - `_get_reachable_nodes()` — BFS from `start`; returns a Set[Type[Node]] of reachable nodes. The raise ValueError for unreachable nodes is in its caller, _validate_dag(), which compares the returned set against all declared nodes and raises if any are missing.
 - `_validate_connections()` — iterates every `NodeConfig`; raises if a non-router node
   has more than one connection. This is the enforcement that gives linear nodes their
   "one outgoing edge only" guarantee.
@@ -136,6 +136,10 @@ up any node by its class and get its config.
 Example: if the schema declares `AnalyzeNode → RouterNode → [ResponseNode, EscalateNode]`,
 after `_initialize_nodes` the dict will have entries for all four classes, even if
 `ResponseNode` and `EscalateNode` were only mentioned as connection targets.
+
+**Important:** `_initialize_nodes()` only iterates `node_config.connections` — it does not register nodes listed in `node_config.parallel_nodes`. Nodes declared exclusively in `parallel_nodes` are not added to `self.nodes` here; `ParallelNode` resolves them at runtime from `task_context.metadata['nodes']` instead.
+
+**Note:** `Workflow` also defines a static `_instantiate_node()` method but it is never called by the run loop or by `_get_next_node_class`. Node instantiation always happens inline (`current_node()` in `run()`, `self.nodes[current_node_class].node()` in `_get_next_node_class`). Treat `_instantiate_node` as dead code.
 
 ---
 
@@ -320,8 +324,10 @@ works in terms of classes, not instances. If no rule matches and there's no fall
 ```
 Workflow.__init__()
   ├── WorkflowValidator.validate()
-  │     ├── _has_cycle()    (DFS)
-  │     └── _get_reachable_nodes()  (BFS) + _validate_connections()
+  │     ├── _validate_dag()
+  │     │     ├── _has_cycle()    (DFS — returns bool)
+  │     │     └── _get_reachable_nodes()  (BFS — returns Set[Type[Node]])
+  │     └── _validate_connections()
   └── _initialize_nodes() → self.nodes: {NodeClass → NodeConfig}
 
 Workflow.run(event)
@@ -346,8 +352,9 @@ Workflow.run(event)
   carries state between runs. All state is in `TaskContext`.
 
 - **No hardcoded model or DB calls** — `Workflow.run()` knows nothing about AI models
-  or databases. Those are the concern of individual nodes, which receive their
-  config via their own constructors. This is what makes the framework deployment-agnostic.
+  or databases. Those are the concern of individual nodes. The framework instantiates
+  every node bare — `current_node()` with no arguments — so nodes must source their own
+  config (e.g., from environment variables via `load_dotenv`).
 
 - **Fail fast** — validation runs at `__init__` time, not at `run()` time. A broken
   graph is caught when the workflow is first instantiated (typically at Celery worker
