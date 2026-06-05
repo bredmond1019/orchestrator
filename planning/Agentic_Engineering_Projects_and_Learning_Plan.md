@@ -227,8 +227,11 @@ If you can answer all five and draw the diagram, Phase 0 orientation is done.
 ### Why first
 Fastest way to exercise the whole `Workflow → Node → TaskContext → AgentNode → PromptManager → RouterNode` chain end-to-end, and it produces something you'll use *every morning*: a personal knowledge feed. You constantly find YouTube videos and articles (AI engineering, but also physics/relativity, music) you don't have time to consume and then lose. This pipeline ingests them, summarizes and categorizes them, stores them so nothing gets lost, and serves them to a private page you read with coffee on the tablet, on your phone during the day, or on the Kindle at night. The self-critic loop is still the real engineering lesson; the wiring is fast.
 
-### The reframe: a one-person Company Brain (the dogfood version)
+### The reframe: a one-person Company Brain (the dogfood version) — and a Honcho evaluation environment
+
 This personal feed is the Company Brain at a scale of one — *you*. Same shape: ingest scattered sources, structure them, store by topic, eventually track what you already know. The "keep track of what I know" instinct is **Project G's job** (semantic memory over your own learning); the categorized, searchable store is **Project F's corpus**. So this is not scope creep away from the plan — it's the personal-scale dogfood of the exact product you're building, and living inside a small one daily will make you understand the real one better. Build the ingestion-and-store layer now; the smart layers (search, "what I already know") attach later *because you stored embeddings at write time*.
+
+**The Honcho validation experiment (DECISIONS D25):** when you get to the memory layer of the personal feed (the "what I already know" smart layer, which is the Phase 3 upgrade after G ships), **use Honcho rather than your own G**. Install Honcho on the Mini (same Postgres + pgvector + Redis stack, Docker Compose, points at Claude Haiku), wire it to the personal feed's `LearningArtifact` store, and live inside it daily. This isn't a production commitment — it's deliberate competitive intelligence. You want to feel: where is Honcho strong (personal preference modeling, communication style, cross-session recall)? Where is it awkward (organizational knowledge, domain-specific extraction, company process modeling)? Where does the domain mismatch (built for personal preferences, your product needs organizational knowledge) show up in practice? The answers will directly inform your Project G design. *Awareness of how the best available competitor works, felt from the inside rather than read in docs, is worth more than any amount of architecture research.* (DECISIONS D25.)
 
 ### Two inputs, two outputs
 
@@ -408,34 +411,85 @@ Ranking/ordering with mocked embeddings; the synthesis node with a mocked agent.
 ## Project G — Agent Memory System (Episodic → Semantic)
 ### The hardest. The most differentiating. **The Company Brain's "keeps it current" engine.**
 
-**Pattern:** episodic→semantic consolidation, confidence decay, contradiction handling. **Reuse downstream:** `MemoryLoaderNode` (verbatim), the whole module. **This is the half of the Company Brain that turns static RAG into a living map of how a company works (DECISIONS D14, D4).**
+**Pattern:** episodic→semantic consolidation, confidence decay, contradiction handling, multi-peer entity modeling. **Reuse downstream:** `MemoryLoaderNode` (verbatim), the whole module. **This is the half of the Company Brain that turns static RAG into a living map of how a company works (DECISIONS D14, D4).**
+
+### Before you build: study Honcho (DECISIONS D25)
+
+**Read Honcho's source code before writing a single line of Project G.** Honcho (Plastic Labs, open-source, github.com/plastic-labs/honcho) is the best available open reference implementation of reasoning-first agent memory. It's the same problem you're solving, built by people who've thought hard about it, with published benchmarks validating their architecture choices.
+
+**What Honcho gets right that you should directly adopt:**
+- **Two-stage reasoning pipeline.** Ingest-time: a fast model captures latent information from each new message immediately (preferences, claims, contradictions) and updates the entity's representation. Dream-time: a separate background process periodically revisits prior messages and prior reasoning, drawing new inferences. This is better than your original single-stage Celery consolidation job — the ingest-time pass keeps representations current immediately; the dream-time pass finds things that require reasoning across multiple sessions. Adopt both stages. Your Celery infrastructure already supports this split cleanly.
+- **Multi-peer entity model.** Honcho's primitive is a *peer* — any entity that persists and changes over time: a user, an AI agent, a company, a client, a product, an SOP. For the Company Brain, this is the right abstraction. You're not modeling one thing; you're modeling the company, its clients, its products, its processes, and the relationships between them. Your original `AgentEpisode`/`SemanticMemory` schema was single-entity — evolve it toward multi-peer (see schema below).
+- **Natural-language query interface.** Honcho's query model is "ask a research agent a question in natural language, get a synthesized answer" — not "embed a query string, retrieve top-k chunks." For memory that reasons, this is strictly better. Your `MemoryLoaderNode` should evolve toward this: load relevant representations with a natural-language question, not just cosine similarity.
+
+**What your version does differently — and why that's your advantage:**
+- **Domain specificity.** Honcho was built for user-modeling in conversational AI (preferences, beliefs, communication styles). The Company Brain models *organizational knowledge* — processes, client relationships, product facts, evolving SOPs, things-only-this-person-knows. The domain is different enough that owning the consolidation prompt is an asset. Yours is tuned, inspectable, versioned in `.j2`, and improvable via Part 5's prompt-evolution loop. Honcho's ingest-time model is a fine-tuned black box.
+- **Privacy-first deployment.** Honcho's managed service sends data to their API. Your version runs on the client's hardware. The reasoning model question (can a local model do ingest-time extraction?) is exactly what Project H measures.
+- **You understand every design decision.** When a client asks why a fact is wrong, you can trace it. With Honcho's fine-tuned model, you can't.
+
+**The competitive intelligence framing (also DECISIONS D25):** you're validating Honcho on your personal knowledge feed first — not because you'll use it in production, but because living inside it daily for weeks will teach you where it's strong, where it's awkward, and where the domain mismatch (personal preferences vs. organizational knowledge) shows up in practice. That's competitive intelligence you feel, not just read. When you build your own G, you'll know exactly what you're improving on.
 
 ### Why this is the capstone now
-Durable memory that gets smarter across sessions, decays confidence over time, and handles contradictions gracefully is frontier-adjacent and the thing most teams get wrong. For a Company Brain, it's the difference between "search over docs" and "knows how this company actually operates, including the parts no document states." Given that the goal is *expertise*, this is the most valuable thing in the plan.
+Durable memory that gets smarter across sessions, decays confidence over time, handles contradictions, and models multiple entities is frontier-adjacent and the thing most teams get wrong. For a Company Brain, it's the difference between "search over docs" and "knows how this company actually operates, including the parts no document states." Honcho's benchmarks prove the approach works (90.4% on LongMem S, beating even the oracle-context baseline) — your job is to build the version of this that runs privately, on organizational knowledge, on the client's own hardware.
 
 ### End result
-A memory module attachable to any workflow:
-1. **Write episode** (after each turn): "User asked about X. I answered with Y. They understood Z but struggled with W."
-2. **Consolidation job** (Celery, session-end + nightly): reads recent episodes, extracts durable facts.
-3. **Memory loader** (session start): loads top-k relevant facts into context.
+A memory module attachable to any workflow, with a two-stage pipeline:
+1. **Write episode / ingest-time pass** (after each interaction turn): fast extraction — what happened, what was learned, what was contradicted. Updates the relevant peer's representation immediately. Fast, cheap, local-model candidate.
+2. **Dream-time consolidation job** (Celery, session-end + nightly): deeper background reasoning across recent episodes and prior representations. Extracts durable facts, resolves contradictions, updates confidence, draws cross-session inferences. This is the Claude-only step.
+3. **Memory loader** (session start): loads top-k relevant representations via natural-language query — not just cosine similarity.
 
-### Models
-- `AgentEpisode(session_id, summary ~40 tokens, outcome [understood|partial|confused|bookmarked], tags, embedding, occurred_at)`
-- `SemanticMemory(fact, confidence 0–1, evidence_episode_ids, decay_factor default 0.95/wk, timestamps, embedding)`
+### Models — evolved to multi-peer (informed by Honcho)
+```
+Peer(
+    peer_id,            # company | client_X | product_Y | sop_Z | agent_name
+    peer_type,          # [company, client, product, process, agent, user]
+    workspace_id,       # Company Brain workspace
+    representation,     # current synthesized summary of what's known
+    updated_at
+)
+
+AgentEpisode(
+    peer_id,            # which peer this episode is about
+    session_id,
+    summary,            # ~40 tokens, fast ingest-time extraction
+    outcome,            # [learned|contradicted|confirmed|bookmarked|unclear]
+    tags,
+    embedding,
+    occurred_at
+)
+
+SemanticMemory(
+    peer_id,            # which peer this fact belongs to
+    fact,               # specific, falsifiable
+    confidence,         # 0–1
+    evidence_episode_ids,
+    decay_factor,       # default 0.95/week
+    source_peer_id,     # which peer observed this (supports "what does A know about B")
+    timestamps,
+    embedding
+)
+```
+
+**The multi-peer unlock for the Company Brain:** you can now model not just "what does the company know" but "what does the support agent know about client X" or "what has changed in SOP Y over the last quarter." That's the peer model in practice, and it's what makes the Company Brain genuinely organizational rather than just a fancy document store.
 
 ### The consolidation prompt — the real work, and the privacy asterisk
-Extract 3–5 durable, **specific and falsifiable** facts. Assign confidence by evidence strength. **If a fact contradicts an existing one, lower the old fact's confidence rather than overwriting — learning is non-monotonic.** Return valid JSON only.
+Extract 3–5 durable, **specific and falsifiable** facts per peer. Assign confidence by evidence strength. **If a fact contradicts an existing one, lower the old fact's confidence rather than overwriting — learning is non-monotonic.** Return valid JSON only, keyed by `peer_id`.
 
-**This is THE step that stays on Claude (DECISIONS D19).** A weak local model here produces plausible-but-wrong durable facts that silently corrupt everything downstream — the worst failure mode in the whole system. Project H will confirm with data, but the design assumption is: consolidation is frontier-only. This is the named exception in "local-by-default, frontier-for-the-named-few-steps," and being able to point at *exactly this step* and explain *why* is itself a senior signal.
+**This is THE step that stays on Claude (DECISIONS D19).** Honcho's benchmarks confirm this directly: their ingest-time pass uses a small fine-tuned model (gemini-2.5-flash-lite), but the deep consolidation — the reasoning that surfaces non-obvious inferences — uses claude-haiku-4-5. A weak model here produces plausible-but-wrong durable facts that silently corrupt everything downstream. Project H will confirm with data, but the design assumption is locked: consolidation is frontier-only. Being able to point at exactly this step and explain exactly why is itself a senior signal.
+
+**Honcho's token efficiency data, now a design input for Project H:** Honcho achieves 90.4% accuracy while using a *median 5%* of available context per query. That's the difference between a $0.50 query and a $0.05 query at scale. The target for your G is the same: keep representations dense enough that the loader injects 5–10% of context, not 80%. This is a measurable quality criterion for Project H to evaluate.
 
 ### Build notes
+- **Read Honcho's source before starting.** Their FastAPI server, Postgres schema, and Celery worker setup are directly instructive — same stack as yours. Note: their ingest-time and dream-time pipeline implementation is the most valuable thing to study.
 - **Confidence decay is not optional:** `new = confidence * decay_factor ** weeks_elapsed`, run in `UpsertMemoryNode`.
 - **Contradictions expected:** lower confidence on the contradicted fact, create a new one. Never overwrite.
-- **Standalone importable module** — `MemoryLoaderNode`, `EpisodeWriteService`, `ConsolidationWorkflow`, no coupling to any one workflow. This is infrastructure — and it's the infrastructure the Company Brain is built on.
-- Local-model note: the short episode-write summary is a fine local-model candidate; the consolidation prompt must stay on Claude.
+- **Standalone importable module** — `MemoryLoaderNode`, `EpisodeWriteService`, `IngestTimeExtractionNode`, `ConsolidationWorkflow`, no coupling to any one workflow.
+- **Ingest-time extraction is a local-model candidate** — it's a bounded, fast task (extract latent facts from one message). Evaluate in Project H: if a 7–9B model clears the quality bar, the ingest-time pass costs pennies and stays local.
+- **Dream-time consolidation must stay on Claude.** The reasoning across multiple episodes and prior representations to surface non-obvious inferences is exactly where weak models produce confident-but-wrong output.
+- **Query interface:** implement natural-language query (`MemoryLoaderNode` takes a question string, returns a synthesized answer assembled from relevant representations) alongside the cosine-similarity retrieval. The NL interface is what Project F's semantic search points at, and it's what clients actually want to use.
 
 ### Tests ship with it — and they matter most here
-Consolidation output schema validity; the decay function (freeze time, assert decay); contradiction handling (assert old-fact confidence drops, new fact created, no overwrite); `MemoryLoaderNode` retrieval ordering. Bad memory output erodes trust in every system built on it — test it hard.
+Consolidation output schema validity (per peer, multi-peer case); the decay function (`freezegun` to advance weeks, assert `confidence * 0.95**weeks`); contradiction handling (assert old-fact confidence drops, new fact created, no overwrite); multi-peer isolation (assert peer A's facts don't bleed into peer B's representations); ingest-time extraction (fast path produces a valid summary and episode write); `MemoryLoaderNode` retrieval ordering (both cosine and NL query modes). Bad memory output is the trust-eroding silent failure — test it harder than anything else in the plan.
 
 ---
 
@@ -617,8 +671,8 @@ Sequencing: all of Part 6 is **Phase 3+**. It depends on the clean API (Phase 0/
 | `RetrieveChunksNode` | D | F (verbatim), Company Brain |
 | `ContentChunk` / `ChatSession` models | D | F, Company Brain |
 | `ParallelNode` (merge fixed) | E | G and beyond |
-| `MemoryLoaderNode` / `ConsolidationWorkflow` | G | any client/product work (verbatim), Company Brain |
-| `AgentEpisode` / `SemanticMemory` models | G | Company Brain memory, products #1/#5 |
+| `MemoryLoaderNode` / `IngestTimeExtractionNode` / `ConsolidationWorkflow` | G | any client/product work (verbatim), Company Brain |
+| `Peer` / `AgentEpisode` / `SemanticMemory` models (multi-peer) | G | Company Brain memory (company/client/product/process peers), products #1/#5 |
 | Eval harness + per-node routing config | H | every node's `model_provider`; SMB-vs-enterprise model config; cost optimization |
 | Clean documented HTTP API | Phase 0 / D | every shell + agent client (Layer 3) |
 | Rust appliance shell | parallel track | SMB Company Brain delivery; daily ops |
@@ -656,12 +710,15 @@ Sequencing: all of Part 6 is **Phase 3+**. It depends on the clean API (Phase 0/
 1. **Project G consolidation stays on Claude — never local**, regardless of how good a local model looks. A weak model here produces plausible-but-wrong durable facts that silently corrupt everything downstream (DECISIONS D19). This is the named frontier-only exception.
 2. **For the commercial appliance, prefer Apache 2.0 / MIT weights.** Llama's license restricts use above 700M MAU (irrelevant at your scale but a needless flag); some Chinese open-weight models carry custom licenses with jurisdiction-specific commercial restrictions. Permissive defaults mean the appliance never inherits a license headache. Apache/MIT among the below: Qwen family, Mistral, GLM-5.1, Qwen3-Embedding.
 
+**Honcho benchmark data as a Project H design target (DECISIONS D25):** Honcho's published evals (mid-2026, LongMem S) show 90.4% accuracy using a **median 5% of available context per question** (mean 11%). Their pipeline: `gemini-2.5-flash-lite` for ingest-time extraction (fast, cheap, local-model candidate in your version) + `claude-haiku-4-5` for the chat/query endpoint. This is empirical evidence for two Project H targets: (a) ingest-time extraction is a bounded, fast task — test whether a local 7–9B model clears the bar before committing to a hosted call; (b) the memory query layer should target 5–10% context injection, not "dump everything in" — if your G's representations are pushing 50%+ of context, the consolidation quality is the problem, not the retrieval. These are measurable criteria for H's eval rubric, not guesses.
+
 ### LLMs — by node role
 
 | Node role (examples) | Quality bar | June 2026 open-weight candidates | Realistic hardware | Notes |
 |---|---|---|---|---|
-| **Consolidation** (Project G `consolidation.j2`) | Frontier-only | **none — Claude only** | — | The asterisk on the privacy pitch. Never local. |
-| **Heavy reasoning / answer-gen** (D `AnswerNode`, open-ended synthesis) | Near-frontier | Qwen 3.6 Plus, DeepSeek V4, Kimi K2.6, GLM-5.1 | Beefy box / multi-GPU; not a 16GB laptop | Frontier-competitive on benchmarks; validate on *your* tasks. GLM-5.1 = MIT, good commercial fit. |
+| **Consolidation** (Project G dream-time `consolidation.j2`) | Frontier-only | **none — Claude only** | — | The asterisk on the privacy pitch. Never local. Honcho confirms: their deep consolidation uses claude-haiku-4-5; their ingest-time pass uses a small model (separate concerns). |
+| **Ingest-time extraction** (Project G fast path — extract latent facts per message) | Low–mid; bounded task | Mistral Small 4, Phi-4-mini, smaller Qwen variants, gemini-2.5-flash-lite equivalent | 8–16GB VRAM | **Project H priority eval.** Honcho uses a fine-tuned small model here; test whether a local 7–9B clears the bar. If yes, ingest-time stays entirely local. |
+| **Heavy reasoning / answer-gen** (D `AnswerNode`, NL memory query, open-ended synthesis) | Near-frontier | Qwen 3.6 Plus, DeepSeek V4, Kimi K2.6, GLM-5.1 | Beefy box / multi-GPU; not a 16GB laptop | Frontier-competitive on benchmarks; validate on *your* tasks. GLM-5.1 = MIT, good commercial fit. |
 | **Mid-tier workhorse** (summarizer, blog draft, proposal writer) | Mid-cloud-API parity | 70B-class (Qwen, Llama 3.3 70B-class) at Q4 | 64–128GB unified memory *or* 32–48GB VRAM (single Mac Studio / one strong GPU) | This is the tier where local becomes "genuinely useful," competitive with mid-tier cloud APIs for most tasks. The SMB appliance's main workhorse. |
 | **Cheap / narrow** (critics, classification, routing, episode-write summary) | Low — bounded transformations | Mistral Small 4, Gemma 4 31B, Phi-4-mini, smaller Qwen variants | 8–24GB VRAM / modest unified memory | The easy local wins H confirms first. Many of these are safe-local with near-zero quality loss because the task is narrow. |
 | **Tool loop** (Project B) | n/a — learning exercise | raw `anthropic` SDK (Claude) | — | Not a routing target; B exists to feel the loop by hand. |
@@ -696,7 +753,7 @@ Sequencing: all of Part 6 is **Phase 3+**. It depends on the clean API (Phase 0/
 | D: Document Q&A | "RAG system with session memory — answers from a company's own documents, tracks the conversation" |
 | E: Specialized Pipeline | "Refactored multi-agent pipeline showing why specialized agents beat generalists" |
 | F: Knowledge Base | "Semantic search over a growing corpus — meaning, not keywords" |
-| G: Memory System | "Reusable episodic→semantic memory with confidence decay and contradiction handling — agents that remember across sessions" |
+| G: Memory System | "Reasoning-first episodic→semantic memory with two-stage pipeline (ingest-time extraction + dream-time consolidation), multi-peer entity modeling, confidence decay, and contradiction handling — informed by Honcho's architecture, domain-tuned for organizational knowledge" |
 | H: Eval & Routing Harness | "System that empirically routes each workflow node to the cheapest model meeting a measured quality bar — with bias-corrected evaluation" |
 | Rust appliance shell | "Single-binary, on-prem control plane that runs a private AI knowledge system on a company's own hardware — nothing leaves the building" |
 | **Company Brain** | **"A privacy-first company knowledge system: ingests a company's scattered knowledge, keeps it current with durable agent memory, emits executable skills for agents — running entirely on the company's own hardware, with measured local-vs-frontier routing"** |

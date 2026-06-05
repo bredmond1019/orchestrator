@@ -88,7 +88,7 @@ Acceptance criteria are the required field — they're how you *and* an agent kn
 
 **Phase 2 — Depth + First Paid Work:** Project E (specialization refactor) · Project F (semantic search) · Project H (model eval & routing harness — *the spine of the privacy differentiator; makes "runs on your hardware" measured and honest*) · First paid diagnostic
 
-**Phase 3 — The Differentiating Build:** Project G (agent memory system — *the Company Brain's "keeps it current" engine*) · then Brain v1 assembly + shells, gated on real pull
+**Phase 3 — The Differentiating Build:** Project G (agent memory system — *two-stage reasoning-first memory, multi-peer entity model, Honcho-informed architecture; the Company Brain's "keeps it current" engine*) · then Brain v1 assembly + shells, gated on real pull
 
 **Parallel track (anytime after the harness exists):** Rust **appliance shell** (formerly "Harness CLI") — the SMB single-binary delivery vehicle; the privacy promise made physical
 

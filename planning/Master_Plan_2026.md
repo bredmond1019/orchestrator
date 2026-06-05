@@ -345,9 +345,11 @@ When the checkpoint is genuinely met and you've had weeks of research conversati
 ## Phase 3: The Differentiating Build
 
 ### Block 8 — Project G: Agent Memory System (Episodic → Semantic) — *the Company Brain's "keeps it current" engine*
-The most architecturally important and differentiating thing you'll build — durable agent memory with confidence decay and contradiction handling. **This is the half of the Company Brain that turns a static RAG box into a living, self-updating map of how a company works.** It's also the one place the privacy pitch has an honest asterisk: the `consolidation.j2` step must stay on Claude (D19), and Project H proves exactly that. The capstone, given expertise-first. Budget a full, unhurried block. Tests ship with it — and matter most here, because bad memory output degrades everything downstream silently.
+The most architecturally important and differentiating thing you'll build — reasoning-first, two-stage memory (ingest-time fast extraction + dream-time consolidation), multi-peer entity modeling, confidence decay, contradiction handling. **This is the half of the Company Brain that turns a static RAG box into a living, self-updating map of how a company works.** The privacy pitch has one honest asterisk: the dream-time consolidation step stays on Claude (D19), confirmed by Honcho's own architecture. Budget a full, unhurried block. **Before writing a line: read Honcho's source (D25).** Tests ship with it — and matter most here, because bad memory output degrades everything downstream silently.
 
-**Visibility:** Your strongest technical content — a deep post and a live demo on the Mini on building durable agent memory. **This is also the demo that sells the Company Brain:** show a system that learns a fake company's operations across sessions, handles a contradiction, and gets a fact right that no single document stated.
+**Note on the personal feed Honcho experiment:** by the time you build Block 8, you'll have been running Honcho on your personal knowledge feed for weeks or months. You'll know exactly where it's strong and where the domain mismatch shows. Build your G to be better in precisely those places — that's the competitive edge (D25).
+
+**Visibility:** Your strongest technical content — a deep post and a live demo on the Mini. **This is also the demo that sells the Company Brain:** show a system that learns a fake company's operations across sessions, handles a contradiction, models multiple entities (the company, a client, a product), and surfaces a fact that no single document ever stated.
 
 ---
 
