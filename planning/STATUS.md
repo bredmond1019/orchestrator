@@ -3,8 +3,8 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** June 2026 — Project A extended to personal knowledge feed (D21–D22)
-**Current focus:** Not yet started — beginning Phase 0, Block A
+**Last updated:** 2026-06-05 — Block A in progress (Tasks 1–2 of 9)
+**Current focus:** Phase 0, Block A — core engine orientation (Tasks 1–2 complete, continuing with Task 3 onward)
 
 ---
 
@@ -22,7 +22,7 @@
 ### Phase 0 — Foundation
 | Block | What | Status | Notes |
 |---|---|---|---|
-| A | Digital presence + codebase ownership | Not started | LinkedIn overhaul, GitHub triage, read core engine, 5 orientation questions |
+| A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 remaining |
 | B | Mac Mini agentic harness + revive site | Not started | Two-face architecture: Caddy+Cloudflare (public site) + Tailscale (private tooling). Install Tailscale on Mini + all devices; revive `learn-agentic-ai.com` on public face. See DECISIONS D23 |
 | C | Test infra + core hardening + 4 bug fixes | Not started | Option A scope; fix the 4 documented bugs |
 | D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
