@@ -40,8 +40,59 @@ Examples:
 
 ## Report
 
-- Concise bullet list of what was built or changed.
-- List of all files created or modified.
-- Output of `git diff --stat`.
-- Any important decisions or trade-offs made.
-- Any follow-up work needed (do not invent scope beyond the plan).
+After completing work, write a report file AND summarize to the user.
+
+**Derive the report file path** from the plan path and optional task number:
+- Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC.md`
+- Plan + task: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3.md`
+
+Create `planning/tasks/reports/` if it does not exist.
+
+**Write the report file** in this exact format:
+
+```markdown
+# Implementation Report — <plan filename> [Task <N> | All Tasks]
+
+**Date:** <YYYY-MM-DD>
+**Plan:** <plan file path>
+**Scope:** Task <N> | All tasks
+
+## What Was Built or Changed
+
+- <bullet per logical change>
+
+## Files Created or Modified
+
+| File | Action |
+|---|---|
+| path/to/file.py | created / modified |
+
+## Validation Output
+
+**Commands run:**
+\`\`\`
+<exact commands executed>
+\`\`\`
+
+**Results:**
+\`\`\`
+<stdout/stderr output, truncated to relevant lines>
+\`\`\`
+Status: PASSED / FAILED
+
+## Decisions and Trade-offs
+
+- <any non-obvious choice made during implementation, or "None">
+
+## Follow-up Work
+
+- <items deferred or out of scope, or "None">
+
+## git diff --stat
+
+\`\`\`
+<output>
+\`\`\`
+```
+
+Then summarize the same information to the user in the chat.
