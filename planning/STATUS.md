@@ -3,7 +3,7 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** May 2026
+**Last updated:** June 2026 — Project A extended to personal knowledge feed (D21–D22)
 **Current focus:** Not yet started — beginning Phase 0, Block A
 
 ---
@@ -23,14 +23,14 @@
 | Block | What | Status | Notes |
 |---|---|---|---|
 | A | Digital presence + codebase ownership | Not started | LinkedIn overhaul, GitHub triage, read core engine, 5 orientation questions |
-| B | Mac Mini agentic harness + revive site | Not started | Caddy/SSL, Cloudflare DNS, async Claude Code trigger, revive `learn-agentic-ai.com` |
+| B | Mac Mini agentic harness + revive site | Not started | Two-face architecture: Caddy+Cloudflare (public site) + Tailscale (private tooling). Install Tailscale on Mini + all devices; revive `learn-agentic-ai.com` on public face. See DECISIONS D23 |
 | C | Test infra + core hardening + 4 bug fixes | Not started | Option A scope; fix the 4 documented bugs |
 | D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
 
 ### Phase 1 — Sellable Competence
 | Project | What | Status | Notes |
 |---|---|---|---|
-| A | Content pipeline (YouTube→summary→blog) | Not started | Ships with tests; deploy to Mini |
+| A | Content pipeline (YouTube/Article → personal digest + optional blog) | Not started | Personal knowledge feed (static HTML on Mini) is the Day-1 win; digest-always, blog-on-flag; `FetchArticleNode` new. Ships with tests; deploy to Mini. See DECISIONS D21–D22 |
 | B | Research agent (thin → hardened) | Not started | Thin cut first (~50 lines, raw tool loop) |
 | C | Proposal generator | Not started | PT + EN; run on warm leads as practice |
 | D | Document Q&A + session memory (RAG) | Not started | Reinforces proven Helpscout production pattern |
@@ -53,7 +53,7 @@
 ### Parallel Track
 | Track | What | Status | Notes |
 |---|---|---|---|
-| Rust CLI | Harness control plane | Not started | Anytime after harness exists; start with one command |
+| Rust appliance shell | SMB single-binary delivery vehicle — the privacy promise made physical; commands + observes the Python brain over HTTP | Not started | Anytime after harness exists; start with one command (ingest + query + print cost). Formerly "Rust CLI" — see DECISIONS D17 |
 
 ---
 
@@ -62,7 +62,7 @@
 |---|---|---|
 | LinkedIn overhaul (case studies foregrounded) | Not started | Block A |
 | GitHub triage (pin engine; de-feature slop repos) | Not started | Block A |
-| Revive site + bilingual return post | Not started | Block B |
+| Revive site + publish return post | Not started | Block B — EN draft written (`LinkedIn_Return_Post_Builders_Arc.docx`) and PT draft written (`LinkedIn_Return_Post_Retorno_PT.docx`); review usage-note pre-publish checks before posting |
 | Network: list of 10 warm contacts | Not started | During Project A |
 | Research conversations (not pitches) | Not started | From Phase 1 |
 | Job applications (São Paulo / SP-office roles) | Not started | Continuous |
@@ -75,6 +75,8 @@
 *Record anything where reality diverged from the plan, or a notable choice was made. Keeps the plans clean and stable.*
 
 - *(none yet — project not started)*
+- **June 2026 — Tailscale + Firecrawl adopted (D23–D24).** Two-face Mini architecture settled: Caddy+Cloudflare for public site (learn-agentic-ai.com, accessible to anyone with the URL), Tailscale for all private tooling (personal feed, API, Celery, etc. — your devices only, no open ports). Critical distinction: Tailscale alone cannot serve a public portfolio site. Firecrawl adopted with defined role: trafilatura-first for single article extraction, Firecrawl as fallback for JS-heavy pages, `CrawlSiteNode` for Company Brain site ingestion. `trafilatura` added to deps. Updated: Master Plan (Block B, Block D), Agentic plan (tech stack, Project A build notes, components table, Company Brain assembly), CONTEXT, this file. Reframed from "YouTube→blog" to a dual-input (YouTube/article), dual-output (personal digest always + blog on flag) pipeline — a personal knowledge feed served as static HTML on the Mini, readable on tablet/phone/Kindle. It's the one-person dogfood of the Company Brain; `FetchArticleNode`/`ArticleExtractionService` reused by the real product. MVP boundary set: ingestion + store + dumb display now; search/"what I know" via Projects F/G later over the same embeddings. New dep: `trafilatura`. Updated: Projects Plan (Project A, shared services, reference tables), Master Plan (Block 1), CONTEXT, this file. Still Not started.
+- **June 2026 — Major planning revision (no code moved).** Strategy session produced decisions D14–D20. Destination now named: the **Company Brain** (privacy-first, SMB-wedge at 30–80-person inflection, enterprise welcomed later). Architecture settled: one deployment-agnostic Python brain, two shells (Rust SMB appliance + future enterprise cloud). Rust track upgraded from ops-CLI to the SMB appliance shell (D17). Self-improvement boundary established: evolve-what's-gated / new-capability-by-PR / never-self-approve-the-gates (D20). Local-model privacy wedge confirmed viable now with honest qualifier: local-by-default, frontier-for-the-named-few-steps (D19). All plan documents updated (Master Plan, Projects Plan, CONTEXT, CLAUDE, README, STATUS); Test Plan unchanged. **EN and PT LinkedIn return posts drafted and ready to publish** — pending pre-publish checks in usage notes. No phase/block status changed; all work remains Not started.
 
 ---
 
