@@ -50,7 +50,8 @@ cd app && uv run celery -A worker.config.celery_app worker --loglevel=info
 # Apply DB migrations (from app/)
 cd app && alembic upgrade head
 
-# Lint
+# Lint (ruff first — fast; pylint second — deep)
+uv run ruff check app/
 uv run pylint app/
 
 # Run tests

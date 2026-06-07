@@ -3,8 +3,8 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-05 — Block A in progress (Tasks 1–2 of 9)
-**Current focus:** Phase 0, Block A — core engine orientation (Tasks 1–2 complete, continuing with Task 3 onward)
+**Last updated:** 2026-06-05 — Block C in progress (Task 1 complete; review pending)
+**Current focus:** Phase 0, Block C — test infra + core hardening (Task 1 complete, awaiting `/review-task` before Task 2)
 
 ---
 
@@ -22,9 +22,9 @@
 ### Phase 0 — Foundation
 | Block | What | Status | Notes |
 |---|---|---|---|
-| A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 remaining |
+| A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 paused — manual/personal tasks (LinkedIn, GitHub triage, etc.) deferred while agent-executable work proceeds |
 | B | Mac Mini agentic harness + revive site | Not started | Two-face architecture: Caddy+Cloudflare (public site) + Tailscale (private tooling). Install Tailscale on Mini + all devices; revive `learn-agentic-ai.com` on public face. See DECISIONS D23 |
-| C | Test infra + core hardening + 4 bug fixes | Not started | Option A scope; fix the 4 documented bugs |
+| C | Test infra + core hardening + 4 bug fixes | In progress | Task 1 complete (pytest deps + `pytest.ini` + test directory scaffold); Tasks 2–14 remaining |
 | D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
 
 ### Phase 1 — Sellable Competence
@@ -74,7 +74,7 @@
 
 *Record anything where reality diverged from the plan, or a notable choice was made. Keeps the plans clean and stable.*
 
-- *(none yet — project not started)*
+- **2026-06-05 — Block A partially paused; Block C started out of sequence.** Block A tasks 3–9 are personal/manual tasks (LinkedIn, GitHub triage, site work) that can't be delegated to an agent. Block C was started ahead of Block A completion because it is fully agent-executable. This is intentional — the sequencing principle is dependency order, and Block C has no dependency on the Block A personal tasks.
 - **June 2026 — Honcho research + D25.** Reviewed Honcho (Plastic Labs, open-source reasoning-first memory, 90.4% LongMem S). Decisions: Honcho as Project G reference architecture (two-stage pipeline, multi-peer entity model, NL query interface all adopted); personal knowledge feed will use Honcho as a validation/competitive-intelligence experiment when the memory smart-layer arrives (Phase 3 upgrade); Company Brain memory layer built custom (domain-tuned, privacy-first, fully traceable). Project G schema evolved to multi-peer (`Peer`/`AgentEpisode`/`SemanticMemory`). Ingest-time extraction added as a separate (fast, local-model candidate) stage. Honcho benchmark data (5% median context, ingest-model + query-model split) added as Project H design targets. Updated: Agentic plan (Project G section, Project A personal feed section, model reference, components table, portfolio one-liner), Master Plan (Block 8), DECISIONS (D25), CONTEXT, this file. Two-face Mini architecture settled: Caddy+Cloudflare for public site (learn-agentic-ai.com, accessible to anyone with the URL), Tailscale for all private tooling (personal feed, API, Celery, etc. — your devices only, no open ports). Critical distinction: Tailscale alone cannot serve a public portfolio site. Firecrawl adopted with defined role: trafilatura-first for single article extraction, Firecrawl as fallback for JS-heavy pages, `CrawlSiteNode` for Company Brain site ingestion. `trafilatura` added to deps. Updated: Master Plan (Block B, Block D), Agentic plan (tech stack, Project A build notes, components table, Company Brain assembly), CONTEXT, this file. Reframed from "YouTube→blog" to a dual-input (YouTube/article), dual-output (personal digest always + blog on flag) pipeline — a personal knowledge feed served as static HTML on the Mini, readable on tablet/phone/Kindle. It's the one-person dogfood of the Company Brain; `FetchArticleNode`/`ArticleExtractionService` reused by the real product. MVP boundary set: ingestion + store + dumb display now; search/"what I know" via Projects F/G later over the same embeddings. New dep: `trafilatura`. Updated: Projects Plan (Project A, shared services, reference tables), Master Plan (Block 1), CONTEXT, this file. Still Not started.
 - **June 2026 — Major planning revision (no code moved).** Strategy session produced decisions D14–D20. Destination now named: the **Company Brain** (privacy-first, SMB-wedge at 30–80-person inflection, enterprise welcomed later). Architecture settled: one deployment-agnostic Python brain, two shells (Rust SMB appliance + future enterprise cloud). Rust track upgraded from ops-CLI to the SMB appliance shell (D17). Self-improvement boundary established: evolve-what's-gated / new-capability-by-PR / never-self-approve-the-gates (D20). Local-model privacy wedge confirmed viable now with honest qualifier: local-by-default, frontier-for-the-named-few-steps (D19). All plan documents updated (Master Plan, Projects Plan, CONTEXT, CLAUDE, README, STATUS); Test Plan unchanged. **EN and PT LinkedIn return posts drafted and ready to publish** — pending pre-publish checks in usage notes. No phase/block status changed; all work remains Not started.
 
