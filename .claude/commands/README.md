@@ -247,6 +247,15 @@ _No variables._
 
 ## Utilities
 
+### `/blog-idea`
+**Capture a blog or LinkedIn post idea into `planning/BLOG_IDEAS.md`.**
+
+Reads the existing ideas file, infers a working title, one-line hook, and output target (`[LI]`, `[Blog]`, or `[Both]`), then appends the entry to the **Queued** or **Suggested** section. Use this any time an interesting angle surfaces mid-session.
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | Required. Description of the idea — title hint, angle, free-form notes. |
+
 ### `/start-block`
 **Mark a block as in-progress in STATUS.md.**
 
