@@ -83,8 +83,13 @@ cd app && uv run python -c "from worker.config import celery_app"
 
 ## Report
 
-Output the path to the file created and a one-line next-step hint:
+Output the path to the file created and the next-step options:
 ```
 planning/tasks/phase0-blockC.md
-Next: /breakdown planning/tasks/phase0-blockC.md
+
+Next (optional — decompose into atomic sub-steps):
+  /breakdown planning/tasks/phase0-blockC.md
+
+Next (skip breakdown — implement directly):
+  /implement planning/tasks/phase0-blockC.md
 ```

@@ -1,30 +1,56 @@
-# Update Task — Record progress in the current task spec.
+# Update Task — Record progress in a task spec.
 
 ## Variables
 
-$1 — step number to mark done (e.g. `3`). Pass `0` to only append a note without marking a step.
-$ARGUMENTS — the note text to append to the spec's `## Notes` section.
+$ARGUMENTS — space-separated values in this order:
+  1. Target spec identifier, e.g. `phase0-blockC` (optional — if omitted, auto-detects the
+     current block from `planning/STATUS.md`).
+  2. Step number to mark done, e.g. `3`. Pass `0` to append a note without marking a step.
+  3. Note text (everything after the step number) to append to the spec's `## Notes` section.
+
+Examples:
+  `/update-task 3 Finished scaffolding`                             ← auto-detect block, mark step 3, append note
+  `/update-task 0 Still investigating the ghost-row bug`            ← auto-detect block, note only
+  `/update-task phase0-blockC 2 Fixed the import-time side effect`  ← explicit spec, mark step 2, append note
+  `/update-task phase0-blockC 0 Investigating the ghost-row bug`    ← explicit spec, note only
 
 ## Instructions
 
-1. Read `planning/STATUS.md` to identify the current block.
-2. Find the matching task spec in `planning/tasks/`. If none exists, say so and stop — suggest running `/next-task`.
+1. **Resolve the target spec.**
+   - If the first token of `$ARGUMENTS` matches a spec identifier pattern (e.g. `phase0-blockC`,
+     `phase1-projectA`), normalise it to the filename form `phaseN-blockX.md` and verify the file
+     exists at `planning/tasks/phaseN-blockX.md`. If it does not exist, stop:
+     > "No spec found at planning/tasks/<name>.md — run `/generate-tasks <name>` to create it."
+   - Otherwise (first token is a number or `$ARGUMENTS` is empty), read `planning/STATUS.md` to
+     identify the current block and load its spec. If no spec exists, say so and stop.
+
+2. Parse the remaining arguments:
+   - Step number: first integer token after the (optional) spec identifier. `0` = note-only.
+   - Note text: all remaining text after the step number. May be empty.
+
 3. Read the task spec.
-4. If `$1` is a non-zero step number, mark that step's heading as done by prepending `✅` to the `### <N>.` line. If the step is already marked done, report that and skip.
-5. If note text was provided in `$ARGUMENTS`, append it to the `## Notes` section of the spec, prefixed with today's date:
+
+4. If a non-zero step number was given, mark that step heading done by prepending `✅` to the
+   matching `### <N>.` line. If the step is already marked done, report that and skip.
+
+5. If note text was provided, append it to the `## Notes` section of the spec, prefixed with
+   today's date:
    ```
    **YYYY-MM-DD**: <note text>
    ```
-6. Write the updated spec back. Preserve all other content and formatting.
+
+6. Write the updated spec back. Preserve all other content and formatting exactly.
+
 7. Report what changed (see Report).
 
 ## Context / Files to Read
 
-- `planning/STATUS.md`
-- The current `planning/tasks/phaseN-blockX.md`
+- `planning/STATUS.md` — only if no spec identifier was provided in $ARGUMENTS
+- The target `planning/tasks/phaseN-blockX.md`
 
 ## Report
 
-- Which step was marked done (if any).
-- The note appended (if any).
+- Which spec was updated (full relative path).
+- Which step was marked done (if any), or "no step marked" if step was 0.
+- The note appended (if any), or "no note added".
 - One-line success or failure of the file write.
