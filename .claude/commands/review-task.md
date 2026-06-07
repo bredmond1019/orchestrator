@@ -14,15 +14,29 @@ Examples:
 1. If `$ARGUMENTS` is not provided, stop and ask the user for the task spec path.
 2. Parse `$ARGUMENTS`: split on the last space. If the trailing token is a number, treat it as the **task number** to review; the remainder is the task spec path.
 3. Run `/prime` to orient to the codebase before reading any files.
-4. **Derive the report file path** (written by `/implement`):
-   - Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC.md`
-   - Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3.md`
+4. **Derive file paths for prior step outputs:**
+
+   Implement report (written by `/implement`):
+   - Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-implement.md`
+   - Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-implement.md`
+
+   Test report (written by `/test`):
+   - Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-test.md`
+   - Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-test.md`
+
 5. Read the task spec in full.
-6. Read the report file if it exists. If it does not exist, note that no `/implement` report was found — continue the review from source alone.
-7. Read every file listed in the report's **Files Created or Modified** table (or, if no report, read the files most likely touched by the task based on the spec). Verify the actual content — do not trust the report alone.
-8. **Run the validation commands** relevant to the scope being reviewed:
-   - **Task-scoped review:** run only the commands directly tied to that task (import checks, specific `pytest` path). Do NOT run the full suite.
-   - **Full review:** run the plan's complete Validation Commands block exactly as written. If none exist, run:
+6. Read both prior step outputs as historical context:
+   a. Read the implement report if it exists. If absent, note it and continue from source alone.
+   b. Read the test report if it exists. Note the historical results, but do NOT treat them as
+      authoritative — a fresh test run is required in step 8. If absent, note that `/test` was
+      not run before this review; the fresh run below covers it.
+7. Read every file listed in the implement report's **Files Created or Modified** table (or, if no
+   report, read the files most likely touched by the task based on the spec). Verify the actual
+   content — do not trust the report alone.
+8. **Run a fresh test suite** as the authoritative verification. Do NOT rely on the historical
+   test report — run the commands now and capture the results.
+   - **Task-scoped:** run the spec's Validation Commands section exactly as written.
+   - **Full block:** run the plan's complete Validation Commands block. If none exist, run:
      ```
      uv run pytest --collect-only
      uv run pytest -v
@@ -30,7 +44,9 @@ Examples:
      cd app && uv run python -c "from main import app"
      cd app && uv run python -c "from worker.config import celery_app"
      ```
-9. **Check every Acceptance Criterion** in the spec against the actual code and validation output:
+   A fresh test failure always prevents PASS, even if all acceptance criteria appear MET from
+   reading the code.
+9. **Check every Acceptance Criterion** in the spec against the actual code and fresh test output:
    - For each criterion: state whether it is **MET**, **PARTIAL**, or **NOT MET**, and cite the evidence (file + line, test name, command output).
    - A criterion is MET only when you can point to code or test output that directly satisfies it.
    - Do not mark anything MET based solely on the implementation report — verify in source.
@@ -39,7 +55,8 @@ Examples:
 ## Context / Files to Read
 
 - `$ARGUMENTS` (the task spec)
-- `planning/tasks/reports/<derived-path>` (the implementation report, if present)
+- `planning/tasks/reports/<derived-implement-path>` (the implementation report, if present)
+- `planning/tasks/reports/<derived-test-path>` (the test report, if present)
 - `CLAUDE.md` (standing rules — check for violations)
 - All files created or modified by the implementation
 
@@ -57,7 +74,8 @@ Examples:
 **Date:** <YYYY-MM-DD>
 **Plan:** <plan file path>
 **Scope:** Task <N> | All tasks
-**Implementation report:** found / not found
+**Implement report:** found / not found
+**Test report:** found / not found
 **Overall verdict:** PASS / FAIL / PARTIAL
 
 ## Acceptance Criteria
@@ -67,17 +85,18 @@ Examples:
 | 1 | <criterion text, truncated to ~80 chars> | MET / PARTIAL / NOT MET | file:line or test name or command output |
 | 2 | … | … | … |
 
-## Validation Commands
+## Fresh Test Run
 
 **Commands run:**
 \`\`\`
-<exact commands>
+<exact commands executed>
 \`\`\`
 
 **Output:**
 \`\`\`
 <stdout/stderr, truncated to relevant lines>
 \`\`\`
+Result: PASS / FAIL
 
 ## CLAUDE.md Rule Violations
 
@@ -87,9 +106,20 @@ Examples:
 
 - <concrete problem with file + line reference, or "None">
 
+**Verdict rules:**
+- **PASS** — all acceptance criteria MET AND fresh test run passed.
+- **PARTIAL** — criteria MET but one or more fresh tests failed; or fresh tests pass but some criteria only partially met.
+- **FAIL** — blocking acceptance criteria NOT MET, or fresh test run produced failures that invalidate the implementation.
+
 ## Verdict
 
 <One paragraph: overall assessment, what passed, what failed, what must be fixed before this task is considered done. If PASS, state clearly. If FAIL or PARTIAL, list the blocking items.>
 ```
 
 Then summarize the verdict and any blocking issues to the user in the chat.
+
+Then output the pipeline next step:
+```
+If verdict is PASS:     Next: /document planning/tasks/phase0-blockC.md [N]
+If verdict is not PASS: Fix the issues above, then: /review-task planning/tasks/phase0-blockC.md [N]
+```

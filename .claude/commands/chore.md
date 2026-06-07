@@ -69,4 +69,13 @@ cd app && uv run python -c "from worker.config import celery_app"
 
 ## Report
 
-Return only the path to the plan file created.
+Output the path to the plan file created and the next-step options:
+```
+planning/tasks/chore-{name}.md
+
+Next (optional — decompose into atomic sub-steps):
+  /breakdown planning/tasks/chore-{name}.md
+
+Next (skip breakdown — implement directly):
+  /implement planning/tasks/chore-{name}.md
+```

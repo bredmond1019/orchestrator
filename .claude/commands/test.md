@@ -2,6 +2,18 @@
 
 Execute comprehensive validation tests for the orchestration framework, returning results in a standardized JSON format for automated processing.
 
+## Variables
+
+$ARGUMENTS — optional path to the task spec and optional task number. Same format as `/implement`.
+
+Examples:
+- (no args) — run full suite; output JSON to chat only; no file written
+- `planning/tasks/phase0-blockC.md` — run full suite; write report to `planning/tasks/reports/phase0-blockC-test.md`
+- `planning/tasks/phase0-blockC.md 1` — run full suite; write report to `planning/tasks/reports/phase0-blockC-task1-test.md`
+
+The task number N does NOT change which tests run — all 8 tests always run regardless. N only
+determines the output file name so the snapshot is scoped to the right pipeline stage.
+
 ## Purpose
 
 Proactively identify and fix issues before they impact the pipeline or downstream workflows. By running this suite you can:
@@ -10,12 +22,16 @@ Proactively identify and fix issues before they impact the pipeline or downstrea
 - Verify that all key modules construct cleanly without side effects
 - Ensure the framework is in a healthy state before beginning new work
 
-## Variables
+## Constants
 
 TEST_COMMAND_TIMEOUT: 5 minutes
 
 ## Instructions
 
+- **Step 0 — Parse `$ARGUMENTS`:** If provided, split on the last space. Trailing number = task N; remainder = spec path. Derive the report file path:
+  - No args: no file will be written.
+  - Spec only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-test.md`
+  - Spec + task N: `planning/tasks/phase0-blockC.md 1` → `planning/tasks/reports/phase0-blockC-task1-test.md`
 - Run `/prime` to orient to the codebase before executing any tests.
 - Execute each test in the sequence provided below
 - Capture the result (passed/failed) and any error messages
@@ -29,7 +45,6 @@ TEST_COMMAND_TIMEOUT: 5 minutes
   - If a command returns a non-zero exit code, mark as failed
   - Capture stderr output for the error field
   - Timeout commands after `TEST_COMMAND_TIMEOUT`
-  - IMPORTANT: If a test fails, stop processing remaining tests and return results thus far
 - Test execution order is important — import checks must pass before running the full suite
 - All commands are run from the repo root unless the command itself changes directory
 - Always run `pwd` before each test to confirm you are in the repo root
@@ -130,4 +145,48 @@ TEST_COMMAND_TIMEOUT: 5 minutes
     "test_purpose": "Verifies that the FastAPI app object constructs cleanly — catches broken route registrations, missing env vars read at import time, and any module-level errors in api/ or main.py"
   }
 ]
+```
+
+## File Output
+
+If `$ARGUMENTS` was provided, after returning the JSON array to chat, write a report file to the
+derived path. Create `planning/tasks/reports/` if it does not exist.
+
+**Write the report file in this exact format:**
+
+```markdown
+# Test Report — <spec filename> [Task <N> | All Tasks]
+
+**Date:** <YYYY-MM-DD>
+**Plan:** <spec file path, or "ad-hoc">
+**Scope:** Task <N> | All tasks
+**Overall result:** PASS (<n>/8 passed) | FAIL (<n>/8 passed)
+
+## Summary
+
+| Test | Result | Error |
+|---|---|---|
+| app_import | PASS / FAIL | <error snippet or blank> |
+| worker_import | PASS / FAIL | |
+| database_session_import | PASS / FAIL | |
+| repository_import | PASS / FAIL | |
+| ruff | PASS / FAIL | |
+| pylint | PASS / FAIL | |
+| pytest_collect | PASS / FAIL | |
+| pytest_full | PASS / FAIL | |
+
+## Full Results (JSON)
+
+\`\`\`json
+<the full JSON array, verbatim>
+\`\`\`
+
+## Next Step
+
+`/review-task <spec file path> [N]`
+```
+
+After writing the file, output one line to chat:
+```
+Next: /review-task <spec file path> [N]
 ```

@@ -43,8 +43,8 @@ Examples:
 After completing work, write a report file AND summarize to the user.
 
 **Derive the report file path** from the plan path and optional task number:
-- Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC.md`
-- Plan + task: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3.md`
+- Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-implement.md`
+- Plan + task: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-implement.md`
 
 Create `planning/tasks/reports/` if it does not exist.
 
@@ -96,3 +96,8 @@ Status: PASSED / FAILED
 ```
 
 Then summarize the same information to the user in the chat.
+
+Then output the pipeline next step:
+```
+Next: /test planning/tasks/phase0-blockC.md [N]
+```
