@@ -44,7 +44,7 @@ $ARGUMENTS — optional free-text explanation of what was done today. May be bri
 
 5. If a settled architectural choice was made during this work, **prompt the user to add it
    to `planning/DECISIONS.md`** — do not edit DECISIONS.md yourself.
-6. Never edit the master plan files (`Master_Plan_2026.md`, `Agentic_Engineering_Projects_and_Learning_Plan.md`).
+6. Never edit the master plan files (`MASTER_PLAN.md`, `Agentic_Engineering_Projects_and_Learning_Plan.md`).
 
 ## Context / Files to Read
 
