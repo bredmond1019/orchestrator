@@ -47,12 +47,12 @@
 //   implement → test → review → [PASS: document] or [FAIL: fix → test → review]
 //   Each fix pass is a separate commit so the diff from each pass is auditable.
 //
-// REPORT FILES  (all written to planning/tasks/reports/)
-//   <stem>-implement.md   implement agent; overwritten by each fix pass
-//   <stem>-test.md        test agent
-//   <stem>-review.md      review agent
-//   <stem>-document.md    document agent
-//   <stem>-workflow.md    finalize agent (full pipeline run summary)
+// REPORT FILES  (all written to planning/tasks/<block>/reports/)
+//   [taskN-]implement.md  implement agent; overwritten by each fix pass
+//   [taskN-]test.md       test agent
+//   [taskN-]review.md     review agent
+//   [taskN-]document.md   document agent
+//   [taskN-]workflow.md   finalize agent (full pipeline run summary)
 //
 // =============================================================================
 
@@ -86,14 +86,15 @@ if (!rawArgs) {
 const parts = rawArgs.split(/\s+/)
 const blockId = parts[0]
 const taskNumber = parts.length > 1 ? parseInt(parts[1], 10) : null
-const specFile = `planning/tasks/${blockId}.md`
+const specFile = `planning/tasks/${blockId}/tasks.md`
 const stem = taskNumber !== null ? `${blockId}-task${taskNumber}` : blockId
-const reportsDir = 'planning/tasks/reports'
-const implementReport = `${reportsDir}/${stem}-implement.md`
-const testReport = `${reportsDir}/${stem}-test.md`
-const reviewReport = `${reportsDir}/${stem}-review.md`
-const documentReport = `${reportsDir}/${stem}-document.md`
-const workflowReport = `${reportsDir}/${stem}-workflow.md`
+const reportsDir = `planning/tasks/${blockId}/reports`
+const taskPrefix = taskNumber !== null ? `task${taskNumber}-` : ''
+const implementReport = `${reportsDir}/${taskPrefix}implement.md`
+const testReport      = `${reportsDir}/${taskPrefix}test.md`
+const reviewReport    = `${reportsDir}/${taskPrefix}review.md`
+const documentReport  = `${reportsDir}/${taskPrefix}document.md`
+const workflowReport  = `${reportsDir}/${taskPrefix}workflow.md`
 
 log(`Target: ${blockId}${taskNumber !== null ? ` task ${taskNumber}` : ' (all tasks)'}`)
 log(`Spec: ${specFile} | Stem: ${stem}`)
@@ -216,13 +217,12 @@ Your job is to determine which SDLC stage to start from, based on which report f
 STEP 1 — Check spec file:
   ls -la ${specFile} 2>/dev/null && echo "SPEC_EXISTS" || echo "SPEC_MISSING"
 
-STEP 2 — Check report files (check stem-specific AND blockId-level to catch older naming variants):
-  ls ${reportsDir}/${stem}-implement.md 2>/dev/null && echo "HAS_IMPLEMENT" || echo "NO_IMPLEMENT"
-  ls ${reportsDir}/${stem}.md 2>/dev/null && echo "HAS_IMPLEMENT_VARIANT" || echo "NO_IMPLEMENT_VARIANT"
-  ls ${reportsDir}/${stem}-test.md 2>/dev/null && echo "HAS_TEST" || echo "NO_TEST"
-  ls ${reportsDir}/${stem}-review.md 2>/dev/null && echo "HAS_REVIEW" || echo "NO_REVIEW"
-  ls ${reportsDir}/${stem}-document.md 2>/dev/null && echo "HAS_DOCUMENT" || echo "NO_DOCUMENT"
-  ls ${reportsDir}/${blockId}*.md 2>/dev/null | head -20 || echo "NO_BLOCK_REPORTS"
+STEP 2 — Check report files (block directory: ${reportsDir}):
+  ls ${implementReport} 2>/dev/null && echo "HAS_IMPLEMENT" || echo "NO_IMPLEMENT"
+  ls ${testReport} 2>/dev/null && echo "HAS_TEST" || echo "NO_TEST"
+  ls ${reviewReport} 2>/dev/null && echo "HAS_REVIEW" || echo "NO_REVIEW"
+  ls ${documentReport} 2>/dev/null && echo "HAS_DOCUMENT" || echo "NO_DOCUMENT"
+  ls ${reportsDir}/*.md 2>/dev/null | head -20 || echo "NO_BLOCK_REPORTS"
 
 STEP 3 — Read STATUS.md to find this block's status and Current focus line:
   head -60 planning/STATUS.md
@@ -303,8 +303,11 @@ Instructions:
 
 3. Read CLAUDE.md — note all standing rules (especially Rule 1: every task ships with tests, no exceptions) and the known bugs table.
 
-4. Read an existing spec as format reference: planning/tasks/phase0-blockC.md
+4. Read an existing spec as format reference: planning/tasks/phase0-blockC/tasks.md
    Study its structure carefully: Goal, Context Pointers, Step-by-Step Tasks (numbered ### sections with sub-steps), Acceptance Criteria, Validation Commands, Notes section.
+
+   Also create the block directory structure now if it does not yet exist:
+   mkdir -p planning/tasks/${blockId}/reports
 
 5. Write ${specFile} following that exact format:
    ## Goal
@@ -1073,13 +1076,13 @@ STEP 3 — Commit the remaining planning files as a single chore: commit.
 
   Run: git status
   Look for any uncommitted files in: planning/STATUS.md, DEVLOG.md,
-  planning/tasks/reports/${stem}-test.md, planning/tasks/reports/${stem}-review.md,
+  ${testReport}, ${reviewReport},
   and ${workflowReport} (which you just wrote).
 
   Stage them:
     git add planning/STATUS.md DEVLOG.md ${workflowReport}
-    git add planning/tasks/reports/${stem}-test.md 2>/dev/null || true
-    git add planning/tasks/reports/${stem}-review.md 2>/dev/null || true
+    git add ${testReport} 2>/dev/null || true
+    git add ${reviewReport} 2>/dev/null || true
     (only add files that actually exist and are untracked/modified)
 
   Commit using HEREDOC:
