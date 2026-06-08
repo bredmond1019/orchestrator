@@ -5,9 +5,9 @@
 $ARGUMENTS — path to the plan file to implement, with an optional task number suffix.
 
 Examples:
-- `planning/tasks/phase0-blockC.md` — run all tasks in the plan
-- `planning/tasks/phase0-blockC.md 1` — run only Task 1
-- `planning/tasks/phase0-blockC.md 3` — run only Task 3
+- `planning/tasks/phase0-blockC/tasks.md` — run all tasks in the plan
+- `planning/tasks/phase0-blockC/tasks.md 1` — run only Task 1
+- `planning/tasks/phase0-blockC/tasks.md 3` — run only Task 3
 
 ## Instructions
 
@@ -43,10 +43,10 @@ Examples:
 After completing work, write a report file AND summarize to the user.
 
 **Derive the report file path** from the plan path and optional task number:
-- Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-implement.md`
-- Plan + task: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-implement.md`
+- Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/implement.md`
+- Plan + task: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-implement.md`
 
-Create `planning/tasks/reports/` if it does not exist.
+Create `planning/tasks/phase0-blockC/reports/` if it does not exist.
 
 **Write the report file** in this exact format:
 
@@ -99,5 +99,5 @@ Then summarize the same information to the user in the chat.
 
 Then output the pipeline next step:
 ```
-Next: /test planning/tasks/phase0-blockC.md [N]
+Next: /test planning/tasks/phase0-blockC/tasks.md [N]
 ```

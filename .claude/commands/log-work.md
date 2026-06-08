@@ -10,7 +10,7 @@ $ARGUMENTS — optional free-text explanation of what was done today. May be bri
 
 ## Instructions
 
-1. Read `planning/STATUS.md` and the current task spec in `planning/tasks/`.
+1. Read `planning/STATUS.md` and the current task spec at `planning/tasks/phaseN-blockX/tasks.md`.
 2. Run `git diff --stat` and `git log --oneline -10` to see what changed.
 
 3. **Determine STATUS.md changes — ask before writing if uncertain.**
@@ -49,5 +49,5 @@ $ARGUMENTS — optional free-text explanation of what was done today. May be bri
 ## Context / Files to Read
 
 - `planning/STATUS.md`
-- The current `planning/tasks/phaseN-blockX.md`
+- The current `planning/tasks/phaseN-blockX/tasks.md`
 - `DEVLOG.md`

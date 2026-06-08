@@ -6,7 +6,7 @@ precise enough for an agent (or a human) to execute without interpretation.
 
 ## Variables
 
-$ARGUMENTS — path to the task spec to break down (e.g. `planning/tasks/phase0-blockC.md`).
+$ARGUMENTS — path to the task spec to break down (e.g. `planning/tasks/phase0-blockC/tasks.md`).
              If omitted, default to the current block's spec identified via `planning/STATUS.md`.
              If no spec exists for the current block, say so and suggest running `/next-task`.
 
@@ -46,8 +46,7 @@ $ARGUMENTS — path to the task spec to break down (e.g. `planning/tasks/phase0-
 6. After each logical group of sub-steps (not only at the end), add an inline **Verify** check:
    a single command or observation that confirms the group succeeded before moving on.
 
-7. Write the breakdown to `planning/tasks/breakdown-<original-filename>` — same filename,
-   `breakdown-` prefix.
+7. Write the breakdown to `planning/tasks/<block-dir>/breakdown.md` — same directory as the spec, named `breakdown.md`.
 
 8. Return only the path to the file created.
 
@@ -131,4 +130,4 @@ checks as you go — do not batch them at the end. Each check must pass before c
 
 ## Report
 
-Return only the path to the file created (e.g. `planning/tasks/breakdown-phase0-blockC.md`).
+Return only the path to the file created (e.g. `planning/tasks/phase0-blockC/breakdown.md`).
