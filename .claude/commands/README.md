@@ -65,6 +65,7 @@ The complete development lifecycle for structured phase/block work. Each step ru
 | **4 — Review** | `/review-task <spec> [N]` | Verify all criteria; run fresh tests; issue verdict | `planning/tasks/<block>/reports/[taskN-]review.md` |
 | **5 — Document** | `/document <spec> [N]` | Surgically patch `docs/`; gates on PASS verdict | `planning/tasks/<block>/reports/[taskN-]document.md` |
 | **6 — Wrap-up** | `/log-work [notes]` | Update STATUS.md + append DEVLOG entry | STATUS.md, DEVLOG.md |
+| **7 — Verify run** | `/review-workflow <id> [N]` | Audit pipeline execution: reports, commits, DEVLOG, STATUS | `planning/tasks/<block>/reports/[taskN-]workflow-review.md` |
 
 ### Pipeline Flow
 
@@ -106,6 +107,9 @@ PHASE 5 — DOCUMENT                            ← gates on PASS verdict
 
 PHASE 6 — WRAP-UP
   /log-work [notes]                           → STATUS.md, DEVLOG.md
+
+(OPTIONAL) PHASE 7 — VERIFY RUN
+  /review-workflow phase0-blockC [N]          → planning/tasks/phase0-blockC/reports/[taskN-]workflow-review.md
 ```
 
 ### Argument Convention
@@ -124,10 +128,12 @@ planning/tasks/
     tasks.md          ← spec (written by /generate-tasks)
     breakdown.md      ← optional (written by /breakdown)
     reports/
-      implement.md    ← or task3-implement.md for task-scoped
-      test.md         ← or task3-test.md
-      review.md       ← or task3-review.md
-      document.md     ← or task3-document.md
+      implement.md         ← or task3-implement.md for task-scoped
+      test.md              ← or task3-test.md
+      review.md            ← or task3-review.md
+      document.md          ← or task3-document.md
+      workflow.md          ← or task3-workflow.md (written by /sdlc-run)
+      workflow-review.md   ← or task3-workflow-review.md (written by /review-workflow)
 ```
 
 ### Report File Naming
@@ -141,6 +147,8 @@ Pattern: `[taskN-]{step}.md` inside `planning/tasks/<block>/reports/`
 | test | `test.md` | `task3-test.md` |
 | review | `review.md` | `task3-review.md` |
 | document | `document.md` | `task3-document.md` |
+| workflow (sdlc-run) | `workflow.md` | `task3-workflow.md` |
+| workflow-review | `workflow-review.md` | `task3-workflow-review.md` |
 
 > **Note:** `/fix` writes to the same `implement.md` slot as `/implement` — it represents the current state of Phase 2 work. Git history preserves prior versions.
 
@@ -324,6 +332,21 @@ Gates strictly on the review report verdict being PASS — stops immediately if 
 Reads `STATUS.md`, the current task spec, and `DEVLOG.md`; runs `git diff --stat`. Updates `STATUS.md` (flips statuses, advances Current focus, bumps Last updated, logs deviations) and appends a new entry to `DEVLOG.md`. Will prompt you to add settled architectural choices to `DECISIONS.md` — never edits it directly. Never touches the master plan files.
 
 _No variables._
+
+---
+
+## Phase 7 — Verify Run (Optional)
+
+### `/review-workflow`
+**Audit a completed sdlc-run pipeline execution — not the implementation, but the pipeline mechanics.**
+
+Checks whether all pipeline report files are present and well-formed, whether commits follow the expected conventional format with `Co-Authored-By` lines, whether DEVLOG was updated accurately, and whether STATUS.md reflects the correct outcome. Issues a PASS / PARTIAL / FAIL verdict on the *pipeline run itself* and writes a `workflow-review.md` report. Does **not** re-run the test suite — use `/review-task` for that.
+
+Use after `/sdlc-run` to confirm the automation executed correctly end-to-end.
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | Required. Block ID with optional task number (e.g. `phase0-blockC` or `phase0-blockC 2`). |
 
 ---
 
