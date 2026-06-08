@@ -1,4 +1,4 @@
-# Recap — Summarize recent work and current standing before starting a session.
+# Session Recap — Summarize recent work and current standing before starting a session.
 
 Reads the most recent DEVLOG entries and STATUS.md to produce a tight briefing: what was
 completed recently, where work left off, and the exact next command to run. Use this at the
