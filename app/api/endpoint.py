@@ -7,7 +7,6 @@ from starlette.responses import Response
 
 from worker.config import celery_app
 from database.event import Event
-from database.repository import GenericRepository
 from database.session import db_session
 from schemas.customer_care_schema import CustomerCareEventSchema
 from workflows.workflow_registry import WorkflowRegistry
@@ -56,16 +55,14 @@ def handle_event(
         The endpoint returns immediately after queueing the task.
         Use the task ID in the response to check processing status.
     """
-    # Store event in database
-    repository = GenericRepository(
-        session=session,
-        model=Event,
-    )
     raw_event = data.model_dump(mode="json")
     event = Event(data=raw_event, workflow_type=get_workflow_type())
-    repository.create(obj=event)
 
-    # Queue processing task
+    # Stage without committing; flush assigns event.id within the open transaction.
+    # If send_task raises below, db_session rolls back automatically — no orphaned row.
+    session.add(event)
+    session.flush()
+
     task_id = celery_app.send_task(
         "process_incoming_event",
         args=[str(event.id)],
