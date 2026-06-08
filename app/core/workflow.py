@@ -1,12 +1,13 @@
 import logging
 from abc import ABC
 from contextlib import contextmanager
+from typing import Any, ClassVar
+
 from dotenv import load_dotenv
-from typing import Dict, Optional, ClassVar, Type, Any
 
 from core.nodes.base import Node
 from core.nodes.router import BaseRouter
-from core.schema import WorkflowSchema, NodeConfig
+from core.schema import NodeConfig, WorkflowSchema
 from core.task import TaskContext
 from core.validate import WorkflowValidator
 
@@ -48,7 +49,7 @@ class Workflow(ABC):
         """Initializes the workflow by validating schema and creating nodes."""
         self.validator = WorkflowValidator(self.workflow_schema)
         self.validator.validate()
-        self.nodes: Dict[Type[Node], NodeConfig] = self._initialize_nodes()
+        self.nodes: dict[type[Node], NodeConfig] = self._initialize_nodes()
         load_dotenv()
 
     @contextmanager
@@ -73,7 +74,7 @@ class Workflow(ABC):
         finally:
             logging.info(f"Finished node: {node_name}")
 
-    def _initialize_nodes(self) -> Dict[Type[Node], NodeConfig]:
+    def _initialize_nodes(self) -> dict[type[Node], NodeConfig]:
         """Initializes all nodes defined in the workflow schema.
 
         Returns:
@@ -89,7 +90,7 @@ class Workflow(ABC):
         return nodes
 
     @staticmethod
-    def _instantiate_node(node_class: Type[Node]) -> Node:
+    def _instantiate_node(node_class: type[Node]) -> Node:
         """Creates an instance of a node class.
 
         Args:
@@ -132,8 +133,8 @@ class Workflow(ABC):
         return task_context
 
     def _get_next_node_class(
-        self, current_node_class: Type[Node], task_context: TaskContext
-    ) -> Optional[Type[Node]]:
+        self, current_node_class: type[Node], task_context: TaskContext
+    ) -> type[Node] | None:
         """Determines the next node to execute in the workflow.
 
         Args:
@@ -159,7 +160,7 @@ class Workflow(ABC):
 
     def _handle_router(
         self, router: BaseRouter, task_context: TaskContext
-    ) -> Optional[Type[Node]]:
+    ) -> type[Node] | None:
         """Handles routing logic for router nodes.
 
         Args:

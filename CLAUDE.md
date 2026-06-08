@@ -86,6 +86,20 @@ After scaffolding:
 
 ---
 
+## Code style rules (avoid re-introducing lint debt)
+
+- **Module docstrings go on line 1**, before imports — not after them.
+- **Use Python 3.10+ type syntax:** `list[T]`, `type[T]`, `X | Y`, `X | None`, `StrEnum` — never `List`, `Type`, `Union`, `Optional`, or `class Foo(str, Enum)`.
+- **Never name a parameter `id`** — it shadows the built-in. Use `obj_id` or `record_id`.
+- **Sort imports** (stdlib → third-party → local). `ruff --fix` handles this automatically.
+- **`open()` always takes `encoding="utf-8"`.**
+- **In `except` blocks, always `raise ... from e`** to preserve the exception chain.
+- **No f-strings in `logging` calls** — use `logging.info("msg: %s", value)`.
+
+Run `uv run ruff check app/ --fix` before committing to auto-resolve most violations.
+
+---
+
 ## What NOT to touch
 
 - `app/workflows/customer_care_workflow*` — reference implementation, frozen

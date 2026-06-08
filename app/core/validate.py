@@ -1,5 +1,4 @@
 from collections import deque
-from typing import Set, Type
 
 from core.nodes.base import Node
 from core.schema import WorkflowSchema
@@ -78,7 +77,7 @@ class WorkflowValidator:
         visited = set()
         rec_stack = set()
 
-        def dfs(node: Type[Node]) -> bool:
+        def dfs(node: type[Node]) -> bool:
             visited.add(node)
             rec_stack.add(node)
 
@@ -103,7 +102,7 @@ class WorkflowValidator:
 
         return False
 
-    def _get_reachable_nodes(self) -> Set[Type[Node]]:
+    def _get_reachable_nodes(self) -> set[type[Node]]:
         """Identifies all nodes reachable from the start node using BFS.
 
         Returns:

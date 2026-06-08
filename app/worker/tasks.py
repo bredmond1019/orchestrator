@@ -1,10 +1,11 @@
 from contextlib import contextmanager
 
-from worker.config import celery_app
 from database.event import Event
 from database.repository import GenericRepository
 from database.session import db_session
 from workflows.workflow_registry import WorkflowRegistry
+
+from worker.config import celery_app
 
 """
 Workflow Task Processing Module

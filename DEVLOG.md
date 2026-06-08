@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-06-08 (session 3)
+
+Completed and documented Task 4 of Phase 0 Block C: fixed the ghost-row bug in `app/api/endpoint.py`. The original code called `repository.create()` (which committed the `Event` row immediately) before `celery_app.send_task()` — meaning a Redis failure would leave an orphaned, unprocessable row in the DB. The fix stages the row with `session.add()` + `session.flush()` (assigns `event.id` without committing), enqueues the Celery task, and only commits on success; if `send_task` raises, the `db_session()` generator's existing rollback path cleans up automatically. The endpoint now bypasses `GenericRepository.create()` for this two-phase commit pattern, which is intentional — the generic method doesn't model the enqueue dependency. SDLC pipeline ran cleanly: implement → test → review → document, with reports landing in `planning/tasks/phase0-blockC/reports/`. Also extended `pyproject.toml` to exclude the reference-only `customer_care` workflow files from ruff and pylint checks — these files are frozen and should not generate lint noise. Additionally, reorganized the `/planning/tasks/` directory from a flat layout into per-block subdirectories (e.g. `phase0-blockC/tasks.md` + `phase0-blockC/reports/`) and updated SDLC commands and workflows to match the new file organization. All four bug fixes from Block C's task spec are now done and documented. Next: Tasks 5–12, the comprehensive unit test suite for `TaskContext`, `WorkflowSchema`, `WorkflowValidator`, `Workflow.run()`, `BaseRouter`/`RouterNode`, `ParallelNode`, `PromptManager`, and `GenericRepository` CRUD.
+
+```diff
+ docs/api-reference.md                                    |  8 ++++++-
+ planning/tasks/phase0-blockC/reports/task4-document.md  | 66 ++++++++++++++++++++++++++++++++++++
+ planning/tasks/phase0-blockC/reports/task4-review.md    | 47 ++++++++++++++++++++++++++
+ planning/tasks/phase0-blockC/reports/task4-test.md      | 53 +++++++++++++++++++++++++++++
+ app/api/endpoint.py                                      | 14 +++-----
+ pyproject.toml                                           | 17 +++++++++++++--
+```
+
+---
+
 ## 2026-06-08 (session 2)
 
 Ran the full SDLC pipeline (implement → test → review → fix → document) on Phase 0, Block C, Task 3: fixed the import-time side effects in `app/database/session.py` and `app/worker/config.py`. `session.py` previously called `create_engine()` at import time (line 15), which caused a live DB connection attempt any time the module was imported in tests or other non-production contexts. Replaced the module-level `engine` and `SessionLocal` with a `_ENGINE = None` sentinel and a lazy `_get_engine()` initialiser, so the engine is only created on first use. `worker/config.py` previously called `Celery("tasks")` followed by `celery_app.config_from_object(get_celery_config())` at import time — the `config_from_object` call silently produced a malformed broker URL if `REDIS_URL` or `PROJECT_NAME` were unset. Replaced with a single `Celery(...)` constructor call passing broker/backend/serializer config as kwargs, which does not attempt a connection. Expanded `tests/conftest.py` with session-scoped `db_engine` and function-scoped `db_session` SQLite fixtures required by the test suite. Initial test run returned FAIL on ruff (73 pre-existing issues across the whole codebase, all unrelated to Task 3) and pylint (exit 30, pre-existing violations in untouched files); the two Task 3 files themselves rated 10.00/10 after a fix pass that renamed `_engine` → `_ENGINE` (C0103), added an inline `# pylint: disable=global-statement` (W0603), and removed trailing whitespace (C0303). Final review verdict: PASS — all 10 acceptance criteria met, 3/3 pytest tests passing, import checks clean. Docs updated in `docs/api-reference.md` (lazy `_get_engine()` documented) and `docs/app-architecture-overview.md` (stale `SessionLocal` reference removed). Also created the `sdlc-run.js` Claude Code workflow (and refined it) to automate the full implement→test→review→document→wrap-up cycle for future tasks.

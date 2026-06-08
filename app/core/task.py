@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -31,11 +31,11 @@ class TaskContext(BaseModel):
     """
 
     event: Any
-    nodes: Dict[str, Any] = Field(
+    nodes: dict[str, Any] = Field(
         default_factory=dict,
         description="Stores results and state from each node's execution",
     )
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Stores workflow-level metadata and configuration",
     )
