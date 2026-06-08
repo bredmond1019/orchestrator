@@ -17,7 +17,7 @@ def get_redis_url():
     redis_url = os.getenv('REDIS_URL')
     if redis_url:
         return redis_url
-    
+
     # Otherwise, build from components (for Docker)
     redis_host = f"{os.getenv('PROJECT_NAME')}_redis"
     return f"redis://{redis_host}:6379/0"
@@ -42,8 +42,16 @@ def get_celery_config():
     }
 
 
-celery_app = Celery("tasks")
-celery_app.config_from_object(get_celery_config())
+celery_app = Celery(
+    "tasks",
+    broker=get_redis_url(),
+    backend=get_redis_url(),
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    enable_utc=True,
+    broker_connection_retry_on_startup=True,
+)
 
 # Automatically discover and register tasks
 celery_app.autodiscover_tasks(["worker"], force=True)
