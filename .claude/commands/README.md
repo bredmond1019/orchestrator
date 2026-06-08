@@ -51,7 +51,7 @@ The complete development lifecycle for structured phase/block work. Each step ru
 
 | SDLC Phase | Command | Role | Output |
 |---|---|---|---|
-| Session Start | `/recap` | Briefing: recent DEVLOG entries, where you left off, next step | chat only |
+| Session Start | `/session-recap` | Briefing: recent DEVLOG entries, where you left off, next step | chat only |
 | Session Start | `/status` | Check current focus and what's in progress | chat only |
 | Session Start | `/process-tasks` | Check which blocks are eligible to start | chat only |
 | Block Setup | `/start-block [id]` | Flip a block to `in_progress` in STATUS.md | STATUS.md |
@@ -126,7 +126,7 @@ For work not tied to a phase/block (one-off features, fixes, or chores), generat
 
 ## Session Orientation
 
-### `/recap`
+### `/session-recap`
 **Start-of-session briefing: what was done recently and what's next.**
 
 Reads the three most recent DEVLOG entries, STATUS.md, the current block's task spec, and the `planning/tasks/reports/` directory listing to determine which pipeline steps have report files. Outputs a concise briefing (under 300 words): recent work summary, where work left off, remaining spec tasks, and the exact next command to run. Read-only — does not run any shell commands.

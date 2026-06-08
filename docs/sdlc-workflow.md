@@ -11,7 +11,7 @@
 |---|---|---|---|
 | **Project Init** | `/new-project <desc>` | description or spec file | `planning/intake.md` |
 | **Project Init** | `/scaffold-project` | `planning/intake.md` | 8 planning files |
-| **Session Start** | `/recap` | DEVLOG + STATUS + spec + reports dir | chat only |
+| **Session Start** | `/session-recap` | DEVLOG + STATUS + spec + reports dir | chat only |
 | **Session Start** | `/status` | `planning/STATUS.md` | chat only |
 | **Session Start** | `/process-tasks` | `planning/STATUS.md` | chat only |
 | **Block Setup** | `/start-block [id]` | `planning/STATUS.md` | `planning/STATUS.md` |
@@ -58,7 +58,7 @@
 ╔══════════════════════════════════════════════════════════════╗
 ║              SESSION START (read-only, each session)         ║
 ║                                                              ║
-║  /recap          reads: DEVLOG (last 3), STATUS, current     ║
+║  /session-recap  reads: DEVLOG (last 3), STATUS, current     ║
 ║                         spec, reports/ listing               ║
 ║                  out:   chat — recent work, next command      ║
 ║                                                              ║
@@ -272,10 +272,10 @@ Two hard gates prevent a step from running until its prerequisite is satisfied:
 |---|---|---|---|
 | `planning/intake.md` | `/new-project` | `/new-project` | `/scaffold-project` |
 | `planning/CONTEXT.md` | `/scaffold-project` | manually | `/prime`, most commands |
-| `planning/STATUS.md` | `/scaffold-project` | `/start-block`, `/log-work` | `/status`, `/process-tasks`, `/recap`, `/log-work` |
+| `planning/STATUS.md` | `/scaffold-project` | `/start-block`, `/log-work` | `/status`, `/process-tasks`, `/session-recap`, `/log-work` |
 | `planning/DECISIONS.md` | `/scaffold-project` | manually (prompted by `/log-work`) | `/prime` |
 | `planning/MASTER_PLAN.md` | `/scaffold-project` | manually | `/generate-tasks` |
 | `planning/tasks/<spec>.md` | `/generate-tasks` | `/update-task` | `/implement`, `/test`, `/review-task`, `/document`, `/log-work` |
 | `planning/tasks/reports/*` | `/implement`, `/test`, `/review-task`, `/document` | each step | the next step in the pipeline |
-| `DEVLOG.md` | `/scaffold-project` | `/log-work` | `/recap` |
+| `DEVLOG.md` | `/scaffold-project` | `/log-work` | `/session-recap` |
 | `docs/*.md` | manually or `/scaffold-project` | `/document` | `/prime` |
