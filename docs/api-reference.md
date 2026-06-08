@@ -705,8 +705,10 @@ corresponding Celery task — a ghost row. See `app/api/endpoint.py`.
 ### Session and Base
 
 `Event` inherits from `Base = declarative_base()` defined in `app/database/session.py`.
-The engine is created at module import time (`create_engine(...)` at module level),
-which is a known side effect. See `app/database/session.py` line 15.
+The engine is created lazily on first use: `db_session()` calls `_get_engine()`, which
+initialises `_ENGINE` (a module-level sentinel, initially `None`) to a live
+`create_engine(...)` instance on the first call. Importing `session.py` does not
+trigger a database connection.
 
 ---
 

@@ -3,8 +3,8 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-08 — Block C in progress (Tasks 1 & 2 complete; Task 3 next)
-**Current focus:** Phase 0, Block C — Task 3: fix import-time side effects (`session.py` + `worker/config.py`)
+**Last updated:** 2026-06-08 — Block C in progress (Tasks 1–3 complete; Task 4 next)
+**Current focus:** Phase 0, Block C — Task 4: fix ghost-row bug in `api/endpoint.py` (commit-before-send_task)
 
 ---
 
@@ -24,7 +24,7 @@
 |---|---|---|---|
 | A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 paused — manual/personal tasks (LinkedIn, GitHub triage, etc.) deferred while agent-executable work proceeds |
 | B | Mac Mini agentic harness + revive site | Not started | Two-face architecture: Caddy+Cloudflare (public site) + Tailscale (private tooling). Install Tailscale on Mini + all devices; revive `learn-agentic-ai.com` on public face. See DECISIONS D23 |
-| C | Test infra + core hardening + 4 bug fixes | In progress | Tasks 1–2 complete (pytest scaffold; `GenericRepository.exists()` bug fixed + tested); Task 3 next (import-time side effects) |
+| C | Test infra + core hardening + 4 bug fixes | In progress | Tasks 1–3 complete (pytest scaffold; `GenericRepository.exists()` bug fixed + tested; import-time side effects in `session.py`/`worker/config.py` fixed + conftest fixtures added); Task 4 next (ghost-row in `api/endpoint.py`) |
 | D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
 
 ### Phase 1 — Sellable Competence
