@@ -73,11 +73,9 @@ The orchestrator. Reads a `WorkflowSchema` (a DAG declaration), walks it node by
 ---
 
 #### `core/task.py` — `TaskContext`
-Pydantic model that carries all state through the pipeline. Every node reads from it and writes to it via `task_context.update_node(node_name, **kwargs)`.
+Pydantic model that carries all state through the pipeline. Nodes write via `task_context.update_node(node_name, **kwargs)`. Nodes read via `task_context.get_node_output(node_name)` — preferred over direct `task_context.nodes[node_name]` access in router nodes because it raises a descriptive `KeyError` that names the missing node and lists all completed nodes, making workflow ordering errors immediately diagnosable.
 
 **Why it's excellent:** This is exactly the "state passing" pattern from Project 4. The `nodes` dict functions as a ledger of everything the pipeline has computed so far — any downstream node can read any upstream node's result. This is more flexible than explicit parameter threading.
-
-**No changes needed.**
 
 ---
 
