@@ -698,9 +698,11 @@ workflow output.
 - `task_context` is written back by the worker after `Workflow.run()` completes,
   storing the serialized `TaskContext` (including `nodes` output from every step).
 
-**Known bug:** The API endpoint commits the `Event` row before calling
-`send_task()`. If `send_task()` fails, the row exists in the database with no
-corresponding Celery task — a ghost row. See `app/api/endpoint.py`.
+**Commit semantics:** The API endpoint stages the `Event` row with `session.add()` +
+`session.flush()` (assigns `event.id` without committing), then calls `send_task()`.
+If `send_task()` raises, `db_session()` rolls back the open transaction automatically —
+no orphaned row is possible. On success, `db_session()` commits after the route handler
+returns. See `app/api/endpoint.py`.
 
 ### Session and Base
 
