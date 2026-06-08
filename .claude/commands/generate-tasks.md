@@ -21,7 +21,7 @@ $ARGUMENTS — the target phase and block, e.g. `phase0-blockC` or `phase1-proje
    - If `$ARGUMENTS` contains `--force`, proceed and overwrite.
 
 4. Read ONLY the relevant section for the requested block in:
-   - `planning/Master_Plan_2026.md` (the phase/block definition)
+   - `planning/MASTER_PLAN.md` (the phase/block definition)
    - `planning/Agentic_Engineering_Projects_and_Learning_Plan.md` (the matching project section, if applicable)
    - Do NOT read STATUS.md — the target block is given explicitly.
 
@@ -38,7 +38,7 @@ $ARGUMENTS — the target phase and block, e.g. `phase0-blockC` or `phase1-proje
 
 ## Context / Files to Read
 
-- `planning/Master_Plan_2026.md` (target block section only)
+- `planning/MASTER_PLAN.md` (target block section only)
 - `planning/Agentic_Engineering_Projects_and_Learning_Plan.md` (matching project section only, if applicable)
 - `CLAUDE.md` (standing rules — tests, prompt files, workflow registration, known bugs)
 

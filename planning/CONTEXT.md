@@ -34,7 +34,7 @@ There are **seven files** in this planning set. They split cleanly so you only e
 | **README.md** | Navigation / front door | Stable | …a ten-second index of the folder and where to start |
 | **CONTEXT.md** (this file) | Orientation + router | Stable | …to understand what the project is, who Brandon is, and where to look for what |
 | **STATUS.md** | Current state | Changes weekly | …to know what's done and what's next |
-| **Master_Plan_2026.md** | The *what & when* | Stable-ish | …the strategic spine: phases, blocks, sequence, business development, case studies, networking |
+| **MASTER_PLAN.md** | The *what & when* | Stable-ish | …the strategic spine: phases, blocks, sequence, business development, case studies, networking |
 | **Agentic_Engineering_Projects_and_Learning_Plan.md** | The *how* | Stable-ish | …technical detail for a specific project, the codebase reference, component reuse |
 | **Test_Plan.md** | The *testing standard* | Stable | …to know the testing scope (Option A), the four bug fixes, the per-project testing rule |
 | **DECISIONS.md** | Why settled choices were made | Append-only | …to avoid relitigating a decision already made (with its reasoning). Currently **D1–D20**; D14–D20 cover the Company Brain destination, the one-brain-two-shells architecture, and the self-improvement boundary |

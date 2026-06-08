@@ -8,7 +8,7 @@ The planning and context documents for becoming an expert AI / agentic / harness
 |---|---|---|
 | **CONTEXT.md** | Orientation + router (read first) | You need to understand the project or find the right file |
 | **STATUS.md** | Current progress (updated as work happens) | You need to know what's done / what's next |
-| **Master_Plan_2026.md** | Strategy: phases, blocks, sequence, business development | You need the *what & when* |
+| **MASTER_PLAN.md** | Strategy: phases, blocks, sequence, business development | You need the *what & when* |
 | **Agentic_Engineering_Projects_and_Learning_Plan.md** | Technical: codebase, project library (A–H), Rust appliance shell track | You need the *how* of a project |
 | **Test_Plan.md** | Testing standard (Option A) + the four bug fixes | You need the testing scope or per-project rule |
 | **DECISIONS.md** | Why settled choices were made (append-only) | You're tempted to relitigate a settled question |
