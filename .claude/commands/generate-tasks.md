@@ -7,31 +7,33 @@ $ARGUMENTS — the target phase and block, e.g. `phase0-blockC` or `phase1-proje
 
 ## Instructions
 
-1. Parse `$ARGUMENTS` to extract the phase number and block/project identifier
+1. Run `/prime` to orient to the repo (standing rules, known bugs, architecture).
+
+2. Parse `$ARGUMENTS` to extract the phase number and block/project identifier
    (e.g. `phase0-blockC` → phase 0, block C).
    - Accept any of these forms: `phase0-blockC`, `phase0blockC`, `0-C`, `Phase 0 Block C`.
    - If the argument cannot be parsed into a phase + block, stop and explain the expected format.
 
-2. Check whether a spec already exists at `planning/tasks/phaseN-blockX.md` (using the
+3. Check whether a spec already exists at `planning/tasks/phaseN-blockX.md` (using the
    normalized filename form, e.g. `phase0-blockC.md`).
    - If it exists, read it and report: "Spec already exists at <path>. Overwrite? (re-run with
      `--force` appended to overwrite, or run `/breakdown <path>` to decompose it instead.)"
    - If `$ARGUMENTS` contains `--force`, proceed and overwrite.
 
-3. Read ONLY the relevant section for the requested block in:
+4. Read ONLY the relevant section for the requested block in:
    - `planning/Master_Plan_2026.md` (the phase/block definition)
    - `planning/Agentic_Engineering_Projects_and_Learning_Plan.md` (the matching project section, if applicable)
    - Do NOT read STATUS.md — the target block is given explicitly.
 
-4. THINK HARD about correct scope:
+5. THINK HARD about correct scope:
    - Do not invent work beyond what the block defines.
    - Size tasks to roughly 21 hours spread across Mon/Wed/Fri sessions.
    - Every workflow task must include writing tests (standing rule from CLAUDE.md).
    - Foundational steps come first; the final step is always Validate.
 
-5. Write the spec to `planning/tasks/phaseN-blockX.md` using the Output Format below.
+6. Write the spec to `planning/tasks/phaseN-blockX.md` using the Output Format below.
 
-6. Report the path written and suggest the next step:
+7. Report the path written and suggest the next step:
    "Spec written to <path>. Run `/breakdown <path>` to decompose into atomic sub-steps."
 
 ## Context / Files to Read

@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-06-08
+
+Ran the full SDLC pipeline (implement → test → review → document) on Phase 0, Block C, Task 2: fixed the `GenericRepository.exists()` SQLAlchemy 2.x compatibility bug in `app/database/repository.py`, replacing the legacy `self.model.query.filter_by(**kwargs).exists()` pattern (which raises `AttributeError` in SQLAlchemy 2.x) with the correct `self.session.query(self.model).filter_by(**kwargs).first() is not None`. Wrote three regression tests in `tests/database/test_repository.py` using a self-contained `_SimpleModel` backed by SQLite (avoiding the PostgreSQL UUID type incompatibility that would block SQLite-based tests). All 3 tests pass. Review verdict: PASS. Docs were patched in `docs/api-reference.md` to reflect the corrected `exists()` signature. Also logged Task 1 as fully reviewed and complete — the pytest deps + test scaffold from the 2026-06-05 session passed review without issues (commit 602da5b). Additionally, the full SDLC slash command set was built out this sprint: new commands for project initialization (`/new-project`, `/scaffold-project`), session orientation (`/recap`, `/status`, `/process-tasks`), block setup (`/start-block`), and the complete pipeline (`/generate-tasks`, `/breakdown`, `/implement`, `/update-task`, `/commit`, `/test`, `/review-task`, `/document`, `/log-work`). The entire SDLC workflow is now documented end-to-end in `docs/sdlc-workflow.md`. Next: Task 3 — fix import-time side effects in `app/database/session.py` and `app/worker/config.py`.
+
+```diff
+ app/database/repository.py |  6 +++---
+ docs/api-reference.md      | 15 +++++++--------
+ 2 files changed, 10 insertions(+), 11 deletions(-)
+```
+
 ## 2026-06-05 (session 2)
 
 Started Phase 0 Block C (test infra + core hardening), completing Task 1: added `pytest`, `pytest-mock`, `httpx`, `freezegun`, and `pytest-env` to `pyproject.toml`'s dev dependency group, ran `uv sync`, and scaffolded the test directory tree (`tests/` with `core/`, `database/`, `api/`, `services/` sub-packages and a stub `conftest.py`) plus a `pytest.ini` at the repo root. Block A tasks 3–9 were intentionally paused — those are personal/manual tasks (LinkedIn, GitHub triage, site work) that can't be delegated to an agent; Block C was pulled forward because it is fully agent-executable and has no dependency on the Block A personal tasks. Also created new slash commands `implement` and `review-task` (and updated related agents) to support structured task execution and review going forward. Next step: run `/review-task planning/tasks/phase0-blockC.md 1` to verify Task 1 before proceeding to Task 2 (fix `GenericRepository.exists()`).
