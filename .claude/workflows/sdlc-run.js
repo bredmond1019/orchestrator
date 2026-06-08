@@ -1,7 +1,65 @@
+// =============================================================================
+// sdlc-run — SDLC Pipeline Workflow
+// =============================================================================
+//
+// Runs the full SDLC pipeline for a phase/block from the current stage to
+// completion. Each stage is a separate agent with its own context window;
+// agents communicate only through report files on disk.
+//
+// USAGE
+//   /sdlc-run phase0-blockC      runs all tasks in the block
+//   /sdlc-run phase0-blockC 2    scopes every stage to task 2 only
+//
+// PIPELINE STAGES (in order)
+//   Scout      → detect current stage from report files + STATUS.md + DEVLOG
+//   Plan       → generate task spec (skipped if spec file already exists)
+//   Implement  → execute tasks from spec
+//   Fix        → targeted fixes for FAIL/PARTIAL review (one pass per retry)
+//   Test       → 8-check suite: imports, ruff, pylint, pytest collect + full
+//   Review     → fresh pytest + acceptance criteria check; verdict gates next
+//   Document   → surgical patches to docs/ (skipped if verdict is not PASS)
+//   Wrap-up    → update STATUS.md + DEVLOG, commit planning files, write report
+//
+// COMMIT STRATEGY
+//   Each agent commits its own work immediately after completing it:
+//     feat: implement <stem>          implement agent (fix: if validation failed)
+//     fix: fix pass N for <stem>      fix agent — one commit per pass
+//     docs: update docs for <stem>    document agent
+//     chore: wrap up <stem>           finalize agent (STATUS/DEVLOG/reports)
+//
+//   This ensures crash recovery: if the pipeline dies mid-run, all completed
+//   work is already in git history and visible to future agents via git log.
+//
+// RESUMPTION
+//   The scout checks which report files exist to determine where to resume.
+//   Priority order:
+//     no spec file      → generate-tasks
+//     no implement.md   → implement
+//     no test.md        → test
+//     no review.md      → review
+//     review = FAIL     → fix
+//     no document.md    → document
+//     document.md exists → wrap-up
+//   Report files are authoritative; DEVLOG is a cross-reference sanity check.
+//   Safe to re-run — the scout will pick up exactly where the pipeline stopped.
+//
+// RETRY LOOP (max 3 review attempts)
+//   implement → test → review → [PASS: document] or [FAIL: fix → test → review]
+//   Each fix pass is a separate commit so the diff from each pass is auditable.
+//
+// REPORT FILES  (all written to planning/tasks/reports/)
+//   <stem>-implement.md   implement agent; overwritten by each fix pass
+//   <stem>-test.md        test agent
+//   <stem>-review.md      review agent
+//   <stem>-document.md    document agent
+//   <stem>-workflow.md    finalize agent (full pipeline run summary)
+//
+// =============================================================================
+
 export const meta = {
   name: 'sdlc-run',
   description: 'Run the SDLC pipeline for a phase/block from current stage to completion',
-  whenToUse: 'When starting or resuming a phase/block through the full implement→test→review→document→wrap-up cycle. Args: "phase0-blockC" or "phase0-blockC 2"',
+  whenToUse: 'When starting or resuming a phase/block through the full implement→test→review→document→wrap-up cycle. Usage: /sdlc-run phase0-blockC or /sdlc-run phase0-blockC 2',
   phases: [
     { title: 'Scout',     detail: 'Determine current pipeline stage from files and DEVLOG' },
     { title: 'Plan',      detail: 'Generate task spec (only if spec file does not yet exist)' },
@@ -10,7 +68,7 @@ export const meta = {
     { title: 'Test',      detail: 'Run 8-check validation suite' },
     { title: 'Review',    detail: 'Verify acceptance criteria; run fresh tests; issue verdict' },
     { title: 'Document',  detail: 'Surgically patch docs/ (gates on PASS verdict)' },
-    { title: 'Wrap-up',   detail: 'Log work, commit, write workflow report' },
+    { title: 'Wrap-up',   detail: 'Log work, chore commit (STATUS/DEVLOG/reports), write workflow report' },
   ]
 }
 
@@ -20,8 +78,8 @@ export const meta = {
 const rawArgs = typeof args === 'string' ? args.trim() : ''
 if (!rawArgs) {
   log('ERROR: No block ID provided.')
-  log('Usage: Workflow({ name: "sdlc-run", args: "phase0-blockC" })')
-  log('       Workflow({ name: "sdlc-run", args: "phase0-blockC 2" })')
+  log('Usage: /sdlc-run phase0-blockC')
+  log('       /sdlc-run phase0-blockC 2')
   return { error: 'Missing required argument: block ID (e.g. "phase0-blockC" or "phase0-blockC 2")' }
 }
 
@@ -81,6 +139,7 @@ const STAGE_SCHEMA = {
     reportFile: { type: 'string', description: 'Path to the report file written' },
     success: { type: 'boolean' },
     filesModified: { type: 'array', items: { type: 'string' } },
+    commitHash: { type: 'string', description: 'Short hash of the commit made by this agent, or empty string if no commit' },
     notes: { type: 'string' }
   }
 }
@@ -376,12 +435,31 @@ Instructions:
    [run: git diff --stat]
    \`\`\`
 
-7. Do NOT commit — the workflow handles all commits at the very end.
+7. Commit your changes now. Never use git add -A or git add . — stage files explicitly by name.
+
+   Run: git status
+   Identify all changed/new files under app/, tests/, and the implement report.
+
+   Stage code files first, then the report:
+     git add app/file1.py tests/file2.py ${implementReport}  (list each file explicitly)
+
+   Commit using HEREDOC:
+     git commit -m "$(cat <<'EOF'
+     feat: implement ${stem}
+
+     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+     EOF
+     )"
+
+   If validation failed (Status: FAILED above), use "fix:" prefix instead of "feat:".
+   Run: git log --oneline -1
+   Capture the short hash from that output.
 
 Return your result using the StructuredOutput tool:
   reportFile: "${implementReport}"
   success: true if implementation completed without critical errors
   filesModified: array of every source file you created or modified
+  commitHash: the 7-character short hash from git log --oneline -1 (empty string if commit failed)
   notes: one-line summary
 `, { label: 'implement', schema: STAGE_SCHEMA, phase: 'Implement' })
 
@@ -493,12 +571,30 @@ Instructions:
    [run: git diff --stat]
    \`\`\`
 
-8. Do NOT commit — the workflow handles all commits at the very end.
+8. Commit your changes now. Never use git add -A or git add . — stage files explicitly by name.
+
+   Run: git status
+   Identify all changed/new files under app/, tests/, and the updated implement report.
+
+   Stage targeted changes and the updated report:
+     git add app/file1.py tests/file2.py ${implementReport}  (list each file explicitly)
+
+   Commit using HEREDOC:
+     git commit -m "$(cat <<'EOF'
+     fix: fix pass ${fixPass} for ${stem}
+
+     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+     EOF
+     )"
+
+   Run: git log --oneline -1
+   Capture the short hash from that output.
 
 Return your result using the StructuredOutput tool:
   reportFile: "${implementReport}"
   success: true if fixes were applied and validation passed
   filesModified: array of source files you actually changed this pass (not the full accumulated list)
+  commitHash: the 7-character short hash from git log --oneline -1 (empty string if commit failed)
   notes: one-line summary of what was fixed
 `, { label: `fix-${fixPass}`, schema: STAGE_SCHEMA, phase: 'Fix' })
 
@@ -790,10 +886,33 @@ Instructions:
    ## Docs Clean (checked, no changes needed)
    [list any docs checked but requiring no updates]
 
+7. Commit your changes now. Never use git add -A or git add . — stage files explicitly by name.
+
+   Run: git status
+   Identify all changed doc files under docs/ and the document report.
+
+   If no doc files were actually patched (only the report was written), commit just the report:
+     git add ${documentReport}
+
+   If docs were patched, stage them and the report:
+     git add docs/file1.md docs/file2.md ${documentReport}  (list each file explicitly)
+
+   Commit using HEREDOC:
+     git commit -m "$(cat <<'EOF'
+     docs: update docs for ${stem}
+
+     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+     EOF
+     )"
+
+   Run: git log --oneline -1
+   Capture the short hash from that output.
+
 Return your result using the StructuredOutput tool:
   reportFile: "${documentReport}"
   success: true if docs were checked and report written (even if no changes were needed)
   filesModified: array of doc files that were actually patched (empty array if none needed changes)
+  commitHash: the 7-character short hash from git log --oneline -1 (empty string if commit failed)
   notes: one-line summary
 `, { label: 'document', schema: STAGE_SCHEMA, phase: 'Document' })
 
@@ -843,8 +962,8 @@ Instructions:
 1. Read planning/STATUS.md
 2. Read ${specFile}
 3. Read DEVLOG.md (at the repo root — NOT in planning/)
-4. Run: git diff --stat
-5. Run: git log --oneline -10
+4. Run: git log --oneline -10
+   (Code and doc changes are already committed by their respective agents — git log shows the full picture)
 
 6. Update planning/STATUS.md using the Edit tool:
    ${taskNumber !== null
@@ -862,7 +981,7 @@ Instructions:
    [One paragraph: what was implemented, how the review went (${finalVerdict} verdict${reviewAttempts > 1 ? ` after ${reviewAttempts} attempts` : ''}), any notable findings, decisions made. End with: "Next: [next task or block]."]
 
    \`\`\`
-   [git diff --stat output]
+   [git log --oneline -5 output — shows the commits made during this pipeline run]
    \`\`\`
 
 8. If the implement report's "Decisions and Trade-offs" section contains any settled architectural choices, mention them in your notes — but do NOT edit DECISIONS.md yourself (that is a manual step).
@@ -890,12 +1009,17 @@ const stageTable = stageResults.map(r => {
   const label = r.stage + (r.attempt ? ` (attempt ${r.attempt})` : '')
   const status = r.verdict ? r.verdict : (r.success ? 'completed' : 'FAILED')
   const file = r.reportFile || r.workflowReportFile || '—'
-  const notes = (r.notes || '').substring(0, 80)
-  return `| ${label} | ${status} | ${file} | ${notes} |`
+  const commit = r.commitHash ? r.commitHash.substring(0, 7) : '—'
+  const notes = (r.notes || '').substring(0, 60)
+  return `| ${label} | ${status} | ${file} | ${commit} | ${notes} |`
 }).join('\n')
 
 const finalizeResult = await agent(`
-You are the finalize agent for the SDLC pipeline. Commit all changes and write the workflow report.
+You are the finalize agent for the SDLC pipeline. Write the workflow report and make the final wrap-up commit.
+
+Context: Code, doc, and fix changes have already been committed by their respective agents during the pipeline run.
+Your job is to write the workflow report, then commit the remaining planning files (STATUS.md, DEVLOG.md,
+test/review reports, and the workflow report itself) as a single chore: commit.
 
 Target:
   Block:          ${blockId}
@@ -907,17 +1031,11 @@ Target:
 Stage results so far:
 ${stageResultsSummary}
 
-Instructions:
-
-STEP 1 — Inspect changes:
-  Run: git status
-  Run: git diff --stat
-  Identify ALL changed and new files. Separate them into:
-  - Code files: anything under app/ or tests/
-  - Planning/docs files: planning/, docs/, DEVLOG.md, and report files (planning/tasks/reports/*.md)
+STEP 1 — Get the full commit history from this pipeline run:
+  Run: git log --oneline -15
+  These are the commits made during this run (implement, fix passes, docs).
 
 STEP 2 — Write the workflow report to: ${workflowReport}
-  (Write this BEFORE committing so it can be included in the docs commit)
 
   Use EXACTLY this format:
 
@@ -934,8 +1052,8 @@ STEP 2 — Write the workflow report to: ${workflowReport}
 
   ## Stage Results
 
-  | Stage | Status | Report | Notes |
-  |---|---|---|---|
+  | Stage | Status | Report | Commit | Notes |
+  |---|---|---|---|---|
   ${stageTable}
 
   ## Key Findings
@@ -947,47 +1065,39 @@ STEP 2 — Write the workflow report to: ${workflowReport}
   ## Docs Updated
   [List doc files patched — from the document report; list any NEEDS_REVIEW flags]
 
-  ## Commits
-  [Fill in after committing below]
+  ## Commits (this pipeline run)
+  [Paste the relevant lines from git log --oneline — the implement, fix, docs commits made during this run]
 
-STEP 3 — TWO commits (code first, then docs). Never use git add -A or git add . — always name files explicitly.
+STEP 3 — Commit the remaining planning files as a single chore: commit.
+  Never use git add -A or git add . — stage files explicitly by name.
 
-  COMMIT 1 — Code changes (only if app/ or tests/ files changed):
-    git add app/file1.py tests/file2.py ...  (list each file explicitly)
-    Commit message: ${finalVerdict === 'PASS' ? 'feat' : 'fix'}: [short description matching what was implemented]
-    Use HEREDOC format:
+  Run: git status
+  Look for any uncommitted files in: planning/STATUS.md, DEVLOG.md,
+  planning/tasks/reports/${stem}-test.md, planning/tasks/reports/${stem}-review.md,
+  and ${workflowReport} (which you just wrote).
+
+  Stage them:
+    git add planning/STATUS.md DEVLOG.md ${workflowReport}
+    git add planning/tasks/reports/${stem}-test.md 2>/dev/null || true
+    git add planning/tasks/reports/${stem}-review.md 2>/dev/null || true
+    (only add files that actually exist and are untracked/modified)
+
+  Commit using HEREDOC:
     git commit -m "$(cat <<'EOF'
-    feat: [description]
+    chore: wrap up ${stem}
 
     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
     EOF
     )"
 
-  COMMIT 2 — Docs and planning changes (planning/, docs/, DEVLOG.md, report files including ${workflowReport}):
-    git add DEVLOG.md planning/STATUS.md planning/tasks/reports/...  (list each explicitly)
-    git add ${workflowReport}
-    Commit message: docs: update STATUS, DEVLOG, and reports for ${stem}
-    Use HEREDOC format:
-    git commit -m "$(cat <<'EOF'
-    docs: update STATUS, DEVLOG, and reports for ${stem}
-
-    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-    EOF
-    )"
-
-  If ONLY code changes or ONLY docs changes exist (not both), make just one appropriately-typed commit.
-
-STEP 4 — After committing, run: git log --oneline -3
-  Capture the commit hashes and messages.
-
-STEP 5 — Update the "## Commits" section of ${workflowReport} with the actual commit hashes and messages.
-  Use the Edit tool to patch just that section.
+  Run: git log --oneline -1
+  Capture the short hash.
 
 Return your result using the StructuredOutput tool:
   workflowReportFile: "${workflowReport}"
-  commitMessage: the primary commit message (first commit if two were made)
-  commitHash: the most recent commit hash from git log
-  notes: any follow-up items (e.g., decisions to add to DECISIONS.md, NEEDS_REVIEW doc flags)
+  commitMessage: "chore: wrap up ${stem}"
+  commitHash: the 7-character short hash from git log --oneline -1
+  notes: any follow-up items (decisions to add to DECISIONS.md, NEEDS_REVIEW doc flags)
 `, { label: 'finalize', schema: FINALIZE_SCHEMA, phase: 'Wrap-up' })
 
 if (finalizeResult) {
