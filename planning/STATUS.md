@@ -3,8 +3,8 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-05 — Block C in progress (Task 1 complete; review pending)
-**Current focus:** Phase 0, Block C — test infra + core hardening (Task 1 complete, awaiting `/review-task` before Task 2)
+**Last updated:** 2026-06-08 — Block C in progress (Tasks 1 & 2 complete; Task 3 next)
+**Current focus:** Phase 0, Block C — Task 3: fix import-time side effects (`session.py` + `worker/config.py`)
 
 ---
 
@@ -24,7 +24,7 @@
 |---|---|---|---|
 | A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 paused — manual/personal tasks (LinkedIn, GitHub triage, etc.) deferred while agent-executable work proceeds |
 | B | Mac Mini agentic harness + revive site | Not started | Two-face architecture: Caddy+Cloudflare (public site) + Tailscale (private tooling). Install Tailscale on Mini + all devices; revive `learn-agentic-ai.com` on public face. See DECISIONS D23 |
-| C | Test infra + core hardening + 4 bug fixes | In progress | Task 1 complete (pytest deps + `pytest.ini` + test directory scaffold); Tasks 2–14 remaining |
+| C | Test infra + core hardening + 4 bug fixes | In progress | Tasks 1–2 complete (pytest scaffold; `GenericRepository.exists()` bug fixed + tested); Task 3 next (import-time side effects) |
 | D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
 
 ### Phase 1 — Sellable Competence

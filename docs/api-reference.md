@@ -535,20 +535,19 @@ model class it manages.
 | `delete` | `delete(id: str) -> None` | `None` | Fetches then deletes; no-op if not found. |
 | `get_latest` | `get_latest(n: int = 1) -> List[T]` | Up to `n` rows | Orders by `model.id DESC`. |
 | `count` | `count() -> int` | Row count | Uses SQLAlchemy `count()`. |
-| `exists` | `exists(**kwargs) -> bool` | Boolean | **Broken — do not use.** |
+| `exists` | `exists(**kwargs) -> bool` | Boolean | Returns `True` if any row matching all `kwargs` exists; `False` otherwise. |
 
-### Known Bug: `exists()`
+### `exists()` Implementation
 
 ```python
 def exists(self, **kwargs) -> bool:
-    return self.session.query(
-        self.model.query.filter_by(**kwargs).exists()
-    ).scalar()
+    return (
+        self.session.query(self.model).filter_by(**kwargs).first() is not None
+    )
 ```
 
-`self.model.query` is a SQLAlchemy 1.x legacy pattern that raises `AttributeError`
-under SQLAlchemy 2.x. The correct 2.x approach uses `select(...).where(...)`. Do not
-call this method until it is rewritten.
+Uses the SQLAlchemy 2.x-compatible pattern — `session.query(model).filter_by(**kwargs).first()`.
+Accepts any column name and value recognized by the model as keyword arguments.
 
 ---
 
