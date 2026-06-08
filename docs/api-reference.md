@@ -237,6 +237,39 @@ def process(self, task_context: TaskContext) -> TaskContext:
     return task_context
 ```
 
+### `get_node_output(node_name: str) -> Any`
+
+```python
+def get_node_output(self, node_name: str) -> Any:
+```
+
+Retrieves the output stored for a completed node. Raises a descriptive `KeyError` if
+the node has not run yet, naming the missing node, listing the nodes that have completed
+so far, and suggesting that the `WorkflowSchema` ordering be checked.
+
+**Raises:** `KeyError` — when `node_name` is not present in `self.nodes`. The error
+message has the form:
+
+```
+Router expected output from node '<node_name>', but it has not run.
+Nodes completed so far: [<list>].
+Check that '<node_name>' appears before the router in the WorkflowSchema.
+```
+
+**Usage pattern inside a router node:**
+
+```python
+def determine_next_node(self, task_context: TaskContext) -> Optional[Node]:
+    output = task_context.get_node_output("AnalyzeTicketNode")
+    if output["intent"] == "refund":
+        return ProcessRefundNode()
+    return None
+```
+
+New router nodes should prefer `get_node_output()` over direct `task_context.nodes[name]`
+access. Direct access still works but produces a raw `KeyError` with no diagnostic
+context if the node has not run yet.
+
 Downstream nodes read the accumulated results directly from `task_context.nodes`.
 
 ---

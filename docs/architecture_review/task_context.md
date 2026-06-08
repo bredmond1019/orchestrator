@@ -180,14 +180,62 @@ class ProcessInvoiceNode(AgentNode):
             ...
 ```
 
-Node names are currently hard-coded strings — this is flagged as a known bug in
-`CLAUDE.md` (router nodes). The same risk applies anywhere a node reads another
-node's output by string key: a rename or typo produces a silent `KeyError` miss
-instead of a clear error.
+**How a router node reads it (preferred):**
+
+```python
+class TicketRouterNode(BaseRouter):
+    def determine_next_node(self, task_context: TaskContext):
+        output = task_context.get_node_output("AnalyzeTicketNode")
+        if output["intent"] == "refund":
+            return ProcessRefundNode()
+        return None
+```
+
+Node names are hard-coded strings — a rename or typo produces a `KeyError`. For
+router nodes, `get_node_output()` is preferred over direct dict access because it
+raises a descriptive error naming the missing node and listing completed nodes.
+Direct `task_context.nodes[name]` access still works in non-router nodes where the
+execution order is fixed and obvious.
 
 ---
 
-## Step 3 — Serialization to the database
+## Step 3 — `get_node_output`: the safe read interface
+
+```python
+def get_node_output(self, node_name: str) -> Any:
+```
+
+Added alongside `update_node` to give router nodes a safe way to read upstream
+output without silently absorbing a misuse. When a router calls
+`task_context.get_node_output("AnalyzeTicketNode")` and that node has not run yet,
+the raised `KeyError` includes three pieces of diagnostic information:
+
+1. The name of the node that was requested.
+2. The list of nodes that *have* completed so far.
+3. A suggestion to check the node's position in the `WorkflowSchema`.
+
+Compare the two patterns:
+
+```python
+# Before — raw dict access; produces unhelpful "KeyError: 'AnalyzeTicketNode'"
+intent = task_context.nodes["AnalyzeTicketNode"]["intent"]
+
+# After — descriptive error that names the problem and the fix
+output = task_context.get_node_output("AnalyzeTicketNode")
+intent = output["intent"]
+```
+
+The method is additive — existing code that uses `task_context.nodes[name]` directly
+continues to work unchanged. New router nodes should prefer `get_node_output()`.
+
+**Caveat:** `get_node_output()` detects execution-order problems at runtime, not at
+schema-definition time. A mis-ordered `WorkflowSchema` still fails during a workflow
+run — the improvement is that the error message makes the cause obvious rather than
+leaving the developer to infer it from a bare key miss.
+
+---
+
+## Step 4 — Serialization to the database
 
 When the workflow finishes, the caller (the Celery task) serializes the final
 `TaskContext` to JSON and stores it in the `task_context` column of the `events`
@@ -237,11 +285,14 @@ produced.
   every call and carry no instance state. Everything that must persist across nodes
   lives in `TaskContext`. This makes individual nodes easy to test in isolation.
 
-- **String keys are the current weak point** — `nodes["AnalyzeTicketNode"]` works,
-  but it's a stringly-typed interface. A rename, a typo, or reading a key before the
-  writing node has run all produce runtime errors rather than type errors. The
-  pattern to watch for when extending: always use `self.node_name` when writing,
-  and consider whether the reading node has a hard dependency on execution order.
+- **String keys — use `get_node_output()` for reads** — `nodes["AnalyzeTicketNode"]`
+  works, but it's a stringly-typed interface. A rename or typo produces a bare
+  `KeyError`. Reading a key before the writing node has run does too. New router nodes
+  should call `task_context.get_node_output("AnalyzeTicketNode")` instead: the method
+  raises a descriptive `KeyError` that names the missing node, lists nodes completed
+  so far, and points to the `WorkflowSchema` ordering as the fix. The pattern to
+  watch for when extending: always use `self.node_name` when writing, and use
+  `get_node_output()` when reading in a router.
 
 - **`metadata` is the escape hatch** — it's where the framework injects things nodes
   might need that don't belong in the event (the node registry, feature flags,
