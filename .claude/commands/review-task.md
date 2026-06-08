@@ -121,5 +121,7 @@ Then summarize the verdict and any blocking issues to the user in the chat.
 Then output the pipeline next step:
 ```
 If verdict is PASS:     Next: /document planning/tasks/phase0-blockC.md [N]
-If verdict is not PASS: Fix the issues above, then: /review-task planning/tasks/phase0-blockC.md [N]
+If verdict is not PASS: /fix planning/tasks/phase0-blockC.md [N]
+                        then: /test planning/tasks/phase0-blockC.md [N]
+                        then: /review-task planning/tasks/phase0-blockC.md [N]
 ```

@@ -58,6 +58,7 @@ The complete development lifecycle for structured phase/block work. Each step ru
 | **1 — Plan** | `/generate-tasks <id>` | Write the full task spec from the master plan | `planning/tasks/phaseN-blockX.md` |
 | **1 — Plan (opt.)** | `/breakdown <spec>` | Decompose spec into atomic, agent-executable sub-steps | `planning/tasks/breakdown-phaseN-blockX.md` |
 | **2 — Implement** | `/implement <spec> [N]` | Execute every task (or task N) in the spec | `planning/tasks/reports/<spec>[-taskN]-implement.md` |
+| **2 — Fix** | `/fix <spec> [N]` | Targeted fixes for FAIL/PARTIAL verdict; reads review report; overwrites implement report | `planning/tasks/reports/<spec>[-taskN]-implement.md` |
 | **2 — Track** | `/update-task [id] <step> [note]` | Mark a step done and/or append a dated note mid-implementation | spec file (in-place) |
 | **2 — Commit** | `/commit [hint]` | Stage + commit with a conventional message | git history |
 | **3 — Test** | `/test <spec> [N]` | Run the 8-test validation suite; write snapshot | `planning/tasks/reports/<spec>[-taskN]-test.md` |
@@ -93,6 +94,12 @@ PHASE 4 — REVIEW                              ← runs fresh tests; verdict ga
   /review-task planning/tasks/phase0-blockC.md [N]
         → planning/tasks/reports/phase0-blockC[-taskN]-review.md
 
+        if PASS → continue to PHASE 5 — DOCUMENT
+        if FAIL/PARTIAL → PHASE 2 — FIX:
+  /fix planning/tasks/phase0-blockC.md [N]
+        → planning/tasks/reports/phase0-blockC[-taskN]-implement.md  (overwritten)
+  then repeat: /test [N] → /review-task [N] until PASS
+
 PHASE 5 — DOCUMENT                            ← gates on PASS verdict
   /document planning/tasks/phase0-blockC.md [N]
         → planning/tasks/reports/phase0-blockC[-taskN]-document.md
@@ -114,9 +121,12 @@ All pipeline report files live in `planning/tasks/reports/`. Pattern: `{spec-ste
 | Step | Full-block | Task-scoped |
 |---|---|---|
 | implement | `phase0-blockC-implement.md` | `phase0-blockC-task3-implement.md` |
+| fix | *(overwrites implement slot)* | *(overwrites implement slot)* |
 | test | `phase0-blockC-test.md` | `phase0-blockC-task3-test.md` |
 | review | `phase0-blockC-review.md` | `phase0-blockC-task3-review.md` |
 | document | `phase0-blockC-document.md` | `phase0-blockC-task3-document.md` |
+
+> **Note:** `/fix` writes to the same `-implement.md` slot as `/implement` — it represents the current state of Phase 2 work. Git history preserves prior versions.
 
 ### Ad-hoc Tasks
 
@@ -215,6 +225,15 @@ Runs `/prime` to orient, reads the given plan file, executes every step (or a si
 | Variable | Description |
 |---|---|
 | `$ARGUMENTS` | Required. Path to the plan file with optional task number (e.g. `planning/tasks/phase0-blockC.md 3`). |
+
+### `/fix`
+**Make targeted fixes for a FAIL or PARTIAL review verdict.**
+
+Reads the review report to extract every failing criterion and issue, orients via `/prime`, reads affected source files, and applies targeted changes addressing only the failures. Does not re-implement passing criteria. Overwrites the `-implement.md` slot with a "Fix Pass N" report so `/test`, `/review-task`, and `/document` continue reading the same path unchanged. Hard-errors if the review report is absent; soft-stops if the verdict is already PASS.
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | Required. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC.md 3`). Same format as `/implement`. |
 
 ### `/update-task`
 **Record progress in a task spec mid-implementation.**
