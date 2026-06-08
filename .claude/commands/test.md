@@ -8,8 +8,8 @@ $ARGUMENTS — optional path to the task spec and optional task number. Same for
 
 Examples:
 - (no args) — run full suite; output JSON to chat only; no file written
-- `planning/tasks/phase0-blockC.md` — run full suite; write report to `planning/tasks/reports/phase0-blockC-test.md`
-- `planning/tasks/phase0-blockC.md 1` — run full suite; write report to `planning/tasks/reports/phase0-blockC-task1-test.md`
+- `planning/tasks/phase0-blockC/tasks.md` — run full suite; write report to `planning/tasks/phase0-blockC/reports/test.md`
+- `planning/tasks/phase0-blockC/tasks.md 1` — run full suite; write report to `planning/tasks/phase0-blockC/reports/task1-test.md`
 
 The task number N does NOT change which tests run — all 8 tests always run regardless. N only
 determines the output file name so the snapshot is scoped to the right pipeline stage.
@@ -28,10 +28,10 @@ TEST_COMMAND_TIMEOUT: 5 minutes
 
 ## Instructions
 
-- **Step 0 — Parse `$ARGUMENTS`:** If provided, split on the last space. Trailing number = task N; remainder = spec path. Derive the report file path:
+- **Step 0 — Parse `$ARGUMENTS`:** If provided, split on the last space. Trailing number = task N; remainder = spec path. Derive the report file path from the spec's parent directory:
   - No args: no file will be written.
-  - Spec only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-test.md`
-  - Spec + task N: `planning/tasks/phase0-blockC.md 1` → `planning/tasks/reports/phase0-blockC-task1-test.md`
+  - Spec only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/test.md`
+  - Spec + task N: `planning/tasks/phase0-blockC/tasks.md 1` → `planning/tasks/phase0-blockC/reports/task1-test.md`
 - Run `/prime` to orient to the codebase before executing any tests.
 - Execute each test in the sequence provided below
 - Capture the result (passed/failed) and any error messages
@@ -150,7 +150,7 @@ TEST_COMMAND_TIMEOUT: 5 minutes
 ## File Output
 
 If `$ARGUMENTS` was provided, after returning the JSON array to chat, write a report file to the
-derived path. Create `planning/tasks/reports/` if it does not exist.
+derived path. Create `planning/tasks/<block>/reports/` if it does not exist.
 
 **Write the report file in this exact format:**
 
@@ -188,5 +188,5 @@ derived path. Create `planning/tasks/reports/` if it does not exist.
 
 After writing the file, output one line to chat:
 ```
-Next: /review-task <spec file path> [N]
+Next: /review-task planning/tasks/phase0-blockC/tasks.md [N]
 ```

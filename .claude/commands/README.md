@@ -55,15 +55,15 @@ The complete development lifecycle for structured phase/block work. Each step ru
 | Session Start | `/status` | Check current focus and what's in progress | chat only |
 | Session Start | `/process-tasks` | Check which blocks are eligible to start | chat only |
 | Block Setup | `/start-block [id]` | Flip a block to `in_progress` in STATUS.md | STATUS.md |
-| **1 — Plan** | `/generate-tasks <id>` | Write the full task spec from the master plan | `planning/tasks/phaseN-blockX.md` |
-| **1 — Plan (opt.)** | `/breakdown <spec>` | Decompose spec into atomic, agent-executable sub-steps | `planning/tasks/breakdown-phaseN-blockX.md` |
-| **2 — Implement** | `/implement <spec> [N]` | Execute every task (or task N) in the spec | `planning/tasks/reports/<spec>[-taskN]-implement.md` |
-| **2 — Fix** | `/fix <spec> [N]` | Targeted fixes for FAIL/PARTIAL verdict; reads review report; overwrites implement report | `planning/tasks/reports/<spec>[-taskN]-implement.md` |
+| **1 — Plan** | `/generate-tasks <id>` | Write the full task spec from the master plan | `planning/tasks/phaseN-blockX/tasks.md` |
+| **1 — Plan (opt.)** | `/breakdown <spec>` | Decompose spec into atomic, agent-executable sub-steps | `planning/tasks/phaseN-blockX/breakdown.md` |
+| **2 — Implement** | `/implement <spec> [N]` | Execute every task (or task N) in the spec | `planning/tasks/<block>/reports/[taskN-]implement.md` |
+| **2 — Fix** | `/fix <spec> [N]` | Targeted fixes for FAIL/PARTIAL verdict; reads review report; overwrites implement report | `planning/tasks/<block>/reports/[taskN-]implement.md` |
 | **2 — Track** | `/update-task [id] <step> [note]` | Mark a step done and/or append a dated note mid-implementation | spec file (in-place) |
 | **2 — Commit** | `/commit [hint]` | Stage + commit with a conventional message | git history |
-| **3 — Test** | `/test <spec> [N]` | Run the 8-test validation suite; write snapshot | `planning/tasks/reports/<spec>[-taskN]-test.md` |
-| **4 — Review** | `/review-task <spec> [N]` | Verify all criteria; run fresh tests; issue verdict | `planning/tasks/reports/<spec>[-taskN]-review.md` |
-| **5 — Document** | `/document <spec> [N]` | Surgically patch `docs/`; gates on PASS verdict | `planning/tasks/reports/<spec>[-taskN]-document.md` |
+| **3 — Test** | `/test <spec> [N]` | Run the 8-test validation suite; write snapshot | `planning/tasks/<block>/reports/[taskN-]test.md` |
+| **4 — Review** | `/review-task <spec> [N]` | Verify all criteria; run fresh tests; issue verdict | `planning/tasks/<block>/reports/[taskN-]review.md` |
+| **5 — Document** | `/document <spec> [N]` | Surgically patch `docs/`; gates on PASS verdict | `planning/tasks/<block>/reports/[taskN-]document.md` |
 | **6 — Wrap-up** | `/log-work [notes]` | Update STATUS.md + append DEVLOG entry | STATUS.md, DEVLOG.md |
 
 ### Pipeline Flow
@@ -77,32 +77,32 @@ BLOCK SETUP
   /start-block [phase0-blockC]                → STATUS.md
 
 PHASE 1 — PLAN
-  /generate-tasks phase0-blockC               → planning/tasks/phase0-blockC.md
+  /generate-tasks phase0-blockC               → planning/tasks/phase0-blockC/tasks.md
         ↓  (optional)
-  /breakdown planning/tasks/phase0-blockC.md  → planning/tasks/breakdown-phase0-blockC.md
+  /breakdown planning/tasks/phase0-blockC/tasks.md  → planning/tasks/phase0-blockC/breakdown.md
 
 PHASE 2 — IMPLEMENT
-  /implement planning/tasks/phase0-blockC.md [N]
-        → planning/tasks/reports/phase0-blockC[-taskN]-implement.md
+  /implement planning/tasks/phase0-blockC/tasks.md [N]
+        → planning/tasks/phase0-blockC/reports/[taskN-]implement.md
   (/update-task and /commit can be called any number of times during this phase)
 
 PHASE 3 — TEST
-  /test planning/tasks/phase0-blockC.md [N]
-        → planning/tasks/reports/phase0-blockC[-taskN]-test.md
+  /test planning/tasks/phase0-blockC/tasks.md [N]
+        → planning/tasks/phase0-blockC/reports/[taskN-]test.md
 
 PHASE 4 — REVIEW                              ← runs fresh tests; verdict gates next step
-  /review-task planning/tasks/phase0-blockC.md [N]
-        → planning/tasks/reports/phase0-blockC[-taskN]-review.md
+  /review-task planning/tasks/phase0-blockC/tasks.md [N]
+        → planning/tasks/phase0-blockC/reports/[taskN-]review.md
 
         if PASS → continue to PHASE 5 — DOCUMENT
         if FAIL/PARTIAL → PHASE 2 — FIX:
-  /fix planning/tasks/phase0-blockC.md [N]
-        → planning/tasks/reports/phase0-blockC[-taskN]-implement.md  (overwritten)
+  /fix planning/tasks/phase0-blockC/tasks.md [N]
+        → planning/tasks/phase0-blockC/reports/[taskN-]implement.md  (overwritten)
   then repeat: /test [N] → /review-task [N] until PASS
 
 PHASE 5 — DOCUMENT                            ← gates on PASS verdict
-  /document planning/tasks/phase0-blockC.md [N]
-        → planning/tasks/reports/phase0-blockC[-taskN]-document.md
+  /document planning/tasks/phase0-blockC/tasks.md [N]
+        → planning/tasks/phase0-blockC/reports/[taskN-]document.md
 
 PHASE 6 — WRAP-UP
   /log-work [notes]                           → STATUS.md, DEVLOG.md
@@ -110,23 +110,39 @@ PHASE 6 — WRAP-UP
 
 ### Argument Convention
 
-Every step from Phase 2 onward takes the same form: `planning/tasks/<spec>.md [N]`
+Every step from Phase 2 onward takes the same form: `planning/tasks/<block>/tasks.md [N]`
 
 Split on the last space. Trailing number = task N (scope to that task only). No number = full block. Use the **same `N`** throughout the pipeline — it determines all report filenames at every step.
 
+### Directory Layout
+
+Each block gets its own directory under `planning/tasks/`. All reports live in a `reports/` subdirectory alongside the spec:
+
+```
+planning/tasks/
+  phase0-blockC/
+    tasks.md          ← spec (written by /generate-tasks)
+    breakdown.md      ← optional (written by /breakdown)
+    reports/
+      implement.md    ← or task3-implement.md for task-scoped
+      test.md         ← or task3-test.md
+      review.md       ← or task3-review.md
+      document.md     ← or task3-document.md
+```
+
 ### Report File Naming
 
-All pipeline report files live in `planning/tasks/reports/`. Pattern: `{spec-stem}[-taskN]-{step}.md`
+Pattern: `[taskN-]{step}.md` inside `planning/tasks/<block>/reports/`
 
 | Step | Full-block | Task-scoped |
 |---|---|---|
-| implement | `phase0-blockC-implement.md` | `phase0-blockC-task3-implement.md` |
+| implement | `implement.md` | `task3-implement.md` |
 | fix | *(overwrites implement slot)* | *(overwrites implement slot)* |
-| test | `phase0-blockC-test.md` | `phase0-blockC-task3-test.md` |
-| review | `phase0-blockC-review.md` | `phase0-blockC-task3-review.md` |
-| document | `phase0-blockC-document.md` | `phase0-blockC-task3-document.md` |
+| test | `test.md` | `task3-test.md` |
+| review | `review.md` | `task3-review.md` |
+| document | `document.md` | `task3-document.md` |
 
-> **Note:** `/fix` writes to the same `-implement.md` slot as `/implement` — it represents the current state of Phase 2 work. Git history preserves prior versions.
+> **Note:** `/fix` writes to the same `implement.md` slot as `/implement` — it represents the current state of Phase 2 work. Git history preserves prior versions.
 
 ### Ad-hoc Tasks
 
@@ -139,7 +155,7 @@ For work not tied to a phase/block (one-off features, fixes, or chores), generat
 ### `/session-recap`
 **Start-of-session briefing: what was done recently and what's next.**
 
-Reads the three most recent DEVLOG entries, STATUS.md, the current block's task spec, and the `planning/tasks/reports/` directory listing to determine which pipeline steps have report files. Outputs a concise briefing (under 300 words): recent work summary, where work left off, remaining spec tasks, and the exact next command to run. Read-only — does not run any shell commands.
+Reads the three most recent DEVLOG entries, STATUS.md, the current block's task spec, and the `planning/tasks/<block>/reports/` directory listing to determine which pipeline steps have report files. Outputs a concise briefing (under 300 words): recent work summary, where work left off, remaining spec tasks, and the exact next command to run. Read-only — does not run any shell commands.
 
 _No variables._
 
@@ -171,7 +187,7 @@ _No variables._
 ### `/generate-tasks`
 **Write the task spec for a given phase and block.**
 
-Reads only the relevant section of the master plan + projects plan, then writes a full task spec to `planning/tasks/phaseN-blockX.md`. Tasks are sized to roughly 21 hours across Mon/Wed/Fri sessions. Every workflow task includes writing tests (CLAUDE.md standing rule). The final task is always Validate.
+Reads only the relevant section of the master plan + projects plan, then writes a full task spec to `planning/tasks/phaseN-blockX/tasks.md`. Tasks are sized to roughly 21 hours across Mon/Wed/Fri sessions. Every workflow task includes writing tests (CLAUDE.md standing rule). The final task is always Validate.
 
 | Variable | Description |
 |---|---|
@@ -180,7 +196,7 @@ Reads only the relevant section of the master plan + projects plan, then writes 
 ### `/breakdown`
 **Decompose a task spec into agent-executable sub-steps.**
 
-Reads a task spec, reads the actual source files each step touches to learn exact class/method names and file paths, then writes a granular breakdown to `planning/tasks/breakdown-{name}.md`. Every sub-step is atomic: one file, one change, one command — precise enough to execute without interpretation. Includes inline Verify checks after each group.
+Reads a task spec, reads the actual source files each step touches to learn exact class/method names and file paths, then writes a granular breakdown to `planning/tasks/{block}/breakdown.md`. Every sub-step is atomic: one file, one change, one command — precise enough to execute without interpretation. Includes inline Verify checks after each group.
 
 | Variable | Description |
 |---|---|
@@ -220,20 +236,20 @@ Researches the codebase and writes a focused chore plan to `planning/tasks/chore
 ### `/implement`
 **Execute a plan file against the codebase.**
 
-Runs `/prime` to orient, reads the given plan file, executes every step (or a single task N) in order following CLAUDE.md conventions, runs the relevant Validation Commands, writes a report to `planning/tasks/reports/<spec>[-taskN]-implement.md`, and outputs the next pipeline step hint.
+Runs `/prime` to orient, reads the given plan file, executes every step (or a single task N) in order following CLAUDE.md conventions, runs the relevant Validation Commands, writes a report to `planning/tasks/<block>/reports/[taskN-]implement.md`, and outputs the next pipeline step hint.
 
 | Variable | Description |
 |---|---|
-| `$ARGUMENTS` | Required. Path to the plan file with optional task number (e.g. `planning/tasks/phase0-blockC.md 3`). |
+| `$ARGUMENTS` | Required. Path to the plan file with optional task number (e.g. `planning/tasks/phase0-blockC/tasks.md 3`). |
 
 ### `/fix`
 **Make targeted fixes for a FAIL or PARTIAL review verdict.**
 
-Reads the review report to extract every failing criterion and issue, orients via `/prime`, reads affected source files, and applies targeted changes addressing only the failures. Does not re-implement passing criteria. Overwrites the `-implement.md` slot with a "Fix Pass N" report so `/test`, `/review-task`, and `/document` continue reading the same path unchanged. Hard-errors if the review report is absent; soft-stops if the verdict is already PASS.
+Reads the review report to extract every failing criterion and issue, orients via `/prime`, reads affected source files, and applies targeted changes addressing only the failures. Does not re-implement passing criteria. Overwrites the `implement.md` slot with a "Fix Pass N" report so `/test`, `/review-task`, and `/document` continue reading the same path unchanged. Hard-errors if the review report is absent; soft-stops if the verdict is already PASS.
 
 | Variable | Description |
 |---|---|
-| `$ARGUMENTS` | Required. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC.md 3`). Same format as `/implement`. |
+| `$ARGUMENTS` | Required. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC/tasks.md 3`). Same format as `/implement`. |
 
 ### `/update-task`
 **Record progress in a task spec mid-implementation.**
@@ -266,11 +282,11 @@ Drafts a conventional message (`feat:`, `fix:`, `docs:`, etc.), shows it for con
 ### `/test`
 **Run the full validation suite (8 tests) and write a pipeline test report.**
 
-Runs `/prime`, then executes 8 checks in order: 4 import checks (app, worker, database session, repository), ruff, pylint, pytest collect, pytest full. Returns results as a JSON array sorted failed-first. When called with a spec path, also writes a test report to `planning/tasks/reports/<spec>[-taskN]-test.md` for the review step to read. No-arg invocation outputs JSON to chat only.
+Runs `/prime`, then executes 8 checks in order: 4 import checks (app, worker, database session, repository), ruff, pylint, pytest collect, pytest full. Returns results as a JSON array sorted failed-first. When called with a spec path, also writes a test report to `planning/tasks/<block>/reports/[taskN-]test.md` for the review step to read. No-arg invocation outputs JSON to chat only.
 
 | Variable | Description |
 |---|---|
-| `$ARGUMENTS` | Optional. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC.md 1`). If omitted, outputs JSON to chat only; no file written. |
+| `$ARGUMENTS` | Optional. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC/tasks.md 1`). If omitted, outputs JSON to chat only; no file written. |
 
 ---
 
@@ -279,11 +295,11 @@ Runs `/prime`, then executes 8 checks in order: 4 import checks (app, worker, da
 ### `/review-task`
 **Verify a completed task against its spec and acceptance criteria.**
 
-Runs `/prime`, reads the task spec, reads the `-implement.md` and `-test.md` reports as historical context, then runs a **fresh test suite** as the authoritative verification. Checks every Acceptance Criterion against actual source code and fresh test output. Verdict is PASS only if all criteria are MET AND the fresh tests pass. A fresh test failure always prevents PASS, even if all acceptance criteria appear met from reading the code. Writes a review report and outputs the next pipeline step.
+Runs `/prime`, reads the task spec, reads the `implement.md` and `test.md` reports as historical context, then runs a **fresh test suite** as the authoritative verification. Checks every Acceptance Criterion against actual source code and fresh test output. Verdict is PASS only if all criteria are MET AND the fresh tests pass. A fresh test failure always prevents PASS, even if all acceptance criteria appear met from reading the code. Writes a review report and outputs the next pipeline step.
 
 | Variable | Description |
 |---|---|
-| `$ARGUMENTS` | Required. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC.md 3`). |
+| `$ARGUMENTS` | Required. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC/tasks.md 3`). |
 
 ---
 
@@ -292,11 +308,11 @@ Runs `/prime`, reads the task spec, reads the `-implement.md` and `-test.md` rep
 ### `/document`
 **Update docs to reflect a completed, reviewed implementation.**
 
-Gates strictly on the review report verdict being PASS — stops immediately if verdict is FAIL or PARTIAL. Reads the implement report's **Files Created or Modified** table to scope doc updates to exactly the right source files, then surgically patches only the affected sections of `docs/*.md`. Flags `docs/app-architecture-overview.md` as `NEEDS_REVIEW` rather than editing it automatically. Writes a document report to `planning/tasks/reports/<spec>[-taskN]-document.md`.
+Gates strictly on the review report verdict being PASS — stops immediately if verdict is FAIL or PARTIAL. Reads the implement report's **Files Created or Modified** table to scope doc updates to exactly the right source files, then surgically patches only the affected sections of `docs/*.md`. Flags `docs/app-architecture-overview.md` as `NEEDS_REVIEW` rather than editing it automatically. Writes a document report to `planning/tasks/<block>/reports/[taskN-]document.md`.
 
 | Variable | Description |
 |---|---|
-| `$ARGUMENTS` | Required. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC.md 3`). |
+| `$ARGUMENTS` | Required. Path to task spec with optional task number (e.g. `planning/tasks/phase0-blockC/tasks.md 3`). |
 
 ---
 
@@ -332,7 +348,7 @@ Reads `planning/intake.md` (or the provided path), then generates all 8 planning
 | `$ARGUMENTS` | Optional. Path to intake file. Defaults to `planning/intake.md`. |
 
 ### `/blog-idea`
-**Capture a blog or LinkedIn post idea into `planning/BLOG_IDEAS.md`.**
+**Capture a blog or LinkedIn post idea into `planning/blog/BLOG_IDEAS.md`.**
 
 Reads the existing ideas file, infers a working title, one-line hook, and output target (`[LI]`, `[Blog]`, or `[Both]`), then appends the entry to the **Queued** or **Suggested** section. Use this any time an interesting angle surfaces mid-session.
 

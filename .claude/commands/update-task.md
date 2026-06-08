@@ -18,9 +18,9 @@ Examples:
 
 1. **Resolve the target spec.**
    - If the first token of `$ARGUMENTS` matches a spec identifier pattern (e.g. `phase0-blockC`,
-     `phase1-projectA`), normalise it to the filename form `phaseN-blockX.md` and verify the file
-     exists at `planning/tasks/phaseN-blockX.md`. If it does not exist, stop:
-     > "No spec found at planning/tasks/<name>.md — run `/generate-tasks <name>` to create it."
+     `phase1-projectA`), resolve to `planning/tasks/phaseN-blockX/tasks.md` and verify the file
+     exists. If it does not exist, stop:
+     > "No spec found at planning/tasks/<name>/tasks.md — run `/generate-tasks <name>` to create it."
    - Otherwise (first token is a number or `$ARGUMENTS` is empty), read `planning/STATUS.md` to
      identify the current block and load its spec. If no spec exists, say so and stop.
 
@@ -46,7 +46,7 @@ Examples:
 ## Context / Files to Read
 
 - `planning/STATUS.md` — only if no spec identifier was provided in $ARGUMENTS
-- The target `planning/tasks/phaseN-blockX.md`
+- The target `planning/tasks/phaseN-blockX/tasks.md`
 
 ## Report
 

@@ -8,8 +8,8 @@ doc updates surgically, without relying on git diff alone.
 $ARGUMENTS — path to the task spec with optional task number. Same format as `/implement`.
 
 Examples:
-- `planning/tasks/phase0-blockC.md` — document all tasks in the block
-- `planning/tasks/phase0-blockC.md 3` — document task 3 only
+- `planning/tasks/phase0-blockC/tasks.md` — document all tasks in the block
+- `planning/tasks/phase0-blockC/tasks.md 3` — document task 3 only
 
 ## Instructions
 
@@ -20,9 +20,9 @@ Examples:
 
 3. Run `/prime` to orient to the codebase before reading any files.
 
-4. **Derive the review report path:**
-   - Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-review.md`
-   - Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-review.md`
+4. **Derive the review report path** (reports live in the spec's `reports/` sibling directory):
+   - Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/review.md`
+   - Plan + task N: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-review.md`
 
 5. Read the review report. Check the **Overall verdict** line.
    **If the verdict is not PASS, STOP immediately:**
@@ -30,8 +30,8 @@ Examples:
    > re-run `/review-task [args]` until the verdict is PASS."
 
 6. **Derive the implement report path:**
-   - Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-implement.md`
-   - Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-implement.md`
+   - Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/implement.md`
+   - Plan + task N: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-implement.md`
 
 7. Read the implement report. Extract the **Files Created or Modified** table. This is the
    authoritative list of changed source files — do not guess from git or the spec.
@@ -70,11 +70,11 @@ Examples:
 
 ## Report
 
-**Derive the document report file path:**
-- Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-document.md`
-- Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-document.md`
+**Derive the document report file path** (reports live in the spec's `reports/` sibling directory):
+- Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/document.md`
+- Plan + task N: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-document.md`
 
-Create `planning/tasks/reports/` if it does not exist.
+Create `planning/tasks/phase0-blockC/reports/` if it does not exist.
 
 **Write the report file in this exact format:**
 

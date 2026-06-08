@@ -16,14 +16,14 @@ start of a coding session before doing anything else.
    - Last updated date
 
 3. If a task spec exists for the current focus block at
-   `planning/tasks/phaseN-blockX.md`, read it. Identify:
+   `planning/tasks/phaseN-blockX/tasks.md`, read it. Identify:
    - Which steps are marked done (have ✅)
    - Which steps remain
    - Any notes in the `## Notes` section
 
-4. Check `planning/tasks/reports/` for any existing pipeline reports for the current
-   block (e.g. `phase0-blockC-implement.md`, `phase0-blockC-test.md`). Note which
-   pipeline steps have been completed (have a report file) and which haven't.
+4. Check `planning/tasks/phaseN-blockX/reports/` for any existing pipeline reports for the current
+   block (e.g. `implement.md`, `task3-test.md`). Note which pipeline steps have been completed
+   (have a report file) and which haven't.
 
 5. Output the briefing in this exact format — keep it under 300 words:
 
@@ -44,7 +44,7 @@ If the spec is missing, say so. If all steps are done, say "All steps marked com
 
 ## Next Pipeline Step
 <Single line: the exact command to run next, with the full argument.>
-Example: `/test planning/tasks/phase0-blockC.md 2`
+Example: `/test planning/tasks/phase0-blockC/tasks.md 2`
 If the block is complete: `Run /log-work to wrap up, then /start-block for the next block.`
 
 ---
@@ -55,5 +55,5 @@ Do not read any source code files. Do not run any commands. This is read-only.
 
 - `DEVLOG.md` (last 3 entries)
 - `planning/STATUS.md`
-- `planning/tasks/phaseN-blockX.md` (current block's spec, if it exists)
-- `planning/tasks/reports/` (directory listing to check which step reports exist)
+- `planning/tasks/phaseN-blockX/tasks.md` (current block's spec, if it exists)
+- `planning/tasks/phaseN-blockX/reports/` (directory listing to check which step reports exist)

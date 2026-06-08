@@ -5,24 +5,24 @@
 $ARGUMENTS — path to the task spec, with an optional task number suffix (same format as `/implement`).
 
 Examples:
-- `planning/tasks/phase0-blockC.md` — review all tasks in the spec
-- `planning/tasks/phase0-blockC.md 1` — review only Task 1
-- `planning/tasks/phase0-blockC.md 3` — review only Task 3
+- `planning/tasks/phase0-blockC/tasks.md` — review all tasks in the spec
+- `planning/tasks/phase0-blockC/tasks.md 1` — review only Task 1
+- `planning/tasks/phase0-blockC/tasks.md 3` — review only Task 3
 
 ## Instructions
 
 1. If `$ARGUMENTS` is not provided, stop and ask the user for the task spec path.
 2. Parse `$ARGUMENTS`: split on the last space. If the trailing token is a number, treat it as the **task number** to review; the remainder is the task spec path.
 3. Run `/prime` to orient to the codebase before reading any files.
-4. **Derive file paths for prior step outputs:**
+4. **Derive file paths for prior step outputs** (reports live in the spec's `reports/` sibling directory):
 
    Implement report (written by `/implement`):
-   - Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-implement.md`
-   - Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-implement.md`
+   - Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/implement.md`
+   - Plan + task N: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-implement.md`
 
    Test report (written by `/test`):
-   - Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-test.md`
-   - Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-test.md`
+   - Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/test.md`
+   - Plan + task N: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-test.md`
 
 5. Read the task spec in full.
 6. Read both prior step outputs as historical context:
@@ -55,16 +55,16 @@ Examples:
 ## Context / Files to Read
 
 - `$ARGUMENTS` (the task spec)
-- `planning/tasks/reports/<derived-implement-path>` (the implementation report, if present)
-- `planning/tasks/reports/<derived-test-path>` (the test report, if present)
+- `planning/tasks/phase0-blockC/reports/implement.md` (or task-scoped variant — the implementation report, if present)
+- `planning/tasks/phase0-blockC/reports/test.md` (or task-scoped variant — the test report, if present)
 - `CLAUDE.md` (standing rules — check for violations)
 - All files created or modified by the implementation
 
 ## Report
 
-**Derive the review report file path:**
-- Plan only: `planning/tasks/phase0-blockC.md` → `planning/tasks/reports/phase0-blockC-review.md`
-- Plan + task N: `planning/tasks/phase0-blockC.md 3` → `planning/tasks/reports/phase0-blockC-task3-review.md`
+**Derive the review report file path** (reports live in the spec's `reports/` sibling directory):
+- Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/review.md`
+- Plan + task N: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-review.md`
 
 **Write the review report file** in this exact format:
 
@@ -120,8 +120,8 @@ Then summarize the verdict and any blocking issues to the user in the chat.
 
 Then output the pipeline next step:
 ```
-If verdict is PASS:     Next: /document planning/tasks/phase0-blockC.md [N]
-If verdict is not PASS: /fix planning/tasks/phase0-blockC.md [N]
-                        then: /test planning/tasks/phase0-blockC.md [N]
-                        then: /review-task planning/tasks/phase0-blockC.md [N]
+If verdict is PASS:     Next: /document planning/tasks/phase0-blockC/tasks.md [N]
+If verdict is not PASS: /fix planning/tasks/phase0-blockC/tasks.md [N]
+                        then: /test planning/tasks/phase0-blockC/tasks.md [N]
+                        then: /review-task planning/tasks/phase0-blockC/tasks.md [N]
 ```

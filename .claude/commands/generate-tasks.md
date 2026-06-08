@@ -14,8 +14,8 @@ $ARGUMENTS — the target phase and block, e.g. `phase0-blockC` or `phase1-proje
    - Accept any of these forms: `phase0-blockC`, `phase0blockC`, `0-C`, `Phase 0 Block C`.
    - If the argument cannot be parsed into a phase + block, stop and explain the expected format.
 
-3. Check whether a spec already exists at `planning/tasks/phaseN-blockX.md` (using the
-   normalized filename form, e.g. `phase0-blockC.md`).
+3. Check whether a spec already exists at `planning/tasks/phaseN-blockX/tasks.md` (using the
+   normalized directory form, e.g. `planning/tasks/phase0-blockC/tasks.md`).
    - If it exists, read it and report: "Spec already exists at <path>. Overwrite? (re-run with
      `--force` appended to overwrite, or run `/breakdown <path>` to decompose it instead.)"
    - If `$ARGUMENTS` contains `--force`, proceed and overwrite.
@@ -31,10 +31,10 @@ $ARGUMENTS — the target phase and block, e.g. `phase0-blockC` or `phase1-proje
    - Every workflow task must include writing tests (standing rule from CLAUDE.md).
    - Foundational steps come first; the final step is always Validate.
 
-6. Write the spec to `planning/tasks/phaseN-blockX.md` using the Output Format below.
+6. Create the directory `planning/tasks/phaseN-blockX/` if it does not exist, then write the spec to `planning/tasks/phaseN-blockX/tasks.md` using the Output Format below.
 
 7. Report the path written and suggest the next step:
-   "Spec written to <path>. Run `/breakdown <path>` to decompose into atomic sub-steps."
+   "Spec written to planning/tasks/phaseN-blockX/tasks.md. Run `/breakdown planning/tasks/phaseN-blockX/tasks.md` to decompose into atomic sub-steps."
 
 ## Context / Files to Read
 
@@ -87,11 +87,11 @@ cd app && uv run python -c "from worker.config import celery_app"
 
 Output the path to the file created and the next-step options:
 ```
-planning/tasks/phase0-blockC.md
+planning/tasks/phase0-blockC/tasks.md
 
 Next (optional — decompose into atomic sub-steps):
-  /breakdown planning/tasks/phase0-blockC.md
+  /breakdown planning/tasks/phase0-blockC/tasks.md
 
 Next (skip breakdown — implement directly):
-  /implement planning/tasks/phase0-blockC.md
+  /implement planning/tasks/phase0-blockC/tasks.md
 ```
