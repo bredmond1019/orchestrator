@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-08 (session 6)
+
+Completed Task 7 of Phase 0 Block C: wrote `WorkflowValidator` unit tests in `tests/core/test_validate.py`. The tests cover all the required scenarios from the task spec: a valid linear workflow (A → B → C) passes with no error; cycle detection raises `ValueError` with "cycle" in the message; an unreachable node raises `ValueError` with "unreachable" in the message; a non-router node with multiple connections raises `ValueError`; a router node with multiple connections passes. Direct tests of the private helpers `_has_cycle()` and `_get_reachable_nodes()` were also included to lock down the validator's graph-traversal internals. Stub `Node` subclasses (3–4 lines each) were defined in the test file to satisfy the `Node` ABC without introducing logic. The initial test run failed (FAILED verdict on the first attempt), which triggered a fix pass; the review verdict was PASS on attempt 1 after the fix. Pipeline ran: implement → test(#1 FAILED) → review(#1 PASS) → document. No architectural decisions were made; this was a straightforward coverage exercise over the existing `WorkflowValidator` public API. Next: Task 8 — write `Workflow.run()` unit tests.
+
+```
+cdeab7e docs: update docs for phase0-blockC-task7
+f49d648 feat: implement phase0-blockC-task7
+6ce9869 chore: wrap up phase0-blockC-task6
+953632a docs: update docs for phase0-blockC-task6
+efe7f37 feat: implement phase0-blockC-task6
+```
+
+---
+
 ## 2026-06-08 (session 5)
 
 Completed Task 6 of Phase 0 Block C: wrote unit tests for `TaskContext` and `WorkflowSchema`. `tests/core/test_task.py` was expanded with tests covering `TaskContext` creation with `event`, `nodes`, and `metadata` fields; `update_node()` for single-key, multi-key, and merge-into-existing-key scenarios; and `get_node_output()` for both the present-node and missing-node branches (the latter already covered by Task 5). `tests/core/test_schema.py` was created with tests covering `NodeConfig` default values (`connections=[]`, `is_router=False`) and override values, `WorkflowSchema` construction with stub `Node` subclasses asserting `start`, `nodes`, and `event_schema` are stored correctly, and the `is_router=True` flag round-trip. The initial test run failed (FAILED verdict), which triggered a fix pass before the final review — review verdict was PASS on attempt 1 after the fix. The pipeline ran implement → test(#1 FAILED) → review(#1 PASS) → document. No architectural decisions were made during this task; the implementation was a straightforward coverage exercise over existing public API. Next: Task 7 — write `WorkflowValidator` unit tests.
