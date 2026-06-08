@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-08 (session 5)
+
+Completed Task 6 of Phase 0 Block C: wrote unit tests for `TaskContext` and `WorkflowSchema`. `tests/core/test_task.py` was expanded with tests covering `TaskContext` creation with `event`, `nodes`, and `metadata` fields; `update_node()` for single-key, multi-key, and merge-into-existing-key scenarios; and `get_node_output()` for both the present-node and missing-node branches (the latter already covered by Task 5). `tests/core/test_schema.py` was created with tests covering `NodeConfig` default values (`connections=[]`, `is_router=False`) and override values, `WorkflowSchema` construction with stub `Node` subclasses asserting `start`, `nodes`, and `event_schema` are stored correctly, and the `is_router=True` flag round-trip. The initial test run failed (FAILED verdict), which triggered a fix pass before the final review — review verdict was PASS on attempt 1 after the fix. The pipeline ran implement → test(#1 FAILED) → review(#1 PASS) → document. No architectural decisions were made during this task; the implementation was a straightforward coverage exercise over existing public API. Next: Task 7 — write `WorkflowValidator` unit tests.
+
+```
+953632a docs: update docs for phase0-blockC-task6
+efe7f37 feat: implement phase0-blockC-task6
+758c5e2 Added a /review-workflow slash command
+00b8c0d docs: document TaskContext.get_node_output() in architecture overview
+7fae3a9 chore: wrap up phase0-blockC-task5
+```
+
+---
+
 ## 2026-06-08 (session 4)
 
 Completed Task 5 of Phase 0 Block C: fixed the router key coupling bug by adding `TaskContext.get_node_output(node_name)` as an additive helper in `app/core/task.py`. The original issue was that router nodes accessing `task_context.nodes["SomeNode"]` raised a bare `KeyError` with no context about which router needed the output or what the workflow ordering problem was. The fix raises a descriptive `KeyError` that names the missing node and lists all nodes completed so far, making workflow ordering errors immediately diagnosable. The change is strictly additive — existing `customer_care` router nodes are untouched per CLAUDE.md Rule 3. Also fixed the module docstring position in `task.py` (moved above imports per style rules). 9 tests were written in `tests/core/test_task.py` covering both the missing-node and present-node branches; all 14 tests in the suite pass. The initial test run failed on a ruff violation (pre-existing docstring position issue), which was resolved in the same pipeline run; review verdict was PASS on the first attempt. Pylint false-positive `E1101 no-member` errors from Pydantic `Field` annotations are suppressed with inline comments — a pre-existing pattern in this file. Docs were updated to reflect the new method. Next: Task 6 — write unit tests for `TaskContext` and `WorkflowSchema`.
