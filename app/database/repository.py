@@ -68,6 +68,6 @@ class GenericRepository(Generic[T]):
         self,
         **kwargs,
     ) -> bool:
-        return self.session.query(
-            self.model.query.filter_by(**kwargs).exists()
-        ).scalar()
+        return (
+            self.session.query(self.model).filter_by(**kwargs).first() is not None
+        )
