@@ -18,6 +18,7 @@
 | **1 — Plan** | `/generate-tasks <id>` | MASTER_PLAN + CLAUDE.md | `planning/tasks/<spec>.md` |
 | **1 — Plan (opt.)** | `/breakdown [spec]` | spec file + source files | `planning/tasks/breakdown-<spec>.md` |
 | **2 — Implement** | `/implement <spec> [N]` | spec file + source files | code changes + implement report |
+| **2 — Fix** | `/fix <spec> [N]` | review report (FAIL/PARTIAL) + implement report + source files | implement report (overwritten) |
 | **2 — Track** | `/update-task [id] <step>` | spec file | spec file (in-place) |
 | **2 — Commit** | `/commit [hint]` | git diff | git history |
 | **3 — Test** | `/test <spec> [N]` | spec file | test report |
@@ -153,23 +154,23 @@
               PASS                 FAIL/PARTIAL
                  │                    │
                  ▼                    ▼
-╔═════════════════════╗    ╔══════════════════════╗
-║  PHASE 5 — DOCUMENT ║    ║  back to IMPLEMENT   ║
-║                     ║    ║  fix the issues,     ║
-║  /document          ║    ║  re-run /test and    ║
-║   <spec> [N]        ║    ║  /review-task        ║
-║                     ║    ╚══════════════════════╝
-║  reads:             ║
-║   review report     ║
-║   (gates on PASS)   ║
-║   implement report  ║
-║   (Files Modified   ║
-║    table)           ║
-║   affected source   ║
-║   files             ║
-║  writes:            ║
-║   docs/*.md         ║
-║   (surgical patches ║
+╔═════════════════════╗    ╔══════════════════════════╗
+║  PHASE 5 — DOCUMENT ║    ║  PHASE 2 — FIX           ║
+║                     ║    ║                          ║
+║  /document          ║    ║  /fix <spec> [N]         ║
+║   <spec> [N]        ║    ║    reads: review report  ║
+║                     ║    ║    (failing criteria +   ║
+║  reads:             ║    ║     issues found)        ║
+║   review report     ║    ║    implement report      ║
+║   (gates on PASS)   ║    ║    (prior file list)     ║
+║   implement report  ║    ║    source files          ║
+║   (Files Modified   ║    ║    writes: implement     ║
+║    table)           ║    ║    report (overwritten)  ║
+║   affected source   ║    ║                          ║
+║   files             ║    ║  /test <spec> [N]        ║
+║  writes:            ║    ║  /review-task <spec> [N] ║
+║   docs/*.md         ║    ║    (repeat until PASS)   ║
+║   (surgical patches ║    ╚══════════════════════════╝
 ║    only)            ║
 ║   document report   ║
 ╚══════════════════════╝
@@ -232,9 +233,12 @@ All pipeline reports live in `planning/tasks/reports/`. Naming pattern: `{spec-s
 | Step | Full-block report | Task-scoped report |
 |---|---|---|
 | implement | `phase0-blockC-implement.md` | `phase0-blockC-task3-implement.md` |
+| fix | *(overwrites implement slot)* | *(overwrites implement slot)* |
 | test | `phase0-blockC-test.md` | `phase0-blockC-task3-test.md` |
 | review | `phase0-blockC-review.md` | `phase0-blockC-task3-review.md` |
 | document | `phase0-blockC-document.md` | `phase0-blockC-task3-document.md` |
+
+**Note:** `/fix` does not have its own named report slot — it overwrites `-implement.md` in place. Both `/review-task` and `/document` continue reading from that path unchanged.
 
 Each step reads the previous step's report as historical context. `/review-task` is the only step that re-runs live tests rather than trusting the test report.
 
@@ -257,12 +261,13 @@ For work outside the structured phase/block plan, generate a spec with one of th
 
 ## Gates
 
-Two hard gates prevent a step from running until its prerequisite is satisfied:
+Three hard gates prevent a step from running until its prerequisite is satisfied:
 
 | Gate | Enforced by | Behavior on failure |
 |---|---|---|
 | Review must PASS before document | `/document` reads the review report verdict | Stops immediately if FAIL or PARTIAL |
 | Fresh tests must pass before PASS verdict | `/review-task` runs live tests | A test failure always produces FAIL/PARTIAL, regardless of code review |
+| Review report must exist and be non-PASS to run fix | `/fix` reads the review report verdict | Hard-stops if report absent; soft-stops if verdict is already PASS |
 
 ---
 
@@ -276,6 +281,6 @@ Two hard gates prevent a step from running until its prerequisite is satisfied:
 | `planning/DECISIONS.md` | `/scaffold-project` | manually (prompted by `/log-work`) | `/prime` |
 | `planning/MASTER_PLAN.md` | `/scaffold-project` | manually | `/generate-tasks` |
 | `planning/tasks/<spec>.md` | `/generate-tasks` | `/update-task` | `/implement`, `/test`, `/review-task`, `/document`, `/log-work` |
-| `planning/tasks/reports/*` | `/implement`, `/test`, `/review-task`, `/document` | each step | the next step in the pipeline |
+| `planning/tasks/reports/*` | `/implement`, `/fix`, `/test`, `/review-task`, `/document` | each step | the next step in the pipeline |
 | `DEVLOG.md` | `/scaffold-project` | `/log-work` | `/session-recap` |
 | `docs/*.md` | manually or `/scaffold-project` | `/document` | `/prime` |
