@@ -6,24 +6,22 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 from database.database_utils import DatabaseUtils
 
-"""
-Session Module
-
-This module provides a session for database operations.
-"""
-
-engine = create_engine(DatabaseUtils.get_connection_string())
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+_ENGINE = None
+
+
+def _get_engine():
+    global _ENGINE  # pylint: disable=global-statement
+    if _ENGINE is None:
+        _ENGINE = create_engine(DatabaseUtils.get_connection_string())
+    return _ENGINE
 
 
 def db_session() -> Generator:
-    """Database Session Dependency.
-
-    This function provides a database session for each request.
-    It ensures that the session is committed after successful operations.
-    """
-    session: Session = SessionLocal()
+    session: Session = sessionmaker(
+        autocommit=False, autoflush=False, bind=_get_engine()
+    )()
     try:
         yield session
         session.commit()
