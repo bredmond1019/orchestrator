@@ -142,7 +142,7 @@ DFS cycle detection + BFS reachability check. Runs on every `Workflow.__init__()
 
 #### `database/` — SQLAlchemy + PostgreSQL
 - `DatabaseUtils`: env-var-driven connection string
-- `session.py`: `db_session()` generator, `SessionLocal`, `Base`
+- `session.py`: `db_session()` generator, `Base`, lazy `_get_engine()` (engine created on first call, not at import time)
 - `repository.py`: Generic CRUD repository — `create`, `get`, `get_all`, `update`, `delete`, `get_latest`, `count`
 - `event.py`: `Event` model (UUID pk, `workflow_type`, `data` JSON, `task_context` JSON, timestamps)
 

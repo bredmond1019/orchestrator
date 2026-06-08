@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-06-08 (session 2)
+
+Ran the full SDLC pipeline (implement → test → review → fix → document) on Phase 0, Block C, Task 3: fixed the import-time side effects in `app/database/session.py` and `app/worker/config.py`. `session.py` previously called `create_engine()` at import time (line 15), which caused a live DB connection attempt any time the module was imported in tests or other non-production contexts. Replaced the module-level `engine` and `SessionLocal` with a `_ENGINE = None` sentinel and a lazy `_get_engine()` initialiser, so the engine is only created on first use. `worker/config.py` previously called `Celery("tasks")` followed by `celery_app.config_from_object(get_celery_config())` at import time — the `config_from_object` call silently produced a malformed broker URL if `REDIS_URL` or `PROJECT_NAME` were unset. Replaced with a single `Celery(...)` constructor call passing broker/backend/serializer config as kwargs, which does not attempt a connection. Expanded `tests/conftest.py` with session-scoped `db_engine` and function-scoped `db_session` SQLite fixtures required by the test suite. Initial test run returned FAIL on ruff (73 pre-existing issues across the whole codebase, all unrelated to Task 3) and pylint (exit 30, pre-existing violations in untouched files); the two Task 3 files themselves rated 10.00/10 after a fix pass that renamed `_engine` → `_ENGINE` (C0103), added an inline `# pylint: disable=global-statement` (W0603), and removed trailing whitespace (C0303). Final review verdict: PASS — all 10 acceptance criteria met, 3/3 pytest tests passing, import checks clean. Docs updated in `docs/api-reference.md` (lazy `_get_engine()` documented) and `docs/app-architecture-overview.md` (stale `SessionLocal` reference removed). Also created the `sdlc-run.js` Claude Code workflow (and refined it) to automate the full implement→test→review→document→wrap-up cycle for future tasks.
+
+```diff
+ .claude/workflows/sdlc-run.js     | 148 +++++++++++++++++++++++++-------------
+ app/database/session.py           |  24 +++++++++++-------------
+ app/worker/config.py              |  14 +++++++++++---
+ docs/api-reference.md             |   6 +-
+ docs/app-architecture-overview.md |   2 +-
+ tests/conftest.py                 |  23 +++++-
+ 6 files changed, 149 insertions(+), 68 deletions(-)
+```
+
+---
+
 ## 2026-06-08
 
 Ran the full SDLC pipeline (implement → test → review → document) on Phase 0, Block C, Task 2: fixed the `GenericRepository.exists()` SQLAlchemy 2.x compatibility bug in `app/database/repository.py`, replacing the legacy `self.model.query.filter_by(**kwargs).exists()` pattern (which raises `AttributeError` in SQLAlchemy 2.x) with the correct `self.session.query(self.model).filter_by(**kwargs).first() is not None`. Wrote three regression tests in `tests/database/test_repository.py` using a self-contained `_SimpleModel` backed by SQLite (avoiding the PostgreSQL UUID type incompatibility that would block SQLite-based tests). All 3 tests pass. Review verdict: PASS. Docs were patched in `docs/api-reference.md` to reflect the corrected `exists()` signature. Also logged Task 1 as fully reviewed and complete — the pytest deps + test scaffold from the 2026-06-05 session passed review without issues (commit 602da5b). Additionally, the full SDLC slash command set was built out this sprint: new commands for project initialization (`/new-project`, `/scaffold-project`), session orientation (`/recap`, `/status`, `/process-tasks`), block setup (`/start-block`), and the complete pipeline (`/generate-tasks`, `/breakdown`, `/implement`, `/update-task`, `/commit`, `/test`, `/review-task`, `/document`, `/log-work`). The entire SDLC workflow is now documented end-to-end in `docs/sdlc-workflow.md`. Next: Task 3 — fix import-time side effects in `app/database/session.py` and `app/worker/config.py`.
