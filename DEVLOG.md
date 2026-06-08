@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-08 (session 4)
+
+Completed Task 5 of Phase 0 Block C: fixed the router key coupling bug by adding `TaskContext.get_node_output(node_name)` as an additive helper in `app/core/task.py`. The original issue was that router nodes accessing `task_context.nodes["SomeNode"]` raised a bare `KeyError` with no context about which router needed the output or what the workflow ordering problem was. The fix raises a descriptive `KeyError` that names the missing node and lists all nodes completed so far, making workflow ordering errors immediately diagnosable. The change is strictly additive — existing `customer_care` router nodes are untouched per CLAUDE.md Rule 3. Also fixed the module docstring position in `task.py` (moved above imports per style rules). 9 tests were written in `tests/core/test_task.py` covering both the missing-node and present-node branches; all 14 tests in the suite pass. The initial test run failed on a ruff violation (pre-existing docstring position issue), which was resolved in the same pipeline run; review verdict was PASS on the first attempt. Pylint false-positive `E1101 no-member` errors from Pydantic `Field` annotations are suppressed with inline comments — a pre-existing pattern in this file. Docs were updated to reflect the new method. Next: Task 6 — write unit tests for `TaskContext` and `WorkflowSchema`.
+
+```
+c02fbd4 docs: update docs for phase0-blockC-task5
+499ff22 feat: implement phase0-blockC-task5
+dc23006 chore(lint): exclude customer_care reference files, auto-fix ruff violations, document style rules
+4a92e96 docs(phase0-blockC): update api-reference and add task4 document report
+e0229ec docs(phase0-blockC): add task4 test report
+```
+
+---
+
 ## 2026-06-08 (session 3)
 
 Completed and documented Task 4 of Phase 0 Block C: fixed the ghost-row bug in `app/api/endpoint.py`. The original code called `repository.create()` (which committed the `Event` row immediately) before `celery_app.send_task()` — meaning a Redis failure would leave an orphaned, unprocessable row in the DB. The fix stages the row with `session.add()` + `session.flush()` (assigns `event.id` without committing), enqueues the Celery task, and only commits on success; if `send_task` raises, the `db_session()` generator's existing rollback path cleans up automatically. The endpoint now bypasses `GenericRepository.create()` for this two-phase commit pattern, which is intentional — the generic method doesn't model the enqueue dependency. SDLC pipeline ran cleanly: implement → test → review → document, with reports landing in `planning/tasks/phase0-blockC/reports/`. Also extended `pyproject.toml` to exclude the reference-only `customer_care` workflow files from ruff and pylint checks — these files are frozen and should not generate lint noise. Additionally, reorganized the `/planning/tasks/` directory from a flat layout into per-block subdirectories (e.g. `phase0-blockC/tasks.md` + `phase0-blockC/reports/`) and updated SDLC commands and workflows to match the new file organization. All four bug fixes from Block C's task spec are now done and documented. Next: Tasks 5–12, the comprehensive unit test suite for `TaskContext`, `WorkflowSchema`, `WorkflowValidator`, `Workflow.run()`, `BaseRouter`/`RouterNode`, `ParallelNode`, `PromptManager`, and `GenericRepository` CRUD.
