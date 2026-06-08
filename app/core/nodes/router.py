@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 
-from core.task import TaskContext
 from core.nodes.base import Node
+from core.task import TaskContext
 
 """
 Router Module
@@ -59,7 +58,7 @@ class BaseRouter(Node):
 
 class RouterNode(ABC):
     @abstractmethod
-    def determine_next_node(self, task_context: TaskContext) -> Optional[Node]:
+    def determine_next_node(self, task_context: TaskContext) -> Node | None:
         pass
 
     @property

@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar, Type, List, Optional
+from typing import Generic, TypeVar
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ T = TypeVar("T")
 
 
 class GenericRepository(Generic[T]):
-    def __init__(self, session: Session, model: Type[T]):
+    def __init__(self, session: Session, model: type[T]):
         self.session = session
         self.model = model
 
@@ -26,12 +26,12 @@ class GenericRepository(Generic[T]):
     def get(
         self,
         id: str,
-    ) -> Optional[T]:
+    ) -> T | None:
         return self.session.query(self.model).filter(self.model.id == id).first()
 
     def get_all(
         self,
-    ) -> List[T]:
+    ) -> list[T]:
         return self.session.query(self.model).all()
 
     def update(
@@ -54,7 +54,7 @@ class GenericRepository(Generic[T]):
     def get_latest(
         self,
         n: int = 1,
-    ) -> List[T]:
+    ) -> list[T]:
         return (
             self.session.query(self.model).order_by(desc(self.model.id)).limit(n).all()
         )

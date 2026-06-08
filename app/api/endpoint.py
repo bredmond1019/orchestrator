@@ -1,14 +1,13 @@
+import json
 from http import HTTPStatus
 
-import json
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from starlette.responses import Response
-
-from worker.config import celery_app
 from database.event import Event
 from database.session import db_session
+from fastapi import APIRouter, Depends
 from schemas.customer_care_schema import CustomerCareEventSchema
+from sqlalchemy.orm import Session
+from starlette.responses import Response
+from worker.config import celery_app
 from workflows.workflow_registry import WorkflowRegistry
 
 """

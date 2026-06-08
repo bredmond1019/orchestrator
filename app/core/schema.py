@@ -1,4 +1,3 @@
-from typing import List, Type, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,11 +35,11 @@ class NodeConfig(BaseModel):
         )
     """
 
-    node: Type[Node]
-    connections: List[Type[Node]] = Field(default_factory=list)
+    node: type[Node]
+    connections: list[type[Node]] = Field(default_factory=list)
     is_router: bool = False
-    description: Optional[str] = None
-    parallel_nodes: Optional[List[Type[Node]]] = Field(default_factory=list)
+    description: str | None = None
+    parallel_nodes: list[type[Node]] | None = Field(default_factory=list)
 
 
 class WorkflowSchema(BaseModel):
@@ -66,7 +65,7 @@ class WorkflowSchema(BaseModel):
         )
     """
 
-    description: Optional[str] = None
-    event_schema: Type[BaseModel]
-    start: Type[Node]
-    nodes: List[NodeConfig]
+    description: str | None = None
+    event_schema: type[BaseModel]
+    start: type[Node]
+    nodes: list[NodeConfig]

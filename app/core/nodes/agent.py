@@ -1,9 +1,11 @@
-import boto3
 import os
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from dotenv import load_dotenv
 from enum import Enum
+from typing import Any
+
+import boto3
+from dotenv import load_dotenv
 from httpx import AsyncClient
 from openai import AsyncAzureOpenAI
 from pydantic import BaseModel
@@ -17,7 +19,6 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.bedrock import BedrockProvider
 from pydantic_ai.providers.google_gla import GoogleGLAProvider
 from pydantic_ai.providers.openai import OpenAIProvider
-from typing import Type, Optional, Union, Any
 
 from core.nodes.base import Node
 from core.task import TaskContext
@@ -37,12 +38,10 @@ class ModelProvider(str, Enum):
 @dataclass
 class AgentConfig:
     system_prompt: str
-    output_type: Optional[Type[Any]]
-    deps_type: Optional[Type[Any]]
+    output_type: type[Any] | None
+    deps_type: type[Any] | None
     model_provider: ModelProvider
-    model_name: Union[
-        OpenAIModelName, AnthropicModelName, GeminiModelName, BedrockModelName
-    ]
+    model_name: OpenAIModelName | AnthropicModelName | GeminiModelName | BedrockModelName
 
 
 class AgentNode(Node, ABC):
