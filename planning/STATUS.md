@@ -3,8 +3,8 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-09 — Block C in progress (Tasks 1–13 complete; Task 14 next — validation)
-**Current focus:** Phase 0, Block C — Task 14: Validate
+**Last updated:** 2026-06-09 — Block C done (all 14 tasks complete); Block D next
+**Current focus:** Phase 0, Block D — Shared services + first scaffold
 
 ---
 
@@ -24,7 +24,7 @@
 |---|---|---|---|
 | A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 paused — manual/personal tasks (LinkedIn, GitHub triage, etc.) deferred while agent-executable work proceeds |
 | B | Mac Mini agentic harness + revive site | Not started | Two-face architecture: Caddy+Cloudflare (public site) + Tailscale (private tooling). Install Tailscale on Mini + all devices; revive `learn-agentic-ai.com` on public face. See DECISIONS D23 |
-| C | Test infra + core hardening + 4 bug fixes | In progress | Tasks 1–13 complete (pytest scaffold; `GenericRepository.exists()` fix; import-time side effects in `session.py`/`worker/config.py` fixed; ghost-row bug in `api/endpoint.py` fixed; router key coupling fix — `TaskContext.get_node_output()` added; `TaskContext` + `WorkflowSchema` unit tests written; `WorkflowValidator` unit tests written; `Workflow.run()` unit tests written; `BaseRouter`/`RouterNode` unit tests written; `ParallelNode` unit tests written; `PromptManager` service tests written; full `GenericRepository` CRUD test suite written; LinkedIn visibility post drafted); Task 14 next (validation) |
+| C | Test infra + core hardening + 4 bug fixes | Done | All 14 tasks complete: pytest scaffold; 4 production bugs fixed (`GenericRepository.exists()`, ghost-row, import-time side effects, router key coupling); full unit test suite written for `TaskContext`, `WorkflowSchema`, `WorkflowValidator`, `Workflow.run()`, `BaseRouter`/`RouterNode`, `ParallelNode`, `PromptManager`, `GenericRepository` CRUD; LinkedIn visibility post drafted; final validation confirmed `uv run pytest` passes with zero failures and all import checks clean |
 | D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
 
 ### Phase 1 — Sellable Competence
