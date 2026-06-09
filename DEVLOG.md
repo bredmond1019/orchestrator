@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-06-08 (task 11 — write `PromptManager` service tests)
+
+Implemented `tests/services/test_prompt_loader.py` with full coverage of the `PromptManager` service using a temporary directory fixture to avoid any dependency on real `app/prompts/` files. Tests cover correct Jinja2 template rendering with variable substitution, YAML frontmatter parsing when the `PromptManager` exposes metadata, a missing template name raising a clear `FileNotFoundError` or `KeyError`, and a template with an undefined variable raising Jinja2's `UndefinedError` rather than silently producing an empty string. The test run initially failed due to a test collection issue that was resolved before the review cycle. The review returned a PASS verdict on the first attempt with no required fixes. Next: Task 12 — Write `GenericRepository` CRUD tests.
+
+```
+751671e docs: update docs for phase0-blockC-task11
+287fb52 feat: implement phase0-blockC-task11
+a77001c chore: init worktree phase0-blockc-task11
+```
+
+---
+
 ## 2026-06-08 (task 10 — write `ParallelNode` unit tests)
 
 Implemented `tests/core/test_nodes_parallel.py` covering the full `ParallelNode` behavior: all parallel nodes run and write unique keys to `task_context`, concurrent execution is verified, and exception propagation from a failing parallel node is tested. A key finding was the known design gap where parallel nodes write directly to the shared `task_context` and the results list is discarded — the test documents current behavior with an explicit comment noting this is deferred to Project E where parallelism is first genuinely needed. The test(#1) run initially failed due to a threading timing sensitivity in the concurrency assertion, which was resolved before review. The review passed on the first verdict with no required fixes, validating that the test suite accurately captures both working behavior and the documented gap without introducing false failures. Next: Task 11 — Write `PromptManager` service tests.
