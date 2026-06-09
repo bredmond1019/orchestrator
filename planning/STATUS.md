@@ -3,8 +3,8 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-08 — Block C in progress (Tasks 1–7 complete; Tasks 8–14 next — comprehensive unit tests + validation)
-**Current focus:** Phase 0, Block C — Task 8: write `Workflow.run()` unit tests
+**Last updated:** 2026-06-08 — Block C in progress (Tasks 1–8 complete; Tasks 9–14 next — comprehensive unit tests + validation)
+**Current focus:** Phase 0, Block C — Task 9: write `BaseRouter` and `RouterNode` unit tests
 
 ---
 
@@ -24,7 +24,7 @@
 |---|---|---|---|
 | A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 paused — manual/personal tasks (LinkedIn, GitHub triage, etc.) deferred while agent-executable work proceeds |
 | B | Mac Mini agentic harness + revive site | Not started | Two-face architecture: Caddy+Cloudflare (public site) + Tailscale (private tooling). Install Tailscale on Mini + all devices; revive `learn-agentic-ai.com` on public face. See DECISIONS D23 |
-| C | Test infra + core hardening + 4 bug fixes | In progress | Tasks 1–7 complete (pytest scaffold; `GenericRepository.exists()` fix; import-time side effects in `session.py`/`worker/config.py` fixed; ghost-row bug in `api/endpoint.py` fixed; router key coupling fix — `TaskContext.get_node_output()` added; `TaskContext` + `WorkflowSchema` unit tests written; `WorkflowValidator` unit tests written); Tasks 8–14 next (Workflow.run(), BaseRouter/RouterNode, ParallelNode, PromptManager, GenericRepository CRUD tests + validation) |
+| C | Test infra + core hardening + 4 bug fixes | In progress | Tasks 1–8 complete (pytest scaffold; `GenericRepository.exists()` fix; import-time side effects in `session.py`/`worker/config.py` fixed; ghost-row bug in `api/endpoint.py` fixed; router key coupling fix — `TaskContext.get_node_output()` added; `TaskContext` + `WorkflowSchema` unit tests written; `WorkflowValidator` unit tests written; `Workflow.run()` unit tests written); Tasks 9–14 next (BaseRouter/RouterNode, ParallelNode, PromptManager, GenericRepository CRUD tests + validation) |
 | D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
 
 ### Phase 1 — Sellable Competence

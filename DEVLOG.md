@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-08 (session 7)
+
+Completed Task 8 of Phase 0 Block C: wrote `Workflow.run()` unit tests in `tests/core/test_workflow.py`. The tests cover the full set of scenarios from the task spec: a linear three-node pipeline verifying that each stub node's output lands in `task_context.nodes` in the correct order; a router workflow that branches on prior node output and asserts only the correct branch ran; `event_schema` parsing asserting that a raw dict is converted to the Pydantic schema object before `run()` begins; `node_context` logging verified via `caplog` for both node start and finish messages; a node that raises `RuntimeError` asserting the exception propagates out of `run()`; and a check that `task_context.metadata` is cleaned up after a completed run. The initial test run failed on the first attempt (FAILED verdict), which triggered a fix pass; the review verdict was PASS on attempt 1 after the fix. Pipeline ran: implement → test(#1 FAILED) → review(#1 PASS) → document. No new architectural decisions were made; this was a targeted coverage exercise over the existing `Workflow.run()` execution loop. Next: Task 9 — write `BaseRouter` and `RouterNode` unit tests.
+
+```
+3685173 docs: update docs for phase0-blockC-task8
+ac075d2 feat: implement phase0-blockC-task8
+b9e36f2 feat: add /sdlc-task workflow and enhance /clean-worktree for parallel task execution
+9aa87ee Reviewed the workflows ran for task 6 and 7
+76423d7 feat: add /init-worktree and /clean-worktree slash commands
+```
+
+---
+
 ## 2026-06-08 (session 6)
 
 Completed Task 7 of Phase 0 Block C: wrote `WorkflowValidator` unit tests in `tests/core/test_validate.py`. The tests cover all the required scenarios from the task spec: a valid linear workflow (A → B → C) passes with no error; cycle detection raises `ValueError` with "cycle" in the message; an unreachable node raises `ValueError` with "unreachable" in the message; a non-router node with multiple connections raises `ValueError`; a router node with multiple connections passes. Direct tests of the private helpers `_has_cycle()` and `_get_reachable_nodes()` were also included to lock down the validator's graph-traversal internals. Stub `Node` subclasses (3–4 lines each) were defined in the test file to satisfy the `Node` ABC without introducing logic. The initial test run failed (FAILED verdict on the first attempt), which triggered a fix pass; the review verdict was PASS on attempt 1 after the fix. Pipeline ran: implement → test(#1 FAILED) → review(#1 PASS) → document. No architectural decisions were made; this was a straightforward coverage exercise over the existing `WorkflowValidator` public API. Next: Task 8 — write `Workflow.run()` unit tests.
