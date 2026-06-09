@@ -406,7 +406,7 @@ Three hard gates prevent a step from running until its prerequisite is satisfied
 | `planning/DECISIONS.md` | `/scaffold-project` | manually (prompted by `/log-work`) | `/prime` |
 | `planning/MASTER_PLAN.md` | `/scaffold-project` | manually | `/generate-tasks` |
 | `planning/tasks/<block>/tasks.md` | `/generate-tasks` | `/update-task` | `/implement`, `/test`, `/review-task`, `/document`, `/log-work` |
-| `planning/tasks/<block>/breakdown.md` | `/breakdown` | — | optional reference during implementation |
+| `planning/tasks/<block>/breakdown.md` | `/breakdown` | — | auto-checked by `/implement`, `/fix`, and dynamic workflow implement + fix agents (`/sdlc-run`, `/sdlc-task`); authoritative for HOW; tasks.md stays authoritative for WHAT |
 | `planning/tasks/<block>/reports/*` | `/implement`, `/fix`, `/test`, `/review-task`, `/document` | each step | the next step in the pipeline |
 | `DEVLOG.md` | `/scaffold-project` | `/log-work` | `/session-recap` |
 | `docs/*.md` | manually or `/scaffold-project` | `/document` | `/prime` |
