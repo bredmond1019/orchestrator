@@ -28,6 +28,8 @@
 | **Ad-hoc** | `/plan <desc>` | description | `planning/tasks/plan-{name}/tasks.md` |
 | **Ad-hoc** | `/feature <desc>` | description | `planning/tasks/feature-{name}/tasks.md` |
 | **Ad-hoc** | `/chore <desc>` | description | `planning/tasks/chore-{name}/tasks.md` |
+| **Worktree** | `/init-worktree <block> [N]` | block ID + optional task number | `trees/<worktree-name>/` (isolated branch) |
+| **Worktree** | `/clean-worktree <block> [N]` | block ID + optional task number | fast-forward merge → `main`; branch + dir removed |
 
 ---
 
@@ -261,6 +263,109 @@ Reports live at `planning/tasks/<block>/reports/`. Naming pattern: `[taskN-]{ste
 **Note:** `/fix` does not have its own named report slot — it overwrites `implement.md` in place. Both `/review-task` and `/document` continue reading from that path unchanged.
 
 Each step reads the previous step's report as historical context. `/review-task` is the only step that re-runs live tests rather than trusting the test report.
+
+---
+
+## Worktree Isolation (Optional)
+
+By default the SDLC pipeline runs on `main` — every commit lands immediately. Worktree isolation wraps the same pipeline in a dedicated branch and directory so `main` stays clean until the work is fully reviewed and ready to merge.
+
+**When to use it:**
+- Running a long or risky block where you want a clean merge point rather than incremental commits on `main`
+- Running multiple blocks in parallel (each in its own worktree session)
+- Experimenting with an implementation approach before committing to `main`
+
+**Naming convention:** the worktree name is derived deterministically — block ID lowercased, plus an optional `-task<N>` suffix.
+
+```
+phase0-blockC      → trees/phase0-blockc/    (branch: phase0-blockc)
+phase0-blockC 3    → trees/phase0-blockc-task3/  (branch: phase0-blockc-task3)
+```
+
+### Flow
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║               WORKTREE SETUP (main repo session)             ║
+║                                                              ║
+║  /init-worktree phase1-block1                                ║
+║      checks: no name collision in git worktree list          ║
+║      creates: trees/phase1-block1/  (branch: phase1-block1) ║
+║      sparse checkout:                                        ║
+║        app/  tests/  docs/  planning/  .claude/              ║
+║        + all root-level files (CLAUDE.md, pyproject.toml…)  ║
+║      copies: .env from repo root (if present)                ║
+║      writes: empty initial commit on branch phase1-block1    ║
+║      prints: path to open as a new Claude Code session       ║
+╚══════════════════════════════════════════════════════════════╝
+                            │
+                            ▼
+╔══════════════════════════════════════════════════════════════╗
+║         FULL PIPELINE  (new Claude Code session)             ║
+║         CWD = trees/phase1-block1/                           ║
+║                                                              ║
+║  /sdlc-run phase1-block1   (or any manual pipeline steps)    ║
+║                                                              ║
+║  All relative paths resolve correctly inside the worktree.   ║
+║  Every git commit goes to branch phase1-block1, not main.    ║
+║                                                              ║
+║  Stages: implement → test → review → document → wrap-up      ║
+║  (same gates, same reports, same conventions as normal flow) ║
+╚══════════════════════════════════════════════════════════════╝
+                            │
+                            ▼
+╔══════════════════════════════════════════════════════════════╗
+║              MERGE + CLEANUP (main repo session)             ║
+║                                                              ║
+║  /clean-worktree phase1-block1                               ║
+║      shows: uncommitted changes (warns if any)               ║
+║      shows: unpushed commits on the branch (for review)      ║
+║      merges: git merge --ff-only phase1-block1 → main        ║
+║        if fast-forward fails: stops, worktree left intact    ║
+║        resolution options printed (merge commit / rebase)    ║
+║      removes: trees/phase1-block1/ directory                 ║
+║      deletes: branch phase1-block1                           ║
+║      verifies: git log shows pipeline commits on main        ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+### Sparse Checkout Details
+
+The worktree uses git cone-mode sparse checkout. Only the listed directories are present in the working tree; everything else (docker/, playground/, etc.) is excluded.
+
+| Path | Why included |
+|---|---|
+| `app/` | All code changes happen here |
+| `tests/` | Test files; implement and test stages write here |
+| `docs/` | Document stage patches `docs/*.md` |
+| `planning/` | Scout reads STATUS.md; plan reads MASTER\_PLAN; wrap-up writes STATUS.md + reports |
+| `.claude/` | Commands and `sdlc-run.js` must resolve from the worktree CWD |
+| *(root files)* | `CLAUDE.md`, `pyproject.toml`, `pytest.ini`, `uv.lock`, etc. — included automatically by cone mode |
+
+### Parallel Block Execution
+
+Multiple worktrees can run simultaneously when blocks are independent (e.g., one block touches `app/workflows/`, another touches `app/database/`). Each runs in its own session and branch. Merge order matters only if the blocks modify overlapping files — in that case, merge whichever finishes first and resolve any conflicts in the second before running `/clean-worktree` on it.
+
+```
+Main session                   Session A (trees/phase1-block1/)    Session B (trees/phase1-block2/)
+─────────────                  ────────────────────────────────    ────────────────────────────────
+/init-worktree phase1-block1   →  /sdlc-run phase1-block1
+/init-worktree phase1-block2                                       →  /sdlc-run phase1-block2
+                               ← done
+/clean-worktree phase1-block1  (fast-forward merge → main)
+                                                                   ← done
+/clean-worktree phase1-block2  (fast-forward or resolve conflicts)
+```
+
+### Edge Cases
+
+| Situation | Behavior |
+|---|---|
+| Name collision on init | Aborts with message; suggests `/clean-worktree` first |
+| Orphan branch (dir gone, branch exists) | Detected at init time; exact resolution command printed |
+| Uncommitted changes at clean time | Warning + confirmation required before proceeding |
+| `main` has advanced since init | `--ff-only` fails cleanly; worktree left intact; resolution options shown |
+| Pipeline crash mid-run | Per-stage commits preserve completed work on the branch; `/clean-worktree` still works |
 
 ---
 
