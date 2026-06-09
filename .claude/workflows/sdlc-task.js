@@ -105,6 +105,7 @@ const reviewReport    = `${reportsDir}/${taskPrefix}review.md`
 const documentReport  = `${reportsDir}/${taskPrefix}document.md`
 const workflowReport  = `${reportsDir}/${taskPrefix}workflow.md`
 const logFile         = `${reportsDir}/${taskPrefix}log.md`
+const breakdownFile   = `planning/tasks/${blockId}/breakdown.md`
 
 // Base branch name (suffix may be appended by setup agent)
 const baseBranchName = `${blockId}-task${taskNumber}`.toLowerCase().replace(/[^a-z0-9-]/g, '-')
@@ -466,6 +467,18 @@ Instructions:
    Run: cd ${worktreePath} && cat ${specFile}
    Implement ONLY the "### ${taskNumber}." section. Do not implement other tasks.
 
+2.5. Check for an optional breakdown file (more granular sub-steps written by /breakdown):
+   Run: cd ${worktreePath} && ls ${breakdownFile} 2>/dev/null && echo "BREAKDOWN_EXISTS" || echo "NO_BREAKDOWN"
+
+   If BREAKDOWN_EXISTS:
+     Read ${worktreePath}/${breakdownFile}
+     Find the "### Step ${taskNumber}:" section — use its atomic sub-steps as the primary
+     execution guide for HOW to implement this task.
+     Inline "Verify:" commands are live checkpoints — run each before moving to the next sub-step.
+     tasks.md is authoritative for scope/acceptance criteria; breakdown.md is authoritative for HOW.
+
+   If NO_BREAKDOWN: proceed using tasks.md only.
+
 3. Execute each step methodically using Read, Edit, Write, and Bash tools.
    ALL file paths must be absolute (under ${worktreePath}) OR use:
      cd ${worktreePath} && <command>
@@ -587,14 +600,20 @@ Instructions:
 2. Read the prior implement report:
    cd ${worktreePath} && cat ${implementReport}
 
-3. Make MINIMUM targeted changes to address the failing criteria.
+3. If a breakdown file exists, check the relevant sub-steps for original intent:
+   Run: cd ${worktreePath} && ls ${breakdownFile} 2>/dev/null && echo EXISTS || echo MISSING
+   If EXISTS: read ${worktreePath}/${breakdownFile} and find the "### Step ${taskNumber}:" section.
+   Use it to understand what the original implementation was supposed to do for the failing criterion.
+   Do NOT re-implement from scratch — use it only as context for the targeted fix.
+
+4. Make MINIMUM targeted changes to address the failing criteria.
    Fix ONLY what the review identified as failing.
 
-4. Run the Validation Commands from the spec:
+5. Run the Validation Commands from the spec:
    cd ${worktreePath} && cat ${specFile} | grep -A 20 "## Validation Commands"
    Then run those commands.
 
-5. Overwrite the implement report at: ${worktreePath}/${implementReport}
+6. Overwrite the implement report at: ${worktreePath}/${implementReport}
 
    Format:
    # Fix Pass ${fixPass} — ${stem}
@@ -623,7 +642,7 @@ Instructions:
    [run: cd ${worktreePath} && git diff --stat]
    \`\`\`
 
-6. Commit your changes:
+7. Commit your changes:
    cd ${worktreePath} && git status
    cd ${worktreePath} && git add <changed files> ${implementReport}
    cd ${worktreePath} && git commit -m "$(cat <<'EOF'
