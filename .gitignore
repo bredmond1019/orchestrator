@@ -95,3 +95,6 @@ app/alembic/versions/*
 
 # Playground
 playground/*.png
+
+# Git worktrees (SDLC isolation)
+trees/

@@ -396,3 +396,46 @@ Surgically updates existing reference docs when code has changed outside the str
 | Variable | Description |
 |---|---|
 | `$ARGUMENTS` | Optional. Git ref or range to diff against (e.g. `HEAD~3`, `main..HEAD`). Defaults to `HEAD~1` plus unstaged changes. |
+
+---
+
+## Worktree Isolation
+
+Use these commands when you want to run an SDLC block or task in a **fully isolated branch** — keeping `main` clean until the pipeline is reviewed and complete. Each worktree is a separate checkout on its own branch, stored under `trees/` at the repo root.
+
+### Typical Worktree Flow
+
+```
+MAIN REPO SESSION
+  /init-worktree phase1-block1
+    → Creates trees/phase1-block1/ on branch phase1-block1
+    → Sparse checkout: app/ tests/ docs/ planning/ .claude/ + root files
+
+OPEN NEW CLAUDE CODE SESSION with CWD = trees/phase1-block1/
+  /sdlc-run phase1-block1
+    → Full pipeline runs in isolation; commits go to branch phase1-block1
+    → main is untouched
+
+BACK IN MAIN REPO SESSION
+  /clean-worktree phase1-block1
+    → Shows unpushed commits; fast-forward merges branch → main
+    → Removes trees/phase1-block1/, deletes branch
+```
+
+### `/init-worktree`
+**Create an isolated git worktree for a block or task.**
+
+Creates `trees/<worktree-name>/` on a dedicated branch with sparse checkout covering `app/`, `tests/`, `docs/`, `planning/`, and `.claude/`. Worktree name is derived deterministically from the block ID (lowercased, with optional `-task<N>` suffix). Copies `.env` if present. Run from the main repo root.
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | Required. Block ID with optional task number. Examples: `phase1-block1`, `phase0-blockC 3`. |
+
+### `/clean-worktree`
+**Merge a completed SDLC worktree branch into main and remove it.**
+
+Safety-first teardown: shows uncommitted changes and unpushed commits before touching anything. Merges the worktree branch into `main` with `--ff-only` (fails cleanly if main has advanced — worktree is left intact for manual resolution). Only after a successful merge does it remove the worktree directory and delete the branch. Run from the main repo root.
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | Required. Block ID with optional task number. Same format as `/init-worktree`. |
