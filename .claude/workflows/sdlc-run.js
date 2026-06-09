@@ -95,6 +95,7 @@ const testReport      = `${reportsDir}/${taskPrefix}test.md`
 const reviewReport    = `${reportsDir}/${taskPrefix}review.md`
 const documentReport  = `${reportsDir}/${taskPrefix}document.md`
 const workflowReport  = `${reportsDir}/${taskPrefix}workflow.md`
+const breakdownFile   = `planning/tasks/${blockId}/breakdown.md`
 
 log(`Target: ${blockId}${taskNumber !== null ? ` task ${taskNumber}` : ' (all tasks)'}`)
 log(`Spec: ${specFile} | Stem: ${stem}`)
@@ -388,6 +389,23 @@ Instructions:
      ? `Focus ONLY on the "### ${taskNumber}." section. Do not implement other tasks.`
      : 'Read all tasks and execute them in order from first to last.'}
 
+2.5. Check for an optional breakdown file (more granular sub-steps written by /breakdown):
+   Run: ls ${breakdownFile} 2>/dev/null && echo "BREAKDOWN_EXISTS" || echo "NO_BREAKDOWN"
+
+   If BREAKDOWN_EXISTS:
+     Read ${breakdownFile}
+     ${taskNumber !== null
+       ? `Find the section "### Step ${taskNumber}:" (may include a title after the colon).
+     Use its atomic sub-steps (numbered N.1, N.2, …) as your primary execution guide.
+     The inline "Verify:" commands are live checkpoints — run each one before moving to the next sub-step.`
+       : `Read all "### Step N:" sections in order and use their atomic sub-steps as your execution guide.
+     The inline "Verify:" commands are live checkpoints — run each one before moving to the next step.`}
+     The breakdown's "## Acceptance Criteria" and "## Validation Commands" match the spec.
+     tasks.md is still authoritative for scope and acceptance criteria; breakdown.md is authoritative
+     for HOW to execute each step.
+
+   If NO_BREAKDOWN: proceed using tasks.md only (normal behavior).
+
 3. Execute each step in the task(s) methodically — use Read, Edit, Write, and Bash tools as needed.
 
 4. As you implement:
@@ -450,7 +468,7 @@ Instructions:
      git commit -m "$(cat <<'EOF'
      feat: implement ${stem}
 
-     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+     
      EOF
      )"
 
@@ -518,20 +536,26 @@ Instructions:
    - The "## Files Created or Modified" table — this is the baseline file list
    - Look for "Fix Pass" in the title to determine the current fix pass count (starts at 1 if none)
 
-3. Read the source files that are relevant to the failing criteria only.
+3. If a breakdown file exists, check the relevant sub-steps for original intent:
+   Run: ls ${breakdownFile} 2>/dev/null && echo EXISTS || echo MISSING
+   If EXISTS: read ${breakdownFile} and find the "### Step ${taskNumber !== null ? taskNumber : 'N'}:" section.
+   Use it to understand what the original implementation was supposed to do for the failing criterion.
+   Do NOT re-implement from scratch — use it only as context for the targeted fix.
+
+4. Read the source files that are relevant to the failing criteria only.
    Do NOT read files unrelated to the issues found.
 
-4. Make the MINIMUM targeted changes required to address the failing criteria and issues.
+5. Make the MINIMUM targeted changes required to address the failing criteria and issues.
    - Fix ONLY what the review identified as failing
    - Do not modify passing criteria or unrelated code
    - Follow all CLAUDE.md standing rules
 
-5. Run ONLY the Validation Commands from the spec (not the full 8-test suite — that belongs to /test):
+6. Run ONLY the Validation Commands from the spec (not the full 8-test suite — that belongs to /test):
    Find the "## Validation Commands" section of ${specFile} and run those commands.
 
-6. Build the complete file list: union of the prior implement table PLUS any new files you touched.
+7. Build the complete file list: union of the prior implement table PLUS any new files you touched.
 
-7. Overwrite the implement report at: ${implementReport}
+8. Overwrite the implement report at: ${implementReport}
    This overwrites the slot. Downstream commands (/test, /review-task, /document) all read this slot.
 
    Use EXACTLY this format:
@@ -574,7 +598,7 @@ Instructions:
    [run: git diff --stat]
    \`\`\`
 
-8. Commit your changes now. Never use git add -A or git add . — stage files explicitly by name.
+9. Commit your changes now. Never use git add -A or git add . — stage files explicitly by name.
 
    Run: git status
    Identify all changed/new files under app/, tests/, and the updated implement report.
@@ -586,7 +610,7 @@ Instructions:
      git commit -m "$(cat <<'EOF'
      fix: fix pass ${fixPass} for ${stem}
 
-     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
      EOF
      )"
 
@@ -904,7 +928,7 @@ Instructions:
      git commit -m "$(cat <<'EOF'
      docs: update docs for ${stem}
 
-     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+     
      EOF
      )"
 
@@ -1089,7 +1113,7 @@ STEP 3 — Commit the remaining planning files as a single chore: commit.
     git commit -m "$(cat <<'EOF'
     chore: wrap up ${stem}
 
-    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+    
     EOF
     )"
 
