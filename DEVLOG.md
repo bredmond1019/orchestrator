@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-09 (task 14 — validate)
+
+Ran the full validation pass for Phase 0 Block C: executed `uv run pytest --collect-only` and `uv run pytest -v` to confirm the entire test suite collects and passes with zero failures and zero errors, and verified the four import checks (`from main import app`, `from worker.config import celery_app`, `from database.session import Base, db_session`, `from database.repository import GenericRepository`) all run cleanly without triggering connection attempts. All acceptance criteria from the Block C task spec were confirmed met: the SQLAlchemy 2.x `AttributeError` regression test passes, the ghost-row test correctly shows an empty `Event` table when `send_task` raises, `TaskContext.get_node_output("MissingNode")` raises a `KeyError` with the diagnostic message, `WorkflowValidator` correctly detects cycles and unreachable nodes, `Workflow.run()` handles linear and router-branch pipelines in tests, `ParallelNode` documents the known shared-context gap with a "fixed in Project E" comment, `PromptManager` tests run against a fixture template without touching real prompts, and the full `GenericRepository` CRUD suite passes on in-memory SQLite. The initial test run returned a FAILED verdict on attempt 1, which was resolved before review; the review returned a PASS verdict on the first submission. This closes all 14 tasks in Phase 0 Block C — the orchestration framework now has a trustworthy, fully tested core before any client-facing workflow is built on it. Next: Phase 0, Block D — Shared services + first scaffold (pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A).
+
+```
+a03627c docs: update docs for phase0-blockC-task14
+b42044c feat: implement phase0-blockC-task14
+f62d6d1 chore: wrap up phase0-blockC-task13
+e6c24f8 docs: update docs for phase0-blockC-task13
+926dcb1 feat: implement phase0-blockC-task13
+```
+
+---
+
 ## 2026-06-09 (task 13 — prepare the LinkedIn visibility post)
 
 Drafted the Block C LinkedIn visibility post in `planning/` covering why an untested orchestration core is a production liability and how the four bugs found in Block C — the SQLAlchemy 2.x `AttributeError` in `GenericRepository.exists()`, the ghost-row risk from committing before `send_task`, the import-time side effects in `session.py` and `worker/config.py`, and the silent router `KeyError` — each had concrete failure modes that could hit users. The post follows the public-narrative rule (subject-on-you throughout, no company names) and frames each bug around what could go wrong in production before presenting the fix. The initial test run failed (FAILED verdict on attempt 1), which was resolved before review; the review returned a PASS verdict on the first submission. Pipeline ran: implement → test(#1 FAILED) → review(#1 PASS) → document. No architectural decisions were made; this was a drafting task over Block C's bug narrative. Next: Task 14 — validation (run the full test suite and import checks, confirm all acceptance criteria are met).
