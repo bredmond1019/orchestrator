@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-06-08 (task 10 — write `ParallelNode` unit tests)
+
+Implemented `tests/core/test_nodes_parallel.py` covering the full `ParallelNode` behavior: all parallel nodes run and write unique keys to `task_context`, concurrent execution is verified, and exception propagation from a failing parallel node is tested. A key finding was the known design gap where parallel nodes write directly to the shared `task_context` and the results list is discarded — the test documents current behavior with an explicit comment noting this is deferred to Project E where parallelism is first genuinely needed. The test(#1) run initially failed due to a threading timing sensitivity in the concurrency assertion, which was resolved before review. The review passed on the first verdict with no required fixes, validating that the test suite accurately captures both working behavior and the documented gap without introducing false failures. Next: Task 11 — Write `PromptManager` service tests.
+
+```
+8fd2c31 docs: update docs for phase0-blockC-task10
+ebae9a3 feat: implement phase0-blockC-task10
+a967ca9 chore: init worktree phase0-blockc-task10
+```
+
+---
+
 ## 2026-06-08 (task 9 — write `BaseRouter` and `RouterNode` unit tests)
 
 Implemented the full `BaseRouter` and `RouterNode` unit test suite in `tests/core/test_nodes_router.py`. Tests cover `BaseRouter.process()` writing `{"next_node": <name>}` to `task_context.nodes`, first-match-wins behavior when multiple routes could match, fallback node selection when no routes match, the no-fallback/no-match case returning `None`, `RouterNode.determine_next_node()` returning `None` being correctly skipped, and the `KeyError` propagation from `task_context.get_node_output("Missing")` flowing out with a clear diagnostic message rather than being swallowed by `route()`. The initial test run failed due to import path issues, which were resolved before review. The review returned a PASS verdict on the first attempt. Next: Task 10 — Write `ParallelNode` unit tests.
