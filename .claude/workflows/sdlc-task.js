@@ -232,14 +232,23 @@ STEP 1 — Get the absolute path to the repo root:
   Store the output as repoRoot (trim whitespace).
 
 STEP 2 — Find a free worktree name using this exact algorithm:
-  Start: candidate = "${baseBranchName}"
-  Loop:
-    Check: git worktree list | grep "trees/${'${candidate}'}" (replace \${candidate} with the actual value)
-    Also:  git branch --list "${'${candidate}'}"
-    If NEITHER the worktree path nor the branch exists → candidate is free, use it. Break.
-    Otherwise: increment suffix — if candidate has no suffix, try "${baseBranchName}-2";
-               if it ends in -N, try -N+1.
-  Cap at -10 to prevent infinite loops.
+
+  Start with candidate = "${baseBranchName}" and work through each suffix in turn:
+
+  Iteration 1 — candidate = "${baseBranchName}":
+    Run: git worktree list | grep "trees/${baseBranchName}"
+    Run: git branch --list "${baseBranchName}"
+    If BOTH return nothing → "${baseBranchName}" is free. Use it. Skip to STEP 3.
+
+  Iteration 2 — candidate = "${baseBranchName}-2":
+    Run: git worktree list | grep "trees/${baseBranchName}-2"
+    Run: git branch --list "${baseBranchName}-2"
+    If BOTH return nothing → "${baseBranchName}-2" is free. Use it. Skip to STEP 3.
+
+  Iteration 3 — candidate = "${baseBranchName}-3":
+    ... same pattern ...
+
+  Continue through "-10" as the cap. Use the first free candidate found.
   Store the chosen name as branchName.
 
 STEP 3 — Create the worktree:
@@ -518,7 +527,6 @@ Instructions:
      cd ${worktreePath} && git commit -m "$(cat <<'EOF'
      feat: implement ${stem}
 
-     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
      EOF
      )"
    Run: cd ${worktreePath} && git log --oneline -1
@@ -620,8 +628,6 @@ Instructions:
    cd ${worktreePath} && git add <changed files> ${implementReport}
    cd ${worktreePath} && git commit -m "$(cat <<'EOF'
    fix: fix pass ${fixPass} for ${stem}
-
-   Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
    EOF
    )"
    cd ${worktreePath} && git log --oneline -1
@@ -911,8 +917,6 @@ Instructions:
      cd ${worktreePath} && git add docs/file1.md docs/file2.md ${documentReport}
    cd ${worktreePath} && git commit -m "$(cat <<'EOF'
    docs: update docs for ${stem}
-
-   Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
    EOF
    )"
    cd ${worktreePath} && git log --oneline -1
@@ -1137,8 +1141,6 @@ STEP 3 — Commit the report files. Never use git add -A or git add .
   Commit using HEREDOC:
     cd ${worktreePath} && git commit -m "$(cat <<'EOF'
     chore: wrap up ${stem}
-
-    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
     EOF
     )"
   cd ${worktreePath} && git log --oneline -1
@@ -1174,6 +1176,8 @@ if (finalizeResult) {
 
 log(`Pipeline complete. Verdict: ${finalVerdict} | Worktree: ${worktreePath} | Branch: ${branchName}`)
 log(`To merge: /clean-worktree ${branchName}`)
+log(`IMPORTANT: If running multiple tasks in parallel, merge them in task-number order.`)
+log(`Merging out of order will cause STATUS.md "Current focus" to point to the wrong next task.`)
 
 return {
   blockId,
