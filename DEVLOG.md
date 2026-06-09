@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-06-09 (task 13 — prepare the LinkedIn visibility post)
+
+Drafted the Block C LinkedIn visibility post in `planning/` covering why an untested orchestration core is a production liability and how the four bugs found in Block C — the SQLAlchemy 2.x `AttributeError` in `GenericRepository.exists()`, the ghost-row risk from committing before `send_task`, the import-time side effects in `session.py` and `worker/config.py`, and the silent router `KeyError` — each had concrete failure modes that could hit users. The post follows the public-narrative rule (subject-on-you throughout, no company names) and frames each bug around what could go wrong in production before presenting the fix. The initial test run failed (FAILED verdict on attempt 1), which was resolved before review; the review returned a PASS verdict on the first submission. Pipeline ran: implement → test(#1 FAILED) → review(#1 PASS) → document. No architectural decisions were made; this was a drafting task over Block C's bug narrative. Next: Task 14 — validation (run the full test suite and import checks, confirm all acceptance criteria are met).
+
+```
+e6c24f8 docs: update docs for phase0-blockC-task13
+926dcb1 feat: implement phase0-blockC-task13
+057a705 chore: apply task log for phase0-blockc-task12
+36dd40e chore: wrap up phase0-blockC-task12
+7c0c943 docs: update docs for phase0-blockC-task12
+```
+
+---
+
 ## 2026-06-08 (task 12 — write `GenericRepository` CRUD tests)
 
 Expanded `tests/database/test_repository.py` with the full CRUD test suite for `GenericRepository`. A minimal `TestModel` was defined in the test file (avoiding dependency on the `Event` model) and backed by an in-memory SQLite engine via the session-scoped `db_engine` fixture from `conftest.py`. Tests covered `create()`, `get()`, `get_all()`, `update()`, `delete()`, `get_latest()`, `count()`, and the fixed `exists()` method — including the regression test ensuring the SQLAlchemy 2.x `AttributeError` is no longer raised. The initial test run failed due to a fixture scoping issue (the `db_session` fixture conflicted with the module-level `db_session` name imported from `database.session`), which was resolved by renaming the fixture. Review returned a PASS verdict on the first submission after the fix was in place. Next: Task 13 — Prepare the LinkedIn visibility post.
