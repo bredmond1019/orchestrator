@@ -87,6 +87,19 @@ Both workflows run the same ordered stages. Each stage is a separate agent with 
 └─────────────┘
 ```
 
+### Breakdown file (optional)
+
+If `/breakdown` has been run for the current block, both workflows automatically check for `planning/tasks/<blockId>/breakdown.md` at the start of the implement and fix stages.
+
+| Agent | Behavior when breakdown.md exists |
+|---|---|
+| Implement | Finds the `### Step N:` section; uses its atomic sub-steps as the primary execution guide. Inline `Verify:` checkpoints are run live before advancing. |
+| Fix | Reads the `### Step N:` section for original-intent context only; never re-implements from scratch. |
+
+`tasks.md` remains the authoritative source for scope and acceptance criteria. `breakdown.md` is authoritative for _how_ to execute — exact file paths, function names, and atomic change boundaries.
+
+If no `breakdown.md` exists the workflows proceed on `tasks.md` alone.
+
 ---
 
 ## `/sdlc-run` — Sequential Pipeline

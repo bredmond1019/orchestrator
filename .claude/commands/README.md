@@ -206,6 +206,8 @@ Reads only the relevant section of the master plan + projects plan, then writes 
 
 Reads a task spec, reads the actual source files each step touches to learn exact class/method names and file paths, then writes a granular breakdown to `planning/tasks/{block}/breakdown.md`. Every sub-step is atomic: one file, one change, one command — precise enough to execute without interpretation. Includes inline Verify checks after each group.
 
+Once written, both `/implement` and `/fix` (and the dynamic workflows `/sdlc-run`, `/sdlc-task`) automatically check for this file at the start of the implement and fix stages. If present, the matching `### Step N:` section becomes the primary execution guide (HOW) — `tasks.md` remains authoritative for scope and acceptance criteria (WHAT). The fix agent uses it for original-intent context only.
+
 | Variable | Description |
 |---|---|
 | `$ARGUMENTS` | Optional. Path to the spec file to break down. Defaults to the current block's spec from STATUS.md. |
