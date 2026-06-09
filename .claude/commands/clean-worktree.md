@@ -30,10 +30,14 @@ The literal single-token form is output by `/sdlc-task` when it creates a suffix
    - Otherwise, apply the same transform as `/init-worktree`: lowercase `blockId`, append
      `-task<taskNum>` if a second token is a number. Derive `worktreeName`.
    - Always: `worktreePath = trees/<worktreeName>`
-   - Also derive `blockId` and `taskNum` from `worktreeName` for use in the task log step:
+   - Extract `taskNum` from `worktreeName` for use in the task log step:
      - Pattern: `<blockid>-task<N>` or `<blockid>-task<N>-<suffix>`
      - Extract `taskNum` as the integer after the last `-task` in the name.
-     - `logFile = planning/tasks/<blockId>/reports/task<taskNum>-log.md` (if taskNum found)
+     - `logFile = planning/tasks/<blockId-placeholder>/reports/task<taskNum>-log.md`
+     - **Note:** the actual `blockId` (with original casing) is read from the log file itself
+       (`**Block:** phase0-blockC`) rather than derived from the lowercased branch name.
+       Use the branch name only to locate the approximate path; then read the log's `**Block:**`
+       field and use that value as the authoritative blockId for all STATUS.md path lookups.
 
 3. **Check if the worktree exists:**
    ```bash
@@ -100,30 +104,32 @@ The literal single-token form is output by `/sdlc-task` when it creates a suffix
    **If log file exists AND `Applied: false`:**
 
    a. Read `<logFile>` in full.
-   b. If `## STATUS.md — Block Status` section is present → flip the block's Status column
+   b. Extract the `**Block:**` field from the log file to get the authoritative blockId
+      (e.g. `phase0-blockC` with original casing). Use this value — not the lowercased
+      branch name — for all `planning/tasks/<blockId>/` path lookups.
+   c. If `## STATUS.md — Block Status` section is present → flip the block's Status column
       in `planning/STATUS.md` progress table to the value specified (e.g. "In progress").
       Omit this sub-step if that section is absent from the log file.
-   c. Apply `## STATUS.md — Current Focus Line` → replace the `**Current focus:**` line in
+   d. Apply `## STATUS.md — Current Focus Line` → replace the `**Current focus:**` line in
       `planning/STATUS.md` with the exact string from the log.
-   d. Apply `## STATUS.md — Last Updated Line` → replace the `**Last updated:**` line in
+   e. Apply `## STATUS.md — Last Updated Line` → replace the `**Last updated:**` line in
       `planning/STATUS.md` with the exact string from the log.
-   e. Apply `## STATUS.md — Block Notes Column` → update the Notes column of the matching
+   f. Apply `## STATUS.md — Block Notes Column` → update the Notes column of the matching
       block row in `planning/STATUS.md` with the text from the log.
-   f. Prepend the `## DEVLOG Entry` section verbatim to `DEVLOG.md`. Insert it immediately
-      after the `# DEVLOG —` header line (before existing entries), preserving a blank line
-      between the new entry and the one below it.
-   g. Edit `<logFile>`: change `**Applied:** false` → `**Applied:** true`.
-   h. Stage and commit these three files only:
+   g. Prepend the **content under** `## DEVLOG Entry` to `DEVLOG.md` — this means
+      everything from the `## YYYY-MM-DD` date header line onward, NOT the `## DEVLOG Entry`
+      section header itself. Insert it immediately after the `# DEVLOG —` header line
+      (before existing entries), preserving a blank line between the new entry and the one below.
+   h. Edit `<logFile>`: change `**Applied:** false` → `**Applied:** true`.
+   i. Stage and commit these three files only:
       ```bash
       git add planning/STATUS.md DEVLOG.md <logFile>
       git commit -m "$(cat <<'EOF'
       chore: apply task log for <stem>
-
-      Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
       EOF
       )"
       ```
-   h. Report: "STATUS.md and DEVLOG.md updated from task log."
+   j. Report: "STATUS.md and DEVLOG.md updated from task log."
 
    **If `Applied: true`:** report "Task log already applied — skipping STATUS/DEVLOG update."
 
