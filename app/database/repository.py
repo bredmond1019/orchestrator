@@ -1,14 +1,14 @@
-from typing import Generic, TypeVar
-
-from sqlalchemy import desc
-from sqlalchemy.orm import Session
-
 """
 Generic Repository Module
 
 This module provides a generic repository for database operations.
 It supports basic CRUD operations and additional methods for querying and updating data.
 """
+
+from typing import Generic, TypeVar
+
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
 
 T = TypeVar("T")
 
@@ -25,9 +25,9 @@ class GenericRepository(Generic[T]):
 
     def get(
         self,
-        id: str,
+        obj_id: str,
     ) -> T | None:
-        return self.session.query(self.model).filter(self.model.id == id).first()
+        return self.session.query(self.model).filter(self.model.id == obj_id).first()
 
     def get_all(
         self,
@@ -44,9 +44,9 @@ class GenericRepository(Generic[T]):
 
     def delete(
         self,
-        id: str,
+        obj_id: str,
     ) -> None:
-        obj = self.get(id)
+        obj = self.get(obj_id)
         if obj:
             self.session.delete(obj)
             self.session.commit()

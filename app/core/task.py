@@ -41,7 +41,7 @@ class TaskContext(BaseModel):
     )
 
     def update_node(self, node_name: str, **kwargs):
-        self.nodes[node_name] = {**self.nodes.get(node_name, {}), **kwargs}
+        self.nodes[node_name] = {**self.nodes.get(node_name, {}), **kwargs}  # pylint: disable=no-member
 
     def get_node_output(self, node_name: str) -> Any:
         """Retrieve the output stored for a completed node.

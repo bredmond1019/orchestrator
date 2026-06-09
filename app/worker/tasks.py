@@ -35,7 +35,7 @@ def process_incoming_event(event_id: str):
         repository = GenericRepository(session=session, model=Event)
 
         # Retrieve event from database
-        db_event = repository.get(id=event_id)
+        db_event = repository.get(obj_id=event_id)
         if db_event is None:
             raise ValueError(f"Event with id {event_id} not found")
 
