@@ -611,7 +611,7 @@ def get_prompt(template: str, **kwargs) -> str:
 Returns the fully rendered string.
 
 Raises `ValueError` if Jinja2 rendering fails (e.g., an undefined variable is
-referenced and `StrictUndefined` is active). Raises `FileNotFoundError` if the
+referenced and `StrictUndefined` is active). Raises `jinja2.TemplateNotFound` if the
 template does not exist in `app/prompts/`.
 
 **`StrictUndefined` behavior:** The environment is created with
@@ -635,6 +635,8 @@ Returns a dict with these keys:
 | `author` | `frontmatter.metadata["author"]` | `str` (default: `"Unknown"`) |
 | `variables` | `jinja2.meta.find_undeclared_variables` on the template AST | `list` |
 | `frontmatter` | Full raw `post.metadata` dict | `dict` |
+
+Raises `jinja2.TemplateNotFound` if the template does not exist in `app/prompts/`.
 
 ### `.j2` Frontmatter Schema
 
