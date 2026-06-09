@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-06-08 (task 12 — write `GenericRepository` CRUD tests)
+
+Expanded `tests/database/test_repository.py` with the full CRUD test suite for `GenericRepository`. A minimal `TestModel` was defined in the test file (avoiding dependency on the `Event` model) and backed by an in-memory SQLite engine via the session-scoped `db_engine` fixture from `conftest.py`. Tests covered `create()`, `get()`, `get_all()`, `update()`, `delete()`, `get_latest()`, `count()`, and the fixed `exists()` method — including the regression test ensuring the SQLAlchemy 2.x `AttributeError` is no longer raised. The initial test run failed due to a fixture scoping issue (the `db_session` fixture conflicted with the module-level `db_session` name imported from `database.session`), which was resolved by renaming the fixture. Review returned a PASS verdict on the first submission after the fix was in place. Next: Task 13 — Prepare the LinkedIn visibility post.
+
+```
+56911e1 docs: update docs for phase0-blockC-task12
+48845d1 feat: implement phase0-blockC-task12
+55f41bb chore: init worktree phase0-blockc-task12
+```
+
+---
+
 ## 2026-06-08 (task 11 — write `PromptManager` service tests)
 
 Implemented `tests/services/test_prompt_loader.py` with full coverage of the `PromptManager` service using a temporary directory fixture to avoid any dependency on real `app/prompts/` files. Tests cover correct Jinja2 template rendering with variable substitution, YAML frontmatter parsing when the `PromptManager` exposes metadata, a missing template name raising a clear `FileNotFoundError` or `KeyError`, and a template with an undefined variable raising Jinja2's `UndefinedError` rather than silently producing an empty string. The test run initially failed due to a test collection issue that was resolved before the review cycle. The review returned a PASS verdict on the first attempt with no required fixes. Next: Task 12 — Write `GenericRepository` CRUD tests.
