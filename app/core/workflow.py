@@ -1,3 +1,11 @@
+"""
+Workflow Orchestration Module
+
+This module implements the core workflow functionality.
+It provides a flexible framework for defining and executing workflows with multiple
+nodes and routing logic.
+"""
+
 import logging
 from abc import ABC
 from contextlib import contextmanager
@@ -10,14 +18,6 @@ from core.nodes.router import BaseRouter
 from core.schema import NodeConfig, WorkflowSchema
 from core.task import TaskContext
 from core.validate import WorkflowValidator
-
-"""
-Workflow Orchestration Module
-
-This module implements the core workflow functionality.
-It provides a flexible framework for defining and executing workflows with multiple
-nodes and routing logic.
-"""
 
 
 class Workflow(ABC):
@@ -65,14 +65,14 @@ class Workflow(ABC):
         Raises:
             Exception: Re-raises any exception that occurs during node execution
         """
-        logging.info(f"Starting node: {node_name}")
+        logging.info("Starting node: %s", node_name)
         try:
             yield
         except Exception as e:
-            logging.error(f"Error in node {node_name}: {str(e)}")
+            logging.error("Error in node %s: %s", node_name, str(e))
             raise
         finally:
-            logging.info(f"Finished node: {node_name}")
+            logging.info("Finished node: %s", node_name)
 
     def _initialize_nodes(self) -> dict[type[Node], NodeConfig]:
         """Initializes all nodes defined in the workflow schema.

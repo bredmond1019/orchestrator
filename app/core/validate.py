@@ -134,5 +134,6 @@ class WorkflowValidator:
         for node_config in self.workflow_schema.nodes:
             if len(node_config.connections) > 1 and not node_config.is_router:
                 raise ValueError(
-                    f"Node {node_config.node.__name__} has multiple connections but is not marked as a router."
+                    f"Node {node_config.node.__name__} has multiple connections "
+                    "but is not marked as a router."
                 )

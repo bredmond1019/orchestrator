@@ -1,7 +1,3 @@
-from abc import ABC, abstractmethod
-
-from core.task import TaskContext
-
 """
 Base Node Module
 
@@ -9,6 +5,10 @@ This module defines the foundational Node class that all workflow nodes inherit 
 It implements the Chain of Responsibility pattern, allowing nodes to process tasks
 sequentially and pass results to the next node in the chain.
 """
+
+from abc import ABC, abstractmethod
+
+from core.task import TaskContext
 
 
 class Node(ABC):
@@ -56,4 +56,3 @@ class Node(ABC):
             1. Process the task according to their specific responsibility
             2. Store results in task_context.nodes[self.node_name]
         """
-        pass

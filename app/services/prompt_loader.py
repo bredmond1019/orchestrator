@@ -1,8 +1,3 @@
-from pathlib import Path
-
-import frontmatter
-from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateError, meta
-
 """
 Prompt Management Module
 
@@ -10,6 +5,11 @@ This module provides functionality for loading and rendering prompt templates wi
 It uses Jinja2 for template rendering and python-frontmatter for metadata handling,
 implementing a singleton pattern for template environment management.
 """
+
+from pathlib import Path
+
+import frontmatter
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, TemplateError, meta
 
 
 class PromptManager:
@@ -72,14 +72,14 @@ class PromptManager:
         """
         env = PromptManager._get_env()
         template_path = f"{template}.j2"
-        with open(env.loader.get_source(env, template_path)[1]) as file:
+        with open(env.loader.get_source(env, template_path)[1], encoding="utf-8") as file:
             post = frontmatter.load(file)
 
         template = env.from_string(post.content)
         try:
             return template.render(**kwargs)
         except TemplateError as e:
-            raise ValueError(f"Error rendering template: {str(e)}")
+            raise ValueError(f"Error rendering template: {str(e)}") from e
 
     @staticmethod
     def get_template_info(template: str) -> dict:
@@ -101,7 +101,7 @@ class PromptManager:
         """
         env = PromptManager._get_env()
         template_path = f"{template}.j2"
-        with open(env.loader.get_source(env, template_path)[1]) as file:
+        with open(env.loader.get_source(env, template_path)[1], encoding="utf-8") as file:
             post = frontmatter.load(file)
 
         ast = env.parse(post.content)

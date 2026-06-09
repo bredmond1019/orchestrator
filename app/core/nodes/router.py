@@ -1,8 +1,3 @@
-from abc import ABC, abstractmethod
-
-from core.nodes.base import Node
-from core.task import TaskContext
-
 """
 Router Module
 
@@ -10,6 +5,11 @@ This module implements the routing logic for workflow nodes.
 It provides base classes for implementing routing decisions between nodes
 in a processing workflow.
 """
+
+from abc import ABC, abstractmethod
+
+from core.nodes.base import Node
+from core.task import TaskContext
 
 
 class BaseRouter(Node):
@@ -49,11 +49,11 @@ class BaseRouter(Node):
         Returns:
             The next node to execute, or None if no route is found
         """
-        for route_node in self.routes:
+        for route_node in self.routes:  # pylint: disable=no-member
             next_node = route_node.determine_next_node(task_context)
             if next_node:
                 return next_node
-        return self.fallback if self.fallback else None
+        return self.fallback if self.fallback else None  # pylint: disable=no-member
 
 
 class RouterNode(ABC):
