@@ -2,10 +2,10 @@
 
 **Block:** phase0-blockC
 **Task:** 10
-**Verdict:** PASS
-**Date:** 2026-06-08
+**Verdict:** NOT_REACHED
+**Date:** 2026-06-09
 **Branch:** phase0-blockc-task10
-**Applied:** true
+**Applied:** false
 
 ---
 
@@ -13,21 +13,19 @@
 Phase 0, Block C — Task 11: Write `PromptManager` service tests
 
 ## STATUS.md — Last Updated Line
-2026-06-08 — Block C in progress (Tasks 1–10 complete; Tasks 11–14 next — PromptManager service tests, GenericRepository CRUD tests, LinkedIn post, and validation)
+2026-06-09 — Block C in progress (Tasks 1–9 complete; Task 10 NOT_REACHED — ParallelNode unit tests not implemented in this run; Tasks 11–14 next)
 
 ## STATUS.md — Block Notes Column
-Tasks 1–10 complete (pytest scaffold; `GenericRepository.exists()` fix; import-time side effects in `session.py`/`worker/config.py` fixed; ghost-row bug in `api/endpoint.py` fixed; router key coupling fix — `TaskContext.get_node_output()` added; `TaskContext` + `WorkflowSchema` unit tests written; `WorkflowValidator` unit tests written; `Workflow.run()` unit tests written; `BaseRouter`/`RouterNode` unit tests written; `ParallelNode` unit tests written); Tasks 11–14 next (PromptManager, GenericRepository CRUD tests, LinkedIn post, validation)
+Tasks 1–9 complete (pytest scaffold; `GenericRepository.exists()` fix; import-time side effects in `session.py`/`worker/config.py` fixed; ghost-row bug in `api/endpoint.py` fixed; router key coupling fix — `TaskContext.get_node_output()` added; `TaskContext` + `WorkflowSchema` unit tests written; `WorkflowValidator` unit tests written; `Workflow.run()` unit tests written; `BaseRouter`/`RouterNode` unit tests written); Task 10 NOT_REACHED (ParallelNode unit tests — worktree setup only, no implementation); Tasks 11–14 next (PromptManager tests, GenericRepository CRUD tests, LinkedIn post, validation)
 
 ---
 
 ## DEVLOG Entry
 
-## 2026-06-08 (task 10 — write `ParallelNode` unit tests)
+## 2026-06-09 (task 10 — write `ParallelNode` unit tests)
 
-Implemented `tests/core/test_nodes_parallel.py` covering the full `ParallelNode` behavior: all parallel nodes run and write unique keys to `task_context`, concurrent execution is verified, and exception propagation from a failing parallel node is tested. A key finding was the known design gap where parallel nodes write directly to the shared `task_context` and the results list is discarded — the test documents current behavior with an explicit comment noting this is deferred to Project E where parallelism is first genuinely needed. The test(#1) run initially failed due to a threading timing sensitivity in the concurrency assertion, which was resolved before review. The review passed on the first verdict with no required fixes, validating that the test suite accurately captures both working behavior and the documented gap without introducing false failures. Next: Task 11 — Write `PromptManager` service tests.
+Task 10 targeted writing unit tests for `ParallelNode` in `tests/core/test_nodes_parallel.py`, covering concurrent execution verification, exception propagation from parallel nodes, and a documented regression for the known shared-context mutation gap deferred to Project E. The pipeline initialized the worktree successfully but did not advance past setup — no implementation, no test run, no review attempt, and no commits beyond the initial `chore: init worktree` were made. The NOT_REACHED verdict reflects a pipeline run that was set up but not executed in this worktree. Next: Task 11 — Write `PromptManager` service tests.
 
 ```
-8fd2c31 docs: update docs for phase0-blockC-task10
-ebae9a3 feat: implement phase0-blockC-task10
-a967ca9 chore: init worktree phase0-blockc-task10
+b540def chore: init worktree phase0-blockc-task10
 ```
