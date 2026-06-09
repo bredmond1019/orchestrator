@@ -562,10 +562,10 @@ model class it manages.
 | Method | Signature | Returns | Notes |
 |---|---|---|---|
 | `create` | `create(obj: T) -> T` | The persisted object | Calls `session.add()` + `session.commit()`. |
-| `get` | `get(id: str) -> Optional[T]` | Single instance or `None` | Filters by `model.id == id`. |
+| `get` | `get(obj_id: str) -> Optional[T]` | Single instance or `None` | Filters by `model.id == obj_id`. |
 | `get_all` | `get_all() -> List[T]` | All rows | No ordering guarantee. |
 | `update` | `update(obj: T) -> T` | The original `obj` passed in | Calls `session.merge(obj)` (return value discarded) + `session.commit()`; returns the original object. |
-| `delete` | `delete(id: str) -> None` | `None` | Fetches then deletes; no-op if not found. |
+| `delete` | `delete(obj_id: str) -> None` | `None` | Fetches then deletes; no-op if not found. |
 | `get_latest` | `get_latest(n: int = 1) -> List[T]` | Up to `n` rows | Orders by `model.id DESC`. |
 | `count` | `count() -> int` | Row count | Uses SQLAlchemy `count()`. |
 | `exists` | `exists(**kwargs) -> bool` | Boolean | Returns `True` if any row matching all `kwargs` exists; `False` otherwise. |
