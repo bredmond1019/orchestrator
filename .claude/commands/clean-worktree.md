@@ -2,23 +2,38 @@
 
 ## Variables
 
-$ARGUMENTS — block ID with optional task number. Same format as `/init-worktree`.
+$ARGUMENTS — one of:
+- `phase0-blockC`          → worktree name: `phase0-blockc`
+- `phase0-blockC 3`        → worktree name: `phase0-blockc-task3`
+- `phase0-blockc-task8`    → literal worktree name (already lowercased, single token)
+- `phase0-blockc-task8-2`  → literal worktree name with suffix (from sdlc-task auto-increment)
 
-Examples:
-- `phase0-blockC`   → worktree name: `phase0-blockc`
-- `phase0-blockC 3` → worktree name: `phase0-blockc-task3`
+The literal single-token form is output by `/sdlc-task` when it creates a suffixed worktree
+(e.g. `-2`, `-3`). Pass it exactly as printed.
 
 ## Instructions
 
 1. If `$ARGUMENTS` is not provided, stop and print usage:
    ```
    Usage: /clean-worktree <block-id> [task-N]
+          /clean-worktree <literal-worktree-name>
    Examples:
      /clean-worktree phase0-blockC
      /clean-worktree phase0-blockC 3
+     /clean-worktree phase0-blockc-task8
+     /clean-worktree phase0-blockc-task8-2
    ```
 
-2. **Parse arguments** using the same transform as `/init-worktree`: lowercase `blockId`, append `-task<taskNum>` if a task number is given. Derive `worktreeName` and `worktreePath = trees/<worktreeName>`.
+2. **Parse arguments:**
+   - If `$ARGUMENTS` is a **single token with no spaces** that is already lowercase and contains
+     only letters, digits, and hyphens → treat it as the literal `worktreeName` directly.
+   - Otherwise, apply the same transform as `/init-worktree`: lowercase `blockId`, append
+     `-task<taskNum>` if a second token is a number. Derive `worktreeName`.
+   - Always: `worktreePath = trees/<worktreeName>`
+   - Also derive `blockId` and `taskNum` from `worktreeName` for use in the task log step:
+     - Pattern: `<blockid>-task<N>` or `<blockid>-task<N>-<suffix>`
+     - Extract `taskNum` as the integer after the last `-task` in the name.
+     - `logFile = planning/tasks/<blockId>/reports/task<taskNum>-log.md` (if taskNum found)
 
 3. **Check if the worktree exists:**
    ```bash
@@ -73,6 +88,48 @@ Examples:
          /clean-worktree <original-args>   ← retry after rebasing
      ```
 
+6.5. **Apply task log (if present) — update STATUS.md and DEVLOG.md:**
+
+   This step only applies when a task number was identified in `worktreeName`.
+
+   ```bash
+   ls <logFile> 2>/dev/null && echo "LOG_EXISTS" || echo "NO_LOG"
+   grep "^\*\*Applied:\*\* false" <logFile> 2>/dev/null && echo "NOT_YET_APPLIED" || echo "ALREADY_APPLIED"
+   ```
+
+   **If log file exists AND `Applied: false`:**
+
+   a. Read `<logFile>` in full.
+   b. If `## STATUS.md — Block Status` section is present → flip the block's Status column
+      in `planning/STATUS.md` progress table to the value specified (e.g. "In progress").
+      Omit this sub-step if that section is absent from the log file.
+   c. Apply `## STATUS.md — Current Focus Line` → replace the `**Current focus:**` line in
+      `planning/STATUS.md` with the exact string from the log.
+   d. Apply `## STATUS.md — Last Updated Line` → replace the `**Last updated:**` line in
+      `planning/STATUS.md` with the exact string from the log.
+   e. Apply `## STATUS.md — Block Notes Column` → update the Notes column of the matching
+      block row in `planning/STATUS.md` with the text from the log.
+   f. Prepend the `## DEVLOG Entry` section verbatim to `DEVLOG.md`. Insert it immediately
+      after the `# DEVLOG —` header line (before existing entries), preserving a blank line
+      between the new entry and the one below it.
+   g. Edit `<logFile>`: change `**Applied:** false` → `**Applied:** true`.
+   h. Stage and commit these three files only:
+      ```bash
+      git add planning/STATUS.md DEVLOG.md <logFile>
+      git commit -m "$(cat <<'EOF'
+      chore: apply task log for <stem>
+
+      Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+      EOF
+      )"
+      ```
+   h. Report: "STATUS.md and DEVLOG.md updated from task log."
+
+   **If `Applied: true`:** report "Task log already applied — skipping STATUS/DEVLOG update."
+
+   **If log file not found:** report "No task log found — STATUS/DEVLOG not updated.
+   If this task was run with /sdlc-task, check that the pipeline completed its wrap-up stage."
+
 7. **Remove the worktree and delete the branch:**
    ```bash
    git worktree remove <worktreePath> --force
@@ -108,3 +165,5 @@ Examples:
 - **Fast-forward only** is the correct default for this pipeline: worktrees branch from `main` at init time, run the full pipeline, and then merge back. If `main` has advanced concurrently (e.g., a hotfix), `--ff-only` fails with a clear error rather than silently creating a merge commit.
 - **Uncommitted changes** in the worktree are unusual — the SDLC pipeline commits after each stage. If they appear, it likely means the pipeline was interrupted mid-stage.
 - Run this command from the **main repo session** (CWD: repo root), not from inside the worktree.
+- **Task log (sdlc-task only):** When a task was run with `/sdlc-task`, the worktree branch contains a `task<N>-log.md` file instead of STATUS.md/DEVLOG.md changes. Step 6.5 reads that file and applies the updates to main after the merge. Always merge tasks in task-number order so STATUS.md's "Current focus" ends up pointing to the right next task.
+- **Suffix worktrees:** If `/sdlc-task` created `phase0-blockc-task8-2` (due to a collision), pass the full name as a single argument: `/clean-worktree phase0-blockc-task8-2`. The task log is still found at `planning/tasks/phase0-blockC/reports/task8-log.md` (based on the task number extracted from the branch name).
