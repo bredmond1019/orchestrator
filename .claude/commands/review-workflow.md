@@ -92,7 +92,7 @@ For each expected report, check: is the file present? Does it contain the requir
 Map expected commits to `git log` output. For each expected commit:
 - Is it present? (search by prefix + stem keyword)
 - Does the commit message follow the conventional commit format?
-- Does it include `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`?
+
 
 ### DEVLOG Quality
 - Is there an entry dated to this run?

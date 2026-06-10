@@ -158,6 +158,35 @@ For work not tied to a phase/block (one-off features, fixes, or chores), generat
 
 ---
 
+## Automated & Orchestrated Pipelines
+
+The manual Phase 1 → 7 commands above can be run end-to-end by automated workflows (in `.claude/workflows/`). Invoke them like slash commands. Each runs the same pipeline stages, but unattended.
+
+| Workflow | Scope | Isolation | Reference |
+|---|---|---|---|
+| `/sdlc-run <id> [N]` | one task or a **full block**, sequential | none — runs on the current branch, updates STATUS/DEVLOG directly | [sdlc-dynamic-workflows.md](../../docs/agentic-workflows/sdlc-dynamic-workflows.md) |
+| `/sdlc-task <id> N` | **one** task, parallel-safe | own git worktree; defers STATUS/DEVLOG to merge time | [sdlc-dynamic-workflows.md](../../docs/agentic-workflows/sdlc-dynamic-workflows.md) |
+| `/sdlc-block <id> [range]` | a **whole block** as dependency-ordered waves of parallel `/sdlc-task` runs | one worktree per task; **merges for you** | [sdlc-orchestration.md](../../docs/agentic-workflows/sdlc-orchestration.md) |
+
+### `/sdlc-block` — block-level orchestration
+
+**Drive an entire block to completion across many parallel tasks.** Reads (or generates) a dependency-ordered execution plan, runs each wave of independent tasks through `/sdlc-task`, then merges the wave before the next begins. Adds bounded per-task **retries** with failure **triage** (transient → clean-slate retry; structural/repeated → escalate and preserve the worktree for you), **selective-union merges** (additive shared files only; real conflicts escalate rather than auto-resolve), and a single authoritative STATUS/DEVLOG update at the end. Escalations poison only the dependent subtree, so independent work keeps going. Resumable — git is the source of truth for which tasks are done.
+
+| Variable | Description |
+|---|---|
+| `$ARGUMENTS` | Required block ID, optional task range, and flags. Examples: `phase0-blockD`, `phase0-blockD 1-7`, `phase0-blockD --tasks 1,3,5-7 --max-wave-width 6`. |
+
+| Arg | Meaning | Default |
+|---|---|---|
+| `<blockId>` | Required — drives every `planning/tasks/<blockId>/…` path. | — |
+| `[range]` | Optional task selection (2nd positional **or** `--tasks`): `1-7`, `1,3,5`, `1-3,7`. | all tasks |
+| `--max-retries N` | Total `/sdlc-task` attempts per task before escalation. | `2` |
+| `--max-wave-width W` | Max full pipelines run concurrently per batch. | `3` |
+
+See [sdlc-orchestration.md](../../docs/agentic-workflows/sdlc-orchestration.md) for the full design — dependency-graph analysis, triage rules, merge strategy, and token-efficiency levers (model tiering, plan caching, budget guard).
+
+---
+
 ## Session Orientation
 
 ### `/session-recap`
