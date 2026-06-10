@@ -21,6 +21,7 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 11. [EmbeddingService](#embeddingservice)
 11. [ArticleExtractionService](#articleextractionservice)
 11. [SearchService and SearchResult](#searchservice-and-searchresult)
+11. [ChunkingService](#chunkingservice)
 12. [WorkflowRegistry](#workflowregistry)
 13. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 14. [createworkflow CLI](#createworkflow-cli)
@@ -832,6 +833,79 @@ Both classes are exported from `app/services/__init__.py`:
 ```python
 from services.search_service import SearchService, SearchResult
 ```
+## ChunkingService
+
+**Source:** `app/services/chunking_service.py`
+
+```python
+class ChunkingService:
+```
+
+Stateless utility class that splits text or binary documents into overlapping
+token-sized chunks. Uses `tiktoken` for token-boundary splitting and `pymupdf`
+(`fitz`) for PDF text extraction. Exported from `app/services/__init__.py`.
+
+### Class Constant
+
+```python
+_ENCODING = "cl100k_base"
+```
+
+Tiktoken encoding used for all tokenisation. `cl100k_base` matches the
+tokenizer used by modern OpenAI and Anthropic-adjacent models. Overridable
+by subclassing.
+
+### `chunk_text(text, chunk_size=500, overlap=50) -> list[str]`
+
+```python
+def chunk_text(
+    self, text: str, chunk_size: int = 500, overlap: int = 50
+) -> list[str]:
+```
+
+Tokenises `text` with tiktoken and produces overlapping chunks on token
+boundaries.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `text` | `str` | required | Input text to split. |
+| `chunk_size` | `int` | `500` | Maximum number of tokens per chunk. |
+| `overlap` | `int` | `50` | Number of tokens shared between adjacent chunks. |
+
+**Returns:** A `list[str]` of decoded text chunks. Returns `[]` for empty
+or all-whitespace input that encodes to zero tokens.
+
+**Algorithm:** sliding window with `step = chunk_size - overlap`. The final
+window may be shorter than `chunk_size` if tokens are exhausted.
+
+### `chunk_document(content, mime_type, chunk_size=500, overlap=50) -> list[str]`
+
+```python
+def chunk_document(
+    self,
+    content: bytes,
+    mime_type: str,
+    chunk_size: int = 500,
+    overlap: int = 50,
+) -> list[str]:
+```
+
+Dispatches on `mime_type` to the right parser, then delegates to
+`chunk_text()`.
+
+| `mime_type` | Parser |
+|---|---|
+| `"text/plain"` | `content.decode("utf-8")` |
+| `"application/pdf"` | `fitz.open(stream=content, filetype="pdf")` — page texts joined with `"\n"` |
+
+**Raises:** `ValueError` naming the unsupported MIME type for any value other
+than `"text/plain"` or `"application/pdf"`.
+
+### Package Export
+
+`ChunkingService` is the first entry in `app/services/__init__.__all__`. Subsequent
+Block D service tasks (`EmbeddingService`, `TranscriptService`, etc.) will extend
+this list as they land.
 
 ---
 
