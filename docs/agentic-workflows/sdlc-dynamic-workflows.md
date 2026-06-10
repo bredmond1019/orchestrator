@@ -106,21 +106,25 @@ If no `breakdown.md` exists the workflows proceed on `tasks.md` alone.
 
 Each pipeline stage runs as its own agent, so each can run on a different model. `sdlc-task` tiers them from a single `MODEL` map at the top of the file. The guiding principle:
 
-> **Opus earns its cost on planning. Sonnet handles the rest.**
+> **Match the model to the work: Opus plans, Haiku does the mechanics, Sonnet does the judgment in between.**
 
-A sharp spec + breakdown makes implementation, testing, and verification well-scoped enough that Sonnet does them reliably — so only spec authoring needs Opus.
+A sharp spec + breakdown makes implementation, testing, and verification well-scoped enough that Sonnet does them reliably — so only spec authoring needs Opus, while the purely-procedural stages drop to Haiku.
 
 | Stage | Model | Why |
 |---|---|---|
 | `generate-tasks` | **opus** | Planning — authors the spec that drives everything. (Fallback only; see below.) |
-| `worktree-setup`, `scout` | sonnet | Scripted git + file-existence checks. |
+| `scout` | **haiku** | Deterministic decision tree: `ls` a few files, apply a fixed 7-rule priority order to pick the start stage. No judgment. |
+| `test` | **haiku** | Runs 8 fixed commands and reads exit codes; `review` re-runs `pytest` authoritatively, so a sloppy test report can't ship a bug. |
+| `finalize` | **haiku** | Fills a **JS-precomputed** stage table and runs scripted `git add`s; it's the last step and can't break the pipeline. |
+| `worktree-setup` | sonnet | Scripted git, but it runs once and a failure **aborts the whole pipeline** — high blast radius, tiny saving, so it stays on Sonnet. |
 | `implement` | sonnet | Writes code + tests against a scoped spec/breakdown. |
 | `fix` | sonnet | Targeted fixes; failures escalate, never silently ship. |
-| `test` | sonnet | Runs 8 commands, reads exit codes, writes the report. |
 | `review` | sonnet | Verifies criteria — **gated by an authoritative fresh-test run**, so a cheap reviewer can't pass failing tests. |
-| `document`, `task-log`, `finalize` | sonnet | Surgical doc patches, log authoring, report assembly. |
+| `document`, `task-log` | sonnet | Surgical doc patches and the **human-facing** DEVLOG/STATUS prose — quality matters, so they stay on Sonnet. |
 
 Change one value in `MODEL` to re-tier; nothing else moves. Valid values: `'haiku' | 'sonnet' | 'opus' | undefined` (inherit the session model).
+
+> The same three Haiku candidates (`scout`, `test`, `finalize`) — plus the trivial `start-block` agent — are tiered identically in **`sdlc-run`** (the sequential sibling). Before this, `sdlc-run` had *no* `MODEL` map, so every stage inherited the session model: launched from an Opus session, even scout/test/finalize ran on Opus. It now carries the same `MODEL` map and staged escalation as `sdlc-task`.
 
 ### Where the planning leverage actually is
 
