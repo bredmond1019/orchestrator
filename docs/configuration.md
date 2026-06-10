@@ -93,6 +93,7 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `AZURE_OPENAI_API_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.AZURE_OPENAI` |
 | `OPENAI_API_VERSION` | string | `2024-07-01-preview` | Conditional | `AgentNode` / `ModelProvider.AZURE_OPENAI` |
 | `ANTHROPIC_API_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.ANTHROPIC` |
+| `VOYAGE_API_KEY` | string | — | Conditional | `EmbeddingService` |
 | `GEMINI_API_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.GEMINI` |
 | `OLLAMA_BASE_URL` | string | `http://localhost:11434/v1` | Conditional | `AgentNode` / `ModelProvider.OLLAMA` |
 | `BEDROCK_AWS_ACCESS_KEY_ID` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
@@ -143,6 +144,11 @@ value `http://localhost:11434/v1` in `app/.env.example` assumes a locally runnin
 
 **Bedrock**: `BEDROCK_AWS_ACCESS_KEY_ID`, `BEDROCK_AWS_SECRET_ACCESS_KEY`, and `BEDROCK_AWS_REGION`
 are read via `os.getenv()` and passed directly to `boto3.client("bedrock-runtime", ...)`.
+
+**VoyageAI embeddings**: `VOYAGE_API_KEY` is read via `os.environ["VOYAGE_API_KEY"]` inside
+`EmbeddingService.__init__()`. Unlike the `AgentNode` provider keys it is not gated on a
+`ModelProvider` config — any workflow that constructs an `EmbeddingService` instance requires
+this key to be set. If missing, a `KeyError` is raised at construction time.
 
 ---
 
