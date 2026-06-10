@@ -47,6 +47,18 @@
 //   implement → test → review → [PASS: document] or [FAIL: fix → test → review]
 //   Each fix pass is a separate commit so the diff from each pass is auditable.
 //
+// MODEL TIERING (token lever — see the MODEL map below)
+//   Three tiers, matched to the work: Opus on PLANNING (generate-tasks fallback); Haiku on the
+//   purely-mechanical stages (scout, start-block, test, finalize); Sonnet on the judgment work
+//   (implement/fix/review/document/log-work). Without this map every stage inherits the SESSION
+//   model — so launching from an Opus session would run scout/test/finalize on Opus too. Tune
+//   one place: the MODEL map.
+//
+// STAGED MODEL ESCALATION (ESCALATION_MODEL)
+//   The FINAL fix pass and FINAL review attempt before the loop gives up run on Opus. The cheap
+//   path stays on Sonnet; a genuinely hard failure that has already failed twice gets one strong
+//   shot. Set null to disable.
+//
 // REPORT FILES  (all written to planning/tasks/<block>/reports/)
 //   [taskN-]implement.md  implement agent; overwritten by each fix pass
 //   [taskN-]test.md       test agent
@@ -194,6 +206,40 @@ const FINALIZE_SCHEMA = {
 }
 
 // ----------------------------------------------------------------
+// MODEL TIERING — the primary token lever for this pipeline.
+//
+// Without this map every stage would inherit the SESSION model — so launching /sdlc-run from an
+// Opus session silently runs scout, test, and finalize on Opus too. This map fixes the cost per
+// stage regardless of how the workflow was launched.
+//
+// Principle (mirrors sdlc-task): match the model to the work.
+//   • Opus   — generate-tasks (authors the spec; fallback path only)
+//   • Haiku  — scout / start-block / test / finalize. Fixed procedures, no real judgment.
+//   • Sonnet — implement / fix / review / document / log-work (judgment work).
+//
+// To re-tier, change one value here — nothing else moves.
+// Valid values: 'haiku' | 'sonnet' | 'opus' | undefined (inherit session model).
+// ----------------------------------------------------------------
+const MODEL = {
+  scout:         'haiku',    // deterministic decision tree: ls a few files, apply a fixed 7-rule order
+  startBlock:    'haiku',    // one surgical STATUS.md edit + a date stamp
+  generateTasks: 'opus',     // PLANNING — authors the spec that drives everything (fallback path)
+  implement:     'sonnet',   // writes code + tests against a scoped spec/breakdown
+  fix:           'sonnet',   // targeted fixes; failures escalate, never silently ship
+  test:          'haiku',    // run 8 fixed commands, read exit codes; review re-runs pytest authoritatively
+  review:        'sonnet',   // verify criteria; gated by an authoritative fresh-test run
+  document:      'sonnet',   // surgical doc patches, gated on PASS
+  logWork:       'sonnet',   // authors the human-facing DEVLOG prose + edits STATUS — keep the quality
+  finalize:      'haiku',    // assembles a JS-precomputed table + scripted git add; can't break the pipeline
+}
+
+// Merge an optional model override into an agent's opts (omits the key when undefined,
+// so the agent inherits the session model rather than receiving model: undefined).
+function withModel(base, model) {
+  return model ? { ...base, model } : base
+}
+
+// ----------------------------------------------------------------
 // Stage results accumulator
 // ----------------------------------------------------------------
 const stageResults = []
@@ -250,7 +296,7 @@ STEP 8 — Note any discrepancy: if DEVLOG says a stage is done but the matching
 Collect the list of existing report files from the ls output in STEP 2 and STEP 6.
 
 Return your findings using the StructuredOutput tool.
-`, { label: 'scout', schema: SCOUT_SCHEMA, phase: 'Scout' })
+`, withModel({ label: 'scout', schema: SCOUT_SCHEMA, phase: 'Scout' }, MODEL.scout))
 
 if (!scout) {
   log('Scout agent failed — cannot determine pipeline state, aborting')
@@ -276,13 +322,18 @@ Instructions:
 5. Update the "Last updated:" date — run this to get today: date +%Y-%m-%d
 6. Use the Edit tool to make these changes surgically (do not rewrite the entire file)
 7. Confirm the edits are correct by reading back the relevant lines
-`, { label: 'start-block', phase: 'Scout' })
+`, withModel({ label: 'start-block', phase: 'Scout' }, MODEL.startBlock))
 }
 
 let currentStage = scout.startStage
 let reviewAttempts = 0
 const MAX_REVIEW_ATTEMPTS = 3
 let lastReviewResult = null
+
+// STAGED MODEL ESCALATION — the FINAL fix pass and FINAL review attempt before the loop gives
+// up run on a stronger model. The common path stays on Sonnet (MODEL.fix/review); only the
+// genuinely-hard case that has already failed twice gets one Opus shot. Set to null to disable.
+const ESCALATION_MODEL = 'opus'
 
 // ================================================================
 // PHASE 2: PLAN — generate-tasks (only if spec file missing)
@@ -347,7 +398,7 @@ Return your result using the StructuredOutput tool with fields:
   success: true if written successfully
   filesModified: ["${specFile}"]
   notes: brief note about what was generated
-`, { label: 'generate-tasks', schema: STAGE_SCHEMA, phase: 'Plan' })
+`, withModel({ label: 'generate-tasks', schema: STAGE_SCHEMA, phase: 'Plan' }, MODEL.generateTasks))
 
   if (!genResult || !genResult.success) {
     log('generate-tasks failed — aborting pipeline')
@@ -482,7 +533,7 @@ Return your result using the StructuredOutput tool:
   filesModified: array of every source file you created or modified
   commitHash: the 7-character short hash from git log --oneline -1 (empty string if commit failed)
   notes: one-line summary
-`, { label: 'implement', schema: STAGE_SCHEMA, phase: 'Implement' })
+`, withModel({ label: 'implement', schema: STAGE_SCHEMA, phase: 'Implement' }, MODEL.implement))
 
     if (!implResult) {
       log('Implement agent returned null — aborting pipeline')
@@ -504,6 +555,10 @@ Return your result using the StructuredOutput tool:
     phase('Fix')
     const fixPass = reviewAttempts + 1
     log(`Running fix (pass ${fixPass}) — targeting review failures...`)
+
+    // Last fix pass before the loop can give up → escalate the model.
+    const fixModel = (ESCALATION_MODEL && fixPass === MAX_REVIEW_ATTEMPTS) ? ESCALATION_MODEL : MODEL.fix
+    if (fixModel !== MODEL.fix) log(`Final fix pass — escalating model to ${fixModel}.`)
 
     const fixResult = await agent(`
 You are the fix agent for the SDLC pipeline. Your job is to make targeted fixes for the failures identified
@@ -623,7 +678,7 @@ Return your result using the StructuredOutput tool:
   filesModified: array of source files you actually changed this pass (not the full accumulated list)
   commitHash: the 7-character short hash from git log --oneline -1 (empty string if commit failed)
   notes: one-line summary of what was fixed
-`, { label: `fix-${fixPass}`, schema: STAGE_SCHEMA, phase: 'Fix' })
+`, withModel({ label: `fix-${fixPass}`, schema: STAGE_SCHEMA, phase: 'Fix' }, fixModel))
 
     if (!fixResult) {
       log('Fix agent returned null — aborting pipeline')
@@ -732,7 +787,7 @@ Return your result using the StructuredOutput tool:
   failCount: integer count of checks that failed
   failedTests: array of test_name strings for failed checks
   notes: one-line summary
-`, { label: 'test', schema: TEST_SCHEMA, phase: 'Test' })
+`, withModel({ label: 'test', schema: TEST_SCHEMA, phase: 'Test' }, MODEL.test))
 
     if (!testResult) {
       log('Test agent returned null — recording failure, continuing to review')
@@ -755,6 +810,10 @@ Return your result using the StructuredOutput tool:
     phase('Review')
     reviewAttempts++
     log(`Running review (attempt ${reviewAttempts}/${MAX_REVIEW_ATTEMPTS})...`)
+
+    // Final review attempt before the loop can give up → escalate the model.
+    const reviewModel = (ESCALATION_MODEL && reviewAttempts === MAX_REVIEW_ATTEMPTS) ? ESCALATION_MODEL : MODEL.review
+    if (reviewModel !== MODEL.review) log(`Final review attempt — escalating model to ${reviewModel}.`)
 
     const reviewResult = await agent(`
 You are the review agent for the SDLC pipeline. Verify the implementation against the spec and issue a verdict.
@@ -827,7 +886,7 @@ Return your result using the StructuredOutput tool:
   failureReasons: array of strings describing what failed (empty array if PASS)
   unmetCriteria: array of criterion texts that were NOT_MET or PARTIAL (empty if PASS)
   notes: one-line summary
-`, { label: `review-${reviewAttempts}`, schema: REVIEW_SCHEMA, phase: 'Review' })
+`, withModel({ label: `review-${reviewAttempts}`, schema: REVIEW_SCHEMA, phase: 'Review' }, reviewModel))
 
     if (!reviewResult) {
       log(`Review agent returned null (attempt ${reviewAttempts}) — treating as FAIL`)
@@ -941,7 +1000,7 @@ Return your result using the StructuredOutput tool:
   filesModified: array of doc files that were actually patched (empty array if none needed changes)
   commitHash: the 7-character short hash from git log --oneline -1 (empty string if commit failed)
   notes: one-line summary
-`, { label: 'document', schema: STAGE_SCHEMA, phase: 'Document' })
+`, withModel({ label: 'document', schema: STAGE_SCHEMA, phase: 'Document' }, MODEL.document))
 
   if (!docResult) {
     stageResults.push({ stage: 'document', success: false, notes: 'Document agent returned null' })
@@ -1018,7 +1077,7 @@ Return your result using the StructuredOutput tool:
   devlogUpdated: true if DEVLOG.md was successfully updated
   nextFocus: the new "Current focus" value written to STATUS.md
   notes: any settled decisions that should be added to DECISIONS.md
-`, { label: 'log-work', schema: WRAPUP_SCHEMA, phase: 'Wrap-up' })
+`, withModel({ label: 'log-work', schema: WRAPUP_SCHEMA, phase: 'Wrap-up' }, MODEL.logWork))
 
 if (wrapupResult) {
   stageResults.push({ stage: 'log-work', ...wrapupResult, success: wrapupResult.statusUpdated && wrapupResult.devlogUpdated })
@@ -1125,7 +1184,7 @@ Return your result using the StructuredOutput tool:
   commitMessage: "chore: wrap up ${stem}"
   commitHash: the 7-character short hash from git log --oneline -1
   notes: any follow-up items (decisions to add to DECISIONS.md, NEEDS_REVIEW doc flags)
-`, { label: 'finalize', schema: FINALIZE_SCHEMA, phase: 'Wrap-up' })
+`, withModel({ label: 'finalize', schema: FINALIZE_SCHEMA, phase: 'Wrap-up' }, MODEL.finalize))
 
 if (finalizeResult) {
   stageResults.push({ stage: 'finalize', ...finalizeResult, success: true })

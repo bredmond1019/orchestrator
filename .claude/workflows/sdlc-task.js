@@ -55,10 +55,11 @@
 //   chore: wrap up <stem>          finalize agent (reports + task log)
 //
 // MODEL TIERING (token lever — see the MODEL map below)
-//   Opus earns its cost on PLANNING (generate-tasks fallback); Sonnet handles every
-//   execution/verification/reporting stage. Tune one place: the MODEL map. Real planning
-//   happens upstream in the /generate-tasks and /breakdown skills — run those on Opus.
-//   This matters most under /sdlc-block, which fans this pipeline out across many tasks.
+//   Three tiers: Opus earns its cost on PLANNING (generate-tasks fallback); Haiku handles the
+//   purely-mechanical stages (scout, test, finalize — fixed procedures, no judgment); Sonnet
+//   handles everything in between (implement/fix/review/document/task-log). Tune one place: the
+//   MODEL map. Real planning happens upstream in the /generate-tasks and /breakdown skills — run
+//   those on Opus. This matters most under /sdlc-block, which fans this pipeline out across many tasks.
 //
 // STAGED MODEL ESCALATION (ESCALATION_MODEL)
 //   The FINAL fix pass and FINAL review attempt before the loop gives up run on Opus.
@@ -222,12 +223,18 @@ const FINALIZE_SCHEMA = {
 // ----------------------------------------------------------------
 // MODEL TIERING — the primary token lever for this pipeline.
 //
-// Principle: Opus earns its cost on PLANNING; Sonnet handles the rest. A sharp spec +
-// breakdown makes implementation, testing, and verification well-scoped enough that
-// Sonnet does them reliably. So only the spec-authoring fallback runs on Opus here; every
-// execution/verification/reporting stage runs on Sonnet. (Review is gated by an
-// authoritative fresh-test run, and fix failures escalate rather than silently ship —
-// so neither needs Opus.)
+// Principle: match the model to the work. Opus earns its cost on PLANNING; Haiku handles the
+// purely-mechanical stages; Sonnet handles the judgment work in between.
+//   • Opus   — generate-tasks (authors the spec; fallback path only)
+//   • Haiku  — scout / test / finalize. Each is a fixed procedure with no real judgment:
+//              scout is a deterministic file-existence decision tree, test runs 8 commands and
+//              reads exit codes (review re-runs pytest authoritatively anyway), and finalize
+//              just fills a JS-precomputed table and runs scripted git adds.
+//   • Sonnet — implement / fix / review / document / task-log. A sharp spec + breakdown makes
+//              these well-scoped enough that Sonnet does them reliably. (Review is gated by an
+//              authoritative fresh-test run, and fix failures escalate rather than silently ship.)
+//   • Sonnet — worktree-setup stays here too: scripted, but it runs once and a failure aborts the
+//              whole pipeline, so the tiny Haiku saving isn't worth the blast radius.
 //
 // Note: the REAL planning usually happens upstream in the /generate-tasks and /breakdown
 // SKILLS (run those on an Opus session). The generate-tasks stage below is only a fallback
@@ -237,16 +244,17 @@ const FINALIZE_SCHEMA = {
 // Valid values: 'haiku' | 'sonnet' | 'opus' | undefined (inherit session model).
 // ----------------------------------------------------------------
 const MODEL = {
-  worktreeSetup: 'sonnet',   // scripted git: worktree add, sparse-checkout, suffix search
-  scout:         'sonnet',   // file existence checks + fixed-priority stage detection
+  worktreeSetup: 'sonnet',   // scripted git, but runs once per task and a failure aborts the whole
+                             //   pipeline (high blast radius) — not worth Haiku's risk for the tiny saving
+  scout:         'haiku',    // deterministic decision tree: ls a few files, apply a fixed 7-rule order
   generateTasks: 'opus',     // PLANNING — authors the spec that drives everything (fallback path)
   implement:     'sonnet',   // writes code + tests against a scoped spec/breakdown
   fix:           'sonnet',   // targeted fixes; failures escalate, never silently ship
-  test:          'sonnet',   // run 8 commands, read exit codes, write the report
+  test:          'haiku',    // run 8 fixed commands, read exit codes; review re-runs pytest authoritatively
   review:        'sonnet',   // verify criteria; gated by an authoritative fresh-test run
   document:      'sonnet',   // surgical doc patches, gated on PASS
-  taskLog:       'sonnet',   // structured STATUS/DEVLOG log authoring
-  finalize:      'sonnet',   // assemble report from given data + commit (haiku also fine here)
+  taskLog:       'sonnet',   // authors the human-facing DEVLOG prose + STATUS lines — keep the quality
+  finalize:      'haiku',    // assembles a JS-precomputed table + scripted git add; can't break the pipeline
 }
 
 // Merge an optional model override into an agent's opts (omits the key when undefined,
