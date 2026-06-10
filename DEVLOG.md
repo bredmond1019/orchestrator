@@ -4,6 +4,56 @@
 
 ---
 
+## 2026-06-10 (task 3 — EmbeddingService)
+
+Implemented `EmbeddingService` in `app/services/embedding_service.py` with `embed_text` and `embed_batch` methods backed by the Voyage AI client. The service is designed as a config-swap seam: provider, model name, and output dimensions are constructor parameters (defaulting to `voyage-2` / 1024), so a local embedding model such as Qwen3-Embedding via Ollama can slot in without code changes — this is the integration point Project H will evaluate. The API key is read from the `VOYAGE_API_KEY` environment variable. Tests in `tests/services/test_embedding_service.py` mock the Voyage client and assert correct dimensionality and batch delegation. The single review attempt awarded a PASS verdict with no blocking findings. Documentation was updated to reflect the new service and its exported interface. Next: Task 4 — TranscriptService.
+
+```
+503a158 docs: update docs for phase0-blockD-task3
+a9a23c4 feat: implement phase0-blockD-task3
+d2571c2 chore: init worktree phase0-blockd-task3
+```
+
+---
+
+## 2026-06-10 (task 9 — scaffold Project A content_pipeline workflow)
+
+Scaffolded the `content_pipeline` workflow for Project A by running `uv run createworkflow` and registering `WorkflowRegistry.CONTENT_PIPELINE` in `app/workflows/workflow_registry.py`. The first test+review pass failed due to two ruff lint violations introduced in adjacent files: UP042 (`ModelProvider(str, Enum)` → `ModelProvider(StrEnum)` in `app/core/nodes/agent.py`) and UP046 (`GenericRepository(Generic[T])` → PEP 695 `GenericRepository[T]` in `app/database/repository.py`). Fix pass 2 resolved both; all 170 tests passed, ruff reported zero errors, and pylint scored 10.00/10. The workflow stub (workflow file, nodes package, schema, and registry entry) is in place with no logic — ready for Project A implementation. Docs updated to reflect the new `WorkflowRegistry.CONTENT_PIPELINE` entry and the two type-syntax fixes. Next: Task 10 — Clean API Contract.
+
+```
+4c8b809 docs: update docs for phase0-blockD-task9
+18a232b fix: fix pass 2 for phase0-blockD-task9
+ef0cfff feat: implement phase0-blockD-task9
+90c9db1 chore: init worktree phase0-blockd-task9
+```
+
+---
+
+## 2026-06-10 (task 2 — pgvector Migration)
+
+Created an Alembic migration to enable the pgvector extension in Postgres. The migration adds `CREATE EXTENSION IF NOT EXISTS vector;` in `upgrade()` and the corresponding `DROP EXTENSION IF EXISTS vector;` in `downgrade()`. No model changes were introduced in this task — vector columns are deferred to Projects A and D when their data models are defined. The initial test run failed due to a pre-existing environment issue but was resolved; the final review awarded a PASS verdict with no blocking findings. Documentation was updated to reflect the migration file and its intended use. Next: Task 3 — EmbeddingService.
+
+```
+2561740 docs: update docs for phase0-blockD-task2
+52cdcdf feat: implement phase0-blockD-task2
+38b4adf chore: init worktree phase0-blockd-task2
+```
+
+---
+
+## 2026-06-10 (task 1 — add new runtime dependencies)
+
+Task 1 of phase0-blockD added all required runtime dependencies for the shared services layer using `uv add`: `voyageai` (EmbeddingService), `youtube-transcript-api` (TranscriptService), `trafilatura` (ArticleExtractionService default), `firecrawl-py` (ArticleExtractionService fallback), `tavily-python` (SearchService), `anthropic` (explicit pin), and `pymupdf` (PDF parsing for ChunkingService and Project D). The import verification check `uv run python -c "import voyageai, tavily, trafilatura, anthropic, fitz"` was confirmed passing. The first review attempt failed due to missing import verification details, but the second review returned a PASS verdict after confirming all imports resolved correctly and `pyproject.toml` / `uv.lock` were committed. Next: Task 2 — pgvector Migration.
+
+```
+639888c docs: update docs for phase0-blockD-task1
+da3bad2 fix: fix pass 2 for phase0-blockD-task1
+548e772 feat: implement phase0-blockD-task1
+5887ad1 chore: init worktree phase0-blockd-task1
+```
+
+---
+
 ## 2026-06-10 (Block B private face — Mac Mini Tailscale unattended access)
 
 Set up the Mac Mini's private face and connected it to my MacBook Pro. Installed the Tailscale standalone app, signed in, and put the Mini on my tailnet as `brandons-mac-mini` (`100.104.113.100`) with MagicDNS; then joined the MacBook Pro to the same tailnet and confirmed I can SSH into the Mini from it. The real work was making access survive a reboot or crash with nobody touching the machine. macOS doesn't support true before-login Tailscale — it can't run as a system service yet (tailscale#987) — and more decisively, **FileVault gates all networking at the pre-boot unlock screen**: until the disk is unlocked at the physical machine, the OS hasn't booted and nothing (SSH, Screen Sharing, VNC, Tailscale) can be running. VNC doesn't get around this for the same reason — it's an in-OS tool and the unlock screen sits below the OS. So unattended recovery meant **disabling FileVault, enabling auto-login for brandon, and turning on Tailscale's launch- and connect-on-login**. Verified end to end: rebooted the Mini and reconnected over SSH from the MacBook Pro without touching the box. The Mini's power settings were already correct for a headless machine (no system sleep, auto-restart after power failure, wake-on-network) and Remote Login was already on. Accepted tradeoff: FileVault is off, so the disk isn't encrypted at rest — acceptable because the threat model here is network exposure (handled by Tailscale + zero open ports), not theft of a physically-secured home box; the encryption-preserving alternatives (`fdesetup authrestart` for planned reboots, an IP-KVM for unplanned crashes) were considered and deferred. **Still to connect to the tailnet:** my remaining devices (Pixel tablet and phone; Kindle TBD), the private tooling itself (orchestration API, Celery, personal knowledge feed) once those services are running, and a **Claude Code remote-trigger path** so I can kick off agent runs on the Mini from other devices over Tailscale and/or via webhooks. Infrastructure/ops work on the Mini — no repository code changed this session.

@@ -5,7 +5,7 @@
 **Verdict:** PASS
 **Date:** 2026-06-10
 **Branch:** phase0-blockd-task1
-**Applied:** false
+**Applied:** true
 
 ---
 

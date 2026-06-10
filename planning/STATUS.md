@@ -3,8 +3,8 @@
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-10 — Mac Mini Tailscale private face: unattended access live (auto-login + connect-on-login, FileVault off), MacBook Pro on the tailnet; Block B (Tailscale) + Block D still run in parallel
-**Current focus:** Phase 0, Block B — private face / Tailscale **and** Block D — Shared services + first scaffold (parallel)
+**Last updated:** 2026-06-10 — Block D partial: Tasks 1, 2, 3, 9 merged; Tasks 5, 6, 7, 8, 10 escalated (docs/api-reference.md merge conflicts need manual resolution); Tasks 4, 11 blocked by upstream escalation
+**Current focus:** Phase 0, Block D — Task 5 (escalated — resolve docs/api-reference.md merge conflict, then resume /sdlc-block phase0-blockD)
 
 ---
 
@@ -25,7 +25,7 @@
 | A | Digital presence + codebase ownership | In progress | Tasks 1–2 done (core engine + support nodes read; architecture review docs generated); Tasks 3–9 paused — manual/personal tasks (LinkedIn, GitHub triage, etc.) deferred while agent-executable work proceeds |
 | B | Mac Mini agentic harness + revive site | In progress | Public face DONE (Cloudflare Tunnel). Private face IN PROGRESS: Tailscale installed on the Mini with **unattended access** — FileVault off + auto-login + Tailscale connect-on-login, so it survives reboot/crash and is reachable hands-free at `brandons-mac-mini` (100.104.113.100), zero open ports; **MacBook Pro joined the tailnet and SSH verified**. Remaining to connect to the tailnet: Pixel tablet + phone (Kindle TBD); private tooling (personal feed, orchestration API, Celery) once those services exist; a **Claude Code remote-trigger path** over Tailscale and/or webhooks. See DECISIONS D23 |
 | C | Test infra + core hardening + 4 bug fixes | Done | All 14 tasks complete: pytest scaffold; 4 production bugs fixed (`GenericRepository.exists()`, ghost-row, import-time side effects, router key coupling); full unit test suite written for `TaskContext`, `WorkflowSchema`, `WorkflowValidator`, `Workflow.run()`, `BaseRouter`/`RouterNode`, `ParallelNode`, `PromptManager`, `GenericRepository` CRUD; LinkedIn visibility post drafted; final validation confirmed `uv run pytest` passes with zero failures and all import checks clean |
-| D | Shared services + first scaffold | Not started | pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A |
+| D | Shared services + first scaffold | In progress | Tasks 1, 2, 3, 9 merged; Tasks 5, 6, 7, 8, 10 escalated (docs merge conflicts); Tasks 4, 11 blocked by upstream escalation |
 
 ### Phase 1 — Sellable Competence
 | Project | What | Status | Notes |
