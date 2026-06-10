@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-06-10 (phase0-blockD — block completion + manual merge recovery)
+
+Drove phase0-blockD to completion via the `/sdlc-block` orchestrator across three runs. **Run 1** aborted safely on a dependency-cycle guard: the auto-analysis left `app/services/__init__.py` off the additive allow-list, which — combined with task 4's real dependency on task 7 — created a 4↔7 contradiction (logical "4 after 7" vs. numeric conflict-serialization "7 after 4"). Fixed by hand-writing `planning/tasks/phase0-blockD/execution-plan.json`, marking the three append-only files (`app/services/__init__.py`, `app/core/nodes/__init__.py`, `app/workflows/workflow_registry.py`) additive. **Run 2** merged tasks 1, 2, 3, 9 cleanly; tasks 5, 6, 7, 8, 10 each PASSED their pipelines but escalated on additive merge conflicts in `docs/api-reference.md` / `docs/configuration.md` (every parallel pipeline appended a section to the same shared docs, plus each rewrote `app/services/__init__.py` with only its own export). Recovered them manually: a temporary `union` merge driver auto-reconciled the doc sections while I hand-resolved the cumulative `app/services/__init__.py`, then verified (201 tests pass, ruff clean) and removed the worktrees. **Run 3** ran the two remaining tasks — task 4 (TranscriptService, unblocked once ChunkingService landed on main) and task 11 (validation gate) — both PASS and merged clean. Final state: all 11 tasks merged, `uv run pytest` **210 passed**, `ruff check app/` clean, all import smoke-tests green. This supersedes the task-11 note below, which (written from stale context) claimed tasks 5–10 "remain escalated" — they were subsequently merged. **Block D is complete.** Next: Phase 1, Project A — Content pipeline.
+
+```
+1ab6038 chore: block orchestration report + status for phase0-blockD
+(plus manual merge commits 2a2d082, 4f87709, 9c1073b for tasks 5/6/7 and ort merges for 8/10)
+```
+
+---
+
 ## 2026-06-10 (task 11 — validate all shared services, nodes, and API contract)
 
 Task 11 ran the full validation suite for phase0-blockD: `uv run pytest` (all new service and node tests passing), `uv run ruff check app/` (zero errors), `uv run pylint app/` (no regression from baseline), and all import checks for `EmbeddingService`, `TranscriptService`, `ArticleExtractionService`, `SearchService`, `ChunkingService`, `ToolUseNode`, and `WorkflowRegistry.CONTENT_PIPELINE`. The `GET /health` endpoint and typed `TaskAcceptedResponse` response model were also verified. Review passed in a single attempt with a PASS verdict — no fixes required. Since task 11 is the final task in the block, the block sequence is complete, though tasks 5, 6, 7, 8, and 10 remain escalated due to docs/api-reference.md merge conflicts and task 4 remains blocked by that upstream escalation. Next: Phase 1, Project A — Content pipeline (scaffold workflow and implement ingestion nodes).
@@ -24,6 +35,66 @@ Implemented `TranscriptService` in `app/services/transcript_service.py`. The ser
 e9c9ae3 docs: update docs for phase0-blockD-task4
 b8254c1 feat: implement phase0-blockD-task4
 b7902ce chore: init worktree phase0-blockd-task4
+```
+
+---
+
+## 2026-06-10 (task 10 — Clean API Contract)
+
+Implemented task 10 of phase0-blockD: cleaned up the FastAPI API contract by replacing the hardcoded `CustomerCareEventSchema` in `app/api/endpoint.py` with a generic `EventPayload` dispatcher that looks up the correct schema from `WorkflowRegistry` and validates `data` against it, raising a `422 Unprocessable Entity` for unknown `workflow_type` values. Added a `GET /health` endpoint in `app/api/health.py` returning `{"status": "ok", "version": "0.1.0"}`. Added OpenAPI metadata (`title`, `description`, `version`) to `app/main.py`. Introduced a typed `TaskAcceptedResponse(task_id: str, message: str)` Pydantic model for the `202 Accepted` response instead of raw `dict`. Updated `tests/api/test_endpoint.py` to cover valid dispatch, unknown `workflow_type` → 422, and health check → 200. Review passed on the first attempt with no issues found. Next: Task 11 — Validate (run the full validation suite: pytest, ruff, pylint, and all import checks).
+
+```
+9c94552 docs: update docs for phase0-blockD-task10
+e96ec2c feat: implement phase0-blockD-task10
+5e873ba chore: init worktree phase0-blockd-task10
+```
+
+---
+
+## 2026-06-10 (task 8 — ToolUseNode raw Anthropic SDK implementation)
+
+Implemented `app/core/nodes/tool_use.py` — an abstract `ToolUseNode(Node)` base class that runs a bounded Anthropic tool-use loop. Subclasses define `tools: list[dict]` (Anthropic tool definitions) and implement `handle_tool_call(tool_name, tool_input, task_context) -> str`; the base `process()` method drives the loop, dispatching tool calls and appending `tool_result` blocks until `stop_reason == "end_turn"` or `max_iterations` (default 10) is reached. The model is read from `TOOL_USE_MODEL` env var (default `claude-haiku-4-5-20251001`), keeping the node deployment-agnostic per D18. Tests in `tests/core/test_nodes_tool_use.py` mock `anthropic.Anthropic().messages.create` and assert correct loop termination on `end_turn`, correct guard on `max_iterations`, and correct dispatch to `handle_tool_call`. Review passed on first attempt with no findings. Next: Task 9 — Scaffold Project A (run `createworkflow content_pipeline` and register in `WorkflowRegistry`).
+
+```
+21246ba docs: update docs for phase0-blockD-task8
+df5f01e feat: implement phase0-blockD-task8
+48c9899 chore: init worktree phase0-blockd-task8
+```
+
+---
+
+## 2026-06-10 (task 7 — ChunkingService)
+
+Implemented `app/services/chunking_service.py` with the `ChunkingService` class providing two methods: `chunk_text` uses `tiktoken` (`cl100k_base` encoding) to split text into overlapping token-boundary chunks (configurable `chunk_size` and `overlap`, returns empty list for empty input), and `chunk_document` dispatches `text/plain` to direct decode and `application/pdf` to `pymupdf` (`fitz`) text extraction before chunking, raising a descriptive `ValueError` for unsupported mime types. `ChunkingService` was exported from `app/services/__init__.py` with a module docstring and explicit `__all__`. Tests in `tests/services/test_chunking_service.py` cover all six required cases (short text, empty input, token overlap verification, plain-text dispatch, PDF dispatch via patched `fitz.open`, unsupported mime-type error). Review returned PASS on the first attempt with all 14 acceptance criteria met; `uv run pytest` (176 passed), `ruff check app/` (zero errors), and `pylint` (10.00/10) all clean. Next: Task 8 — ToolUseNode (raw Anthropic SDK).
+
+```
+1e4bfb1 docs: update docs for phase0-blockD-task7
+7e67fb2 feat: implement phase0-blockD-task7
+f67620c chore: init worktree phase0-blockd-task7
+```
+
+---
+
+## 2026-06-10 (task 6 — SearchService implementation)
+
+Implemented `app/services/search_service.py` with the `SearchService` class, which wraps the Tavily API to provide structured web search results for use in agent tool loops. The service reads `TAVILY_API_KEY` from env, exposes a `search(query: str, max_results: int = 5) -> list[SearchResult]` method, and returns clean Pydantic `SearchResult` models (`title`, `url`, `content`, `score`). The service was exported from `app/services/__init__.py`. Tests were written in `tests/services/test_search_service.py` covering Tavily client mocking, result schema validation, and `max_results` enforcement. All tests passed on the first run and code review resulted in a PASS verdict with no required fixes. Next: Task 7 — ChunkingService.
+
+```
+db19499 docs: update docs for phase0-blockD-task6
+c3d4595 feat: implement phase0-blockD-task6
+d4b2419 chore: init worktree phase0-blockd-task6
+```
+
+---
+
+## 2026-06-10 (task 5 — ArticleExtractionService)
+
+Implemented `ArticleExtractionService` in `app/services/article_extraction_service.py`. The service uses a two-path extraction strategy: trafilatura as the default (free, local, fast for clean articles) with Firecrawl as the fallback for JS-rendered pages where trafilatura returns empty or junk content. The `ArticleResult` Pydantic model captures `text`, `title`, and `fetch_status` (`"ok"` / `"fallback_used"` / `"failed"`). On total failure the service returns a `failed` status rather than raising, keeping pipelines alive. The Firecrawl API key is read from the `FIRECRAWL_API_KEY` env var and silently disabled if absent — no hardcoded keys, no deployment conditionals in the service layer. Tests in `tests/services/test_article_extraction_service.py` mock both trafilatura and the Firecrawl client, covering the fallback trigger and graceful-failure paths. All tests passed, ruff and pylint reported no new errors, and the review returned a PASS verdict on the first attempt. Next: Task 6 — SearchService.
+
+```
+3f281c2 docs: update docs for phase0-blockD-task5
+2e1de69 feat: implement phase0-blockD-task5
+096da10 chore: init worktree phase0-blockd-task5
 ```
 
 ---
