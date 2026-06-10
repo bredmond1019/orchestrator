@@ -1,67 +1,67 @@
-# Implementation Report — phase0-blockD-task1
+# Fix Pass 2 — phase0-blockD-task1
 
 **Date:** 2026-06-10
 **Plan:** planning/tasks/phase0-blockD/tasks.md
-**Scope:** Task 1 — Add New Dependencies
+**Fix pass:** 2
 
-## What Was Built or Changed
-- Added seven runtime dependencies to `pyproject.toml` via `uv add` (which also resolved and locked `uv.lock`):
-  - `voyageai` — EmbeddingService (Task 3)
-  - `youtube-transcript-api` — TranscriptService (Task 4)
-  - `trafilatura` — ArticleExtractionService default path (Task 5)
-  - `firecrawl-py` — ArticleExtractionService fallback + future CrawlSiteNode (Task 5)
-  - `tavily-python` — SearchService (Task 6)
-  - `anthropic` — explicit pin (was transitive via pydantic-ai); ToolUseNode (Task 8)
-  - `pymupdf` — PDF parsing for ChunkingService / Project D (Task 7)
+## Failures Addressed
+
+| Failing Criterion | Fix Applied |
+|---|---|
+| `uv run ruff check app/` reports zero errors (UP042 in `agent.py`, UP046 in `repository.py`) | Fixed both pre-existing lint errors: converted `ModelProvider` to use `StrEnum` and converted `GenericRepository` to PEP 695 type parameter syntax |
+
+## Changes Made
+
+- **`app/core/nodes/agent.py`** — Changed `from enum import Enum` to `from enum import StrEnum`; changed `class ModelProvider(str, Enum):` to `class ModelProvider(StrEnum):` (resolves UP042)
+- **`app/database/repository.py`** — Removed `from typing import Generic, TypeVar` and `T = TypeVar("T")`; changed `class GenericRepository(Generic[T]):` to `class GenericRepository[T]:` (resolves UP046, PEP 695 syntax)
 
 ## Files Created or Modified
+
 | File | Action |
 |---|---|
-| pyproject.toml | modified |
-| uv.lock | modified |
+| pyproject.toml | modified (Fix Pass 1 — added 7 dependencies) |
+| uv.lock | modified (Fix Pass 1 — resolved lock) |
+| app/core/nodes/agent.py | modified (Fix Pass 2 — UP042: StrEnum) |
+| app/database/repository.py | modified (Fix Pass 2 — UP046: PEP 695 type params) |
+| planning/tasks/phase0-blockD/reports/task1-implement.md | modified (this file) |
 
 ## Validation Output
-**Commands run:**
+
 ```
-uv add voyageai youtube-transcript-api trafilatura firecrawl-py tavily-python anthropic pymupdf
-uv run python -c "import voyageai, tavily, trafilatura, anthropic, fitz"
-uv run python -c "import youtube_transcript_api, firecrawl"
-cd app && uv run python -c "from main import app; from worker.config import celery_app"
-uv run ruff check app/
+$ uv run ruff check app/
+All checks passed!
+
+$ uv run pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.12.4, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task1
+configfile: pytest.ini
+testpaths: tests
+plugins: mock-3.15.1, anyio-4.9.0, env-1.6.0, langsmith-0.8.12
+collected 166 items
+
+tests/api/test_endpoint.py ..
+tests/core/test_nodes_parallel.py ..........
+tests/core/test_nodes_router.py .......................
+tests/core/test_schema.py ..................
+tests/core/test_task.py .......................
+tests/core/test_validate.py .......................
+tests/core/test_workflow.py ..................
+tests/database/test_repository.py .............................
+tests/services/test_prompt_loader.py ....................
+
+166 passed in 0.78s
+
+$ uv run pylint app/
+Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 ```
-**Results:**
-```
-IMPORTS OK            # voyageai, tavily, trafilatura, anthropic, fitz
-EXTRA IMPORTS OK      # youtube_transcript_api, firecrawl
-APP IMPORTS OK        # main:app and worker.config:celery_app import cleanly
-ruff: Found 2 errors  # both pre-existing, in files NOT touched by this task:
-                      #   app/core/nodes/agent.py:29:7
-                      #   app/database/repository.py:16:25
-```
+
 Status: PASSED
 
-The two ruff errors are baseline lint debt in files this task did not modify
-(`agent.py`, `repository.py`). Task 1's scope (dependency additions to
-`pyproject.toml` / `uv.lock`) introduces no new lint findings. These are slated
-for later tasks in the block that touch the relevant code.
-
-## Decisions and Trade-offs
-- `anthropic` was already present transitively via `pydantic-ai`; per spec it is now
-  pinned explicitly so the version is locked directly in our manifest rather than
-  floating with a transitive resolution.
-- Used the exact single `uv add` invocation from the breakdown (Step 1.1) so the
-  resolver computes one consistent lock rather than seven incremental relocks.
-- Did not implement Tasks 2–11 — this worktree is scoped to Task 1 only.
-
-## Follow-up Work
-- Tasks 2–11 (pgvector migration, the five services, ToolUseNode, Project A scaffold,
-  clean API contract) are handled in their own task worktrees.
-- Pre-existing ruff errors in `app/core/nodes/agent.py` and `app/database/repository.py`
-  remain; out of scope for a dependency-only task.
-
 ## git diff --stat
+
 ```
- pyproject.toml |   7 +
- uv.lock        | 930 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
- 2 files changed, 936 insertions(+), 1 deletion(-)
+ app/core/nodes/agent.py    | 4 ++--
+ app/database/repository.py | 6 +-----
+ 2 files changed, 3 insertions(+), 7 deletions(-)
 ```
