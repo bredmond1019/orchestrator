@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-06-10 (task 11 — validate all shared services, nodes, and API contract)
+
+Task 11 ran the full validation suite for phase0-blockD: `uv run pytest` (all new service and node tests passing), `uv run ruff check app/` (zero errors), `uv run pylint app/` (no regression from baseline), and all import checks for `EmbeddingService`, `TranscriptService`, `ArticleExtractionService`, `SearchService`, `ChunkingService`, `ToolUseNode`, and `WorkflowRegistry.CONTENT_PIPELINE`. The `GET /health` endpoint and typed `TaskAcceptedResponse` response model were also verified. Review passed in a single attempt with a PASS verdict — no fixes required. Since task 11 is the final task in the block, the block sequence is complete, though tasks 5, 6, 7, 8, and 10 remain escalated due to docs/api-reference.md merge conflicts and task 4 remains blocked by that upstream escalation. Next: Phase 1, Project A — Content pipeline (scaffold workflow and implement ingestion nodes).
+
+```
+d1690b4 docs: update docs for phase0-blockD-task11
+66d6d24 feat: implement phase0-blockD-task11
+6915139 chore: init worktree phase0-blockd-task11
+```
+
+---
+
+## 2026-06-10 (task 4 — TranscriptService)
+
+Implemented `TranscriptService` in `app/services/transcript_service.py`. The service exposes `fetch_transcript(url: str) -> str` which extracts a YouTube video ID from a URL and returns clean joined transcript text, and `fetch_and_chunk(url: str, chunk_size: int, overlap: int) -> list[str]` which delegates to `ChunkingService` after fetching. Descriptive errors are raised on unsupported URL formats or unavailable transcripts — no silent empty-string returns. The service was exported from `app/services/__init__.py`. Tests in `tests/services/test_transcript_service.py` mock `youtube_transcript_api`, assert video ID extraction, assert chunk delegation, and assert that a bad URL raises. Review passed on the first attempt with no findings requiring remediation. Documentation was updated to reflect the new service. Next: Task 5 — ArticleExtractionService.
+
+```
+e9c9ae3 docs: update docs for phase0-blockD-task4
+b8254c1 feat: implement phase0-blockD-task4
+b7902ce chore: init worktree phase0-blockd-task4
+```
+
+---
+
 ## 2026-06-10 (task 3 — EmbeddingService)
 
 Implemented `EmbeddingService` in `app/services/embedding_service.py` with `embed_text` and `embed_batch` methods backed by the Voyage AI client. The service is designed as a config-swap seam: provider, model name, and output dimensions are constructor parameters (defaulting to `voyage-2` / 1024), so a local embedding model such as Qwen3-Embedding via Ollama can slot in without code changes — this is the integration point Project H will evaluate. The API key is read from the `VOYAGE_API_KEY` environment variable. Tests in `tests/services/test_embedding_service.py` mock the Voyage client and assert correct dimensionality and batch delegation. The single review attempt awarded a PASS verdict with no blocking findings. Documentation was updated to reflect the new service and its exported interface. Next: Task 4 — TranscriptService.
