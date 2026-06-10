@@ -17,6 +17,14 @@ Reference: `.claude/commands/README.md`
 **Testing Agentic Systems: What's Actually Worth Testing (and What Isn't)** `[Both]`
 Under-discussed topic. Three layers: (1) unit tests for the plumbing — routing logic, context propagation, schema validation, with the LLM mocked; (2) e2e tests for the full pipeline — things agents overlook when writing unit tests only (silent routing misses, context key collisions, parallel node merge gaps); (3) how the SDLC slash commands enforce the discipline — the `/test` and `/review-task` steps run a fresh suite as an authoritative gate, not a vibe check. The four production bugs in this project's Block C make good concrete examples of what slips through without this.
 
+**Reach Your Mac Mini From Anywhere: Unattended Tailscale, and the FileVault Gotcha Nobody Mentions** `[Both]`
+A real-world walkthrough of turning a home Mac Mini into a headless box you can SSH into from any device, from anywhere, with zero open ports. The hook is the part the tutorials skip: macOS can't run Tailscale before login (tailscale#987), and FileVault gates *all* networking at the pre-boot unlock screen — so VNC, SSH, and Tailscale are equally useless until the disk is unlocked. The honest fix (disable FileVault + auto-login + connect-on-login), the threat-model reasoning that makes it acceptable on a physically-secured box, and the encryption-preserving alternatives (`fdesetup authrestart`, an IP-KVM) for those who need them. Concrete, opinionated, reasoned — not a copy-paste recipe.
+Reference: DEVLOG 2026-06-10 (Block B private face); DECISIONS D23
+
+**Host Your Own Site From a Mac Mini at Home — Cloudflare Tunnel, Zero Open Ports** `[Both]`
+How `learn-agentic-ai.com` got served to the public from a Mac Mini on a home network without forwarding a single port or exposing the home IP. The angle: a Cloudflare Tunnel (`cloudflared`, outbound-only) flips the usual self-hosting model — the origin reaches out to Cloudflare's edge instead of the internet reaching in, so DNS/TLS/DDoS sit in front and the box stays closed. Why this beats port-forwarded Caddy for a privacy-first setup, and why it's *not* the same as Tailscale Funnel (public vs. private faces, the right tool for each).
+Reference: DECISIONS D23 (2026-06-10 amendment); DEVLOG 2026-06-10 (Block B public face)
+
 ---
 
 ## Suggested (not yet added — revisit after more projects are built)
