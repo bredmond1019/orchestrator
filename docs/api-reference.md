@@ -668,10 +668,12 @@ You're an AI assistant named {{ name | default('Emma') }}, working for {{ compan
 
 ```python
 from enum import Enum
+from workflows.content_pipeline_workflow import ContentPipelineWorkflow
 from workflows.customer_care_workflow import CustomerCareWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE = CustomerCareWorkflow
+    CUSTOMER_CARE    = CustomerCareWorkflow
+    CONTENT_PIPELINE = ContentPipelineWorkflow
 ```
 
 A plain `Enum` mapping string workflow type identifiers to workflow classes. The
@@ -688,8 +690,9 @@ Celery worker resolves the correct `Workflow` subclass by looking up the
 from workflows.my_new_workflow import MyNewWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE = CustomerCareWorkflow
-    MY_NEW       = MyNewWorkflow
+    CUSTOMER_CARE    = CustomerCareWorkflow
+    CONTENT_PIPELINE = ContentPipelineWorkflow
+    MY_NEW           = MyNewWorkflow
 ```
 
 ### Naming Convention
