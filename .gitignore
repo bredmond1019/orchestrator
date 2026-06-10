@@ -92,6 +92,8 @@ target/
 # Alembic migrations
 app/alembic/versions/*
 !app/alembic/versions/.gitkeep
+# Foundational migrations that must be version-controlled
+!app/alembic/versions/*_enable_pgvector_extension.py
 
 # Playground
 playground/*.png
