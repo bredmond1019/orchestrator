@@ -118,10 +118,10 @@ credentials to use. Each `ModelProvider` enum value and its required variables:
 | `ModelProvider.OLLAMA` | `"ollama"` | `OLLAMA_BASE_URL` |
 | `ModelProvider.BEDROCK` | `"bedrock"` | `BEDROCK_AWS_ACCESS_KEY_ID`, `BEDROCK_AWS_SECRET_ACCESS_KEY`, `BEDROCK_AWS_REGION` |
 
-`ModelProvider` is defined in `app/core/nodes/agent.py` as a `str` enum:
+`ModelProvider` is defined in `app/core/nodes/agent.py` as a `StrEnum`:
 
 ```python
-class ModelProvider(str, Enum):
+class ModelProvider(StrEnum):
     OPENAI = "openai"
     AZURE_OPENAI = "azure_openai"
     ANTHROPIC = "anthropic"
