@@ -365,7 +365,7 @@ class AgentConfig:
 ### `ModelProvider` Enum
 
 ```python
-class ModelProvider(str, Enum):
+class ModelProvider(StrEnum):
     OPENAI        = "openai"
     AZURE_OPENAI  = "azure_openai"
     ANTHROPIC     = "anthropic"
@@ -541,10 +541,8 @@ engine instantiates a fresh instance when executing the next node.
 **Source:** `app/database/repository.py`
 
 ```python
-T = TypeVar("T")
-
-class GenericRepository(Generic[T]):
-    def __init__(self, session: Session, model: Type[T]): ...
+class GenericRepository[T]:
+    def __init__(self, session: Session, model: type[T]): ...
 ```
 
 Type-safe wrapper around a SQLAlchemy `Session`. Instantiated per request with the
@@ -670,10 +668,12 @@ You're an AI assistant named {{ name | default('Emma') }}, working for {{ compan
 
 ```python
 from enum import Enum
+from workflows.content_pipeline_workflow import ContentPipelineWorkflow
 from workflows.customer_care_workflow import CustomerCareWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE = CustomerCareWorkflow
+    CUSTOMER_CARE    = CustomerCareWorkflow
+    CONTENT_PIPELINE = ContentPipelineWorkflow
 ```
 
 A plain `Enum` mapping string workflow type identifiers to workflow classes. The
@@ -690,8 +690,9 @@ Celery worker resolves the correct `Workflow` subclass by looking up the
 from workflows.my_new_workflow import MyNewWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE = CustomerCareWorkflow
-    MY_NEW       = MyNewWorkflow
+    CUSTOMER_CARE    = CustomerCareWorkflow
+    CONTENT_PIPELINE = ContentPipelineWorkflow
+    MY_NEW           = MyNewWorkflow
 ```
 
 ### Naming Convention
