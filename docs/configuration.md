@@ -402,6 +402,12 @@ cd app && alembic upgrade head
 
 This requires `DATABASE_*` variables to be set in `app/.env` and Postgres to be reachable.
 
+**pgvector prerequisite:** The first migration (`12a5c7643ab9_enable_pgvector_extension`) runs
+`CREATE EXTENSION IF NOT EXISTS vector`. The `supabase/postgres:15.8.1` Docker image ships with
+pgvector pre-installed — no extra steps needed in the Docker stack. If you run a plain local
+Postgres instance, install the pgvector extension first (e.g. `brew install pgvector` on macOS,
+or the `postgresql-<ver>-pgvector` package on Linux) before applying migrations.
+
 ### Running Redis locally
 
 If Redis is not already running, start it with:
