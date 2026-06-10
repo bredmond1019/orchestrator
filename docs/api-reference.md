@@ -18,9 +18,10 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 8. [BaseRouter and RouterNode](#baserouter-and-routernode)
 9. [GenericRepository](#genericrepository)
 10. [PromptManager](#promptmanager)
-11. [WorkflowRegistry](#workflowregistry)
-12. [Event SQLAlchemy Model](#event-sqlalchemy-model)
-13. [createworkflow CLI](#createworkflow-cli)
+11. [EmbeddingService](#embeddingservice)
+12. [WorkflowRegistry](#workflowregistry)
+13. [Event SQLAlchemy Model](#event-sqlalchemy-model)
+14. [createworkflow CLI](#createworkflow-cli)
 
 ---
 
@@ -658,6 +659,61 @@ author: TechGear AI Team
 ---
 
 You're an AI assistant named {{ name | default('Emma') }}, working for {{ company | default('TechGear') }}.
+```
+
+---
+
+## EmbeddingService
+
+**Source:** `app/services/embedding_service.py`
+
+```python
+class EmbeddingService:
+    def __init__(self, model: str = "voyage-2", dims: int = 1024) -> None:
+```
+
+Wraps the VoyageAI client to produce float embedding vectors. `model` and `dims` are
+constructor params — this is the deliberate provider-swap seam: substituting a local
+model (e.g. Qwen3-Embedding via Ollama) requires no code changes, only a different
+constructor call.
+
+Reads `VOYAGE_API_KEY` from the environment at construction time via `os.environ["VOYAGE_API_KEY"]`.
+If the variable is absent a `KeyError` is raised immediately.
+
+### Constructor parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `model` | `str` | `"voyage-2"` | Model name passed to `voyageai.Client.embed()`. |
+| `dims` | `int` | `1024` | Expected embedding dimensionality (stored for future vector-column validation; not currently enforced against returned vectors). |
+
+### `embed_text(text: str) -> list[float]`
+
+```python
+def embed_text(self, text: str) -> list[float]:
+```
+
+Embeds a single string and returns its vector as a `list[float]`.
+Internally calls `voyageai.Client.embed([text], model=self._model)` and returns
+`result.embeddings[0]`.
+
+### `embed_batch(texts: list[str]) -> list[list[float]]`
+
+```python
+def embed_batch(self, texts: list[str]) -> list[list[float]]:
+```
+
+Embeds a list of strings in one API call and returns one vector per input as a
+`list[list[float]]`.
+Internally calls `voyageai.Client.embed(texts, model=self._model)` and returns
+`result.embeddings`.
+
+### Export
+
+`EmbeddingService` is exported from `app/services/__init__.py`:
+
+```python
+from services import EmbeddingService
 ```
 
 ---
