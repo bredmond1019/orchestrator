@@ -23,15 +23,18 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 
 ---
 
-## Known bugs (unfixed in core — fix these when you touch the relevant code)
+## Core hardening (Block C fixed these four production bugs — don't reintroduce them)
 
-| Location | Bug |
-|---|---|
-| `database/repository.py` `GenericRepository.exists()` | Uses `self.model.query.filter_by(...).exists()` — SQLAlchemy 2.x AttributeError |
-| `api/endpoint.py` | Commit happens before `send_task`; if `send_task` fails the row is orphaned (ghost row) |
-| `database/session.py` line 15 | `create_engine(...)` runs at import time — side effect on module load |
-| `worker/config.py` line 45–46 | `Celery(...)` and `config_from_object(...)` run at import time — side effect on module load |
-| Router nodes | Route keys are hard-coded strings; prefer a clear `KeyError` message over a silent miss |
+These were the documented production bugs; all are fixed and covered by tests. The table now records the **guard to preserve** when you touch the code, not an open TODO.
+
+| Location | Bug that was fixed | Guard to keep |
+|---|---|---|
+| `database/repository.py` `GenericRepository.exists()` | `self.model.query.filter_by(...).exists()` — SQLAlchemy 1.x, errors on 2.x | uses `self.session.query(self.model).filter_by(**kwargs).first() is not None` |
+| `api/endpoint.py` | committed before `send_task`; a `send_task` failure orphaned the row (ghost row) | `session.flush()` (not commit) assigns the id inside the open transaction; `db_session` rolls back if `send_task` raises |
+| `database/session.py` | `create_engine(...)` ran at import time | engine is lazy via `_get_engine()` (created on first use, not module load) |
+| Router nodes / `core/task.py` | mis-ordered nodes surfaced a raw, silent `KeyError` | router nodes read via `TaskContext.get_node_output()`, which raises a descriptive error naming the missing node and listing completed ones |
+
+Note: `worker/config.py` still constructs `celery_app` at import — that is **intentional and required** (it must be importable as `-A worker.config.celery_app`). What was removed is the config-assembly side effect: Redis URL and Celery settings are now pure functions (`get_redis_url()`, `get_celery_config()`).
 
 ---
 

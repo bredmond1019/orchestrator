@@ -1,7 +1,7 @@
 # App Architecture Overview
 ## Codebase Analysis for Agentic Engineering Projects
 
-*Reviewed: May 2026 · Scope: `app/` directory*
+*Reviewed: May 2026 · Updated: June 2026 (Phase 0 Block D — shared services layer, `ToolUseNode`, pgvector, clean API contract) · Scope: `app/` directory*
 
 ---
 
@@ -98,7 +98,9 @@ The most important node type. Wraps `pydantic-ai`'s `Agent` class with:
 
 **Limitation for learning:** `AgentNode.__init__` calls `Agent()` from pydantic-ai which wraps the tool loop for you. For Projects 2–4 where the learning goal *is* the agentic tool loop, you may want to implement a bare `ToolUseNode` that uses `anthropic.Anthropic()` directly and manages the `while stop_reason == "tool_use"` loop yourself. This is educational — do it at least once.
 
-**Extension needed:** Add `ToolUseAgentNode` subclass for tool-calling agents (Project 2+).
+**Extension — done (Block D):** the bare `ToolUseNode` (raw `anthropic.Anthropic()`, explicit
+`while stop_reason == "tool_use"` loop, bounded by `max_iterations`) now lives in `core/nodes/tool_use.py`.
+See its entry under "Shared Services Layer" below and the signature in [api-reference.md](api-reference.md).
 
 ---
 
@@ -146,10 +148,10 @@ DFS cycle detection + BFS reachability check. Runs on every `Workflow.__init__()
 
 **What's reusable:** `DatabaseUtils`, `db_session`, `GenericRepository` — all of it. Every new model (content chunks, learning artifacts, agent episodes) follows the same pattern.
 
-**What's missing for the learning plan:**
-- pgvector support (the `supabase/postgres:15.8.1` image *already has pgvector installed* — you just need to enable the extension and add vector columns)
-- New models: `ContentChunk`, `LearningArtifact`, `AgentEpisode`, `SemanticMemory`
-- Embedding service (Voyage AI)
+**Status (post Block D):**
+- pgvector — extension now **enabled** by migration (`supabase/postgres:15.8.1` ships it); vector *columns* still to add per project.
+- `EmbeddingService` (Voyage AI) — **built** (`app/services/embedding_service.py`).
+- Still to add: the embedding-bearing models `ContentChunk`, `LearningArtifact` (Projects A/D) and `AgentEpisode`, `SemanticMemory` (Project G) — built with the project that stores them.
 
 ---
 
@@ -192,66 +194,46 @@ The Customer Care workflow is a **worked example**, not a foundation to build on
 
 ---
 
-### ⚠️ THINGS THAT NEED TO BE BUILT
+### ✅ SHARED SERVICES LAYER — built in Phase 0, Block D
 
-These are gaps between the current codebase and the learning plan's requirements:
+Most of what this section originally listed as "to build" now exists. Phase 0 Block D added a
+first-class **services layer** (`app/services/`) alongside the core engine, plus a raw-SDK node type,
+the pgvector extension, the first project scaffold, and a clean generic API contract. Precise
+class-level signatures live in [api-reference.md](api-reference.md); env vars in
+[configuration.md](configuration.md). What shipped:
 
-#### 1. pgvector + Embeddings Layer
-The Supabase postgres image already ships with pgvector. You need:
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-Then:
-- New Alembic migration with `vector` column types
-- `services/embedding_service.py` — Voyage AI client wrapper
-- New models: `ContentChunk(id, doc_id, position, content, embedding vector(1024))`
+| Built | Where | Notes |
+|---|---|---|
+| pgvector **extension** | Alembic migration (`enable_pgvector_extension`) | `CREATE EXTENSION IF NOT EXISTS vector;` — extension only; vector *columns* come with the models below |
+| `EmbeddingService` | `services/embedding_service.py` | Voyage AI; provider/model/dims are constructor params — the config-swap seam Project H evaluates (a local model slots in without code changes) |
+| `TranscriptService` | `services/transcript_service.py` | YouTube transcript fetch + delegate-to-`ChunkingService` |
+| `ArticleExtractionService` | `services/article_extraction_service.py` | trafilatura-first, Firecrawl fallback for JS pages; returns `ArticleResult`, never raises |
+| `SearchService` | `services/search_service.py` | Tavily wrapper → typed `SearchResult` list for tool-use loops |
+| `ChunkingService` | `services/chunking_service.py` | `tiktoken` token-boundary chunking; PDF via `pymupdf` |
+| `ToolUseNode` | `core/nodes/tool_use.py` | raw Anthropic SDK tool loop (the "educational loop" below) — abstract base; subclass + implement `handle_tool_call`; bounded by `max_iterations`; model from `TOOL_USE_MODEL` env |
+| Generic API contract | `api/endpoint.py`, `api/health.py`, `api/schema_registry.py`, `api/models.py` | `EventPayload` dispatcher (schema looked up by `workflow_type`, `422` on unknown), `GET /health`, typed `TaskAcceptedResponse` — the brain's HTTP surface that shells drive (D16 Layer 3) |
+| Project A scaffold | `workflows/content_pipeline_workflow*`, `schemas/content_pipeline_schema.py` | stub only; registered as `WorkflowRegistry.CONTENT_PIPELINE` |
 
-#### 2. `ToolUseNode` (raw Anthropic agentic loop)
-The pydantic-ai `AgentNode` handles tool calls internally. For Projects 2–3 where understanding the tool loop is the educational goal, write a `ToolUseNode` that exposes:
-```python
-class ToolUseNode(Node):
-    tools: list[dict]  # Anthropic tool definitions
-    
-    def run_with_tools(self, messages: list, system: str) -> str:
-        client = anthropic.Anthropic()
-        while True:
-            response = client.messages.create(...)
-            if response.stop_reason == "end_turn":
-                return ...
-            # process tool calls, append results, continue
-```
+The `WorkflowRegistry` enum scaling concern is resolved in practice: each project adds one entry
+(`CONTENT_PIPELINE` is the first beyond `customer_care`).
 
-#### 3. New Database Models
-Per the learning plan's storage requirements:
-- `LearningArtifact` — source_url, type, title, content, embedding
-- `ContentChunk` — doc_id, position, content, embedding  
-- `AgentEpisode` — session_id, summary, outcome, tags, embedding
-- `SemanticMemory` — fact, confidence, evidence, created_at
+### ⚠️ STILL TO BUILD (per project, just-in-time)
 
-#### 4. YouTube Transcript Service
-```python
-# services/transcript_service.py
-# Wraps youtube-transcript-api, handles chunking for long videos
-```
+Deliberately **not** built yet — these arrive with the project that needs them, not before:
 
-#### 5. Web Search Service (Tavily)
-```python
-# services/search_service.py
-# Tavily client wrapper, returns clean dicts for use in ToolUseNode
-```
-
-#### 6. Long-Content Chunking Service
-```python
-# services/chunking_service.py
-# Splits transcripts/PDFs into overlapping token-sized chunks
-```
-
-#### 7. Multi-Workflow Registry
-The current `WorkflowRegistry` enum has one entry. Each project adds a new entry. This scales fine — just extend the enum.
+- **Vector-column models.** The pgvector *extension* is enabled, but no `vector` columns exist yet.
+  Add them with the project that stores embeddings: `ContentChunk(doc_id, position, content, embedding vector(1024))`
+  and `LearningArtifact` with Project A/D; `AgentEpisode` / `SemanticMemory` (multi-peer) with Project G.
+- **`ParallelNode` result-merge.** Still the known gap (see ParallelNode above) — fix it in Project E,
+  where parallel passes first need their outputs merged back via uniquely-keyed slots.
 
 ---
 
-## The One Design Decision to Make Now
+## The One Design Decision (resolved: **Both**)
+
+> **Resolved in Block D.** Both node types now exist: `AgentNode` (pydantic-ai) and `ToolUseNode`
+> (raw Anthropic SDK). Use the matrix below to choose per node — `AgentNode` for structured
+> classification/generation, `ToolUseNode` where *feeling the tool loop* is the point (Project B).
 
 **Do you use pydantic-ai's `AgentNode` or raw Anthropic SDK for agent calls?**
 
@@ -267,11 +249,13 @@ The current `WorkflowRegistry` enum has one entry. Each project adds a new entry
 
 ## Dependency Notes
 
-Current `pyproject.toml` has everything needed except:
-- `voyageai` — for embeddings
-- `youtube-transcript-api` — for Project 0
-- `tavily-python` — for Project 2 web search
-- `pymupdf` — for Project 1 PDF ingestion
-- `anthropic` — direct SDK (pydantic-ai pulls it as a transitive dep, but good to pin explicitly)
+These were all **added in Block D** and are now in `pyproject.toml` / `uv.lock`:
+- `voyageai` — embeddings (`EmbeddingService`)
+- `youtube-transcript-api` — transcripts (`TranscriptService`)
+- `trafilatura` + `firecrawl-py` — article extraction, default + JS fallback (`ArticleExtractionService`)
+- `tavily-python` — web search (`SearchService`)
+- `pymupdf` — PDF parsing (`ChunkingService`)
+- `anthropic` — direct SDK, now pinned explicitly (`ToolUseNode`; pydantic-ai also pulls it transitively)
 
-The `supabase/postgres` Docker image includes pgvector. No Docker changes needed for vector support — just a migration.
+The `supabase/postgres` Docker image includes pgvector, and the extension is now enabled by migration.
+No Docker changes were needed for vector support — vector *columns* are added per project (see "Still to build").
