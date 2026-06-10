@@ -5,15 +5,11 @@ This module provides a generic repository for database operations.
 It supports basic CRUD operations and additional methods for querying and updating data.
 """
 
-from typing import Generic, TypeVar
-
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-T = TypeVar("T")
 
-
-class GenericRepository(Generic[T]):
+class GenericRepository[T]:
     def __init__(self, session: Session, model: type[T]):
         self.session = session
         self.model = model
