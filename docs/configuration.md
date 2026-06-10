@@ -94,6 +94,8 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `OPENAI_API_VERSION` | string | `2024-07-01-preview` | Conditional | `AgentNode` / `ModelProvider.AZURE_OPENAI` |
 | `ANTHROPIC_API_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.ANTHROPIC` |
 | `VOYAGE_API_KEY` | string | — | Conditional | `EmbeddingService` |
+| `ANTHROPIC_API_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.ANTHROPIC`, `ToolUseNode` |
+| `TOOL_USE_MODEL` | string | `claude-haiku-4-5-20251001` | No | `ToolUseNode` — overrides the Anthropic model used by all `ToolUseNode` subclasses |
 | `GEMINI_API_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.GEMINI` |
 | `OLLAMA_BASE_URL` | string | `http://localhost:11434/v1` | Conditional | `AgentNode` / `ModelProvider.OLLAMA` |
 | `BEDROCK_AWS_ACCESS_KEY_ID` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
