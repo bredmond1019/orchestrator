@@ -28,6 +28,10 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 12. [WorkflowRegistry](#workflowregistry)
 13. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 14. [createworkflow CLI](#createworkflow-cli)
+11. [WorkflowRegistry](#workflowregistry)
+12. [Event SQLAlchemy Model](#event-sqlalchemy-model)
+13. [createworkflow CLI](#createworkflow-cli)
+14. [API Layer](#api-layer)
 
 ---
 
@@ -1064,14 +1068,29 @@ Celery worker resolves the correct `Workflow` subclass by looking up the
 1. Import the new workflow class at the top of the file.
 2. Add an enum member whose name matches the intended `workflow_type` string (by
    convention, `UPPER_SNAKE_CASE`).
+3. Add an entry to `app/api/schema_registry.py`'s `SCHEMA_MAP` mapping the enum
+   member name to the workflow's event schema class. Without this step the generic
+   API dispatcher will reject requests for the new workflow with a 422.
 
 ```python
+# app/workflows/workflow_registry.py
 from workflows.my_new_workflow import MyNewWorkflow
 
 class WorkflowRegistry(Enum):
     CUSTOMER_CARE    = CustomerCareWorkflow
     CONTENT_PIPELINE = ContentPipelineWorkflow
     MY_NEW           = MyNewWorkflow
+```
+
+```python
+# app/api/schema_registry.py
+from schemas.my_new_schema import MyNewEventSchema
+
+SCHEMA_MAP: dict[str, type[BaseModel]] = {
+    WorkflowRegistry.CUSTOMER_CARE.name:    CustomerCareEventSchema,
+    WorkflowRegistry.CONTENT_PIPELINE.name: ContentPipelineEventSchema,
+    WorkflowRegistry.MY_NEW.name:           MyNewEventSchema,
+}
 ```
 
 ### Naming Convention
@@ -1221,5 +1240,99 @@ workflow is functional:
 | 2 | Add real node files under `app/workflows/<name>_workflow_nodes/`. |
 | 3 | Wire `WorkflowSchema`: set `start`, populate `nodes` with real `NodeConfig` entries and their `connections`. |
 | 4 | Register in `app/workflows/workflow_registry.py`: import the class and add an enum member. |
+| 4a | Add the event schema to `app/api/schema_registry.py` `SCHEMA_MAP` (see [WorkflowRegistry — Adding a New Entry](#adding-a-new-entry)). |
 | 5 | Add at least one `.j2` prompt file in `app/prompts/` for every system prompt the workflow uses. |
 | 6 | Write tests before marking the workflow complete (see `planning/Test_Plan.md`). |
+
+---
+
+## API Layer
+
+**Sources:** `app/api/models.py`, `app/api/health.py`, `app/api/schema_registry.py`, `app/api/endpoint.py`
+
+The API layer exposes a single generic dispatch endpoint and a health endpoint. All
+request and response types are typed Pydantic models — no raw `dict` responses.
+
+### `EventPayload`
+
+**Source:** `app/api/models.py`
+
+```python
+class EventPayload(BaseModel):
+    workflow_type: str
+    data: dict
+```
+
+The inbound request body for `POST /events`. `workflow_type` must match an entry in
+`SCHEMA_MAP` (see below). `data` is validated against the resolved workflow-specific
+event schema before dispatch.
+
+| Field | Type | Description |
+|---|---|---|
+| `workflow_type` | `str` | Must match a `WorkflowRegistry` enum member name (e.g. `"CONTENT_PIPELINE"`). |
+| `data` | `dict` | Raw event payload; validated against the workflow's event schema class. |
+
+### `TaskAcceptedResponse`
+
+**Source:** `app/api/models.py`
+
+```python
+class TaskAcceptedResponse(BaseModel):
+    task_id: str
+    message: str
+```
+
+Typed 202 response body returned by `POST /events` on successful dispatch.
+
+| Field | Type | Description |
+|---|---|---|
+| `task_id` | `str` | The Celery task UUID assigned to the dispatched workflow run. |
+| `message` | `str` | Human-readable confirmation string. |
+
+### `HealthResponse`
+
+**Source:** `app/api/health.py`
+
+```python
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+```
+
+Typed 200 response body for `GET /health`.
+
+| Field | Type | Description |
+|---|---|---|
+| `status` | `str` | Always `"ok"` when the service is running. |
+| `version` | `str` | Application version string (e.g. `"0.1.0"`). |
+
+### `GET /health`
+
+**Source:** `app/api/health.py`
+
+```
+GET /health → 200 HealthResponse(status="ok", version="0.1.0")
+```
+
+No authentication required. Returns immediately without touching the database or
+message broker. Use this endpoint for liveness probes.
+
+### `SCHEMA_MAP`
+
+**Source:** `app/api/schema_registry.py`
+
+```python
+SCHEMA_MAP: dict[str, type[BaseModel]] = {
+    WorkflowRegistry.CUSTOMER_CARE.name:    CustomerCareEventSchema,
+    WorkflowRegistry.CONTENT_PIPELINE.name: ContentPipelineEventSchema,
+}
+```
+
+Maps `WorkflowRegistry` enum member names (strings) to their corresponding event
+schema classes. The generic dispatcher in `endpoint.py` resolves the correct schema
+by looking up `payload.workflow_type` in this dict.
+
+**Every new workflow must add an entry here.** If the entry is missing, requests for
+that `workflow_type` return `422 Unprocessable Entity` with a descriptive error
+message. See [WorkflowRegistry — Adding a New Entry](#adding-a-new-entry) for the
+complete checklist.
