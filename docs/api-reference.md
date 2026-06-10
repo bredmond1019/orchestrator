@@ -19,6 +19,7 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 9. [GenericRepository](#genericrepository)
 10. [PromptManager](#promptmanager)
 11. [EmbeddingService](#embeddingservice)
+11. [ArticleExtractionService](#articleextractionservice)
 12. [WorkflowRegistry](#workflowregistry)
 13. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 14. [createworkflow CLI](#createworkflow-cli)
@@ -714,6 +715,62 @@ Internally calls `voyageai.Client.embed(texts, model=self._model)` and returns
 
 ```python
 from services import EmbeddingService
+## ArticleExtractionService
+
+**Source:** `app/services/article_extraction_service.py`
+
+```python
+class ArticleResult(BaseModel):
+    text: str
+    title: str | None = None
+    fetch_status: str  # "ok" | "fallback_used" | "failed"
+
+class ArticleExtractionService:
+    def __init__(self) -> None: ...
+    def extract(self, url: str) -> ArticleResult: ...
+```
+
+Extracts readable article text from a URL. Uses `trafilatura` as the primary path
+(free, local, fast for clean articles) and optionally falls back to the Firecrawl
+hosted scraper when trafilatura returns nothing (e.g., JS-rendered pages).
+
+The service is **stateless** — no call-count guard. Per-agent rate limiting belongs
+in the calling node, not here.
+
+### `ArticleResult`
+
+| Field | Type | Values |
+|---|---|---|
+| `text` | `str` | Extracted article body; empty string on failure |
+| `title` | `str \| None` | Page title when available; `None` otherwise |
+| `fetch_status` | `str` | `"ok"` — trafilatura succeeded; `"fallback_used"` — Firecrawl fallback succeeded; `"failed"` — both paths failed |
+
+### `ArticleExtractionService.extract(url)`
+
+```python
+def extract(self, url: str) -> ArticleResult:
+```
+
+Never raises. On total extraction failure returns an `ArticleResult` with
+`text=""` and `fetch_status="failed"` and logs a `WARNING`.
+
+**Extraction path:**
+
+1. `trafilatura.fetch_url(url)` → `trafilatura.extract(downloaded)`
+2. If step 1 returns `None` **and** `FIRECRAWL_API_KEY` is set, calls
+   `FirecrawlApp.scrape_url(url, params={"formats": ["markdown"]})`.
+3. If both paths fail, returns `fetch_status="failed"`.
+
+**Firecrawl fallback gating:** The fallback is silently skipped when
+`FIRECRAWL_API_KEY` is absent. No exception is raised.
+
+### Exports
+
+Both `ArticleExtractionService` and `ArticleResult` are exported from
+`app/services/__init__.py`:
+
+```python
+from services import ArticleExtractionService, ArticleResult
 ```
 
 ---
