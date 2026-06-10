@@ -102,6 +102,49 @@ If no `breakdown.md` exists the workflows proceed on `tasks.md` alone.
 
 ---
 
+## Model Tiering & Token Cost
+
+Each pipeline stage runs as its own agent, so each can run on a different model. `sdlc-task` tiers them from a single `MODEL` map at the top of the file. The guiding principle:
+
+> **Opus earns its cost on planning. Sonnet handles the rest.**
+
+A sharp spec + breakdown makes implementation, testing, and verification well-scoped enough that Sonnet does them reliably — so only spec authoring needs Opus.
+
+| Stage | Model | Why |
+|---|---|---|
+| `generate-tasks` | **opus** | Planning — authors the spec that drives everything. (Fallback only; see below.) |
+| `worktree-setup`, `scout` | sonnet | Scripted git + file-existence checks. |
+| `implement` | sonnet | Writes code + tests against a scoped spec/breakdown. |
+| `fix` | sonnet | Targeted fixes; failures escalate, never silently ship. |
+| `test` | sonnet | Runs 8 commands, reads exit codes, writes the report. |
+| `review` | sonnet | Verifies criteria — **gated by an authoritative fresh-test run**, so a cheap reviewer can't pass failing tests. |
+| `document`, `task-log`, `finalize` | sonnet | Surgical doc patches, log authoring, report assembly. |
+
+Change one value in `MODEL` to re-tier; nothing else moves. Valid values: `'haiku' | 'sonnet' | 'opus' | undefined` (inherit the session model).
+
+### Where the planning leverage actually is
+
+Inside `sdlc-task`, `generate-tasks` is only a **fallback** that fires when the spec file is missing. Normally `tasks.md` and `breakdown.md` are authored **upstream** by the `/generate-tasks` and `/breakdown` skills — which run on your **session** model, not a per-agent override. So to cash in "Opus for planning," **run those two skills on an Opus session**, then let the pipeline grind on Sonnet. That upstream spec quality is exactly what makes Sonnet-everywhere-else reliable.
+
+### Staged model escalation
+
+`review` is the verdict gate and `fix` is the riskiest stage (debugging can get deep) — but neither needs Opus by default, because the structure protects them: review is gated by fresh tests, and a weak fix fails the loop and escalates rather than shipping. To cover the genuinely-hard case without paying Opus on every task, `sdlc-task` escalates the model **only on the last attempt before giving up**:
+
+- the **final fix pass** (`fixPass === MAX_REVIEW_ATTEMPTS`) and
+- the **final review attempt** (`reviewAttempts === MAX_REVIEW_ATTEMPTS`)
+
+run on `ESCALATION_MODEL` (default `opus`). The first two fix/review cycles stay on Sonnet; only a task that has already failed twice gets one Opus shot before it wraps up FAIL (or, under `/sdlc-block`, escalates to triage). This is strictly better than "all Sonnet" (which misses hard cases) or "all Opus" (which overpays for easy ones). Set `ESCALATION_MODEL = null` to disable.
+
+### Other levers
+
+- **Triage-gated retries** (`/sdlc-block` only) — a clean-slate retry re-runs a full pipeline, so the orchestrator only spends that on *transient/progressing* failures, never a stuck one.
+- **Plan caching** (`/sdlc-block` only) — `execution-plan.json` is committed and reused, skipping the dependency analysis on re-runs.
+- **Output capping** *(available, not enabled)* — `test`/`review` currently pipe full `pytest`/`pylint` output into the agent; capping with `| tail -80` would bound input tokens on large/failing suites at the cost of some context. Apply only if cost on big suites becomes a concern.
+
+> Tiering matters most under `/sdlc-block`, which fans this pipeline across many tasks — every per-stage saving multiplies by task count. See [sdlc-orchestration.md](sdlc-orchestration.md) for the orchestrator's own tiering.
+
+---
+
 ## `/sdlc-run` — Sequential Pipeline
 
 ### Usage
