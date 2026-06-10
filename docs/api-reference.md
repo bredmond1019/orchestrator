@@ -16,22 +16,18 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 6. [AgentNode](#agentnode)
 7. [ParallelNode](#parallelnode)
 8. [BaseRouter and RouterNode](#baserouter-and-routernode)
-9. [GenericRepository](#genericrepository)
-10. [PromptManager](#promptmanager)
-11. [EmbeddingService](#embeddingservice)
-11. [ArticleExtractionService](#articleextractionservice)
-11. [SearchService and SearchResult](#searchservice-and-searchresult)
-11. [ChunkingService](#chunkingservice)
 9. [ToolUseNode](#tooluse-node)
 10. [GenericRepository](#genericrepository)
 11. [PromptManager](#promptmanager)
-12. [WorkflowRegistry](#workflowregistry)
-13. [Event SQLAlchemy Model](#event-sqlalchemy-model)
-14. [createworkflow CLI](#createworkflow-cli)
-11. [WorkflowRegistry](#workflowregistry)
-12. [Event SQLAlchemy Model](#event-sqlalchemy-model)
-13. [createworkflow CLI](#createworkflow-cli)
-14. [API Layer](#api-layer)
+12. [EmbeddingService](#embeddingservice)
+13. [ArticleExtractionService](#articleextractionservice)
+14. [SearchService and SearchResult](#searchservice-and-searchresult)
+15. [ChunkingService](#chunkingservice)
+16. [TranscriptService](#transcriptservice)
+17. [WorkflowRegistry](#workflowregistry)
+18. [Event SQLAlchemy Model](#event-sqlalchemy-model)
+19. [createworkflow CLI](#createworkflow-cli)
+20. [API Layer](#api-layer)
 
 ---
 
@@ -853,6 +849,10 @@ Internally calls `voyageai.Client.embed(texts, model=self._model)` and returns
 
 ```python
 from services import EmbeddingService
+```
+
+---
+
 ## ArticleExtractionService
 
 **Source:** `app/services/article_extraction_service.py`
@@ -909,6 +909,10 @@ Both `ArticleExtractionService` and `ArticleResult` are exported from
 
 ```python
 from services import ArticleExtractionService, ArticleResult
+```
+
+---
+
 ## SearchService and SearchResult
 
 **Source:** `app/services/search_service.py`
@@ -969,6 +973,9 @@ Both classes are exported from `app/services/__init__.py`:
 ```python
 from services.search_service import SearchService, SearchResult
 ```
+
+---
+
 ## ChunkingService
 
 **Source:** `app/services/chunking_service.py`
