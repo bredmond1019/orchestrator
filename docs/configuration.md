@@ -100,9 +100,10 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `BEDROCK_AWS_SECRET_ACCESS_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
 | `BEDROCK_AWS_REGION` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
 | `FIRECRAWL_API_KEY` | string | — | Optional | `ArticleExtractionService` Firecrawl fallback |
+| `TAVILY_API_KEY` | string | — | Conditional | `SearchService` — required when any workflow uses web search |
 
 "Conditional" means the variable is required only when a workflow node is configured with the
-corresponding `ModelProvider` value.
+corresponding `ModelProvider` value (or service, in the case of `TAVILY_API_KEY`).
 
 ---
 

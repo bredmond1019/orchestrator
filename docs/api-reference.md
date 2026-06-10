@@ -20,6 +20,7 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 10. [PromptManager](#promptmanager)
 11. [EmbeddingService](#embeddingservice)
 11. [ArticleExtractionService](#articleextractionservice)
+11. [SearchService and SearchResult](#searchservice-and-searchresult)
 12. [WorkflowRegistry](#workflowregistry)
 13. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 14. [createworkflow CLI](#createworkflow-cli)
@@ -771,6 +772,65 @@ Both `ArticleExtractionService` and `ArticleResult` are exported from
 
 ```python
 from services import ArticleExtractionService, ArticleResult
+## SearchService and SearchResult
+
+**Source:** `app/services/search_service.py`
+
+Thin wrapper over the [Tavily](https://tavily.com/) search client. Returns typed
+`SearchResult` instances suitable for a tool-use agent loop.
+
+### `SearchResult`
+
+```python
+class SearchResult(BaseModel):
+    title: str
+    url: str
+    content: str
+    score: float | None = None
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `title` | `str` | Page title from the search result. Defaults to `""` if absent in the Tavily response. |
+| `url` | `str` | Page URL. Defaults to `""` if absent. |
+| `content` | `str` | Page text excerpt. Defaults to `""` if absent. |
+| `score` | `float | None` | Relevance score returned by Tavily, or `None` if not provided. |
+
+### `SearchService`
+
+```python
+class SearchService:
+    def __init__(self) -> None: ...
+    def search(self, query: str, max_results: int = 5) -> list[SearchResult]: ...
+```
+
+#### `__init__`
+
+Reads `TAVILY_API_KEY` from the environment via `os.environ["TAVILY_API_KEY"]` and
+constructs a `TavilyClient`. Raises `KeyError` immediately if the variable is absent —
+fail-fast rather than a silent default.
+
+**Required env var:** `TAVILY_API_KEY`
+
+#### `search(query, max_results=5) -> list[SearchResult]`
+
+Calls `TavilyClient.search(query, max_results=max_results)` and maps the raw Tavily
+result dicts to `SearchResult` instances. Any missing field defaults gracefully:
+`title`, `url`, and `content` default to `""`, `score` defaults to `None`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `query` | `str` | required | Search query string. |
+| `max_results` | `int` | `5` | Maximum number of results to return; passed directly to the Tavily client. |
+
+**Returns:** `list[SearchResult]` — empty list if Tavily returns no `"results"` key.
+
+### Exports
+
+Both classes are exported from `app/services/__init__.py`:
+
+```python
+from services.search_service import SearchService, SearchResult
 ```
 
 ---
