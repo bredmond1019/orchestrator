@@ -296,10 +296,23 @@ STEP 3 — Build the dependency graph. For EACH task determine:
   - dependsOn:     task numbers whose output this task consumes. A depends on B if A's text
                    references a symbol/file B creates (e.g. "delegates to ChunkingService (Task 7)").
   - evidence:      quote the exact phrase(s) from tasks.md/breakdown.md proving each dependsOn edge.
-  Then classify shared files into "additiveFiles": a file belongs here ONLY if every task that
-  touches it merely APPENDS (an export line, a registry entry) and none rewrites existing lines.
-  Be CONSERVATIVE: if unsure whether an edge exists, INCLUDE it; if unsure whether a file is
-  additive, LEAVE IT OUT (treat as exclusive). Over-serializing is safe; a bad merge is not.
+  Then classify shared files into "additiveFiles": a file belongs here if every task that touches it
+  only CONTRIBUTES its own independent piece (an export line, a registry entry, a doc section for the
+  component IT created) rather than rewriting another task's lines.
+  ADDITIVE BY DEFAULT — include these whenever more than one task touches them:
+    - Package aggregator __init__.py files (e.g. app/services/__init__.py, app/core/nodes/__init__.py)
+      — each task adds an import + an __all__ entry for the symbol it created.
+    - Registry files (e.g. app/workflows/workflow_registry.py) — each task appends one enum/registry entry.
+    - Auto-generated reference docs (docs/*.md, e.g. docs/api-reference.md, docs/configuration.md)
+      — each task's document stage appends a section describing its OWN component.
+    These exact file kinds falsely serialized a prior block into a dependency CYCLE (an aggregator
+    __init__.py treated as exclusive, combined with a real dependsOn edge, contradicted the numeric
+    conflict-ordering) and then blocked its merges. Treating them as EXCLUSIVE is the common failure
+    mode here, not the safe default — so default them to ADDITIVE.
+  Stay CONSERVATIVE only for real source modules edited in place (e.g. app/api/endpoint.py, app/main.py,
+  a shared node base): if unsure whether one of THOSE is additive, LEAVE IT OUT (treat as exclusive).
+  For dependsOn edges: if unsure whether an edge exists, INCLUDE it. Over-serializing logical deps is
+  safe; wrongly marking an in-place-edited source module additive is not.
 
 STEP 4 — Resume scout: find tasks already completed on main:
   ls ${reportsDir}/task*-workflow.md 2>/dev/null || echo "NONE"
@@ -565,11 +578,27 @@ STEP 2 — Attempt a normal merge (do NOT use --ff-only; parallel branches share
 
 STEP 3 — Conflict handling:
   git diff --name-only --diff-filter=U   (the conflicted files)
-  - If EVERY conflicted file is in the additive list above:
+  - If EVERY conflicted file is in the additive list above, resolve them with git's built-in "union"
+    merge driver, which keeps BOTH sides of each conflict (both export lines, both doc sections).
+    IMPORTANT: there is NO "git merge -X union" — union is a low-level merge DRIVER, not a strategy
+    option. Activate it repo-locally via .git/info/attributes (NEVER the tracked .gitattributes — this
+    must not be committed), re-merge, then ALWAYS remove the driver again:
         git merge --abort
-        git merge -X union --no-edit ${p.branchName}
-        If exit 0 -> strategy="union", merged=true. Go to STEP 4.
-        Else -> git merge --abort ; strategy="aborted", merged=false, escalated=true. Go to STEP 5.
+        cp .git/info/attributes /tmp/sdlc-attrs.bak 2>/dev/null || rm -f /tmp/sdlc-attrs.bak
+        # register a temporary union driver for EXACTLY the conflicted additive files:
+        for each conflicted additive file F:  printf '%s merge=union\\n' "F" >> .git/info/attributes
+        git merge --no-ff --no-edit ${p.branchName}
+        git diff --name-only --diff-filter=U   (recheck — usually empty now)
+        # restore the attributes file so the temp driver can't affect later waves:
+        if [ -f /tmp/sdlc-attrs.bak ]; then cp /tmp/sdlc-attrs.bak .git/info/attributes; else rm -f .git/info/attributes; fi
+    If no conflicts remain -> stage all, commit the merge if not already committed -> strategy="union",
+    merged=true. Go to STEP 4.
+    If conflicts STILL remain on an aggregator __init__.py (its single all-different hunk can leave a
+    union artifact — a duplicated module docstring and a second __all__ that shadows the first), you MAY
+    hand-resolve that ONE file: keep every "from ... import ..." line and merge all symbols into a single
+    __all__ list (dedup, sorted), one docstring. Then "cd app && uv run python -c 'import <pkg>'" to
+    confirm it imports; if it does -> strategy="union", merged=true. Otherwise:
+        git merge --abort -> strategy="aborted", merged=false, escalated=true. Go to STEP 5.
   - If ANY conflicted file is NOT additive (a real code conflict):
         git merge --abort
         strategy="aborted", merged=false, escalated=true, conflictedFiles=<the non-additive ones>. Go to STEP 5.
