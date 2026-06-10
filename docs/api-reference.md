@@ -1039,9 +1039,97 @@ than `"text/plain"` or `"application/pdf"`.
 
 ### Package Export
 
-`ChunkingService` is the first entry in `app/services/__init__.__all__`. Subsequent
-Block D service tasks (`EmbeddingService`, `TranscriptService`, etc.) will extend
-this list as they land.
+`ChunkingService` is exported from `app/services/__init__.py`:
+
+```python
+from services.chunking_service import ChunkingService
+```
+
+---
+
+## TranscriptService
+
+**Source:** `app/services/transcript_service.py`
+
+```python
+class TranscriptService:
+```
+
+Fetches YouTube video transcripts via `youtube-transcript-api` and returns
+clean joined text or overlapping token-sized chunks. Raises descriptive
+exceptions instead of returning silent empty strings.
+
+### `_extract_video_id(url) -> str`
+
+```python
+def _extract_video_id(self, url: str) -> str:
+```
+
+Extracts the 11-character YouTube video ID from a URL using the regex
+`(?:v=|youtu\.be/|embed/|shorts/)([a-zA-Z0-9_-]{11})`. Handles the
+following URL forms: `watch?v=`, `youtu.be/`, `embed/`, and `shorts/`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `url` | `str` | Any YouTube URL containing a video ID. |
+
+**Returns:** The 11-character video ID string.
+
+**Raises:** `ValueError` — "Cannot extract video ID from URL: ..." — if no
+video ID can be parsed.
+
+### `fetch_transcript(url) -> str`
+
+```python
+def fetch_transcript(self, url: str) -> str:
+```
+
+Fetches the transcript for a YouTube video and returns the full text as a
+single space-joined string. Delegates video ID extraction to
+`_extract_video_id`, then calls `YouTubeTranscriptApi().fetch(video_id)` and
+joins all snippet `.text` values.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `url` | `str` | Any YouTube URL containing a valid video ID. |
+
+**Returns:** Non-empty `str` — the full transcript text.
+
+**Raises:**
+- `ValueError` — unsupported URL format (from `_extract_video_id`).
+- `RuntimeError` — transcript unavailable (wraps the underlying API exception
+  with `from e`) or transcript text is empty after joining.
+
+Never returns a silent empty string.
+
+### `fetch_and_chunk(url, chunk_size=500, overlap=50) -> list[str]`
+
+```python
+def fetch_and_chunk(
+    self, url: str, chunk_size: int = 500, overlap: int = 50
+) -> list[str]:
+```
+
+Fetches a transcript via `fetch_transcript` and splits it into overlapping
+token-sized chunks by delegating to `ChunkingService.chunk_text`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `url` | `str` | required | YouTube URL. |
+| `chunk_size` | `int` | `500` | Maximum tokens per chunk. |
+| `overlap` | `int` | `50` | Tokens shared between adjacent chunks. |
+
+**Returns:** `list[str]` of decoded text chunks (may be empty if transcript
+encodes to zero tokens, but `fetch_transcript` prevents empty transcripts
+from reaching this point).
+
+### Package Export
+
+`TranscriptService` is exported from `app/services/__init__.py`:
+
+```python
+from services.transcript_service import TranscriptService
+```
 
 ---
 
