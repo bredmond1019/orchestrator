@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-06-10 (Block B public face + SDLC block orchestration)
+
+Two threads landed today. First, the **public face of Block B is done**: `learn-agentic-ai.com` is now live to the public, served from the Mac Mini through a **Cloudflare Tunnel** with Cloudflare DNS in front. The tunnel approach means no inbound ports are opened on the Mini — the site is reachable by anyone with the URL while the box itself stays closed, which is the right shape for a privacy-first harness. This completes the site-revival half of Block B; the remaining work is the **private face** — installing Tailscale on the Mini and all my devices (Pixel tablet, phone, Kindle, laptop) and putting the personal knowledge feed, orchestration API, and Celery behind it with no open ports. Per the two-face architecture (DECISIONS D23), Tailscale alone can't serve the public site, which is exactly why the public side went through Cloudflare. I'll work Block B (Tailscale) and Block D (shared services) in parallel from here. Second, I built `.claude/workflows/sdlc-block.js` — a block-level SDLC orchestration workflow that drives an entire `planning/tasks/<blockId>/tasks.md` to completion by fanning out many parallel `/sdlc-task` pipelines, each in its own git worktree, across dependency-ordered waves. An Opus analysis agent proposes a dependency graph with evidence and an additive-file allow-list; deterministic JS computes the topological waves and conflict serialization; each wave runs with bounded retries plus failure triage (RETRYABLE → clean-slate re-run, MAJOR → escalate and poison only the dependent subtree); merges happen in task-number order with additive-only union fallback; and STATUS/DEVLOG are applied exactly once at the end. The same commit set also ported three-tier model assignment (Opus for planning, Sonnet for review/merge, Haiku for mechanical steps) into `sdlc-run` and `sdlc-task`, and added the `sdlc-orchestration` / `sdlc-dynamic-workflows` docs. This is the agentic harness machinery that actually ran Block C — tooling, not a planning block.
+
+```diff
+ .claude/commands/README.md                       |  29 +
+ .claude/commands/review-workflow.md              |   2 +-
+ .claude/workflows/sdlc-block.js                  | 707 +++++++++++++++++++++++
+ .claude/workflows/sdlc-run.js                    |  79 ++-
+ .claude/workflows/sdlc-task.js                   |  85 ++-
+ docs/agentic-workflows/sdlc-dynamic-workflows.md |  47 ++
+ docs/agentic-workflows/sdlc-orchestration.md     | 215 +++++++
+ 7 files changed, 1145 insertions(+), 19 deletions(-)
+```
+
+---
+
 ## 2026-06-09 (task 14 — validate)
 
 Ran the full validation pass for Phase 0 Block C: executed `uv run pytest --collect-only` and `uv run pytest -v` to confirm the entire test suite collects and passes with zero failures and zero errors, and verified the four import checks (`from main import app`, `from worker.config import celery_app`, `from database.session import Base, db_session`, `from database.repository import GenericRepository`) all run cleanly without triggering connection attempts. All acceptance criteria from the Block C task spec were confirmed met: the SQLAlchemy 2.x `AttributeError` regression test passes, the ghost-row test correctly shows an empty `Event` table when `send_task` raises, `TaskContext.get_node_output("MissingNode")` raises a `KeyError` with the diagnostic message, `WorkflowValidator` correctly detects cycles and unreachable nodes, `Workflow.run()` handles linear and router-branch pipelines in tests, `ParallelNode` documents the known shared-context gap with a "fixed in Project E" comment, `PromptManager` tests run against a fixture template without touching real prompts, and the full `GenericRepository` CRUD suite passes on in-memory SQLite. The initial test run returned a FAILED verdict on attempt 1, which was resolved before review; the review returned a PASS verdict on the first submission. This closes all 14 tasks in Phase 0 Block C — the orchestration framework now has a trustworthy, fully tested core before any client-facing workflow is built on it. Next: Phase 0, Block D — Shared services + first scaffold (pgvector, Embedding/Transcript/Search/Chunking services; scaffold Project A).
