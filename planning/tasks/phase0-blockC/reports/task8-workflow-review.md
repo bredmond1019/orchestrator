@@ -50,7 +50,7 @@
 
 ## Issues Found
 
-1. **Missing Co-Authored-By on implement commit (ac075d2):** The `feat: implement phase0-blockC-task8` commit lacks the `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>` trailer that the docs and wrap-up commits carry. Minor; the commit is otherwise correctly formatted.
+1. **Missing Co-Authored-By on implement commit (ac075d2):** The `feat: implement phase0-blockC-task8` commit lacks the `` trailer that the docs and wrap-up commits carry. Minor; the commit is otherwise correctly formatted.
 2. **DEVLOG inaccuracy — "fix pass" language:** The session 7 entry says the test failure "triggered a fix pass," implying a fix commit was made. No fix commit was made; the review agent passed directly on attempt 1 after confirming the lint violations were pre-existing. The characterization is misleading but harmless; the actual outcome (PASS on attempt 1, no new violations) is correct.
 3. **Workflow report `## Commits` section incomplete:** Lists only 2 of 3 commits (missing `chore: wrap up`). This is expected behavior — the workflow report is written before the wrap-up step executes — but worth noting for completeness.
 
