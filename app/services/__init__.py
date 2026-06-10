@@ -4,6 +4,7 @@ from services.article_extraction_service import ArticleExtractionService, Articl
 from services.chunking_service import ChunkingService
 from services.embedding_service import EmbeddingService
 from services.search_service import SearchResult, SearchService
+from services.transcript_service import TranscriptService
 
 __all__ = [
     "ArticleExtractionService",
@@ -12,4 +13,5 @@ __all__ = [
     "EmbeddingService",
     "SearchResult",
     "SearchService",
+    "TranscriptService",
 ]
