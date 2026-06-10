@@ -22,6 +22,9 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 11. [ArticleExtractionService](#articleextractionservice)
 11. [SearchService and SearchResult](#searchservice-and-searchresult)
 11. [ChunkingService](#chunkingservice)
+9. [ToolUseNode](#tooluse-node)
+10. [GenericRepository](#genericrepository)
+11. [PromptManager](#promptmanager)
 12. [WorkflowRegistry](#workflowregistry)
 13. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 14. [createworkflow CLI](#createworkflow-cli)
@@ -537,6 +540,135 @@ to claim the route; return `None` to pass to the next `RouterNode` in the list.
 `next_node.__class__` to get the node type for the main execution loop. The returned
 `Node` instance from `determine_next_node()` is used only for its class — the workflow
 engine instantiates a fresh instance when executing the next node.
+
+---
+
+## ToolUse Node
+
+**Source:** `app/core/nodes/tool_use.py`
+
+```python
+class ToolUseNode(Node):
+```
+
+Abstract base that drives a raw Anthropic SDK tool-use loop. Unlike `AgentNode`
+(which delegates to pydantic-ai), `ToolUseNode` calls `anthropic.Anthropic().messages.create`
+directly and manages the `tool_use` / `tool_result` message cycle itself. Subclasses
+declare the tools they expose and handle each tool call.
+
+### Class Attribute
+
+```python
+max_iterations: int = 10
+```
+
+Hard upper bound on the request/tool-result loop. The loop exits cleanly when this
+limit is reached — it never raises. Subclasses may override the value but must not
+set it to `None` (the guard is unconditional).
+
+### `__init__`
+
+```python
+def __init__(self) -> None:
+    self._client = anthropic.Anthropic()
+    self._model = os.getenv("TOOL_USE_MODEL", _DEFAULT_MODEL)
+```
+
+Instantiates the Anthropic client and reads the model from the `TOOL_USE_MODEL`
+environment variable (default `claude-haiku-4-5-20251001`). The model is never
+hardcoded, keeping deployment choices outside the node.
+
+### `tools` — Abstract Property
+
+```python
+@property
+@abstractmethod
+def tools(self) -> list[dict]:
+    """Anthropic tool definitions for this node."""
+```
+
+Must return a list of Anthropic tool-definition dicts (the `tools` parameter passed
+to `messages.create`). Subclasses declare exactly which tools they expose.
+
+### `handle_tool_call(tool_name, tool_input, task_context) -> str` — Abstract
+
+```python
+@abstractmethod
+def handle_tool_call(
+    self,
+    tool_name: str,
+    tool_input: dict,
+    task_context: TaskContext,
+) -> str:
+    """Execute a single tool call and return the result string."""
+```
+
+Called once per `tool_use` block in the model response. Must return a plain string;
+that string is sent back to the model as the `tool_result` content.
+
+### `_build_initial_messages(task_context) -> list[dict]`
+
+```python
+def _build_initial_messages(self, task_context: TaskContext) -> list[dict]:
+    return [{"role": "user", "content": str(task_context.nodes)}]
+```
+
+Hook for shaping the opening user message. Concrete subclasses override this to
+inject domain-specific context (e.g., an event payload) without overriding the whole
+loop. Default serialises `task_context.nodes` as a string.
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+```python
+def process(self, task_context: TaskContext) -> TaskContext:
+```
+
+Runs the tool-use loop:
+
+1. Calls `_build_initial_messages()` to seed the message list.
+2. Calls `messages.create(model, max_tokens=4096, tools, messages)`.
+3. On `stop_reason == "end_turn"`: breaks immediately.
+4. On `stop_reason == "tool_use"`: iterates `response.content`, calls
+   `handle_tool_call()` for each `tool_use` block, appends the assistant turn and
+   a `user` turn containing the `tool_result` list, then loops.
+5. On any other `stop_reason` (e.g. `"max_tokens"`): breaks immediately.
+6. After the loop, if `iterations >= max_iterations`, logs a `WARNING` with the node
+   name and limit. Returns `task_context` whether exhausted or not.
+
+**Note:** `process` does not write output into `task_context.nodes[self.node_name]`
+by default — concrete subclasses are expected to do that inside `handle_tool_call()`
+or by overriding `process` and calling `super().process()`.
+
+### Subclassing Example
+
+```python
+from core.nodes.tool_use import ToolUseNode
+from core.task import TaskContext
+
+class LookupNode(ToolUseNode):
+    @property
+    def tools(self) -> list[dict]:
+        return [
+            {
+                "name": "lookup_record",
+                "description": "Fetch a record by id.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"record_id": {"type": "string"}},
+                    "required": ["record_id"],
+                },
+            }
+        ]
+
+    def handle_tool_call(
+        self, tool_name: str, tool_input: dict, task_context: TaskContext
+    ) -> str:
+        if tool_name == "lookup_record":
+            record = fetch(tool_input["record_id"])
+            task_context.update_node(self.node_name, {"record": record})
+            return str(record)
+        return "unknown tool"
+```
 
 ---
 
