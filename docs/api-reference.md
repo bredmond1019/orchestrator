@@ -365,7 +365,7 @@ class AgentConfig:
 ### `ModelProvider` Enum
 
 ```python
-class ModelProvider(str, Enum):
+class ModelProvider(StrEnum):
     OPENAI        = "openai"
     AZURE_OPENAI  = "azure_openai"
     ANTHROPIC     = "anthropic"
@@ -541,10 +541,8 @@ engine instantiates a fresh instance when executing the next node.
 **Source:** `app/database/repository.py`
 
 ```python
-T = TypeVar("T")
-
-class GenericRepository(Generic[T]):
-    def __init__(self, session: Session, model: Type[T]): ...
+class GenericRepository[T]:
+    def __init__(self, session: Session, model: type[T]): ...
 ```
 
 Type-safe wrapper around a SQLAlchemy `Session`. Instantiated per request with the

@@ -37,7 +37,7 @@ class Node(ABC):
 ## Step 2 — `ModelProvider` enum
 
 ```python
-class ModelProvider(str, Enum):
+class ModelProvider(StrEnum):
     OPENAI = "openai"
     AZURE_OPENAI = "azure_openai"
     ANTHROPIC = "anthropic"
@@ -46,7 +46,7 @@ class ModelProvider(str, Enum):
     BEDROCK = "bedrock"
 ```
 
-This enum is how you declare *which AI provider you want* in your node config. It's a `str` enum, so it serialises cleanly to/from JSON and config files.
+This enum is how you declare *which AI provider you want* in your node config. It uses `StrEnum` (Python 3.11+), so it serialises cleanly to/from JSON and config files.
 
 The choice lives in `AgentConfig`, never hardcoded inside a node's logic. That's the D18 injection-point discipline — the node describes what it needs; the framework wires it up.
 
