@@ -64,7 +64,7 @@ The complete development lifecycle for structured phase/block work. Each step ru
 | **3 — Test** | `/test <spec> [N]` | Run the 8-test validation suite; write snapshot | `planning/tasks/<block>/reports/[taskN-]test.md` |
 | **4 — Review** | `/review-task <spec> [N]` | Verify all criteria; run fresh tests; issue verdict | `planning/tasks/<block>/reports/[taskN-]review.md` |
 | **5 — Document** | `/document <spec> [N]` | Surgically patch `docs/`; gates on PASS verdict | `planning/tasks/<block>/reports/[taskN-]document.md` |
-| **6 — Wrap-up** | `/log-work [notes]` | Update STATUS.md + append DEVLOG entry | STATUS.md, DEVLOG.md |
+| **6 — Wrap-up** | `/log-work [notes]` | Update STATUS.md + append DEVLOG entry + sync company brain | STATUS.md, DEVLOG.md, `../docs/projects/python-orchestration.md`, `../README.md` |
 | **7 — Verify run** | `/review-workflow <id> [N]` | Audit pipeline execution: reports, commits, DEVLOG, STATUS | `planning/tasks/<block>/reports/[taskN-]workflow-review.md` |
 
 ### Pipeline Flow
@@ -360,7 +360,7 @@ Gates strictly on the review report verdict being PASS — stops immediately if 
 ### `/log-work`
 **Sync STATUS.md and append a dated DEVLOG entry for completed work.**
 
-Reads `STATUS.md`, the current task spec, and `DEVLOG.md`; runs `git diff --stat`. Updates `STATUS.md` (flips statuses, advances Current focus, bumps Last updated, logs deviations) and appends a new entry to `DEVLOG.md`. Will prompt you to add settled architectural choices to `DECISIONS.md` — never edits it directly. Never touches the master plan files.
+Reads `STATUS.md`, the current task spec, and `DEVLOG.md`; runs `git diff --stat`. Updates `STATUS.md` (flips statuses, advances Current focus, bumps Last updated, logs deviations) and appends a new entry to `DEVLOG.md`. Will prompt you to add settled architectural choices to `DECISIONS.md` — never edits it directly. Never touches the master plan files. Also syncs `../docs/projects/python-orchestration.md` and `../README.md` in the company brain to match the new status.
 
 _No variables._
 
@@ -470,3 +470,18 @@ Safety-first teardown: shows uncommitted changes and unpushed commits before tou
 | Variable | Description |
 |---|---|
 | `$ARGUMENTS` | Required. Block ID with optional task number. Same format as `/init-worktree`. |
+
+---
+
+## Company Brain Integration
+
+Both `/log-work` and `/blog-idea` automatically mirror updates to the parent
+`agentic-portfolio/` company brain:
+
+| Command | Brain files updated |
+|---|---|
+| `/log-work` | `../docs/projects/python-orchestration.md`, `../README.md` (status sync) |
+| `/blog-idea` | `../docs/content/ideas.md` (idea mirror) |
+
+To run brain-level commands (briefing, sync-status, log-decision, add-project, log-correspondence),
+open Claude Code in the `agentic-portfolio/` root and use the `/` commands there.
