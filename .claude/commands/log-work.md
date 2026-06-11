@@ -46,8 +46,19 @@ $ARGUMENTS — optional free-text explanation of what was done today. May be bri
    to `planning/DECISIONS.md`** — do not edit DECISIONS.md yourself.
 6. Never edit the master plan files (`MASTER_PLAN.md`, `Agentic_Engineering_Projects_and_Learning_Plan.md`).
 
+7. **Sync the company brain.** After STATUS.md and DEVLOG.md are confirmed:
+   - Read `../docs/projects/python-orchestration.md` in the company brain.
+   - Update the **Current Status** date and focus line to match the new STATUS.md state.
+   - Update status values in the Phase Progress Table for any rows that changed.
+   - Open `../README.md` and update the Quick Status section for python-orchestration-system:
+     the Current focus line and any changed status rows.
+   - Surgical updates only — do not rewrite sections that didn't change.
+   - If the brain docs are already in sync with STATUS.md, skip this step silently.
+
 ## Context / Files to Read
 
 - `planning/STATUS.md`
 - The current `planning/tasks/phaseN-blockX/tasks.md`
 - `DEVLOG.md`
+- `../docs/projects/python-orchestration.md` (brain sync target)
+- `../README.md` (brain sync target)
