@@ -22,3 +22,16 @@ $ARGUMENTS — description of the blog post idea (title hint, angle, or free-for
 
 5. If the user's description mentions a connection to a specific project, file, or decision, include a brief `Reference:` or `*(Revisit when: ...)*` note on a third line.
 6. Report back the title and section it was added to.
+
+7. **Sync the company brain.** Append the same entry to `../docs/content/ideas.md`
+   in the company brain:
+   - Use the same working title, hook, and output target `[LI|Blog|Both]`.
+   - Place it in the **Ideas Backlog — Not Yet Scoped** section (or **Confirmed** /
+     **Committed** if the idea is already ready or tied to a named spec).
+   - Surgical append only — do not touch other sections.
+
+## Notes
+
+- Step 7 mirrors the idea to the top-level company brain so ideas surfaced in any sub-project
+  session are automatically visible at the brain level.
+- Never edit existing entries unless the user explicitly asks — only append.
