@@ -14,6 +14,12 @@ Examples:
   `/update-task phase0-blockC 2 Fixed the import-time side effect`  ← explicit spec, mark step 2, append note
   `/update-task phase0-blockC 0 Investigating the ghost-row bug`    ← explicit spec, note only
 
+## Execution Model
+
+Spawn a Haiku subagent (Agent tool, `model: "haiku"`) to execute all steps below.
+Pass the resolved `$ARGUMENTS` value and the complete Instructions section in the subagent prompt.
+Return the subagent's result to the user.
+
 ## Instructions
 
 1. **Resolve the target spec.**
