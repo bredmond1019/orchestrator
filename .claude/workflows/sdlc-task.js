@@ -135,6 +135,7 @@ const SETUP_SCHEMA = {
     branchName:    { type: 'string', description: 'Actual branch name used (may have -2, -3 suffix if base was taken)' },
     worktreePath:  { type: 'string', description: 'Absolute path to the worktree directory' },
     wasCreated:    { type: 'boolean', description: 'true if a new worktree was created, false if it already existed' },
+    lintBaselineFile: { type: 'string', description: 'Relative path to the lint baseline JSON captured at worktree creation time (before any implementation)' },
     notes:         { type: 'string' }
   }
 }
@@ -145,7 +146,7 @@ const SCOUT_SCHEMA = {
   properties: {
     startStage: {
       type: 'string',
-      enum: ['generate-tasks', 'implement', 'fix', 'test', 'review', 'document', 'wrap-up'],
+      enum: ['already-complete', 'generate-tasks', 'implement', 'fix', 'test', 'review', 'document', 'wrap-up'],
     },
     specFileExists:    { type: 'boolean' },
     blockStatus: {
@@ -168,8 +169,9 @@ const STAGE_SCHEMA = {
     reportFile:     { type: 'string' },
     success:        { type: 'boolean' },
     filesModified:  { type: 'array', items: { type: 'string' } },
-    commitHash:     { type: 'string' },
-    notes:          { type: 'string' }
+    commitHash:            { type: 'string' },
+    untrackedDeliverables: { type: 'array', items: { type: 'string' }, description: 'Deliverable files that remained ?? (untracked) in git status after the staging step — these would be silently absent from the merge' },
+    notes:                 { type: 'string' }
   }
 }
 
@@ -181,8 +183,12 @@ const TEST_SCHEMA = {
     allPassed:    { type: 'boolean' },
     passCount:    { type: 'integer' },
     failCount:    { type: 'integer' },
-    failedTests:  { type: 'array', items: { type: 'string' } },
-    notes:        { type: 'string' }
+    failedTests:          { type: 'array', items: { type: 'string' } },
+    netNewViolations:     { type: 'array', items: { type: 'string' }, description: 'Net-new ruff violations introduced by this task (absent from lint baseline at worktree creation)' },
+    pytestTestCount:      { type: 'integer', description: 'Total pytest tests collected in CHECK 7' },
+    pytestTestCountDelta: { type: 'integer', description: 'Change in test count vs previous task (negative = tests removed, 0 = no new tests added)' },
+    importWarnings:       { type: 'array', items: { type: 'string' }, description: 'Pydantic field-shadowing UserWarnings captured from CHECK 1/2 import stderr' },
+    notes:                { type: 'string' }
   }
 }
 
@@ -326,11 +332,19 @@ STEP 4 — Verify:
 STEP 5 — Compute the absolute worktree path:
   worktreePath = repoRoot + "/trees/" + branchName
 
+STEP 6 — Capture lint baseline for net-new violation tracking:
+  Run from the worktree root (replace [branchName] with the actual chosen branch name):
+    cd trees/[branchName] && mkdir -p ${reportsDir} && uv run ruff check app/ --format=json > ${reportsDir}/${taskPrefix}lint-baseline.json 2>/dev/null || true
+  This records ALL pre-existing lint violations BEFORE any implementation work begins.
+  The test stage diffs against this file and reports only violations net-new to this task.
+  (ruff --format=json always writes valid JSON: an empty array [] when there are no violations.)
+
 Return your result using the StructuredOutput tool:
-  branchName:   the final chosen branch name (e.g. "${baseBranchName}" or "${baseBranchName}-2")
-  worktreePath: the ABSOLUTE path to the worktree (e.g. /Users/brandon/Dev/.../trees/${baseBranchName})
-  wasCreated:   true (a new worktree was created)
-  notes:        any issues encountered
+  branchName:      the final chosen branch name (e.g. "${baseBranchName}" or "${baseBranchName}-2")
+  worktreePath:    the ABSOLUTE path to the worktree (e.g. /Users/brandon/Dev/.../trees/${baseBranchName})
+  wasCreated:      true (a new worktree was created)
+  lintBaselineFile: "${reportsDir}/${taskPrefix}lint-baseline.json"
+  notes:           any issues encountered
 `, withModel({ label: 'worktree-setup', schema: SETUP_SCHEMA, phase: 'Worktree' }, MODEL.worktreeSetup))
 
 if (!setupResult) {
@@ -397,7 +411,18 @@ STEP 4 — Read recent DEVLOG (at the worktree root):
 STEP 5 — If review report exists, extract the verdict:
   cd ${worktreePath} && grep -iE "\\*\\*Verdict|## Verdict|^Verdict:" ${reviewReport} 2>/dev/null | head -5 || echo "NO_REVIEW_REPORT"
 
-STEP 6 — Determine startStage using this EXACT priority order:
+STEP 6 — Determine startStage.
+
+RULE 0 (highest priority — check this FIRST before evaluating rules 1-7):
+  Run: cd ${worktreePath} && git log main --oneline --grep="implement ${stem}" 2>/dev/null | head -5
+  If at least one commit is found on main matching "implement ${stem}" → run:
+  cd ${worktreePath} && git show main:${workflowReport} 2>/dev/null | grep -iE "\\*\\*Verdict|^Verdict:|## Verdict" | head -3
+
+  If BOTH are true — a commit matching "implement ${stem}" exists on main AND the workflow
+  report on main shows "PASS" as the verdict — return startStage: "already-complete" immediately.
+  Do NOT evaluate rules 1-7. This prevents duplicate pipeline runs on already-merged tasks.
+
+Apply rules 1-7 IN ORDER only if RULE 0 did not match:
   1. Spec file MISSING → "generate-tasks"
   2. Spec exists, no implement report → "implement"
   3. Implement report exists, no test report → "test"
@@ -430,6 +455,28 @@ if (scout.blockStatus === 'Not started') {
   log(`Note: Block "${blockId}" is "Not started" in STATUS.md.`)
   log(`The task log will record the block status flip — applied when this branch merges to main.`)
   log(`To update STATUS.md immediately (e.g. before other parallel tasks start), run /start-block ${blockId} from the main session.`)
+}
+
+// Short-circuit: task already complete on main (detected by scout RULE 0).
+// This prevents orphaned NOT_REACHED records from duplicate pipeline runs.
+if (scout.startStage === 'already-complete') {
+  log(`[${stem}] Scout (RULE 0): task already complete on main — exiting pipeline early.`)
+  log(`Evidence: git log main --grep="implement ${stem}" matched AND main workflow report shows PASS.`)
+  log(`Worktree ${worktreePath} (branch: ${branchName}) was created but is now unused.`)
+  log(`Clean it up with: git worktree remove trees/${branchName} --force && git branch -d ${branchName}`)
+  return {
+    blockId,
+    taskNumber,
+    stem,
+    branchName,
+    worktreePath,
+    status: 'ALREADY_COMPLETE',
+    finalVerdict: 'PASS',
+    startStage: 'already-complete',
+    notes: scout.statusSummary,
+    mergeCommand: null,
+    stageResults
+  }
 }
 
 let currentStage = scout.startStage
@@ -605,11 +652,29 @@ Instructions:
      )"
    Run: cd ${worktreePath} && git log --oneline -1
 
+8. MANDATORY FINAL STEP — verify all deliverables are tracked in git before returning:
+   Run: cd ${worktreePath} && git status --short
+
+   For EVERY file you plan to list in filesModified or filesCreated:
+   - Status "A", "M", or "AM" → properly staged or tracked. Good.
+   - Status "??" → UNTRACKED. The file will be silently absent from the merge. You MUST fix this.
+
+   If any listed deliverable shows "??":
+     Run: cd ${worktreePath} && git add <untracked-file>
+     Then re-run: cd ${worktreePath} && git status --short
+     Amend the commit to include it:
+       cd ${worktreePath} && git commit --amend --no-edit
+     Confirm the file is now tracked (A, M, or AM — not ??).
+
+   Do NOT return success: true if any deliverable remains untracked after this step.
+   List any files that were untracked and required a git add in untrackedDeliverables.
+
 Return using StructuredOutput:
   reportFile: "${implementReport}"
-  success: true if implementation completed without critical errors
+  success: true if implementation completed without critical errors AND no deliverables are untracked
   filesModified: array of source files created or modified
   commitHash: 7-character short hash from git log --oneline -1
+  untrackedDeliverables: array of files that were untracked at git-status check time (empty if all were staged)
   notes: one-line summary
 `, { label: 'implement', schema: STAGE_SCHEMA, phase: 'Implement' })
 
@@ -742,26 +807,64 @@ Return using StructuredOutput:
   // ----------------------------------------------------------
   if (currentStage === 'test') {
     phase('Test')
-    log('Running 8-check test suite...')
+    log('Running validation suite (CHECK 0 through CHECK 8 + CHECK 8.5)...')
 
     const testResult = await agent(`${W}
-You are the test agent for the SDLC pipeline. Run the 8-check validation suite in the worktree.
+You are the test agent for the SDLC pipeline. Run the full validation suite in the worktree.
 
 Target:
   Spec:            ${specFile}
   Report to write: ${testReport}
   Worktree root:   ${worktreePath}
+  Lint baseline:   ${worktreePath}/${reportsDir}/${taskPrefix}lint-baseline.json
 
-Run ALL 8 checks IN ORDER. Capture full output (stdout + stderr) for each.
+Run ALL checks IN ORDER (CHECK 0 through CHECK 8, plus CHECK 8.5). Capture full output for each.
 All commands start with: cd ${worktreePath} &&
 
-CHECK 1 — App import:
-  cd ${worktreePath}/app && uv run python -c "import main" 2>&1
-  echo "CHECK1_EXIT:$?"
+CHECK 0 — CLAUDE.md standing-rule violations (non-waivable — these are rules, not pre-existing debt):
+  cd ${worktreePath} && python3 << 'PYEOF'
+import subprocess as sp, sys
 
-CHECK 2 — Worker import:
-  cd ${worktreePath}/app && uv run python -c "import worker.config" 2>&1
-  echo "CHECK2_EXIT:$?"
+def run(cmd):
+    r = sp.run(['bash', '-c', cmd], capture_output=True, text=True)
+    return r.stdout.strip()
+
+violations = {}
+
+# 0a: f-strings in logging calls (CLAUDE.md: "No f-strings in logging calls")
+out = run("grep -rn --include='*.py' -E 'logging[.][a-z]+[(].*f[\"' + \"'\" + ']' app/")
+if out: violations['0a-f-string-in-logging'] = out
+
+# 0b: open() without encoding= (CLAUDE.md: "open() always takes encoding=utf-8")
+out = run("grep -rn --include='*.py' 'open(' app/ | grep -v 'encoding=' | grep -v '#'")
+if out: violations['0b-open-without-encoding'] = out
+
+# 0c: raise without from e (CLAUDE.md: "In except blocks, always raise ... from e")
+out = run("grep -rn --include='*.py' -A1 'except .* as e:' app/ | grep -E '^ +raise ' | grep -v 'from e'")
+if out: violations['0c-raise-without-from-e'] = out
+
+# 0d: parameter named 'id' (CLAUDE.md: "Never name a parameter id — shadows built-in")
+out = run("grep -rn --include='*.py' -E 'def [a-zA-Z_]+[(][^)]*\\bid\\b' app/ | grep -v 'obj_id|record_id|node_id|workflow_id|task_id|invalid'")
+if out: violations['0d-param-named-id'] = out
+
+if violations:
+    print('CHECK 0 FAIL — STANDING RULE VIOLATIONS FOUND (non-waivable per CLAUDE.md):')
+    for k, v in violations.items():
+        print(f'  {k}:')
+        for line in v.splitlines()[:5]:
+            print(f'    {line}')
+    sys.exit(1)
+else:
+    print('CHECK 0 PASSED: No standing rule violations')
+    sys.exit(0)
+PYEOF
+  echo "CHECK0_EXIT:$?"
+
+CHECK 1 — App import (capture stderr to detect Pydantic field-shadow warnings):
+  cd ${worktreePath}/app && { uv run python -c "import main" 2>/tmp/${stem}-check1-stderr.txt; C1_EXIT=$?; cat /tmp/${stem}-check1-stderr.txt 2>/dev/null; grep -iE "UserWarning|shadows an attribute|field.*shadow" /tmp/${stem}-check1-stderr.txt 2>/dev/null && echo "CHECK1_PYDANTIC_WARNING_FOUND" || true; echo "CHECK1_EXIT:$C1_EXIT"; }
+
+CHECK 2 — Worker import (capture stderr to detect Pydantic field-shadow warnings):
+  cd ${worktreePath}/app && { uv run python -c "import worker.config" 2>/tmp/${stem}-check2-stderr.txt; C2_EXIT=$?; cat /tmp/${stem}-check2-stderr.txt 2>/dev/null; grep -iE "UserWarning|shadows an attribute|field.*shadow" /tmp/${stem}-check2-stderr.txt 2>/dev/null && echo "CHECK2_PYDANTIC_WARNING_FOUND" || true; echo "CHECK2_EXIT:$C2_EXIT"; }
 
 CHECK 3 — Database session import:
   cd ${worktreePath}/app && uv run python -c "import database.session" 2>&1
@@ -771,21 +874,67 @@ CHECK 4 — Repository import:
   cd ${worktreePath}/app && uv run python -c "import database.repository" 2>&1
   echo "CHECK4_EXIT:$?"
 
-CHECK 5 — Ruff lint:
-  cd ${worktreePath} && uv run ruff check app/ 2>&1
+CHECK 5 — Ruff lint (net-new violations only — diff against baseline from worktree creation):
+  cd ${worktreePath} && { uv run ruff check app/ --format=json > /tmp/${stem}-lint-current.json 2>/dev/null; true; }
+  cd ${worktreePath} && python3 << 'RUFFCHECK'
+import json, sys
+baseline_path = '${worktreePath}/${reportsDir}/${taskPrefix}lint-baseline.json'
+current_path = '/tmp/${stem}-lint-current.json'
+try:
+    b = json.load(open(baseline_path))
+except Exception as e:
+    print(f'WARNING: Could not load lint baseline ({e}) — treating all current violations as pre-existing')
+    b = []
+try:
+    c = json.load(open(current_path))
+except Exception:
+    c = []
+# Ruff JSON: flat list of dicts with filename, code, message, location, etc.
+def key(v):
+    return (v.get('filename', ''), v.get('code', ''), v.get('message', ''))
+baseline_keys = set(key(v) for v in b)
+new_violations = [v for v in c if key(v) not in baseline_keys]
+if new_violations:
+    print(f'NET-NEW VIOLATIONS ({len(new_violations)} introduced by this task, not in baseline):')
+    for v in new_violations[:20]:
+        loc = v.get('location', {})
+        print(f"  {v.get('filename','')}:{loc.get('row','?')} [{v.get('code','')}] {v.get('message','')}")
+    sys.exit(1)
+else:
+    print(f'CHECK 5 PASSED: No net-new lint violations (baseline: {len(b)} violations, current: {len(c)} violations)')
+    sys.exit(0)
+RUFFCHECK
   echo "CHECK5_EXIT:$?"
 
 CHECK 6 — Pylint:
   cd ${worktreePath} && uv run pylint app/ 2>&1
   echo "CHECK6_EXIT:$?"
 
-CHECK 7 — Pytest collect:
+CHECK 7 — Pytest collect (parse test count from summary line):
   cd ${worktreePath} && uv run pytest --collect-only -q 2>&1
   echo "CHECK7_EXIT:$?"
+  Note: Extract the integer from the summary line (e.g. "87 tests collected") and store it as pytestTestCount.
 
 CHECK 8 — Pytest full:
   cd ${worktreePath} && uv run pytest 2>&1
   echo "CHECK8_EXIT:$?"
+
+CHECK 8.5 — Test count delta (alert on count decrease or zero new tests):
+  cd ${worktreePath} && ls ${reportsDir}/task${taskNumber - 1}-test.md 2>/dev/null && echo "HAS_PREV_TEST_REPORT" || echo "NO_PREV_TEST_REPORT"
+
+  If HAS_PREV_TEST_REPORT:
+    cd ${worktreePath} && grep -iE "[0-9]+ tests? collected" ${reportsDir}/task${taskNumber - 1}-test.md | head -3
+    Extract the test count from the previous report. Compute:
+      pytestTestCountDelta = pytestTestCount (from CHECK 7) - previousTestCount
+    If delta < 0  → CHECK 8.5 = FAIL  (tests were removed or collection regressed — add to failedTests)
+    If delta == 0 → CHECK 8.5 = WARN  (no new tests added — verify spec requires no new tests)
+    If delta > 0  → CHECK 8.5 = PASS
+  If NO_PREV_TEST_REPORT: CHECK 8.5 = SKIP — set pytestTestCountDelta to null.
+
+  Also check: if CHECK 1 or CHECK 2 output contained "CHECK1_PYDANTIC_WARNING_FOUND" or
+  "CHECK2_PYDANTIC_WARNING_FOUND", those shadow warnings indicate a real data-loss risk.
+  Record the full warning text in importWarnings. A model with importWarnings should receive
+  at minimum a WARN entry in the test report noting that a serialization test is needed.
 
 Write the test report to: ${worktreePath}/${testReport}
 
@@ -795,24 +944,35 @@ Format:
 **Date:** [run: date +%Y-%m-%d]
 **Spec:** ${specFile}
 **Scope:** Task ${taskNumber}
+**Pytest test count:** [pytestTestCount] ([pytestTestCountDelta >= 0 ? "+" : ""][pytestTestCountDelta] vs task ${taskNumber - 1})
 
 ## Summary
 
 | Test | Result | Error |
 |---|---|---|
-[FAILED rows first, then PASSED rows]
+[FAILED rows first, then PASSED rows — include CHECK 0 and CHECK 8.5]
 
 ## Full Results (JSON)
 \`\`\`json
 [array of {test_name, passed, execution_command, test_purpose, error}]
 \`\`\`
 
+## Net-New Lint Violations (CHECK 5)
+[list violations if any, or "None — clean baseline diff"]
+
+## Import Warnings (CHECK 1/2 stderr)
+[Pydantic field-shadow warnings, or "None"]
+
 Return using StructuredOutput:
   reportFile: "${testReport}"
-  allPassed: true only if ALL 8 checks passed (exit code 0)
-  passCount: integer
-  failCount: integer
-  failedTests: array of test_name strings for failed checks
+  allPassed: true only if ALL checks passed (CHECK 0 through CHECK 8) AND CHECK 8.5 did not FAIL (test count did not decrease)
+  passCount: integer (count of passed checks including CHECK 0 and CHECK 8.5)
+  failCount: integer (count of failed checks)
+  failedTests: array of check names that failed (e.g. "CHECK 0 — 0b-open-without-encoding", "CHECK 5 — net-new ruff", "CHECK 8.5 — test-count-delta")
+  netNewViolations: array of net-new ruff violation strings from CHECK 5 (empty if clean)
+  pytestTestCount: integer — total tests collected in CHECK 7
+  pytestTestCountDelta: integer or null — delta vs previous task (null if no previous task report)
+  importWarnings: array of Pydantic field-shadow warning strings from CHECK 1/2 stderr (empty if none)
   notes: one-line summary
 `, withModel({ label: 'test', schema: TEST_SCHEMA, phase: 'Test' }, MODEL.test))
 
@@ -822,9 +982,14 @@ Return using StructuredOutput:
     } else {
       stageResults.push({ stage: 'test', attempt: reviewAttempts + 1, ...testResult, success: testResult.allPassed })
       if (!testResult.allPassed) {
-        log(`Test failures (${testResult.failCount}): ${(testResult.failedTests || []).join(', ')}`)
+        log(`[${stem}] Test failures (${testResult.failCount}): ${(testResult.failedTests || []).join(', ')}`)
+        if (testResult.netNewViolations?.length) log(`[${stem}] Net-new lint violations: ${testResult.netNewViolations.length}`)
+        if (testResult.importWarnings?.length) log(`[${stem}] Pydantic shadow warnings: ${testResult.importWarnings.join(' | ')}`)
+        if (testResult.pytestTestCountDelta !== null && testResult.pytestTestCountDelta !== undefined) {
+          log(`[${stem}] Test count delta: ${testResult.pytestTestCountDelta >= 0 ? '+' : ''}${testResult.pytestTestCountDelta} (total: ${testResult.pytestTestCount})`)
+        }
       } else {
-        log(`All ${testResult.passCount} checks passed`)
+        log(`[${stem}] All ${testResult.passCount} checks passed (pytest count: ${testResult.pytestTestCount}, delta: ${testResult.pytestTestCountDelta >= 0 ? '+' : ''}${testResult.pytestTestCountDelta})`)
       }
     }
     currentStage = 'review'
