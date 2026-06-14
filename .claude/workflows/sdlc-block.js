@@ -204,9 +204,21 @@ const REPORT_SCHEMA = {
   required: ['reportFile', 'overallVerdict'],
   properties: {
     reportFile:     { type: 'string' },
-    overallVerdict: { type: 'string', enum: ['PASS', 'PARTIAL', 'BLOCKED'] },
+    overallVerdict: { type: 'string', enum: ['PASS', 'PARTIAL', 'BLOCKED', 'ALREADY_COMPLETE'] },
     statusUpdated:  { type: 'boolean' },
     nextFocus:      { type: 'string' },
+    needsReviewItems: {
+      type: 'array',
+      description: 'Files flagged NEEDS_REVIEW across all task workflow reports, deduplicated by file path',
+      items: {
+        type: 'object',
+        properties: {
+          file:           { type: 'string' },
+          flaggedByTasks: { type: 'array', items: { type: 'integer' } },
+          reasons:        { type: 'array', items: { type: 'string' } }
+        }
+      }
+    },
     notes:          { type: 'string' }
   }
 }
@@ -292,7 +304,11 @@ STEP 2 — Read the spec and (if present) the breakdown:
 STEP 3 — Build the dependency graph. For EACH task determine:
   - filesCreated:  new files the task creates (e.g. app/services/chunking_service.py)
   - filesModified: EXISTING shared files the task edits (e.g. app/services/__init__.py,
-                   app/workflows/workflow_registry.py, app/api/endpoint.py)
+                   app/workflows/workflow_registry.py, app/api/endpoint.py).
+                   IMPORTANT: also include any docs/*.md file the task will edit. Any task that adds
+                   a section to docs/api-reference.md or docs/app-architecture-overview.md MUST list
+                   that file in filesModified — TOC renumbering is NOT additive (it changes existing
+                   line numbers shared across tasks), so these files must be serialized, not union-merged.
   - dependsOn:     task numbers whose output this task consumes. A depends on B if A's text
                    references a symbol/file B creates (e.g. "delegates to ChunkingService (Task 7)").
   - evidence:      quote the exact phrase(s) from tasks.md/breakdown.md proving each dependsOn edge.
@@ -303,12 +319,16 @@ STEP 3 — Build the dependency graph. For EACH task determine:
     - Package aggregator __init__.py files (e.g. app/services/__init__.py, app/core/nodes/__init__.py)
       — each task adds an import + an __all__ entry for the symbol it created.
     - Registry files (e.g. app/workflows/workflow_registry.py) — each task appends one enum/registry entry.
-    - Auto-generated reference docs (docs/*.md, e.g. docs/api-reference.md, docs/configuration.md)
-      — each task's document stage appends a section describing its OWN component.
-    These exact file kinds falsely serialized a prior block into a dependency CYCLE (an aggregator
+    NOT ADDITIVE — do NOT include these in additiveFiles even if multiple tasks touch them:
+    - docs/api-reference.md and docs/app-architecture-overview.md: TOC renumbering rewrites existing
+      line numbers across every task's sections — parallel edits corrupt each other's numbering.
+      These must appear in filesModified (exclusive) so computeWaves() serializes them. This was the
+      root cause of blockD TOC corruption (tasks 3, 6, 7, 8 all ran in the same wave and each
+      renumbered independently; sequential merges then produced a garbled TOC requiring task11 repair).
+    These exact aggregator file kinds falsely serialized a prior block into a dependency CYCLE (an
     __init__.py treated as exclusive, combined with a real dependsOn edge, contradicted the numeric
-    conflict-ordering) and then blocked its merges. Treating them as EXCLUSIVE is the common failure
-    mode here, not the safe default — so default them to ADDITIVE.
+    conflict-ordering) and then blocked its merges. Treating __init__.py and registry files as
+    EXCLUSIVE is the common failure mode — default them to ADDITIVE. But docs/ TOC files are different.
   Stay CONSERVATIVE only for real source modules edited in place (e.g. app/api/endpoint.py, app/main.py,
   a shared node base): if unsure whether one of THOSE is additive, LEAVE IT OUT (treat as exclusive).
   For dependsOn edges: if unsure whether an edge exists, INCLUDE it. Over-serializing logical deps is
@@ -317,6 +337,15 @@ STEP 3 — Build the dependency graph. For EACH task determine:
 STEP 4 — Resume scout: find tasks already completed on main:
   ls ${reportsDir}/task*-workflow.md 2>/dev/null || echo "NONE"
   For each task N with a task${'${N}'}-workflow.md present, read its Final Verdict; if PASS, add N to doneTasks.
+  Additionally, for every task N in allTasks NOT already in doneTasks, check git log for a feat commit:
+    git log main --oneline --grep="feat: implement ${blockId}-task<N>"
+  If git log returns at least one line but no workflow file exists (or the file has a non-PASS verdict
+  such as NOT_REACHED from a stale partial run), write a minimal ${reportsDir}/task<N>-workflow.md:
+    echo "# Task <N> Workflow\\n\\nFinal Verdict: ALREADY_COMPLETE\\nCommit: <hash>\\n" > ${reportsDir}/task<N>-workflow.md
+    git add ${reportsDir}/task<N>-workflow.md && git commit -m "chore: record ALREADY_COMPLETE for ${blockId}-task<N> (found on main)" || true
+  Then add N to doneTasks. This prevents stale NOT_REACHED records from accumulating and gives future
+  scouts a clear signal (blockC tasks 10 and 12 both re-initialized worktrees because stale NOT_REACHED
+  workflow files misled the scout on resume).
   Also list any worktrees preserved from a prior escalated run:
   git worktree list | grep "trees/${blockId.toLowerCase()}" || echo "NO_WORKTREES"
 
@@ -610,6 +639,18 @@ STEP 4 — On success, capture the commit and clean up the worktree:
   git worktree prune
   (Do NOT touch planning/STATUS.md or DEVLOG.md — those are applied once in Report.)
 
+STEP 4a — Post-merge integrity audits (run after cleanup, before returning):
+  1. Docs fence audit: if docs/api-reference.md exists, verify balanced code fences:
+       python3 -c "import re,sys; t=open('docs/api-reference.md').read(); fences=len(re.findall(r'^\`\`\`',t,re.M)); sys.exit(0 if fences%2==0 else 1)" 2>/dev/null \
+         && echo "FENCE_OK" \
+         || echo "FENCE_MISMATCH: docs/api-reference.md has unbalanced code fences after merging task ${p.taskNum} — TOC or section corruption suspected"
+     Include any FENCE_MISMATCH message verbatim in the notes field.
+  2. DEVLOG fix-pass audit: compare fix-pass claims in the task log against git history:
+       FIX_DEVLOG=$(grep -ic "fix pass" ${reportsDir}/task${p.taskNum}-log.md 2>/dev/null || echo 0)
+       FIX_COMMITS=$(git log --oneline --grep="fix:.*${blockId}-task${p.taskNum}" | wc -l | tr -d ' ')
+       [ "$FIX_DEVLOG" -gt "$FIX_COMMITS" ] && echo "DEVLOG_MISMATCH: task${p.taskNum} claims $FIX_DEVLOG fix passes but git shows $FIX_COMMITS fix commits" || true
+     Include any DEVLOG_MISMATCH message verbatim in the notes field.
+
 STEP 5 — On escalation, PRESERVE the worktree and branch (the user will inspect them). Do not remove them.
 
 Return using StructuredOutput: taskNum=${p.taskNum}, branchName="${p.branchName}", merged, strategy,
@@ -626,7 +667,13 @@ conflictedFiles, escalated, commitHash, notes.
       } else {
         log(`Task ${p.taskNum}: merged (${m.strategy}) ${m.commitHash || ''}`)
         const o = outcomes.find(x => x.taskNum === p.taskNum)
-        if (o) { o.merged = true; o.commitHash = m.commitHash; o.mergeStrategy = m.strategy }
+        if (o) { o.merged = true; o.commitHash = m.commitHash; o.mergeStrategy = m.strategy; o.mergeNotes = m.notes }
+        if (m.notes && m.notes.includes('DEVLOG_MISMATCH')) {
+          log(`Task ${p.taskNum}: WARNING — DEVLOG_MISMATCH: ${m.notes}. Surfaced in block-workflow.md Observations.`)
+        }
+        if (m.notes && m.notes.includes('FENCE_MISMATCH')) {
+          log(`Task ${p.taskNum}: WARNING — FENCE_MISMATCH: docs/api-reference.md has unbalanced code fences after this merge. Manual repair required before next wave.`)
+        }
       }
     }
   }
@@ -667,6 +714,15 @@ Skipped (blocked by upstream): ${JSON.stringify(skipped.map(o => o.taskNum))}
 
 DO THIS, IN ORDER:
 
+0. Scan all task workflow reports for NEEDS_REVIEW flags (before writing the block report):
+   ls ${reportsDir}/task*-workflow.md 2>/dev/null || echo "NONE"
+   For each file found, grep for lines containing "NEEDS_REVIEW":
+     grep -n "NEEDS_REVIEW" ${reportsDir}/task*-workflow.md 2>/dev/null || echo "NONE"
+   Extract the file path and reason from each match. Parse the task number from the filename
+   (task<N>-workflow.md). Deduplicate by file path: for the same file flagged by multiple tasks,
+   combine all task numbers into flaggedByTasks[] and all distinct reasons into reasons[].
+   Store the result as needsReviewItems in the StructuredOutput. If none found, return [].
+
 1. Write the block report to ${blockReport}:
 
    # Block Orchestration Report — ${blockId}
@@ -682,6 +738,16 @@ ${outcomeTable}
 
    ## Escalations (need your attention)
 ${escalationBlock}
+
+   ## Outstanding NEEDS_REVIEW Items
+   [From step 0: if needsReviewItems is non-empty, write a table:
+    | File | Flagged By | Reason |
+    |---|---|---|
+    | <file> | tasks <N, M, ...> | <combined reasons> |
+    If needsReviewItems is empty, write: None.]
+
+   ## Observations
+   [Any DEVLOG_MISMATCH or FENCE_MISMATCH warnings surfaced during merge audits.]
 
    ## Resume
    After fixing any blocker (or editing ${planFile}), re-run:  /sdlc-block ${blockId}
