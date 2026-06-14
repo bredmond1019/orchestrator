@@ -4,6 +4,12 @@
 
 $ARGUMENTS — description of the blog post idea (title hint, angle, or free-form notes).
 
+## Execution Model
+
+Spawn a Haiku subagent (Agent tool, `model: "haiku"`) to execute all steps below.
+Pass the resolved `$ARGUMENTS` value and the complete Instructions section in the subagent prompt.
+Return the subagent's result to the user.
+
 ## Instructions
 
 1. If `$ARGUMENTS` is not provided, stop and ask the user to describe the idea.
