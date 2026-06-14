@@ -8,6 +8,12 @@ $ARGUMENTS — optional free-text explanation of what was done today. May be bri
              discard or summarise it down. If omitted, derive the narrative from git history
              and the task spec alone.
 
+## Execution Model
+
+Spawn a Haiku subagent (Agent tool, `model: "haiku"`) to execute all steps below.
+Pass the resolved `$ARGUMENTS` value and the complete Instructions section in the subagent prompt.
+Return the subagent's result to the user.
+
 ## Instructions
 
 1. Read `planning/STATUS.md` and the current task spec at `planning/tasks/phaseN-blockX/tasks.md`.

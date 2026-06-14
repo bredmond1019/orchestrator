@@ -4,6 +4,12 @@
 
 $ARGUMENTS — optional block identifier to start (e.g. `phase1-block2`). If omitted, defaults to the first block that is not `done` in STATUS.md.
 
+## Execution Model
+
+Spawn a Haiku subagent (Agent tool, `model: "haiku"`) to execute all steps below.
+Pass the resolved `$ARGUMENTS` value and the complete Instructions section in the subagent prompt.
+Return the subagent's result to the user.
+
 ## Instructions
 
 1. Read `planning/STATUS.md`.
