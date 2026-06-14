@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-06-14
+
+Infrastructure and tooling hardening session. Audited phase0-blockC and phase0-blockD execution reports via multi-agent workflow to identify failure patterns and silent passes. Enhanced SDLC orchestrator: `/sdlc-block` now detects already-merged tasks via git log (ALREADY_COMPLETE guard prevents duplicate runs), performs post-merge integrity audits (docs fence-balance check, DEVLOG fix-pass pattern scan), and aggregates NEEDS_REVIEW flags across all tasks. Clarified `docs/api-reference.md` as exclusive (not additive) to prevent corrupted TOC. Improved per-task runner: `/sdlc-task` now captures lint baseline at worktree creation (tracks net-new violations vs. baseline), implements RULE 0 already-complete stage (prevents pipeline re-runs on already-merged tasks), and expanded TEST_SCHEMA with `netNewViolations`, `pytestTestCount`, `pytestTestCountDelta` for better failure triage. Created new `/health-check` workflow: daily/midday live code checks (ruff, pylint, pytest, imports, DEVLOG fence-balance, DEVLOG format, test count trend, branch sync) + silent pattern scans (missing schema registrations, floating migrations, import ordering, test doubles). Auto-discovers active block and produces CRITICAL/WARNING/OK status report. Removed obsolete `planning/tasks/phase1-block1/tasks.md` (216 lines).
+
+```diff
+planning/tasks/phase1-block1/tasks.md | 216 ----------------------------------
+ 1 file changed, 216 deletions(-)
+```
+
+---
+
 ## 2026-06-10 (phase0-blockD — block completion + manual merge recovery)
 
 Drove phase0-blockD to completion via the `/sdlc-block` orchestrator across three runs. **Run 1** aborted safely on a dependency-cycle guard: the auto-analysis left `app/services/__init__.py` off the additive allow-list, which — combined with task 4's real dependency on task 7 — created a 4↔7 contradiction (logical "4 after 7" vs. numeric conflict-serialization "7 after 4"). Fixed by hand-writing `planning/tasks/phase0-blockD/execution-plan.json`, marking the three append-only files (`app/services/__init__.py`, `app/core/nodes/__init__.py`, `app/workflows/workflow_registry.py`) additive. **Run 2** merged tasks 1, 2, 3, 9 cleanly; tasks 5, 6, 7, 8, 10 each PASSED their pipelines but escalated on additive merge conflicts in `docs/api-reference.md` / `docs/configuration.md` (every parallel pipeline appended a section to the same shared docs, plus each rewrote `app/services/__init__.py` with only its own export). Recovered them manually: a temporary `union` merge driver auto-reconciled the doc sections while I hand-resolved the cumulative `app/services/__init__.py`, then verified (201 tests pass, ruff clean) and removed the worktrees. **Run 3** ran the two remaining tasks — task 4 (TranscriptService, unblocked once ChunkingService landed on main) and task 11 (validation gate) — both PASS and merged clean. Final state: all 11 tasks merged, `uv run pytest` **210 passed**, `ruff check app/` clean, all import smoke-tests green. This supersedes the task-11 note below, which (written from stale context) claimed tasks 5–10 "remain escalated" — they were subsequently merged. **Block D is complete.** Next: Phase 1, Project A — Content pipeline.
