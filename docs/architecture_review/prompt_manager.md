@@ -1,3 +1,9 @@
+---
+type: Reference
+title: PromptManager — How It Works
+description: How PromptManager works — loading .j2 system prompts from app/prompts/.
+---
+
 # PromptManager — How It Works
 
 `app/services/prompt_loader.py`

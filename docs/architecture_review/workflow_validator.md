@@ -1,3 +1,9 @@
+---
+type: Reference
+title: WorkflowValidator — How It Works
+description: How WorkflowValidator works — validating a workflow graph before execution.
+---
+
 # WorkflowValidator — How It Works
 
 `app/core/validate.py`

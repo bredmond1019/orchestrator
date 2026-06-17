@@ -1,3 +1,9 @@
+---
+type: Reference
+title: SDLC Workflow Reference
+description: Reference for the end-to-end SDLC workflow pipeline and its stages.
+---
+
 # SDLC Workflow Reference
 
 *The complete development lifecycle for this repo — slash commands, inputs, outputs, and flow.*

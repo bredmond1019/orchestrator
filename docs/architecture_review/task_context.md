@@ -1,3 +1,9 @@
+---
+type: Reference
+title: TaskContext (task.py) — How It Works
+description: How task.py / TaskContext works — node output accumulation and retrieval.
+---
+
 # How `task.py` Works — Step-by-Step
 
 `app/core/task.py` is one of the smallest files in the codebase and one of the most

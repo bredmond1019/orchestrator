@@ -48,8 +48,16 @@ Return the subagent's result to the user.
    ```
    ```
 
-5. If a settled architectural choice was made during this work, **prompt the user to add it
-   to `planning/DECISIONS.md`** — do not edit DECISIONS.md yourself.
+5. If a settled architectural choice was made during this work, record it as an **atomic
+   decision file** — but **ask first**:
+   - Determine the next number `N+1` by reading `planning/decisions/index.md` (highest existing `D{N}`).
+   - State the proposed decision and ask the user to confirm before writing anything:
+     > "This looks like a settled choice. Add it as `planning/decisions/D{N+1}-<kebab>.md`?
+     > (Decided / Why / Rejected)"
+   - Only on confirmation: create `planning/decisions/D{N+1}-<kebab-title>.md` with OKF
+     frontmatter (`type: Decision`, `title: D{N+1} — …`, one-line `description`) and the
+     **Decided / Why / Rejected** body, then append a row to `planning/decisions/index.md`.
+   - Never write or edit a decision file without explicit confirmation.
 6. Never edit the master plan files (`MASTER_PLAN.md`, `Agentic_Engineering_Projects_and_Learning_Plan.md`).
 
 7. **Sync the company brain.** After STATUS.md and DEVLOG.md are confirmed:

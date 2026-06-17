@@ -1,3 +1,9 @@
+---
+type: Reference
+title: AgentNode — How It Works
+description: How AgentNode works — the LLM-calling node abstraction.
+---
+
 # AgentNode — How It Works
 
 `app/core/nodes/agent.py`

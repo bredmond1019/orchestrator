@@ -1,3 +1,9 @@
+---
+type: Reference
+title: Core Engine API Reference
+description: Class-level reference for the public abstractions in app/core, app/database, app/services, and app/workflows that a developer subclasses when writing a new workflow.
+---
+
 # Core Engine API Reference
 
 Precise class-level reference for every public abstraction a developer must understand
