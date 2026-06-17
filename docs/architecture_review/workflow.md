@@ -1,3 +1,9 @@
+---
+type: Reference
+title: Workflow (workflow.py) — How It Works
+description: How workflow.py works — the Workflow base class and its execution loop.
+---
+
 # How `workflow.py` Works — Step-by-Step
 
 `app/core/workflow.py` is the orchestration engine. It reads a graph definition,

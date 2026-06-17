@@ -10,7 +10,17 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
-## 2026-06-14
+## 2026-06-17
+
+Completed OKF Phase 1 for this repo — additive, workflow-safe documentation/structure changes only (no workflow JS touched, no load-bearing file renamed). Split the aggregate `planning/DECISIONS.md` into 26 atomic OKF files under `planning/decisions/` (one `D{N}-<kebab>.md` per decision, each `type: Decision`, Decided/Why/Rejected bodies and supersession notes preserved verbatim) plus a `type: Index` registry at `planning/decisions/index.md`; deleted the old aggregate and repointed the prose pointers in `CLAUDE.md`, `planning/CONTEXT.md`, and `planning/README.md` to the new directory. Added OKF frontmatter to all 14 files under `docs/` (api-reference + configuration as `Reference`, app-architecture-overview as `Architecture`, the architecture_review/ and agentic-workflows/ docs as `Reference`) and created `docs/index.md`. Updated `.claude/commands/log-work.md` so settled choices are written as atomic decision files (next `D{N+1}` from the index, OKF frontmatter, registered in index.md) instead of appended to a single aggregate — ask-first guard kept intact. **Accepted seam (corrected in Phase 2, not an oversight):** the SDLC workflow scripts (`sdlc-run.js`, `sdlc-task.js`) still carry `notes`-field prompt strings that say "DECISIONS.md"; these are descriptive only (the workflows never read or write the file), so they were deliberately left untouched to keep this phase workflow-safe.
+
+```diff
+ planning/DECISIONS.md                          | 161 ---------------- (deleted)
+ planning/decisions/*.md (26 decisions + index) | 366 ++++++++++++++++ (created)
+ docs/*.md (14 files + index.md)                | 116 ++++++++++++++++
+ CLAUDE.md / CONTEXT.md / README.md (pointers)  |  20 +-
+ .claude/commands/log-work.md                   |  12 +-
+```
 
 Infrastructure and tooling hardening session. Audited phase0-blockC and phase0-blockD execution reports via multi-agent workflow to identify failure patterns and silent passes. Enhanced SDLC orchestrator: `/sdlc-block` now detects already-merged tasks via git log (ALREADY_COMPLETE guard prevents duplicate runs), performs post-merge integrity audits (docs fence-balance check, DEVLOG fix-pass pattern scan), and aggregates NEEDS_REVIEW flags across all tasks. Clarified `docs/api-reference.md` as exclusive (not additive) to prevent corrupted TOC. Improved per-task runner: `/sdlc-task` now captures lint baseline at worktree creation (tracks net-new violations vs. baseline), implements RULE 0 already-complete stage (prevents pipeline re-runs on already-merged tasks), and expanded TEST_SCHEMA with `netNewViolations`, `pytestTestCount`, `pytestTestCountDelta` for better failure triage. Created new `/health-check` workflow: daily/midday live code checks (ruff, pylint, pytest, imports, DEVLOG fence-balance, DEVLOG format, test count trend, branch sync) + silent pattern scans (missing schema registrations, floating migrations, import ordering, test doubles). Auto-discovers active block and produces CRITICAL/WARNING/OK status report. Removed obsolete `planning/tasks/phase1-block1/tasks.md` (216 lines).
 

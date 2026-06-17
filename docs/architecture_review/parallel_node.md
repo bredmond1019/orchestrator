@@ -1,3 +1,9 @@
+---
+type: Reference
+title: ParallelNode — How It Works
+description: How ParallelNode works — fan-out execution of child nodes.
+---
+
 # ParallelNode — How It Works
 
 `app/core/nodes/parallel.py`

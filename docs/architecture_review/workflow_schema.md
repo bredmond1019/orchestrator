@@ -1,3 +1,9 @@
+---
+type: Reference
+title: WorkflowSchema & NodeConfig — How They Work
+description: How WorkflowSchema and NodeConfig work — declaring a workflow's start, nodes, and connections.
+---
+
 # WorkflowSchema & NodeConfig — How They Work
 
 `app/core/schema.py`

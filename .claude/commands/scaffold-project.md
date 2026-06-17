@@ -1,5 +1,13 @@
 # Scaffold Project — Generate the full planning document infrastructure from an intake file.
 
+> ⚠️ **SUPERSEDED (2026-06-17).** This command's function is now covered by `/new-project` +
+> the `base-template/` software factory (in the company brain): `/new-project` clones the
+> curated harness and the tokenized complete-OKF scaffold, substitutes tokens, and stamps
+> template provenance — replacing this intake-driven generator. The section depth below (the
+> A–H specs) was folded into `base-template/scaffold/`. **Do not use this for new projects.**
+> Retained only to avoid breaking in-flight references; deletion happens in the OKF Phase-2
+> sweep (brain `planning/okf-phase-2/plan.md`, WS7).
+
 ## Variables
 
 $ARGUMENTS — Optional. Path to the intake file. Defaults to `planning/intake.md`.

@@ -20,7 +20,7 @@ infrastructure that the SDLC pipeline expects. Run these once, before any SDLC w
 |---|---|
 | `planning/CONTEXT.md` | Stable orientation — what the project is, who is building it, governing principles |
 | `planning/STATUS.md` | Volatile state tracker — current focus, progress table, deviations log |
-| `planning/DECISIONS.md` | Append-only log of settled architectural and strategic choices |
+| `planning/decisions/` | Append-only registry of settled architectural and strategic choices — one atomic file per decision + `index.md` |
 | `planning/MASTER_PLAN.md` | The full strategic plan — phases, blocks, build notes, acceptance criteria |
 | `planning/README.md` | Navigation for the planning directory |
 | `CLAUDE.md` | Repo-scoped agent context — standing rules, build/run commands, directory map |
@@ -360,7 +360,7 @@ Gates strictly on the review report verdict being PASS — stops immediately if 
 ### `/log-work`
 **Sync STATUS.md and append a dated DEVLOG entry for completed work.**
 
-Reads `STATUS.md`, the current task spec, and `DEVLOG.md`; runs `git diff --stat`. Updates `STATUS.md` (flips statuses, advances Current focus, bumps Last updated, logs deviations) and appends a new entry to `DEVLOG.md`. Will prompt you to add settled architectural choices to `DECISIONS.md` — never edits it directly. Never touches the master plan files. Also syncs `../docs/projects/python-orchestration.md` and `../README.md` in the company brain to match the new status.
+Reads `STATUS.md`, the current task spec, and `DEVLOG.md`; runs `git diff --stat`. Updates `STATUS.md` (flips statuses, advances Current focus, bumps Last updated, logs deviations) and appends a new entry to `DEVLOG.md`. Will prompt you (ask-first) to record settled architectural choices as atomic files under `planning/decisions/` — never writes one without confirmation. Never touches the master plan files. Also syncs `../docs/projects/python-orchestration.md` and `../README.md` in the company brain to match the new status.
 
 _No variables._
 

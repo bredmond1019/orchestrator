@@ -1,3 +1,9 @@
+---
+type: Reference
+title: RouterNode & BaseRouter — How They Work
+description: How RouterNode and BaseRouter work — conditional branching in a workflow graph.
+---
+
 # RouterNode & BaseRouter — How They Work
 
 `app/core/nodes/router.py`
