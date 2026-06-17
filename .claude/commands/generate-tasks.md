@@ -45,6 +45,12 @@ $ARGUMENTS — the target phase and block, e.g. `phase0-blockC` or `phase1-proje
 ## Output Format
 
 ```md
+---
+type: Specification
+title: <Block/Project> <X>
+description: <one sentence, taken directly from the plan>
+---
+
 # Task Spec — Phase <N>, <Block/Project> <X>
 
 ## Goal
