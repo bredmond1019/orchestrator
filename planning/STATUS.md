@@ -9,7 +9,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-14 — Infrastructure / tooling improvements: SDLC orchestrator hardened (scout ALREADY_COMPLETE detection, post-merge integrity audits, NEEDS_REVIEW flag aggregation), per-task runner improved (lint baseline capture, RULE 0 already-complete guard, expanded TEST_SCHEMA), new daily health-check workflow. No product code changed; all block statuses unchanged. Block D **DONE**: all 11 tasks merged (shared services, pgvector, ToolUseNode, Project A scaffold, clean API contract); `uv run pytest` 210 passed, ruff clean
+**Last updated:** 2026-06-17 — Infrastructure / tooling improvements: SDLC orchestrator hardened (scout ALREADY_COMPLETE detection, post-merge integrity audits, NEEDS_REVIEW flag aggregation), per-task runner improved (lint baseline capture, RULE 0 already-complete guard, expanded TEST_SCHEMA), new daily health-check workflow. No product code changed; all block statuses unchanged. Block D **DONE**: all 11 tasks merged (shared services, pgvector, ToolUseNode, Project A scaffold, clean API contract); `uv run pytest` 210 passed, ruff clean
 **Current focus:** Phase 0, Block B (private face / Tailscale) continues **and** Phase 1, Project A — `content_pipeline` workflow scaffolded + registered on main, ready to implement. Goal is a solo contracting practice at ~20 hrs/week; first contract offer comes after Project D competence checkpoint.
 
 ---
