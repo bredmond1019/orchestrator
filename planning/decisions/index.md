@@ -39,6 +39,7 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided Â
 | D24 | Firecrawl role: trafilatura-first, Firecrawl-fallback, CrawlSiteNode | [D24-firecrawl-role.md](D24-firecrawl-role.md) |
 | D25 | Honcho as Project G reference architecture; build your own G for production | [D25-honcho-reference.md](D25-honcho-reference.md) |
 | D26 | Goal revised: solo contracting practice, not a studio or product company | [D26-goal-solo-contracting.md](D26-goal-solo-contracting.md) |
+| D27 | Adopt OKF Phase 2 conventions (lowercase names, concept-folder planning, index.md); retire scaffold-project | [D27-adopt-okf-phase-2-conventions.md](D27-adopt-okf-phase-2-conventions.md) |
 
 ---
 
