@@ -17,7 +17,7 @@ The planning and context documents for becoming an expert AI / agentic / harness
 | **MASTER_PLAN.md** | Strategy: phases, blocks, sequence, business development | You need the *what & when* |
 | **Agentic_Engineering_Projects_and_Learning_Plan.md** | Technical: codebase, project library (A–H), Rust appliance shell track | You need the *how* of a project |
 | **Test_Plan.md** | Testing standard (Option A) + the four bug fixes | You need the testing scope or per-project rule |
-| **DECISIONS.md** | Why settled choices were made (append-only) | You're tempted to relitigate a settled question |
+| **decisions/** | Why settled choices were made — one atomic file per decision + `index.md` registry (append-only) | You're tempted to relitigate a settled question |
 | **tasks/** *(created just-in-time)* | Per-block work orders with acceptance criteria | You're starting a specific block |
 
 ## Read order for a newcomer (human or LLM)
@@ -29,8 +29,8 @@ The planning and context documents for becoming an expert AI / agentic / harness
 Pass the **minimum** subset a question needs — never the whole set by reflex. CONTEXT.md's "How to Use This Document Set With an LLM" table gives the exact recipe per query type. Rule of thumb: CONTEXT + STATUS + the one relevant plan section answers almost everything.
 
 ## What's *not* here
-- **Code repos** live elsewhere. The Python orchestration framework (one monorepo, all Python workflows), the **Rust appliance shell** (the SMB single-binary delivery vehicle — formerly "Rust CLI"), and the website are separate repos, each with its own `CLAUDE.md` (agent conventions) and `DEVLOG.md` (daily log). See DECISIONS.md for the repo strategy (D12–D13, D17).
+- **Code repos** live elsewhere. The Python orchestration framework (one monorepo, all Python workflows), the **Rust appliance shell** (the SMB single-binary delivery vehicle — formerly "Rust CLI"), and the website are separate repos, each with its own `CLAUDE.md` (agent conventions) and `DEVLOG.md` (daily log). See `decisions/` for the repo strategy (D12–D13, D17).
 - An archived Socratic Tutor plan and physics/PhD exploration are intentionally excluded from this set.
 
 ---
-*This README navigates. `CONTEXT.md` orients. The plans contain. `STATUS.md` tracks. `DECISIONS.md` remembers.*
+*This README navigates. `CONTEXT.md` orients. The plans contain. `STATUS.md` tracks. `decisions/` remembers.*

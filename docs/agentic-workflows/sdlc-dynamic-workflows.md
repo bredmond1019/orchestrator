@@ -1,3 +1,9 @@
+---
+type: Reference
+title: SDLC Dynamic Workflows Reference
+description: Reference for the dynamic SDLC workflow scripts and how they compose pipeline stages at runtime.
+---
+
 # SDLC Dynamic Workflows Reference
 
 *Automated, multi-agent SDLC pipelines — invoke once and the full pipeline runs end-to-end.*

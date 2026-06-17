@@ -1,3 +1,9 @@
+---
+type: Architecture
+title: App Architecture Overview
+description: Codebase analysis of the FastAPI -> Celery -> Workflow DAG -> TaskContext architecture for agentic engineering projects.
+---
+
 # App Architecture Overview
 ## Codebase Analysis for Agentic Engineering Projects
 

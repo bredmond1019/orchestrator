@@ -1,3 +1,9 @@
+---
+type: Reference
+title: SDLC Block Orchestration
+description: Reference for /sdlc-block — orchestrating a block through dependency-ordered waves of parallel task pipelines.
+---
+
 # SDLC Block Orchestration (`/sdlc-block`)
 
 *One level up from `/sdlc-task`: drive an **entire block** to completion by orchestrating many parallel `/sdlc-task` pipelines across dependency-ordered waves, with bounded retries, failure triage, escalation, and ordered merges.*

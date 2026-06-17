@@ -1,0 +1,12 @@
+---
+type: Decision
+title: D14 — The destination has a named product: the Company Brain (superseded by D26 as active build; retained as technical reference)
+description: The three RFS ideas are three layers of one system — a Company Brain. Superseded by D26 as active build; retained as technical reference.
+---
+
+# D14 — The destination has a named product: the Company Brain *(superseded by D26 as active build; retained as technical reference)*
+
+**Decided:** The three RFS ideas Brandon was drawn to (YC S26: Company Brain, AI Operating System for Companies, Software for Agents) are not three options to choose between — they are three layers of **one** system the plan now names explicitly: a **Company Brain** that ingests a company's scattered knowledge, structures it, keeps it current via the Project G memory engine, and emits an executable skills file agents can act on.
+**Why:** Founder-market fit is unusually strong and *lived*, not hypothetical — Brandon watched a previous employer grow 30→200 people, diagnosed the exact knowledge-fragmentation failure Company Brain describes, proposed this literal solution internally, and was turned down, then watched the cost compound.
+**Rejected:** Treating the three RFS ideas as a menu and picking one.
+*Note: D26 supersedes the "active product build" framing. The architecture remains valid as portfolio depth.*

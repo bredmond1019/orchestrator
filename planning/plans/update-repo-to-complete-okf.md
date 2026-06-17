@@ -6,6 +6,9 @@ description: Close the deliberately-deferred OKF gaps in the orchestration repo 
 
 # Plan: Update python-orchestration-system to Complete OKF — Phase 1
 
+> **Part of a multi-repo initiative.** Master tracker (state, decisions, execution order):
+> `../../../planning/okf-initiative/index.md` in the company brain. This is workstream WS2.
+
 ## Context
 
 The 2026-06-17 OKF migration intentionally stopped short here to avoid disturbing the
@@ -112,6 +115,9 @@ tracked in the new-project plan.
 - DEVLOG entry records the change and the accepted "DECISIONS.md string" seam.
 
 ## Out of Scope — Phase 2 (named, deferred)
+
+> Now captured as a real plan: `complete-okf-phase-2.md` (this repo), coordinated by the
+> brain's `../../../planning/okf-phase-2/plan.md`.
 
 1. `README.md` → `index.md` renames across `planning/` and subfolders.
 2. `index.md` files inside `planning/tasks/`, `planning/blog/`.

@@ -43,7 +43,7 @@ There are **seven files** in this planning set. They split cleanly so you only e
 | **MASTER_PLAN.md** | The *what & when* | Stable-ish | …the strategic spine: phases, blocks, sequence, contracting approach, case studies, networking |
 | **Agentic_Engineering_Projects_and_Learning_Plan.md** | The *how* | Stable-ish | …technical detail for a specific project, the codebase reference, component reuse. Read `Agentic_Plan_Framing_Note.md` first. |
 | **Test_Plan.md** | The *testing standard* | Stable | …to know the testing scope (Option A), the four bug fixes, the per-project testing rule |
-| **DECISIONS.md** | Why settled choices were made | Append-only | …to avoid relitigating a decision already made (with its reasoning). Currently **D1–D26**. |
+| **decisions/** | Why settled choices were made (one atomic file per decision + `index.md` registry) | Append-only | …to avoid relitigating a decision already made (with its reasoning). Currently **D1–D26**. |
 
 **Single source of truth:** the two plans (Master, Projects) and the Test Plan own the actual content. CONTEXT routes to them and never duplicates them. STATUS mirrors only the *names* of phases/blocks/projects as a status table — never their content — so nothing drifts. DECISIONS records *why* settled choices were made, so they aren't relitigated.
 
@@ -59,7 +59,7 @@ These planning docs are the **parent / top-most context** for the whole endeavor
 - **`CLAUDE.md`** — repo-scoped *agent context*: how to work in that repo (conventions, build/test commands, the tests-ship-with-every-workflow rule, the keyed-slot convention). This is a **different document** from this planning CONTEXT.md — different reader (an agent editing that repo), different job. Don't conflate them.
 - **`DEVLOG.md`** — repo-scoped, append-only *daily working log*. Distinct from STATUS: STATUS is the cross-repo state rollup; DEVLOG is within-repo history.
 
-**The five jobs, no overlap:** planning docs describe the *endeavor* (cross-repo) · `CLAUDE.md` describes *working in a repo* · `DEVLOG.md` records *repo history* · `STATUS.md` rolls up *cross-repo state* · `DECISIONS.md` records *why*.
+**The five jobs, no overlap:** planning docs describe the *endeavor* (cross-repo) · `CLAUDE.md` describes *working in a repo* · `DEVLOG.md` records *repo history* · `STATUS.md` rolls up *cross-repo state* · `decisions/` records *why*.
 
 ### Task specs (`tasks/`) — generated just-in-time, never pre-written
 
@@ -149,5 +149,5 @@ The ideology: **pass the minimum context needed for the result — never the who
 
 ---
 
-*This file orients; it does not track. For state, open `STATUS.md`. For content, open the relevant plan. For why a choice was made, open `DECISIONS.md`.*
+*This file orients; it does not track. For state, open `STATUS.md`. For content, open the relevant plan. For why a choice was made, open `decisions/` (start at `decisions/index.md`).*
 *Last updated: June 2026 — revised goal from studio/product to solo contracting practice (D26).*
