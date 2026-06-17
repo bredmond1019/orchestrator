@@ -1,3 +1,9 @@
+---
+type: Decision
+title: Decisions Registry
+description: Log of architectural decisions and settled choices for the python-orchestration-system.
+---
+
 # DECISIONS — Settled Choices & Their Reasoning
 
 *Append-only. Records non-obvious decisions so they don't get relitigated. Newest at the bottom.*

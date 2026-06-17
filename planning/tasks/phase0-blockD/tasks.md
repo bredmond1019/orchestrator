@@ -1,3 +1,9 @@
+---
+type: Specification
+title: Phase 0, Block D
+description: Build the shared services layer (embedding, transcript, article extraction, search, chunking, raw...
+---
+
 # Task Spec — Phase 0, Block D
 
 ## Goal

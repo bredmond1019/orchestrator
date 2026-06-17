@@ -1,3 +1,9 @@
+---
+type: Plan
+title: Agentic Engineering Projects Plan — Framing Note (June 2026, D26)
+description: Documentation for this phase or specification.
+---
+
 # Agentic Engineering Projects Plan — Framing Note (June 2026, D26)
 
 *This note applies to the full `Agentic_Engineering_Projects_and_Learning_Plan.md` document. Read it before that document.*

@@ -1,3 +1,9 @@
+---
+type: ProjectStatus
+title: Project Status
+description: Current state and progress tracker for the python-orchestration-system.
+---
+
 # STATUS — Current State & Progress
 
 *The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*

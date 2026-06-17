@@ -1,3 +1,9 @@
+---
+type: Plan
+title: Brandon's Master Plan — 2026
+description: Documentation for this phase or specification.
+---
+
 # Brandon's Master Plan — 2026
 ## Becoming an Expert in AI / Agentic / Harness Engineering — and Building a Contracting Practice From It
 

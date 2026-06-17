@@ -1,3 +1,9 @@
+---
+type: Specification
+title: Phase 0, Block C (Test Infrastructure + Core Hardening)
+description: Make the orchestration framework trustworthy before any client-facing system is built on it: esta...
+---
+
 # Task Spec — Phase 0, Block C (Test Infrastructure + Core Hardening)
 
 ## Goal

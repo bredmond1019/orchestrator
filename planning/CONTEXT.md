@@ -1,3 +1,9 @@
+---
+type: LocalContext
+title: Project Context
+description: Core context, guidelines, and documentation router for the python-orchestration-system.
+---
+
 # CONTEXT — Project Overview & Document Router
 
 *The orientation file for this project. Stable — rarely changes. Read this first.*

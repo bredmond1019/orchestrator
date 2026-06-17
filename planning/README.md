@@ -1,3 +1,9 @@
+---
+type: Index
+title: Brandon — Agentic Engineering Practice · Planning Docs
+description: Documentation for this phase or specification.
+---
+
 # Brandon — Agentic Engineering Practice · Planning Docs
 
 The planning and context documents for becoming an expert AI / agentic / harness engineer and building a practice from it. **Start with `CONTEXT.md`** — it explains everything and routes you to the right file.

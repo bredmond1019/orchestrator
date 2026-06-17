@@ -1,3 +1,9 @@
+---
+type: Plan
+title: Test Plan — Option A
+description: Documentation for this phase or specification.
+---
+
 # Test Plan — Option A
 ## Core Engine + Infrastructure Coverage, Then Per-Project Tests
 

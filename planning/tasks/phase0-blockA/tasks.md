@@ -1,3 +1,9 @@
+---
+type: Specification
+title: Phase 0, Block A
+description: Establish digital presence with case studies foregrounded and achieve genuine ownership of the or...
+---
+
 # Task Spec — Phase 0, Block A
 
 ## Goal

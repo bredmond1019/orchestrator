@@ -1,3 +1,9 @@
+---
+type: Plan
+title: Agentic Engineering Projects & Learning Plan
+description: Documentation for this phase or specification.
+---
+
 # Agentic Engineering Projects & Learning Plan
 ## Brandon's Path to Expert Agentic & Harness Engineer — and the Company Brain
 
