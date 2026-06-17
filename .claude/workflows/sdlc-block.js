@@ -757,7 +757,7 @@ ${escalationBlock}
    planning/tasks/${blockId}/reports/task<N>-log.md committed on main with "Applied: false".
    For EACH merged task N in ${JSON.stringify(mergedTaskNums)} (ascending):
      - cat ${reportsDir}/task${'${N}'}-log.md
-     - Append its "## DEVLOG Entry" content to the TOP of DEVLOG.md (most-recent-first), once.
+     - Prepend its "## DEVLOG Entry" content directly below the YAML frontmatter and main header block of DEVLOG.md (most-recent-first, keeping the frontmatter at the top), once.
      - Flip that log's "Applied: false" -> "Applied: true".
    Then update planning/STATUS.md ONCE:
      - If ALL tasks in the block are now merged: mark the block "Done" in the progress table and set

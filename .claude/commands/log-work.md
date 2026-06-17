@@ -35,7 +35,7 @@ Return the subagent's result to the user.
      - Bump the **Last updated** date.
      - Append to the **Decisions & Deviations** log if reality diverged from the plan.
 
-4. Append a new dated entry to `DEVLOG.md` in this exact format:
+4. Prepend a new dated entry to `DEVLOG.md` directly below the YAML frontmatter and main header block (do NOT write it at the very top of the file before the `---` boundaries, the frontmatter must remain at the top). Use this exact entry format:
    ```
    ## YYYY-MM-DD
 

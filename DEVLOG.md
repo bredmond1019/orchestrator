@@ -1,3 +1,9 @@
+---
+type: Log
+title: Development Log
+description: Chronological log of work completed for the python-orchestration-system.
+---
+
 # DEVLOG — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*

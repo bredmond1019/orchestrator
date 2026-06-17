@@ -1060,7 +1060,7 @@ Instructions:
         - Update "Current focus" to the next block or phase.`}
    - Update "Last updated" — run: date +%Y-%m-%d
 
-7. Append a new entry to DEVLOG.md (prepend at the TOP, newest entries first).
+7. Prepend a new entry to DEVLOG.md directly below the YAML frontmatter and main header block (do NOT write it at the very top of the file before the `---` boundaries, the frontmatter must remain at the top).
    The entry must follow this format:
 
    ## [YYYY-MM-DD — run date +%Y-%m-%d to get this]

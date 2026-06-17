@@ -119,7 +119,8 @@ The literal single-token form is output by `/sdlc-task` when it creates a suffix
    g. Prepend the **content under** `## DEVLOG Entry` to `DEVLOG.md` — this means
       everything from the `## YYYY-MM-DD` date header line onward, NOT the `## DEVLOG Entry`
       section header itself. Insert it immediately after the `# DEVLOG —` header line
-      (before existing entries), preserving a blank line between the new entry and the one below.
+      (which is below the YAML frontmatter block, keeping the frontmatter at the very top of the file),
+      preserving a blank line between the new entry and the one below.
    h. Edit `<logFile>`: change `**Applied:** false` → `**Applied:** true`.
    i. Stage and commit these three files only:
       ```bash

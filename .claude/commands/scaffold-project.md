@@ -23,6 +23,7 @@ $ARGUMENTS — Optional. Path to the intake file. Defaults to `planning/intake.m
    the project is, and write substantive content — not boilerplate placeholders. Every section
    listed below is required. Use the intake to fill specifics; use good judgment to fill gaps.
    Infer sensible defaults from the tech stack and project type where the intake is sparse.
+   **CRITICAL: All generated markdown files (except CLAUDE.md) MUST begin with universal OKF YAML frontmatter block at the top of the file matching the OKF standard (e.g., type: LocalContext for CONTEXT.md, type: ProjectStatus for STATUS.md, type: Decision for DECISIONS.md, type: Plan for MASTER_PLAN.md, type: Index for README.md and planning/README.md, and type: Log for DEVLOG.md).**
 
 ---
 
