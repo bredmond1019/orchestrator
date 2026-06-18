@@ -63,6 +63,15 @@ description: Current state and progress tracker for the python-orchestration-sys
 
 ---
 
+## Go-Public Checklist (repo is currently private — do not flip until all done)
+
+- [ ] **Fix `app/prompts/customer_ticket_response.j2`** — `author: Healthie AI Team` and "Healthie Support Team" sign-off must be replaced with a generic placeholder (e.g. TechGear, same as `ticket_analysis.j2`). This is the only code-level issue; fix it now even while private.
+- [ ] **Exclude `planning/` from public history** — add `planning/` to `.gitignore`, then rebuild a curated public history that excludes it. The directory contains: private employer context (`CONTEXT.md` "private corroborating evidence" paragraph), non-disparagement-sensitive material, warm lead names and personal relationships, LinkedIn drafts. Same approach as `workflow-engine-rs`.
+- [ ] **Update `README.md`** — currently says "No tests exist yet." 210 tests pass; fix before anyone lands on the repo.
+- [ ] **Wait until Project A ships** — a framework with one reference workflow and one empty scaffold undersells the work. Go public after Project A at minimum; after Project B is better.
+
+---
+
 ## Business Development / Visibility (runs continuously, loosely)
 | Item | Status | Notes |
 |---|---|---|
