@@ -362,6 +362,7 @@ RAG over a client's own documents — SOPs, product catalogs, internal wikis, po
 ### Build notes
 - Models: `ContentChunk(doc_id, position, section_title, content, embedding)`, `ChatSession(doc_id, turns JSONB, topics_covered, timestamps)`.
 - **Build `RetrieveChunksNode` carefully** — cosine-distance top-k; reused verbatim downstream.
+- **Implement two-stage hybrid retrieval in `RetrieveChunksNode`** — semantic vector search narrows candidates; keyword re-rank fuses signals. Beats pure cosine on business document queries (exact terminology, SKUs, policy language). **Reference:** `rag-engine-rs/src/services/search/two_stage_retrieval.rs` — a working Rust implementation of this exact pattern using pgvector + keyword re-rank. The Python port uses Voyage embeddings instead of the Flask microservice, but the retrieval logic is identical and proven on real help-center documents.
 - Chunk size: 500 tokens / 50 overlap starting point; tune on a real business doc.
 - **The distinction to internalize:** RAG retrieves from the document; session memory tracks the conversation. Both are context, assembled together in `AssembleContextNode`. This is the conceptual groundwork for Project G — and the line between "static knowledge" (RAG) and "living knowledge" (G's memory) that defines the full Company Brain.
 - **New (June 2026) — note model routing as you build:** embedding and retrieval are pure-local-friendly; the `AnswerNode` is where answer quality lives and may want a stronger model. Don't optimize yet — just observe which steps are which, as input to Project H. This is where the "local-by-default, frontier-for-the-few" map starts (DECISIONS D19).
@@ -558,6 +559,16 @@ Anthropic's May 28, 2026 Claude Code releases (**Agent View** `claude agents`, *
 A binary an operator invokes daily wants instant startup and single-static-binary deployment. For the **client appliance**, the single binary *is* the value proposition: "copy one file, double-click, it runs, your data never leaves the building" is something you can say to a clinic or a growing startup that a Python-on-Docker stack never can. The Rust CLI ecosystem (`clap`, optionally `ratatui`) is mature. Clean language boundary: **Rust commands and observes, Python executes**, over HTTP — no FFI, no rewriting working Python.
 
 **Honest limit on the Rust bet:** Rust compounds in single-binary appliances for non-technical operators, long-running runtimes, and the local-model hot path. It is *not* an advantage in "a nicer way to launch Claude Code" — that's built-in now. Keep Rust where it compounds.
+
+### Existing Rust reference projects (look here first)
+
+Three portfolio projects demonstrate the patterns this track will use — read them before writing new code:
+
+| Project | What it shows | Where to look |
+|---|---|---|
+| `claude-sdk-rs` | Typed async Rust CLI wrapper: `Config` → flag mapping, `QueryBuilder`, session continuity (`--resume`), streaming via `futures::Stream`, structured errors (C001–C014). The session continuity and process-spawning models are directly applicable for "trigger and observe a running workflow" commands. Published at v2.0.0 on crates.io. | `src/runtime/process.rs`, `src/core/session.rs` |
+| `rag-engine-rs` | Actix-web backend: HTTP API design, Tokio async patterns, `tokio::sync::Semaphore` for bounded concurrency. The HTTP API is the interface the appliance shell calls into the Python brain. | `src/api/`, `src/services/metadata_generator/` |
+| `workflow-engine-rs` | 8-crate Cargo workspace hygiene under `-D warnings`, multi-transport MCP client (HTTP/WS/stdio), `realtime_communication` service (WebSocket + JWT + fan-out). Demonstrates clean workspace layout at scale. | `crates/workflow-engine-mcp/`, `services/realtime_communication/` |
 
 ### Scope discipline
 First version is one command that does something real end-to-end: **start the local brain, ingest one document, run one query against a local model, print the answer and what it cost.** That single command is the entire SMB thesis in miniature. It earns its next command only when you reach for one that isn't there. The "control plane for my whole practice" and "client appliance" framings are the destination, not the first commit.
@@ -763,6 +774,16 @@ Sequencing: all of Part 6 is **Phase 3+**. It depends on the clean API (Phase 0/
 | H: Eval & Routing Harness | "System that empirically routes each workflow node to the cheapest model meeting a measured quality bar — with bias-corrected evaluation" |
 | Rust appliance shell | "Single-binary, on-prem control plane that runs a private AI knowledge system on a company's own hardware — nothing leaves the building" |
 | **Company Brain** | **"A privacy-first company knowledge system: ingests a company's scattered knowledge, keeps it current with durable agent memory, emits executable skills for agents — running entirely on the company's own hardware, with measured local-vs-frontier routing"** |
+
+## Rust Reference Implementations
+
+Three completed portfolio Rust projects serve as implementation references for the Python work and the Rust appliance shell. The Python brain stays Python; the Rust shell stays Rust. Read these when the equivalent design question comes up — don't rebuild what is already there.
+
+| Project | What it demonstrates | Most relevant to |
+|---|---|---|
+| `rag-engine-rs` (hybrid RAG backend) | Two-stage hybrid retrieval (semantic + keyword re-rank), Actix actor model for WebSocket streaming chat, bounded-concurrency embedding pipeline (`Semaphore + buffer_unordered`), Ollama local inference, pgvector via Diesel. 19 tests, CI clean. | **Project D** `RetrieveChunksNode` two-stage pattern; `EmbeddingService` concurrency model; local-LLM inference via Ollama |
+| `claude-sdk-rs` (Claude Code CLI SDK) | Typed async Rust SDK wrapping `claude -p`: `Config` → CLI flag mapping, `QueryBuilder`, three response formats (Text / JSON / streaming via `futures::Stream`), session continuity (`--resume`), structured error codes (C001–C014), optional SQLite session persistence. v2.0.0 on crates.io, 149 tests. | **Rust appliance shell** CLI interaction model; **Project G** session continuity concept for multi-turn conversation management |
+| `workflow-engine-rs` (Rust workflow engine) | Compile-time-validated workflow graphs (DFS cycle detection + reachability analysis before `run()`), multi-transport MCP client (HTTP/WS/stdio), real tiktoken token counting (`cl100k_base` / `o200k_base`), Handlebars prompt templating, three independent service crates (`knowledge_graph`, `realtime_communication`, `content_processing`). 717 tests, zero clippy warnings. | **Future MCP integration** for the Python framework; **Rust appliance shell** workspace structure and `realtime_communication` WebSocket patterns; **Project H** token accounting model |
 
 ## Red Flags to Watch For
 

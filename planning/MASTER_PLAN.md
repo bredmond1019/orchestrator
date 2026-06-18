@@ -248,6 +248,7 @@ The most common contract ask. A pattern you've already shipped in production (He
 - Ingestion: `ParseDocumentNode → ChunkDocumentNode → EmbedChunksNode → StoreChunksNode`.
 - Query: `EmbedQuestionNode → RetrieveChunksNode → AssembleContextNode → AnswerNode → UpdateSessionMemoryNode`.
 - Build `RetrieveChunksNode` carefully — reused verbatim later.
+- **Use two-stage hybrid retrieval** — semantic vector search narrows candidates; keyword re-rank fuses signals. Beats pure cosine on business document queries (exact terminology, SKU codes, policy language). Reference implementation: `rag-engine-rs/src/services/search/two_stage_retrieval.rs` — the same pattern proven in Rust with pgvector; the Python version swaps Voyage for the embedding service but the retrieval architecture is identical.
 - Tests ship with it.
 
 **Visibility:** A post connecting this to the Helpscout production work. Proven, not aspirational.
@@ -297,6 +298,8 @@ Read Honcho's source before starting. *(DECISIONS D25.)* Tests ship with it — 
 ### Parallel Track — Rust CLI *(whenever you want a Rust session)*
 
 A single-binary terminal tool for personal ops: starting/stopping the local brain, triggering ingestion or queries, inspecting what's stored. Keeps the Rust skill warm through genuine daily use. Not a product, not a client deliverable — a personal tool that happens to demonstrate range. *(DECISIONS D6, D7.)*
+
+**Existing Rust reference projects:** Three portfolio Rust projects demonstrate patterns for this track. `claude-sdk-rs` — typed async Rust SDK wrapping `claude -p` (`QueryBuilder`, session continuity, streaming via `futures::Stream`) — shows the CLI interaction model. `workflow-engine-rs` — 8-crate Cargo workspace with multi-transport MCP client (HTTP/WS/stdio) — shows workspace hygiene and protocol implementation at scale. `rag-engine-rs` — Actix-web backend with bounded-concurrency pipeline — shows the HTTP API patterns the shell will call into. Read before starting; don't rebuild what's already proven.
 
 ---
 
