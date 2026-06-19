@@ -26,9 +26,9 @@ Antigravity skill twins to update.
 
 The workflows hard-depend on these names/paths. Leave them exactly as they are:
 
-- `planning/STATUS.md` (read + single authoritative update at merge)
-- `planning/MASTER_PLAN.md` (read for block context)
-- **root** `DEVLOG.md` (read + prepend below frontmatter)
+- `planning/status.md` (read + single authoritative update at merge)
+- `planning/master-plan.md` (read for block context)
+- **root** `log.md` (read + prepend below frontmatter)
 - `planning/tasks/<stem>/tasks.md`, `execution-plan.json`, `reports/`
 - All `.claude/workflows/*.js`
 
@@ -61,8 +61,8 @@ Mirror what the brain repo did for `docs/decisions/`.
 - Update prose pointers to the new path (NOT the workflow JS):
   - `CLAUDE.md` — "Before you start" references D6/D16/D17/D18/D20 and
     `planning/DECISIONS.md`; repoint to `planning/decisions/`.
-  - `planning/CONTEXT.md` — Document Set table row.
-  - `planning/README.md` — files table.
+  - `planning/context.md` — Document Set table row.
+  - `planning/index.md` — files table.
 
 > **Known seam (accepted):** workflow `notes`-field prompt strings still say
 > "DECISIONS.md". Descriptive only, no file operations — corrected in Phase 2. Record
@@ -105,7 +105,7 @@ tracked in the new-project plan.
 ## Acceptance Criteria
 
 - `planning/decisions/` exists with one atomic file per prior decision + an `index.md`
-  registry; old `planning/DECISIONS.md` removed; CLAUDE.md / CONTEXT.md / README pointers
+  registry; old `planning/DECISIONS.md` removed; CLAUDE.md / context.md / README pointers
   updated.
 - `log-work.md` creates atomic decision files instead of pointing at a single aggregate,
   ask-first guard intact.

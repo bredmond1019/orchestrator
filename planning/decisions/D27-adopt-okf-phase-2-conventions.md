@@ -9,8 +9,8 @@ description: This repo converges to the cross-repo OKF Phase 2 conventions settl
 **Decided:** This repo adopts the cross-repo OKF Phase 2 conventions settled in the company
 brain (brain decisions D15–D18), applied during the WS7 lockstep workflow rewrite:
 
-- **Lowercase document names** (brain D15): `STATUS.md`→`status.md`, `DEVLOG.md`→`log.md`,
-  `MASTER_PLAN.md`→`master-plan.md`, `CONTEXT.md`→`context.md`; `decisions/` unchanged.
+- **Lowercase document names** (brain D15): `status.md`→`status.md`, `log.md`→`log.md`,
+  `master-plan.md`→`master-plan.md`, `context.md`→`context.md`; `decisions/` unchanged.
 - **Concept-folder `planning/` model** (brain D16): replace `planning/tasks/<stem>/` with the
   brain's concept-folder model; SDLC machine artifacts (`execution-plan.json`, `reports/`) move
   to a reserved subfolder inside each concept folder (exact path fixed in the workflow rewrite).

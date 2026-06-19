@@ -7,7 +7,7 @@ description: Core context, guidelines, and documentation router for the python-o
 # CONTEXT — Project Overview & Document Router
 
 *The orientation file for this project. Stable — rarely changes. Read this first.*
-*For current progress and "what's next," see `STATUS.md` (the volatile companion to this file).*
+*For current progress and "what's next," see `status.md` (the volatile companion to this file).*
 
 ---
 
@@ -38,9 +38,9 @@ There are **seven files** in this planning set. They split cleanly so you only e
 | File | Role | Volatility | Read it when you need… |
 |---|---|---|---|
 | **README.md** | Navigation / front door | Stable | …a ten-second index of the folder and where to start |
-| **CONTEXT.md** (this file) | Orientation + router | Stable | …to understand what the project is, who Brandon is, and where to look for what |
-| **STATUS.md** | Current state | Changes weekly | …to know what's done and what's next |
-| **MASTER_PLAN.md** | The *what & when* | Stable-ish | …the strategic spine: phases, blocks, sequence, contracting approach, case studies, networking |
+| **context.md** (this file) | Orientation + router | Stable | …to understand what the project is, who Brandon is, and where to look for what |
+| **status.md** | Current state | Changes weekly | …to know what's done and what's next |
+| **master-plan.md** | The *what & when* | Stable-ish | …the strategic spine: phases, blocks, sequence, contracting approach, case studies, networking |
 | **Agentic_Engineering_Projects_and_Learning_Plan.md** | The *how* | Stable-ish | …technical detail for a specific project, the codebase reference, component reuse. Read `Agentic_Plan_Framing_Note.md` first. |
 | **Test_Plan.md** | The *testing standard* | Stable | …to know the testing scope (Option A), the four bug fixes, the per-project testing rule |
 | **decisions/** | Why settled choices were made (one atomic file per decision + `index.md` registry) | Append-only | …to avoid relitigating a decision already made (with its reasoning). Currently **D1–D26**. |
@@ -56,10 +56,10 @@ These planning docs are the **parent / top-most context** for the whole endeavor
 **One Python monorepo** holds the orchestration framework and every Python workflow (Projects A–H). Each project is a workflow directory (workflow + nodes + prompts + tests) added *alongside* the existing ones — **not** a clone. Heavy verbatim component reuse across projects is the reason; cloning would fragment the framework. **Separate repos** exist only for different languages / deploy lifecycles: the **Rust CLI** (personal ops tooling, keeps the skill warm), the **website** (`learn-agentic-ai.com`). The test for "new repo?": *does it share the Python framework's code and dependency tree?* If yes, same repo.
 
 **Each repo carries two files this planning set does NOT contain:**
-- **`CLAUDE.md`** — repo-scoped *agent context*: how to work in that repo (conventions, build/test commands, the tests-ship-with-every-workflow rule, the keyed-slot convention). This is a **different document** from this planning CONTEXT.md — different reader (an agent editing that repo), different job. Don't conflate them.
-- **`DEVLOG.md`** — repo-scoped, append-only *daily working log*. Distinct from STATUS: STATUS is the cross-repo state rollup; DEVLOG is within-repo history.
+- **`CLAUDE.md`** — repo-scoped *agent context*: how to work in that repo (conventions, build/test commands, the tests-ship-with-every-workflow rule, the keyed-slot convention). This is a **different document** from this planning context.md — different reader (an agent editing that repo), different job. Don't conflate them.
+- **`log.md`** — repo-scoped, append-only *daily working log*. Distinct from status.md: status.md is the cross-repo state rollup; log.md is within-repo history.
 
-**The five jobs, no overlap:** planning docs describe the *endeavor* (cross-repo) · `CLAUDE.md` describes *working in a repo* · `DEVLOG.md` records *repo history* · `STATUS.md` rolls up *cross-repo state* · `decisions/` records *why*.
+**The five jobs, no overlap:** planning docs describe the *endeavor* (cross-repo) · `CLAUDE.md` describes *working in a repo* · `log.md` records *repo history* · `status.md` rolls up *cross-repo state* · `decisions/` records *why*.
 
 ### Task specs (`tasks/`) — generated just-in-time, never pre-written
 
@@ -131,7 +131,7 @@ The ideology: **pass the minimum context needed for the result — never the who
 
 **When generating task lists:** respect the governing principles — especially just-in-time scope, tests-per-project, and sequence-not-calendar (produce a *this-week* batch sized to ~21 hrs/week across Mon/Wed/Fri, not a dated schedule).
 
-**When updating progress:** edit `STATUS.md` only. Leave the plans clean.
+**When updating progress:** edit `status.md` only. Leave the plans clean.
 
 ---
 
@@ -149,5 +149,5 @@ The ideology: **pass the minimum context needed for the result — never the who
 
 ---
 
-*This file orients; it does not track. For state, open `STATUS.md`. For content, open the relevant plan. For why a choice was made, open `decisions/` (start at `decisions/index.md`).*
+*This file orients; it does not track. For state, open `status.md`. For content, open the relevant plan. For why a choice was made, open `decisions/` (start at `decisions/index.md`).*
 *Last updated: June 2026 — revised goal from studio/product to solo contracting practice (D26).*

@@ -1,0 +1,59 @@
+{
+  "$schema": "../.claude/workflows/harness.schema.json",
+  "stack": "python-fastapi",
+  "_comment": "SDLC validation suite for ai-event-system. Mirrors the original 8-check suite (CHECK 0-8.5) now externalized to harness.json via the richer check kinds (base-template D6). The original CHECK 0c (raise ... from e) is intentionally dropped: it duplicated ruff B904 (flake8-bugbear, already in [tool.ruff.lint] select and gating via net-new-lint), but with a multi-line false-positive grep. Keep app/ build/test commands in CLAUDE.md in sync with this file.",
+  "validation": {
+    "checks": [
+      {
+        "kind": "forbidden-pattern-scan",
+        "name": "standing-rules",
+        "purpose": "CLAUDE.md standing-rule scan (non-waivable) — rules, not pre-existing debt",
+        "gates": true,
+        "rules": [
+          { "id": "f-string-in-logging", "pattern": "logging\\.[a-z]+\\(.*f[\"']", "paths": "--include='*.py' app/" },
+          { "id": "open-without-encoding", "pattern": "open\\(", "paths": "--include='*.py' app/", "allowlistPattern": "encoding=|#|\\.open\\(" },
+          { "id": "param-named-id", "pattern": "def [a-zA-Z_]+\\([^)]*\\bid\\b", "paths": "--include='*.py' app/", "allowlistPattern": "obj_id|record_id|node_id|workflow_id|task_id|invalid" }
+        ]
+      },
+      {
+        "kind": "warning-scan",
+        "name": "app-import",
+        "purpose": "App imports cleanly; surface Pydantic field-shadow warnings (advisory)",
+        "gates": false,
+        "command": "cd app && uv run python -c 'import main'",
+        "warningPatterns": ["UserWarning", "shadows an attribute", "field.*shadow"]
+      },
+      {
+        "kind": "warning-scan",
+        "name": "worker-import",
+        "purpose": "Worker config imports cleanly; surface Pydantic field-shadow warnings (advisory)",
+        "gates": false,
+        "command": "cd app && uv run python -c 'import worker.config'",
+        "warningPatterns": ["UserWarning", "shadows an attribute", "field.*shadow"]
+      },
+      { "name": "db-session-import",    "command": "cd app && uv run python -c 'import database.session'",    "purpose": "Database session imports", "gates": true },
+      { "name": "db-repository-import", "command": "cd app && uv run python -c 'import database.repository'", "purpose": "Repository imports",        "gates": true },
+      {
+        "kind": "baseline-diff",
+        "name": "net-new-lint",
+        "purpose": "Ruff — fail only on violations this task introduced (diff vs worktree-creation baseline)",
+        "gates": true,
+        "baselineCommand": "uv run ruff check app/ --output-format=json",
+        "command": "uv run ruff check app/ --output-format=json",
+        "compareKeys": ["filename", "code", "message"]
+      },
+      { "name": "pylint", "command": "uv run pylint app/", "purpose": "Pylint", "gates": true },
+      {
+        "kind": "count-delta",
+        "name": "pytest-count",
+        "purpose": "Pytest collection count must not drop vs the previous task (catches silently-removed tests)",
+        "gates": true,
+        "command": "uv run pytest --collect-only -q",
+        "countPattern": "[0-9]+ tests? collected",
+        "failOn": "decrease"
+      },
+      { "name": "pytest", "command": "uv run pytest", "purpose": "Full test suite — AUTHORITATIVE for verdict", "gates": true }
+    ]
+  },
+  "uiTest": { "enabled": false }
+}

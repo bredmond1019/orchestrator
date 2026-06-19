@@ -1,20 +1,20 @@
 # Breakdown — Decompose a task spec into agent-executable sub-steps.
 
-Takes a task spec from `planning/tasks/` and produces a granular breakdown where every
+Takes a task spec from `planning/` and produces a granular breakdown where every
 sub-step names exact file paths, class/function names, and what to write or change —
 precise enough for an agent (or a human) to execute without interpretation.
 
 ## Variables
 
-$ARGUMENTS — path to the task spec to break down (e.g. `planning/tasks/phase0-blockC/tasks.md`).
-             If omitted, default to the current block's spec identified via `planning/STATUS.md`.
+$ARGUMENTS — path to the task spec to break down (e.g. `planning/<spec-slug>/tasks.md`).
+             If omitted, default to the current block's spec identified via `planning/status.md`.
              If no spec exists for the current block, say so and suggest running `/next-task`.
 
 ## Instructions
 
 1. Resolve the target spec:
    - If `$ARGUMENTS` is provided, read that file.
-   - If omitted, read `planning/STATUS.md` to find the current block, then read its spec.
+   - If omitted, read `planning/status.md` to find the current block, then read its spec.
    - If neither yields a file, stop and explain clearly.
 
 2. Read the spec in full. Note:
@@ -22,23 +22,25 @@ $ARGUMENTS — path to the task spec to break down (e.g. `planning/tasks/phase0-
    - The **Relevant Files** or **Context Pointers** section
    - The **Acceptance Criteria** and **Validation Commands** (copied verbatim into the breakdown)
 
-3. Read `CLAUDE.md` for standing rules (prompts must be `.j2` files, workflow registration, tests
-   required, known bugs). These constraints belong in the relevant sub-steps, not as a separate note.
+3. Read `CLAUDE.md` for **the project's standing rules** (do not assume any stack, locale-parity,
+   narrative, or content-layout rule unless written there; plus the universal harness rules — no
+   fabricated metrics, no emoji, gated checks must pass). These constraints belong in the relevant
+   sub-steps, not as a separate note.
 
 4. **For each step in the spec, before writing its breakdown:** read the actual source files
    that step touches. This is not optional — the breakdown must name real things:
-   - If a step says "unit test `TaskContext`" → read `app/core/task.py` to get the actual
-     method names and signatures before writing the test sub-steps.
-   - If a step says "add `EmbeddingService`" → read `app/services/` to understand the existing
-     service pattern before writing the implementation sub-steps.
-   - If a step creates a new workflow node → read an existing node in
-     `app/workflows/customer_care_workflow_nodes/` to match the exact pattern.
+   - If a step says "unit test X" → read the module under test to get the actual function names
+     and signatures before writing the test sub-steps.
+   - If a step adds new code → read an existing sibling of the same kind to match the project's
+     established pattern before writing the implementation sub-steps.
+   - If a step edits content/docs → read the corresponding file(s), plus any companion files the
+     project's conventions require, so the breakdown captures every artifact the change must touch.
    - Read only what is relevant to each step. Do not load the entire codebase.
 
 5. Decompose each spec step into numbered sub-steps using the format `N.M`
    (e.g. step 2 → sub-steps 2.1, 2.2, 2.3). Each sub-step must be atomic:
    - One file to create or one specific change to one existing file.
-   - If creating a file: state the full path and the complete structure (classes, functions,
+   - If creating a file: state the full path and the complete structure (components, functions,
      fixtures, imports) — not "add a test file."
    - If editing a file: state the exact function or line to change and what to add or replace.
    - If running a command: write the exact command, not a description of what to run.
@@ -46,27 +48,27 @@ $ARGUMENTS — path to the task spec to break down (e.g. `planning/tasks/phase0-
 6. After each logical group of sub-steps (not only at the end), add an inline **Verify** check:
    a single command or observation that confirms the group succeeded before moving on.
 
-7. Write the breakdown to `planning/tasks/<block-dir>/breakdown.md` — same directory as the spec, named `breakdown.md`.
+7. Write the breakdown to `planning/<block-dir>/breakdown.md` — same directory as the spec, named `breakdown.md`.
 
 8. Return only the path to the file created.
 
 ## What makes a sub-step unambiguous
 
 Good sub-step:
-> **2.3 Create `tests/core/test_task.py`**
-> File: `tests/core/test_task.py`
-> Class: `TestTaskContext`
-> - `test_add_result_stores_value` — call `ctx.add_result("k", "v")`, assert `ctx.get_result("k") == "v"`
-> - `test_get_all_results_returns_dict` — add two keys, assert `ctx.get_all_results()` returns `{"k1": ..., "k2": ...}`
-> - `test_missing_key_returns_none` — assert `ctx.get_result("missing")` returns `None` (or raises — match actual behaviour in `task.py`)
+> **2.3 Create `__tests__/lib/services/content-loader.test.ts`**
+> File: `__tests__/lib/services/content-loader.test.ts`
+> Suite: `describe("getPublishedPosts")`
+> - `returns posts for a locale` — call `getPublishedPosts("en")`, assert the array is non-empty and every item has a `slug`
+> - `handles empty input` — call `getPublishedPosts("")`, assert it returns an empty array (not an error)
+> - `unknown slug returns null` — assert `getPostBySlug("missing", "en")` returns `null` (or throws — match actual behaviour in `lib/services/`)
 
 Bad sub-step (too vague to execute without interpretation):
-> - Add tests for TaskContext
+> - Add tests for the content loader
 
 ## Context / Files to Read
 
 - `$ARGUMENTS` (the spec file, or the current block's spec)
-- `planning/STATUS.md` (only if $ARGUMENTS is omitted)
+- `planning/status.md` (only if $ARGUMENTS is omitted)
 - `CLAUDE.md`
 - Source files relevant to each step (read per-step, not upfront)
 
@@ -124,10 +126,10 @@ checks as you go — do not batch them at the end. Each check must pass before c
 <copied verbatim from the spec — do not paraphrase>
 
 ## Notes
-<any discoveries made while reading the codebase that affect execution — e.g. a method
+<any discoveries made while reading the codebase that affect execution — e.g. a function
  signature differs from what the spec implied, or a standing rule from CLAUDE.md applies>
 ```
 
 ## Report
 
-Return only the path to the file created (e.g. `planning/tasks/phase0-blockC/breakdown.md`).
+Return only the path to the file created (e.g. `planning/<spec-slug>/breakdown.md`).

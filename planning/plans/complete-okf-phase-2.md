@@ -24,7 +24,7 @@ This repo is Claude-only (`.claude/`, no `.agents/`).
 ## Why this can't be done alone
 
 The three SDLC scripts (`.claude/workflows/sdlc-run.js`, `sdlc-task.js`, `sdlc-block.js`)
-hard-depend on `planning/STATUS.md`, `planning/MASTER_PLAN.md`, root `DEVLOG.md`, and
+hard-depend on `planning/status.md`, `planning/master-plan.md`, root `log.md`, and
 `planning/tasks/<stem>/`. After base-template exists, the **canonical** workflow copy
 lives there — pos should take the rewritten scripts from base-template rather than
 re-deriving them.
@@ -34,13 +34,13 @@ re-deriving them.
 ## Work Items (apply the brain's settled decisions)
 
 ### 1. Canonical document names (per coordination D-a)
-Rename `planning/STATUS.md` / `planning/MASTER_PLAN.md` / root `DEVLOG.md` / `CONTEXT.md`
+Rename `planning/status.md` / `planning/master-plan.md` / root `log.md` / `context.md`
 to the agreed canonical names. Update every reference: `CLAUDE.md` (which cites several
-decisions + planning paths), `planning/README.md`, `planning/CONTEXT.md`, the workflows,
+decisions + planning paths), `planning/index.md`, `planning/context.md`, the workflows,
 and the `.claude/commands/` that read these files.
 
 ### 2. `README.md` → `index.md` (per coordination D-c)
-Rename `planning/README.md` to `index.md` if adopted; repoint references. Not
+Rename `planning/index.md` to `index.md` if adopted; repoint references. Not
 workflow-load-bearing, low risk.
 
 ### 3. `planning/` structure convergence (per coordination D-b)

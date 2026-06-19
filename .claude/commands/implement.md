@@ -5,9 +5,9 @@
 $ARGUMENTS — path to the plan file to implement, with an optional task number suffix.
 
 Examples:
-- `planning/tasks/phase0-blockC/tasks.md` — run all tasks in the plan
-- `planning/tasks/phase0-blockC/tasks.md 1` — run only Task 1
-- `planning/tasks/phase0-blockC/tasks.md 3` — run only Task 3
+- `planning/<spec-slug>/tasks.md` — run all tasks in the plan
+- `planning/<spec-slug>/tasks.md 1` — run only Task 1
+- `planning/<spec-slug>/tasks.md 3` — run only Task 3
 
 ## Instructions
 
@@ -16,19 +16,12 @@ Examples:
 3. Run `/prime` to orient to the codebase before touching any code.
 4. Read the plan file in full.
 5. THINK HARD about the plan: understand the goal, relevant files, and the target task(s) before writing anything.
-6. **If a task number was given:** execute only that numbered task from the Step-by-Step Tasks section. Skip all others. After completing it, run only the validation commands directly relevant to that task (e.g. import checks for the file(s) changed, or the specific `pytest` path for tests written). Do NOT run the full validation suite — that is reserved for when all tasks are complete.
+6. **If a task number was given:** execute only that numbered task from the Step-by-Step Tasks section. Skip all others. After completing it, run only the validation checks directly relevant to that task (a subset of the project's checks in `planning/harness.json` / the spec's `## Validation Commands`). Do NOT run the full validation suite — that is reserved for when all tasks are complete.
 7. **If no task number was given:** execute every Step-by-Step task in order, top to bottom.
    - Follow existing code patterns and conventions (see CLAUDE.md).
-   - Never hardcode a system prompt in Python — use `.j2` files in `app/prompts/` via `PromptManager`.
-   - Every new workflow must ship with tests.
-   - Register any new workflow in `app/workflows/workflow_registry.py`.
-8. After all tasks are complete (full run only), run the plan's Validation Commands exactly as written. If no plan-specific commands exist, run the standard checks:
-   ```
-   uv run pylint app/
-   uv run pytest
-   cd app && uv run python -c "from main import app"
-   cd app && uv run python -c "from worker.config import celery_app"
-   ```
+   - Read `CLAUDE.md` and `planning/context.md` and enforce **the project's standing rules** — do not assume any stack, locale-parity, narrative, or content-layout rule unless written there.
+   - Universal harness rules: no fabricated metrics/quotes (verify model ids / package names via the `claude-api` skill, not memory), no emoji, every change ships with tests.
+8. After all tasks are complete (full run only), run the spec's `## Validation Commands` exactly as written. If the spec has none, run the project's checks from `planning/harness.json` (`validation.checks[]`); if that is absent too, stop and ask the user for the validation commands.
 9. If validation fails, fix the failure before reporting.
 10. Report the completed work (see Report).
 
@@ -43,10 +36,10 @@ Examples:
 After completing work, write a report file AND summarize to the user.
 
 **Derive the report file path** from the plan path and optional task number:
-- Plan only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/implement.md`
-- Plan + task: `planning/tasks/phase0-blockC/tasks.md 3` → `planning/tasks/phase0-blockC/reports/task3-implement.md`
+- Plan only: `planning/<spec-slug>/tasks.md` → `planning/<spec-slug>/sdlc/reports/implement.md`
+- Plan + task: `planning/<spec-slug>/tasks.md 3` → `planning/<spec-slug>/sdlc/reports/task3-implement.md`
 
-Create `planning/tasks/phase0-blockC/reports/` if it does not exist.
+Create `planning/<spec-slug>/sdlc/reports/` if it does not exist.
 
 **Write the report file** in this exact format:
 
@@ -65,7 +58,7 @@ Create `planning/tasks/phase0-blockC/reports/` if it does not exist.
 
 | File | Action |
 |---|---|
-| path/to/file.py | created / modified |
+| path/to/file | created / modified |
 
 ## Validation Output
 
@@ -99,5 +92,5 @@ Then summarize the same information to the user in the chat.
 
 Then output the pipeline next step:
 ```
-Next: /test planning/tasks/phase0-blockC/tasks.md [N]
+Next: /test planning/<spec-slug>/tasks.md [N]
 ```

@@ -8,7 +8,7 @@ Format: **Title idea** — one-line hook. Tag the output target: `[LI]` = Linked
 ## Queued
 
 **Welcome Back: The Builder's Arc** `[LI]`
-EN and PT drafts already written (`LinkedIn_Return_Post_Builders_Arc.docx`, `LinkedIn_Return_Post_Retorno_PT.docx`). Pre-publish de-identification check required before posting — see CONTEXT.md public-narrative rule and DECISIONS D10.
+EN and PT drafts already written (`LinkedIn_Return_Post_Builders_Arc.docx`, `LinkedIn_Return_Post_Retorno_PT.docx`). Pre-publish de-identification check required before posting — see context.md public-narrative rule and DECISIONS D10.
 
 **I Automated My Entire Dev Lifecycle with Claude Code Slash Commands** `[Both]`
 Walkthrough of the `/generate-tasks → /implement → /test → /review-task → /document → /log-work` pipeline built in `.claude/commands/`. Each command is a markdown file that drives a fresh agent context; together they form a repeatable, file-traced SDLC. Angle: meta-level AI tooling — using AI to build AI systems more reliably.

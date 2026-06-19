@@ -6,10 +6,10 @@ description: Current state and progress tracker for the python-orchestration-sys
 
 # STATUS — Current State & Progress
 
-*The volatile companion to `CONTEXT.md`. Update this file as you go; leave the plans clean.*
+*The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-17 — Infrastructure / tooling improvements: SDLC orchestrator hardened (scout ALREADY_COMPLETE detection, post-merge integrity audits, NEEDS_REVIEW flag aggregation), per-task runner improved (lint baseline capture, RULE 0 already-complete guard, expanded TEST_SCHEMA), new daily health-check workflow. No product code changed; all block statuses unchanged. Block D **DONE**: all 11 tasks merged (shared services, pgvector, ToolUseNode, Project A scaffold, clean API contract); `uv run pytest` 210 passed, ruff clean
+**Last updated:** 2026-06-19 — **OKF Phase 2 executed + SDLC engines re-adopted from base-template `45504b5`** (D29): agnostic zero-stack-default engines with token telemetry + richer validation check kinds; 8-check suite externalized to `planning/harness.json` (no validation lost); docs lowercased (`status.md`/`log.md`/etc.); 153 finished tasks archived to `archive/planning-tasks-pre-okf/`; brain-level/one-off harness files pruned. `node --check` passes; `harness.json` parses (10 checks). No product code changed; all block statuses unchanged. Prior (2026-06-17): SDLC orchestrator hardening; Block D **DONE** (11 tasks merged; `uv run pytest` 210 passed, ruff clean)
 **Current focus:** Phase 0, Block B (private face / Tailscale) continues **and** Phase 1, Project A — `content_pipeline` workflow scaffolded + registered on main, ready to implement. Goal is a solo contracting practice at ~20 hrs/week; first contract offer comes after Project D competence checkpoint.
 
 ---
@@ -66,7 +66,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 ## Go-Public Checklist (repo is currently private — do not flip until all done)
 
 - [ ] **Fix `app/prompts/customer_ticket_response.j2`** — `author: Healthie AI Team` and "Healthie Support Team" sign-off must be replaced with a generic placeholder (e.g. TechGear, same as `ticket_analysis.j2`). This is the only code-level issue; fix it now even while private.
-- [ ] **Exclude `planning/` from public history** — add `planning/` to `.gitignore`, then rebuild a curated public history that excludes it. The directory contains: private employer context (`CONTEXT.md` "private corroborating evidence" paragraph), non-disparagement-sensitive material, warm lead names and personal relationships, LinkedIn drafts. Same approach as `workflow-engine-rs`.
+- [ ] **Exclude `planning/` from public history** — add `planning/` to `.gitignore`, then rebuild a curated public history that excludes it. The directory contains: private employer context (`context.md` "private corroborating evidence" paragraph), non-disparagement-sensitive material, warm lead names and personal relationships, LinkedIn drafts. Same approach as `workflow-engine-rs`.
 - [ ] **Update `README.md`** — currently says "No tests exist yet." 210 tests pass; fix before anyone lands on the repo.
 - [ ] **Wait until Project A ships** — a framework with one reference workflow and one empty scaffold undersells the work. Go public after Project A at minimum; after Project B is better.
 
@@ -111,4 +111,4 @@ If yes to accuracy, pass CONTEXT + this file + the relevant plan section and ask
 
 ---
 
-*State only. For what things mean, see the plans. For orientation, see `CONTEXT.md`.*
+*State only. For what things mean, see the plans. For orientation, see `context.md`.*
