@@ -1,10 +1,13 @@
 # AI Event System — Orchestration Framework
 
-A production-ready, event-driven AI pipeline framework. FastAPI accepts events,
+An event-driven AI pipeline framework. FastAPI accepts events,
 persists them to PostgreSQL, and queues them via Celery (Redis broker). A worker
 picks up each job and runs it through a **Workflow** — a validated DAG of
 **Nodes** — passing a shared `TaskContext` through each step. New workflows are
 added as sibling directories alongside the reference `customer_care` workflow.
+
+The framework core is complete and tested (210 passing tests); it is the delivery
+vehicle each new automation ships into, not a hardened, deployed product.
 
 ## Prerequisites
 
@@ -60,7 +63,8 @@ cd docker
 uv run pytest
 ```
 
-No tests exist yet — they are added per workflow as each one ships. See
+210 tests pass, covering the framework core, shared services, the database layer,
+and the API. Every new workflow ships with its own tests as it lands. See
 `planning/Test_Plan.md` for scope (Option A).
 
 ## Sending a test event
@@ -87,7 +91,8 @@ orchestration/
 │   ├── database/             SQLAlchemy models, GenericRepository, session
 │   ├── prompts/              Jinja2 .j2 prompt templates
 │   ├── schemas/              Pydantic event schemas (one per workflow)
-│   ├── services/             PromptManager (Jinja2 loader)
+│   ├── services/             Shared services: embedding, chunking, search,
+│   │                         article extraction, transcript, PromptManager
 │   ├── worker/               Celery config + task
 │   └── workflows/            Workflow implementations + node packages
 ├── docker/                   Dockerfiles, compose files, start/stop scripts
