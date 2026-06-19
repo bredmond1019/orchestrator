@@ -4,21 +4,49 @@ title: Development Log
 description: Chronological log of work completed for the python-orchestration-system.
 ---
 
-# DEVLOG — Orchestration Repo
+# log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
 
+## 2026-06-19
+
+Executed OKF Phase 2 (D27 → D29) in lockstep with adopting base-template's rewritten SDLC engines
+(provenance `45504b5`). **Engines replaced** — `.claude/workflows/{sdlc-run,sdlc-task,sdlc-block}.js`
+plus `harness.schema.json` and `templates/spec-template.md` — now the agnostic, zero-stack-default
+engines carrying per-stage **token telemetry** and the **richer validation check kinds** (base-template
+D6). Adopted the OKF-agnostic command set; pruned brain-level commands (`new-project`,
+`scaffold-project`, `blog-idea`) and the one-off `review-and-merge-tasks-9-12.js` (kept project
+workflows `health-check`, `test-planning`, `generate-new-docs`).
+
+**Validation externalized to `planning/harness.json`** — the old hardcoded 8-check suite (CHECK 0–8.5)
+is now expressed faithfully via the new kinds: `forbidden-pattern-scan` (CLAUDE.md standing rules),
+`warning-scan` (Pydantic field-shadow warnings on app/worker import), `baseline-diff` (ruff net-new
+violations vs a worktree-creation baseline), `count-delta` (pytest count must not regress), plus plain
+commands (imports, pylint, full pytest = authoritative). No validation behavior lost.
+
+**OKF renames** — `CONTEXT→context`, `STATUS→status`, `MASTER_PLAN→master-plan`, `DEVLOG→log`,
+`planning/README→planning/index`; references updated. **Archived** the 153 finished files under
+`planning/tasks/` to `archive/planning-tasks-pre-okf/`; new work uses the concept-folder model
+(`planning/<concept>/tasks.md`, state under `<concept>/sdlc/`). D28 (node-level execution state) is
+untouched — it lives in app/framework code, not the engines.
+
+Verification: `node --check` passes on all three engines; `harness.json` parses (10 checks). Next:
+run one `/sdlc-task` to capture the Phase-A token-telemetry **baseline**, then base-template's Phase B
+trims. See base-template `planning/plans/sdlc-telemetry-updates.md` and `planning/decisions/D29`.
+
+---
+
 ## 2026-06-17
 
-Completed OKF Phase 1 for this repo — additive, workflow-safe documentation/structure changes only (no workflow JS touched, no load-bearing file renamed). Split the aggregate `planning/DECISIONS.md` into 26 atomic OKF files under `planning/decisions/` (one `D{N}-<kebab>.md` per decision, each `type: Decision`, Decided/Why/Rejected bodies and supersession notes preserved verbatim) plus a `type: Index` registry at `planning/decisions/index.md`; deleted the old aggregate and repointed the prose pointers in `CLAUDE.md`, `planning/CONTEXT.md`, and `planning/README.md` to the new directory. Added OKF frontmatter to all 14 files under `docs/` (api-reference + configuration as `Reference`, app-architecture-overview as `Architecture`, the architecture_review/ and agentic-workflows/ docs as `Reference`) and created `docs/index.md`. Updated `.claude/commands/log-work.md` so settled choices are written as atomic decision files (next `D{N+1}` from the index, OKF frontmatter, registered in index.md) instead of appended to a single aggregate — ask-first guard kept intact. **Accepted seam (corrected in Phase 2, not an oversight):** the SDLC workflow scripts (`sdlc-run.js`, `sdlc-task.js`) still carry `notes`-field prompt strings that say "DECISIONS.md"; these are descriptive only (the workflows never read or write the file), so they were deliberately left untouched to keep this phase workflow-safe.
+Completed OKF Phase 1 for this repo — additive, workflow-safe documentation/structure changes only (no workflow JS touched, no load-bearing file renamed). Split the aggregate `planning/DECISIONS.md` into 26 atomic OKF files under `planning/decisions/` (one `D{N}-<kebab>.md` per decision, each `type: Decision`, Decided/Why/Rejected bodies and supersession notes preserved verbatim) plus a `type: Index` registry at `planning/decisions/index.md`; deleted the old aggregate and repointed the prose pointers in `CLAUDE.md`, `planning/context.md`, and `planning/index.md` to the new directory. Added OKF frontmatter to all 14 files under `docs/` (api-reference + configuration as `Reference`, app-architecture-overview as `Architecture`, the architecture_review/ and agentic-workflows/ docs as `Reference`) and created `docs/index.md`. Updated `.claude/commands/log-work.md` so settled choices are written as atomic decision files (next `D{N+1}` from the index, OKF frontmatter, registered in index.md) instead of appended to a single aggregate — ask-first guard kept intact. **Accepted seam (corrected in Phase 2, not an oversight):** the SDLC workflow scripts (`sdlc-run.js`, `sdlc-task.js`) still carry `notes`-field prompt strings that say "DECISIONS.md"; these are descriptive only (the workflows never read or write the file), so they were deliberately left untouched to keep this phase workflow-safe.
 
 ```diff
  planning/DECISIONS.md                          | 161 ---------------- (deleted)
  planning/decisions/*.md (26 decisions + index) | 366 ++++++++++++++++ (created)
  docs/*.md (14 files + index.md)                | 116 ++++++++++++++++
- CLAUDE.md / CONTEXT.md / README.md (pointers)  |  20 +-
+ CLAUDE.md / context.md / README.md (pointers)  |  20 +-
  .claude/commands/log-work.md                   |  12 +-
 ```
 

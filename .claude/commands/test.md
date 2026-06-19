@@ -1,6 +1,8 @@
 # Application Validation Test Suite
 
-Execute comprehensive validation tests for the orchestration framework, returning results in a standardized JSON format for automated processing.
+Execute the project's validation suite, returning results in a standardized JSON format for
+automated processing. The suite is **not hardcoded** — it is read from `planning/harness.json`
+(the mechanism/policy split), so this command works for any stack.
 
 ## Variables
 
@@ -8,19 +10,20 @@ $ARGUMENTS — optional path to the task spec and optional task number. Same for
 
 Examples:
 - (no args) — run full suite; output JSON to chat only; no file written
-- `planning/tasks/phase0-blockC/tasks.md` — run full suite; write report to `planning/tasks/phase0-blockC/reports/test.md`
-- `planning/tasks/phase0-blockC/tasks.md 1` — run full suite; write report to `planning/tasks/phase0-blockC/reports/task1-test.md`
+- `planning/<spec-slug>/tasks.md` — run full suite; write report to `planning/<spec-slug>/sdlc/reports/test.md`
+- `planning/<spec-slug>/tasks.md 1` — run full suite; write report to `planning/<spec-slug>/sdlc/reports/task1-test.md`
 
-The task number N does NOT change which tests run — all 8 tests always run regardless. N only
+The task number N does NOT change which checks run — all checks always run regardless. N only
 determines the output file name so the snapshot is scoped to the right pipeline stage.
 
 ## Purpose
 
-Proactively identify and fix issues before they impact the pipeline or downstream workflows. By running this suite you can:
-- Detect syntax errors, import failures, and module misconfiguration
-- Identify broken tests or regressions in core engine behavior
-- Verify that all key modules construct cleanly without side effects
-- Ensure the framework is in a healthy state before beginning new work
+Proactively identify and fix issues before they impact the project or downstream work. By running
+this suite you can:
+- Detect lint / format / type errors before they reach the build
+- Catch broken tests or regressions
+- Verify the project builds/compiles cleanly
+- Enforce the universal harness rule: no emoji in changed markdown
 
 ## Constants
 
@@ -30,87 +33,79 @@ TEST_COMMAND_TIMEOUT: 5 minutes
 
 - **Step 0 — Parse `$ARGUMENTS`:** If provided, split on the last space. Trailing number = task N; remainder = spec path. Derive the report file path from the spec's parent directory:
   - No args: no file will be written.
-  - Spec only: `planning/tasks/phase0-blockC/tasks.md` → `planning/tasks/phase0-blockC/reports/test.md`
-  - Spec + task N: `planning/tasks/phase0-blockC/tasks.md 1` → `planning/tasks/phase0-blockC/reports/task1-test.md`
-- Run `/prime` to orient to the codebase before executing any tests.
-- Execute each test in the sequence provided below
-- Capture the result (passed/failed) and any error messages
-- IMPORTANT: Return ONLY the JSON array with test results
+  - Spec only: `planning/<spec-slug>/tasks.md` → `planning/<spec-slug>/sdlc/reports/test.md`
+  - Spec + task N: `planning/<spec-slug>/tasks.md 1` → `planning/<spec-slug>/sdlc/reports/task1-test.md`
+- Run `/prime` to orient to the codebase before executing any checks.
+- **Step 1 — Load the validation suite:** Read `planning/harness.json`.
+  - If present and valid JSON: the checks are `validation.checks[]`, run **in order, top to bottom**.
+    Each entry has `name`, `command`, `purpose`, and `gates` (whether its failure blocks the
+    review verdict). The check whose `purpose` names it authoritative for the verdict is the one
+    that always prevents PASS when it fails.
+  - If absent or invalid: fall back to the spec's optional `## Validation Commands` section — run
+    each command there, in order. If there is no spec or no such section, run no project checks
+    and record a single informational row (`test_name` `"no_validation_suite"`, `passed` true).
+  - The engine ships **no stack defaults** — never invent lint/test/build commands; they come only
+    from `harness.json` or the spec.
+- Run each check with the Bash tool. Capture the result (passed/failed) and any error messages.
+- IMPORTANT: Return ONLY the JSON array with check results
   - IMPORTANT: Do not include any additional text, explanations, or markdown formatting
   - We'll immediately run JSON.parse() on the output, so make sure it's valid JSON
-- If a test passes, omit the error field
-- If a test fails, include the error message in the error field
-- Execute all tests even if some fail
+- If a check passes, omit the error field
+- If a check fails, include the error message in the error field
+- Execute all checks even if some fail
 - Error Handling:
   - If a command returns a non-zero exit code, mark as failed
   - Capture stderr output for the error field
   - Timeout commands after `TEST_COMMAND_TIMEOUT`
-- Test execution order is important — import checks must pass before running the full suite
+- Execution order is the order in `validation.checks[]` (or the spec) — earlier gates (format/lint/type) before later ones (test/build)
 - All commands are run from the repo root unless the command itself changes directory
-- Always run `pwd` before each test to confirm you are in the repo root
+- Always run `pwd` before each check to confirm you are in the repo root
 
 ## Test Execution Sequence
 
-### Import / Construction Checks
+### Project validation checks (from `planning/harness.json`)
 
-1. **App Import Check**
-   - Preparation Command: None
-   - Command: `cd app && uv run python -c "from main import app"`
-   - test_name: "app_import"
-   - test_purpose: "Verifies that the FastAPI app object constructs cleanly — catches broken route registrations, missing env vars read at import time, and any module-level errors in api/ or main.py"
+For each entry in `validation.checks[]`, run `command` and record:
+- `test_name`: the check's `name`
+- `execution_command`: the exact `command`
+- `test_purpose`: the check's `purpose` (note whether it is gating)
+- `passed`: true iff exit code 0
+- `error`: stderr/output snippet on failure; omit on pass
 
-2. **Worker Import Check**
-   - Preparation Command: None
-   - Command: `cd app && uv run python -c "from worker.config import celery_app"`
-   - test_name: "worker_import"
-   - test_purpose: "Verifies that the Celery app constructs cleanly — catches misconfigured broker URLs, import-time side effects, and missing env vars in worker/config.py"
+(If `harness.json` is absent, the rows come from the spec's `## Validation Commands` instead.)
 
-3. **Database Session Import Check**
-   - Preparation Command: None
-   - Command: `cd app && uv run python -c "from database.session import Base, db_session"`
-   - test_name: "database_session_import"
-   - test_purpose: "Verifies that database.session imports without triggering a live DB connection — catches the known import-time create_engine() side effect and any SQLAlchemy misconfiguration"
+### Universal harness gate (always runs last, regardless of config)
 
-4. **Repository Import Check**
-   - Preparation Command: None
-   - Command: `cd app && uv run python -c "from database.repository import GenericRepository"`
-   - test_name: "repository_import"
-   - test_purpose: "Verifies that GenericRepository imports cleanly — catches missing model references, SQLAlchemy 2.x incompatibilities, and import-time errors in database/repository.py"
+**Emoji prohibition** — hard FAIL if any markdown file changed by this work introduces an emoji:
 
-### Code Quality
+```bash
+python3 - <<'PYEOF'
+import subprocess, re, sys, os
+EMOJI = re.compile(r'[\U0001F300-\U0001FAFF\U00002600-\U000027BF]')
+changed = subprocess.run(['git','diff','main..HEAD','--name-only'], capture_output=True, text=True).stdout.splitlines()
+md_files = [f for f in changed if f.endswith(('.md','.mdx')) and os.path.isfile(f)]
+hits = []
+for path in md_files:
+    for n, line in enumerate(open(path, errors='ignore'), 1):
+        if EMOJI.search(line):
+            hits.append(f'{path}:{n}: {line.rstrip()[:100]}')
+if hits:
+    print('EMOJI CHECK FAIL: emoji in modified files (violates the no-emoji harness rule):')
+    for h in hits[:25]: print(h)
+    sys.exit(1)
+print('EMOJI CHECK: OK — no emoji in modified files')
+sys.exit(0)
+PYEOF
+```
 
-5. **Ruff**
-   - Preparation Command: None
-   - Command: `uv run ruff check app/`
-   - test_name: "ruff"
-   - test_purpose: "Fast Rust-based linter — checks pyflakes (unused imports, undefined names), pycodestyle, isort ordering, pyupgrade (modern syntax), and flake8-bugbear (likely bugs). Runs in milliseconds; catches the common class of issues before the slower pylint pass"
-
-6. **Pylint**
-   - Preparation Command: None
-   - Command: `uv run pylint app/`
-   - test_name: "pylint"
-   - test_purpose: "Deep semantic analysis across the entire app/ directory — catches type-aware issues, attribute access errors, and design problems that ruff's AST-only pass cannot detect. Excludes app/core/commands/ and app/alembic/ per project rules"
-
-### Test Suite
-
-7. **Pytest Collection**
-   - Preparation Command: None
-   - Command: `uv run pytest --collect-only`
-   - test_name: "pytest_collect"
-   - test_purpose: "Verifies that pytest can discover and collect all tests without import errors — a collection failure means tests can't run at all, usually caused by a broken import in a test file or fixture"
-
-8. **Full Test Suite**
-   - Preparation Command: None
-   - Command: `uv run pytest -v`
-   - test_name: "pytest_full"
-   - test_purpose: "Runs every test in the suite with verbose output — validates core engine behavior (Workflow, TaskContext, WorkflowValidator, nodes), database layer (GenericRepository CRUD), API endpoint (ghost-row regression), and services (PromptManager). customer_care workflow is excluded from tests per project standing rules"
+Record this as one row: `test_name` `"emoji_check"`, `test_purpose` "Universal harness gate — no emoji in changed markdown".
 
 ## Report
 
 - IMPORTANT: Return results exclusively as a JSON array based on the `Output Structure` section below.
-- Sort the JSON array with failed tests (passed: false) at the top
-- Include all tests in the output, both passed and failed
-- The execution_command field should contain the exact command that can be run to reproduce the test
+- Sort the JSON array with failed checks (passed: false) at the top
+- Include all checks in the output, both passed and failed
+- The execution_command field should contain the exact command that can be run to reproduce the check
 - This allows subsequent agents to quickly identify and resolve errors
 
 ### Output Structure
@@ -132,17 +127,17 @@ TEST_COMMAND_TIMEOUT: 5 minutes
 ```json
 [
   {
-    "test_name": "ruff",
+    "test_name": "clippy",
     "passed": false,
-    "execution_command": "uv run ruff check app/",
-    "test_purpose": "Fast Rust-based linter — checks pyflakes, pycodestyle, isort, pyupgrade, and flake8-bugbear",
-    "error": "app/database/repository.py:3:1: F401 `sqlalchemy.orm` imported but unused"
+    "execution_command": "cargo clippy -- -D warnings",
+    "test_purpose": "Lint gate — denies warnings",
+    "error": "error: unused variable `parsed` ... -D unused-variables"
   },
   {
-    "test_name": "app_import",
+    "test_name": "test",
     "passed": true,
-    "execution_command": "cd app && uv run python -c \"from main import app\"",
-    "test_purpose": "Verifies that the FastAPI app object constructs cleanly — catches broken route registrations, missing env vars read at import time, and any module-level errors in api/ or main.py"
+    "execution_command": "cargo test",
+    "test_purpose": "Test suite — authoritative for the review verdict; a failure here always prevents PASS."
   }
 ]
 ```
@@ -150,9 +145,10 @@ TEST_COMMAND_TIMEOUT: 5 minutes
 ## File Output
 
 If `$ARGUMENTS` was provided, after returning the JSON array to chat, write a report file to the
-derived path. Create `planning/tasks/<block>/reports/` if it does not exist.
+derived path. Create `planning/<name>/sdlc/reports/` if it does not exist.
 
-**Write the report file in this exact format:**
+**Write the report file in this exact format** (let M = total number of checks run, including the
+emoji gate):
 
 ```markdown
 # Test Report — <spec filename> [Task <N> | All Tasks]
@@ -160,20 +156,15 @@ derived path. Create `planning/tasks/<block>/reports/` if it does not exist.
 **Date:** <YYYY-MM-DD>
 **Plan:** <spec file path, or "ad-hoc">
 **Scope:** Task <N> | All tasks
-**Overall result:** PASS (<n>/8 passed) | FAIL (<n>/8 passed)
+**Overall result:** PASS (<n>/<M> passed) | FAIL (<n>/<M> passed)
 
 ## Summary
 
 | Test | Result | Error |
 |---|---|---|
-| app_import | PASS / FAIL | <error snippet or blank> |
-| worker_import | PASS / FAIL | |
-| database_session_import | PASS / FAIL | |
-| repository_import | PASS / FAIL | |
-| ruff | PASS / FAIL | |
-| pylint | PASS / FAIL | |
-| pytest_collect | PASS / FAIL | |
-| pytest_full | PASS / FAIL | |
+| <check name> | PASS / FAIL | <error snippet or blank> |
+| ... (one row per check, in order) | | |
+| emoji_check | PASS / FAIL | |
 
 ## Full Results (JSON)
 
@@ -188,5 +179,5 @@ derived path. Create `planning/tasks/<block>/reports/` if it does not exist.
 
 After writing the file, output one line to chat:
 ```
-Next: /review-task planning/tasks/phase0-blockC/tasks.md [N]
+Next: /review-task planning/<spec-slug>/tasks.md [N]
 ```

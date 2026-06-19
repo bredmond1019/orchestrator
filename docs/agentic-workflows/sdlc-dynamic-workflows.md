@@ -31,8 +31,8 @@ Both run the same pipeline: scout → plan → implement → fix (if needed) →
 | Worktree | None — runs on main branch | Auto-created at `trees/<branchName>/` |
 | Task number | Optional (omit = full block) | Required |
 | Branch | `main` | `<blockId-lowercased>-task<N>` |
-| STATUS.md update | During wrap-up (log-work agent) | Deferred — applied at `/clean-worktree` time |
-| DEVLOG.md update | During wrap-up (log-work agent) | Deferred — applied at `/clean-worktree` time |
+| status.md update | During wrap-up (log-work agent) | Deferred — applied at `/clean-worktree` time |
+| log.md update | During wrap-up (log-work agent) | Deferred — applied at `/clean-worktree` time |
 | Report files | `planning/tasks/<block>/reports/` | Same path, inside the worktree |
 | Merge step | Not needed | `/clean-worktree <branchName>` |
 | Parallel-safe | No — STATUS/DEVLOG writes conflict | Yes — no shared file writes during the run |
@@ -166,7 +166,7 @@ run on `ESCALATION_MODEL` (default `opus`). The first two fix/review cycles stay
 
 ### What it does
 
-Runs the full pipeline on the **current branch** (usually `main`). No worktree is created. After the pipeline completes, STATUS.md and DEVLOG.md are updated directly by the log-work agent in the wrap-up stage.
+Runs the full pipeline on the **current branch** (usually `main`). No worktree is created. After the pipeline completes, status.md and log.md are updated directly by the log-work agent in the wrap-up stage.
 
 Best for:
 - Sequential single-task work where parallel safety is not needed
@@ -186,8 +186,8 @@ Best for:
 ║              Document → Wrap-up                           ║
 ║                                                           ║
 ║  Wrap-up writes:                                          ║
-║    planning/STATUS.md    (updated directly)               ║
-║    DEVLOG.md             (new entry prepended)            ║
+║    planning/status.md    (updated directly)               ║
+║    log.md             (new entry prepended)            ║
 ║    planning/tasks/<block>/reports/[taskN-]workflow.md     ║
 ╚═══════════════════════════════════════════════════════════╝
 ```
@@ -201,7 +201,7 @@ Each agent commits its own work immediately:
 | Implement | `feat: implement <stem>` | code + implement report |
 | Fix (each pass) | `fix: fix pass N for <stem>` | targeted changes + updated implement report |
 | Document | `docs: update docs for <stem>` | patched docs/ files + document report |
-| Wrap-up | `chore: wrap up <stem>` | STATUS.md, DEVLOG.md, test/review/workflow reports |
+| Wrap-up | `chore: wrap up <stem>` | status.md, log.md, test/review/workflow reports |
 
 ### Resumption
 
@@ -231,7 +231,7 @@ Task number is **required**. For full-block runs, use `/sdlc-run` instead.
 
 ### What it does
 
-Creates an isolated git worktree at `trees/<branchName>/`, runs the full pipeline inside it, and writes a task log file instead of touching STATUS.md or DEVLOG.md. Because nothing shared is written during the run, multiple tasks can execute simultaneously without conflicts.
+Creates an isolated git worktree at `trees/<branchName>/`, runs the full pipeline inside it, and writes a task log file instead of touching status.md or log.md. Because nothing shared is written during the run, multiple tasks can execute simultaneously without conflicts.
 
 After the pipeline completes, merge the branch back to main:
 
@@ -239,7 +239,7 @@ After the pipeline completes, merge the branch back to main:
 /clean-worktree <branchName>
 ```
 
-`/clean-worktree` merges the branch, reads the task log, applies the STATUS.md and DEVLOG.md updates, and removes the worktree.
+`/clean-worktree` merges the branch, reads the task log, applies the status.md and log.md updates, and removes the worktree.
 
 ### Flow
 
@@ -252,7 +252,7 @@ After the pipeline completes, merge the branch back to main:
 ║                                                           ║
 ║  All subsequent agents cd into the worktree.              ║
 ║  All git commits go to branch phase0-blockc-task8.        ║
-║  STATUS.md and DEVLOG.md are NEVER touched.               ║
+║  status.md and log.md are NEVER touched.               ║
 ║                                                           ║
 ║  Scout → Plan → Implement → Test → Review                 ║
 ║         ↑          ↓ (FAIL/PARTIAL, max 3)                ║
@@ -275,7 +275,7 @@ After the pipeline completes, merge the branch back to main:
 ║  1. Show uncommitted changes (warn if any)                ║
 ║  2. Show unpushed commits (for review)                    ║
 ║  3. git merge --ff-only phase0-blockc-task8               ║
-║  4. Read task8-log.md → apply STATUS.md + DEVLOG.md       ║
+║  4. Read task8-log.md → apply status.md + log.md       ║
 ║     Mark log Applied: true                                ║
 ║     Commit: chore: apply task log for phase0-blockC-task8 ║
 ║  5. git worktree remove trees/phase0-blockc-task8         ║
@@ -312,13 +312,13 @@ The worktree uses cone-mode sparse checkout. Included paths:
 | `app/` | All code changes |
 | `tests/` | Test files |
 | `docs/` | Document stage patches `docs/*.md` |
-| `planning/` | Scout reads STATUS.md; spec + reports live here |
+| `planning/` | Scout reads status.md; spec + reports live here |
 | `.claude/` | Commands and workflows resolve from the worktree CWD |
-| *(root files)* | `CLAUDE.md`, `pyproject.toml`, `uv.lock`, `DEVLOG.md`, etc. — auto-included by cone mode |
+| *(root files)* | `CLAUDE.md`, `pyproject.toml`, `uv.lock`, `log.md`, etc. — auto-included by cone mode |
 
 ### The task log
 
-Instead of updating STATUS.md and DEVLOG.md during the pipeline, the wrap-up agent writes a structured `task<N>-log.md`:
+Instead of updating status.md and log.md during the pipeline, the wrap-up agent writes a structured `task<N>-log.md`:
 
 ```markdown
 # Task Log — phase0-blockC task 8
@@ -332,16 +332,16 @@ Instead of updating STATUS.md and DEVLOG.md during the pipeline, the wrap-up age
 
 ---
 
-## STATUS.md — Block Status
+## status.md — Block Status
 [present only if block was "Not started" — value: "In progress"]
 
-## STATUS.md — Current Focus Line
+## status.md — Current Focus Line
 Phase 0, Block C — Task 9: Validate
 
-## STATUS.md — Last Updated Line
+## status.md — Last Updated Line
 2026-06-08 — Block C in progress (Tasks 1–8 complete; Tasks 9–N next — ...)
 
-## STATUS.md — Block Notes Column
+## status.md — Block Notes Column
 Tasks 1–8 complete; Task 9 (Validate) next.
 
 ---
@@ -355,7 +355,7 @@ Tasks 1–8 complete; Task 9 (Validate) next.
 ```git log --oneline output```
 ```
 
-`/clean-worktree` reads this file, applies each section to the correct location in STATUS.md and DEVLOG.md, then flips `Applied: false` → `Applied: true` and commits. If the log has already been applied, it is skipped.
+`/clean-worktree` reads this file, applies each section to the correct location in status.md and log.md, then flips `Applied: false` → `Applied: true` and commits. If the log has already been applied, it is skipped.
 
 ---
 
@@ -375,9 +375,9 @@ Main session                   Session A                    Session B
 /clean-worktree phase0-blockc-task9   ← then task 9
 ```
 
-**Merge in task-number order.** Each task log's `## STATUS.md — Current Focus Line` says "next up is task N+1." If you merge task 9 before task 8, STATUS.md ends up pointing at task 10 before task 8 has been applied. Merge in ascending order to keep Current focus accurate.
+**Merge in task-number order.** Each task log's `## status.md — Current Focus Line` says "next up is task N+1." If you merge task 9 before task 8, status.md ends up pointing at task 10 before task 8 has been applied. Merge in ascending order to keep Current focus accurate.
 
-**Before starting parallel tasks**, if the block is "Not started", run `/start-block phase0-blockC` from the main session first — this flips STATUS.md to "In progress" immediately so all worktrees see the correct block status when their scouts run. Alternatively, the task log for the first-merged task will flip it during `/clean-worktree`.
+**Before starting parallel tasks**, if the block is "Not started", run `/start-block phase0-blockC` from the main session first — this flips status.md to "In progress" immediately so all worktrees see the correct block status when their scouts run. Alternatively, the task log for the first-merged task will flip it during `/clean-worktree`.
 
 ---
 
@@ -420,4 +420,4 @@ Full-block runs (no task number) use the same names without the `task<N>-` prefi
 | main has advanced since worktree was created | `/clean-worktree` `--ff-only` fails cleanly; worktree left intact; rebase or merge-commit options printed |
 | Task log already applied | `/clean-worktree` detects `Applied: true` and skips STATUS/DEVLOG update |
 | Pipeline crash mid-stage | Per-stage commits preserve completed work on the branch; re-run the same command to resume |
-| Block is "Not started" in STATUS.md | sdlc-run flips it immediately; sdlc-task records it in the task log (applied at merge time) |
+| Block is "Not started" in status.md | sdlc-run flips it immediately; sdlc-task records it in the task log (applied at merge time) |

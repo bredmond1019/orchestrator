@@ -18,9 +18,9 @@ description: Reference for the end-to-end SDLC workflow pipeline and its stages.
 | **Project Init** | `/new-project <desc>` | description or spec file | `planning/intake.md` |
 | **Project Init** | `/scaffold-project` | `planning/intake.md` | 8 planning files |
 | **Session Start** | `/session-recap` | DEVLOG + STATUS + spec + reports dir | chat only |
-| **Session Start** | `/status` | `planning/STATUS.md` | chat only |
-| **Session Start** | `/process-tasks` | `planning/STATUS.md` | chat only |
-| **Block Setup** | `/start-block [id]` | `planning/STATUS.md` | `planning/STATUS.md` |
+| **Session Start** | `/status` | `planning/status.md` | chat only |
+| **Session Start** | `/process-tasks` | `planning/status.md` | chat only |
+| **Block Setup** | `/start-block [id]` | `planning/status.md` | `planning/status.md` |
 | **1 — Plan** | `/generate-tasks <id>` | MASTER_PLAN + CLAUDE.md | `planning/tasks/<block>/tasks.md` |
 | **1 — Plan (opt.)** | `/breakdown [spec]` | spec file + source files | `planning/tasks/<block>/breakdown.md` |
 | **2 — Implement** | `/implement <spec> [N]` | spec file + source files | code changes + implement report |
@@ -30,7 +30,7 @@ description: Reference for the end-to-end SDLC workflow pipeline and its stages.
 | **3 — Test** | `/test <spec> [N]` | spec file | test report |
 | **4 — Review** | `/review-task <spec> [N]` | spec + implement + test reports | review report (PASS/FAIL) |
 | **5 — Document** | `/document <spec> [N]` | review report (must be PASS) + implement report | patched `docs/*.md` + document report |
-| **6 — Wrap-up** | `/log-work [notes]` | STATUS + spec + DEVLOG + git diff | updated STATUS.md + DEVLOG.md |
+| **6 — Wrap-up** | `/log-work [notes]` | STATUS + spec + DEVLOG + git diff | updated status.md + log.md |
 | **Ad-hoc** | `/plan <desc>` | description | `planning/tasks/plan-{name}/tasks.md` |
 | **Ad-hoc** | `/feature <desc>` | description | `planning/tasks/feature-{name}/tasks.md` |
 | **Ad-hoc** | `/chore <desc>` | description | `planning/tasks/chore-{name}/tasks.md` |
@@ -52,15 +52,15 @@ description: Reference for the end-to-end SDLC workflow pipeline and its stages.
 ║                                                              ║
 ║  /scaffold-project [intake path]                             ║
 ║      │  reads: planning/intake.md                           ║
-║      ↓  writes: planning/CONTEXT.md                         ║
-║                  planning/STATUS.md                          ║
+║      ↓  writes: planning/context.md                         ║
+║                  planning/status.md                          ║
 ║                  planning/DECISIONS.md                       ║
-║                  planning/MASTER_PLAN.md                     ║
-║                  planning/README.md                          ║
+║                  planning/master-plan.md                     ║
+║                  planning/index.md                          ║
 ║                  planning/tasks/  (stub)                     ║
 ║                  CLAUDE.md                                   ║
 ║                  README.md                                   ║
-║                  DEVLOG.md                                   ║
+║                  log.md                                   ║
 ╚══════════════════════════════════════════════════════════════╝
                             │
                             ▼
@@ -71,10 +71,10 @@ description: Reference for the end-to-end SDLC workflow pipeline and its stages.
 ║                         spec, <block>/reports/ listing       ║
 ║                  out:   chat — recent work, next command      ║
 ║                                                              ║
-║  /status         reads: STATUS.md only                       ║
+║  /status         reads: status.md only                       ║
 ║                  out:   chat — current focus + in-progress   ║
 ║                                                              ║
-║  /process-tasks  reads: STATUS.md                            ║
+║  /process-tasks  reads: status.md                            ║
 ║                  out:   chat — eligibility table             ║
 ╚══════════════════════════════════════════════════════════════╝
                             │
@@ -83,8 +83,8 @@ description: Reference for the end-to-end SDLC workflow pipeline and its stages.
 ║                      BLOCK SETUP                             ║
 ║                                                              ║
 ║  /start-block [phase0-blockC]                                ║
-║      reads: planning/STATUS.md                               ║
-║      writes: planning/STATUS.md                              ║
+║      reads: planning/status.md                               ║
+║      writes: planning/status.md                              ║
 ║              (block → in_progress, Current focus updated)    ║
 ╚══════════════════════════════════════════════════════════════╝
                             │
@@ -93,7 +93,7 @@ description: Reference for the end-to-end SDLC workflow pipeline and its stages.
 ║                   PHASE 1 — PLAN                             ║
 ║                                                              ║
 ║  /generate-tasks phase0-blockC                               ║
-║      reads: MASTER_PLAN.md (target section only)             ║
+║      reads: master-plan.md (target section only)             ║
 ║             Projects_and_Learning_Plan.md (matching section) ║
 ║             CLAUDE.md (standing rules, known bugs)           ║
 ║      writes: planning/tasks/phase0-blockC/tasks.md ◄─ SPEC  ║
@@ -188,14 +188,14 @@ description: Reference for the end-to-end SDLC workflow pipeline and its stages.
 ║                  PHASE 6 — WRAP-UP                           ║
 ║                                                              ║
 ║  /log-work [notes]                                           ║
-║      reads: planning/STATUS.md                               ║
+║      reads: planning/status.md                               ║
 ║             planning/tasks/phase0-blockC/tasks.md            ║
-║             DEVLOG.md                                        ║
+║             log.md                                        ║
 ║             git diff --stat + git log --oneline -10          ║
-║      writes: planning/STATUS.md                              ║
+║      writes: planning/status.md                              ║
 ║              (block → done, Current focus → next block,      ║
 ║               date bumped, deviations logged)                ║
-║              DEVLOG.md (new dated entry appended)            ║
+║              log.md (new dated entry appended)            ║
 ║      prompts: add settled choices to DECISIONS.md            ║
 ║              (never self-edits DECISIONS.md)                 ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -344,7 +344,7 @@ The worktree uses git cone-mode sparse checkout. Only the listed directories are
 | `app/` | All code changes happen here |
 | `tests/` | Test files; implement and test stages write here |
 | `docs/` | Document stage patches `docs/*.md` |
-| `planning/` | Scout reads STATUS.md; plan reads MASTER\_PLAN; wrap-up writes STATUS.md + reports |
+| `planning/` | Scout reads status.md; plan reads MASTER\_PLAN; wrap-up writes status.md + reports |
 | `.claude/` | Commands and `sdlc-run.js` must resolve from the worktree CWD |
 | *(root files)* | `CLAUDE.md`, `pyproject.toml`, `pytest.ini`, `uv.lock`, etc. — included automatically by cone mode |
 
@@ -407,12 +407,12 @@ Three hard gates prevent a step from running until its prerequisite is satisfied
 | File | Created by | Written by | Read by |
 |---|---|---|---|
 | `planning/intake.md` | `/new-project` | `/new-project` | `/scaffold-project` |
-| `planning/CONTEXT.md` | `/scaffold-project` | manually | `/prime`, most commands |
-| `planning/STATUS.md` | `/scaffold-project` | `/start-block`, `/log-work` | `/status`, `/process-tasks`, `/session-recap`, `/log-work` |
+| `planning/context.md` | `/scaffold-project` | manually | `/prime`, most commands |
+| `planning/status.md` | `/scaffold-project` | `/start-block`, `/log-work` | `/status`, `/process-tasks`, `/session-recap`, `/log-work` |
 | `planning/DECISIONS.md` | `/scaffold-project` | manually (prompted by `/log-work`) | `/prime` |
-| `planning/MASTER_PLAN.md` | `/scaffold-project` | manually | `/generate-tasks` |
+| `planning/master-plan.md` | `/scaffold-project` | manually | `/generate-tasks` |
 | `planning/tasks/<block>/tasks.md` | `/generate-tasks` | `/update-task` | `/implement`, `/test`, `/review-task`, `/document`, `/log-work` |
 | `planning/tasks/<block>/breakdown.md` | `/breakdown` | — | auto-checked by `/implement`, `/fix`, and dynamic workflow implement + fix agents (`/sdlc-run`, `/sdlc-task`); authoritative for HOW; tasks.md stays authoritative for WHAT |
 | `planning/tasks/<block>/reports/*` | `/implement`, `/fix`, `/test`, `/review-task`, `/document` | each step | the next step in the pipeline |
-| `DEVLOG.md` | `/scaffold-project` | `/log-work` | `/session-recap` |
+| `log.md` | `/scaffold-project` | `/log-work` | `/session-recap` |
 | `docs/*.md` | manually or `/scaffold-project` | `/document` | `/prime` |
