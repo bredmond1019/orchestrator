@@ -2,30 +2,30 @@
 // sdlc-run — SDLC Pipeline Workflow
 // =============================================================================
 //
-// Runs the full SDLC pipeline for a phase/block from the current stage to
+// Runs the full SDLC pipeline for a spec from the current stage to
 // completion. Each stage is a separate agent with its own context window;
 // agents communicate only through report files on disk.
 //
 // USAGE
-//   /sdlc-run phase0-blockC      runs all tasks in the block
-//   /sdlc-run phase0-blockC 2    scopes every stage to task 2 only
+//   /sdlc-run <spec-slug>      runs all tasks in the spec
+//   /sdlc-run <spec-slug> 2    scopes every stage to task 2 only
 //
 // PIPELINE STAGES (in order)
-//   Scout      → detect current stage from report files + STATUS.md + DEVLOG
+//   Scout      → detect current stage from report files + status.md + log
 //   Plan       → generate task spec (skipped if spec file already exists)
 //   Implement  → execute tasks from spec
 //   Fix        → targeted fixes for FAIL/PARTIAL review (one pass per retry)
-//   Test       → 8-check suite: imports, ruff, pylint, pytest collect + full
-//   Review     → fresh pytest + acceptance criteria check; verdict gates next
+//   Test       → run the project's validation suite from planning/harness.json (+ universal emoji gate)
+//   Review     → fresh validation run + acceptance criteria check; verdict gates next
 //   Document   → surgical patches to docs/ (skipped if verdict is not PASS)
-//   Wrap-up    → update STATUS.md + DEVLOG, commit planning files, write report
+//   Wrap-up    → update status.md + log, commit planning files, write report
 //
 // COMMIT STRATEGY
 //   Each agent commits its own work immediately after completing it:
 //     feat: implement <stem>          implement agent (fix: if validation failed)
 //     fix: fix pass N for <stem>      fix agent — one commit per pass
 //     docs: update docs for <stem>    document agent
-//     chore: wrap up <stem>           finalize agent (STATUS/DEVLOG/reports)
+//     chore: wrap up <stem>           finalize agent (status/log/reports)
 //
 //   This ensures crash recovery: if the pipeline dies mid-run, all completed
 //   work is already in git history and visible to future agents via git log.
@@ -40,7 +40,7 @@
 //     review = FAIL     → fix
 //     no document.md    → document
 //     document.md exists → wrap-up
-//   Report files are authoritative; DEVLOG is a cross-reference sanity check.
+//   Report files are authoritative; log is a cross-reference sanity check.
 //   Safe to re-run — the scout will pick up exactly where the pipeline stopped.
 //
 // RETRY LOOP (max 3 review attempts)
@@ -59,7 +59,7 @@
 //   path stays on Sonnet; a genuinely hard failure that has already failed twice gets one strong
 //   shot. Set null to disable.
 //
-// REPORT FILES  (all written to planning/tasks/<block>/reports/)
+// REPORT FILES  (all written to planning/<name>/sdlc/reports/)
 //   [taskN-]implement.md  implement agent; overwritten by each fix pass
 //   [taskN-]test.md       test agent
 //   [taskN-]review.md     review agent
@@ -70,44 +70,46 @@
 
 export const meta = {
   name: 'sdlc-run',
-  description: 'Run the SDLC pipeline for a phase/block from current stage to completion',
-  whenToUse: 'When starting or resuming a phase/block through the full implement→test→review→document→wrap-up cycle. Usage: /sdlc-run phase0-blockC or /sdlc-run phase0-blockC 2',
+  description: 'Run the SDLC pipeline for a content/feature spec from current stage to completion',
+  whenToUse: 'When starting or resuming a spec through the full implement→test→review→document→wrap-up cycle. Usage: /sdlc-run <spec-slug> or /sdlc-run <spec-slug> 2',
   phases: [
-    { title: 'Scout',     detail: 'Determine current pipeline stage from files and DEVLOG' },
+    { title: 'Scout',     detail: 'Determine current pipeline stage from files and log' },
     { title: 'Plan',      detail: 'Generate task spec (only if spec file does not yet exist)' },
     { title: 'Implement', detail: 'Execute implementation tasks' },
     { title: 'Fix',       detail: 'Targeted fixes for FAIL/PARTIAL review — overwrites implement report' },
-    { title: 'Test',      detail: 'Run 8-check validation suite' },
+    { title: 'Test',      detail: "Run the project's validation suite (from planning/harness.json)" },
     { title: 'Review',    detail: 'Verify acceptance criteria; run fresh tests; issue verdict' },
+    { title: 'UI Test',   detail: 'Browser smoke check (only when planning/harness.json enables uiTest)' },
     { title: 'Document',  detail: 'Surgically patch docs/ (gates on PASS verdict)' },
-    { title: 'Wrap-up',   detail: 'Log work, chore commit (STATUS/DEVLOG/reports), write workflow report' },
+    { title: 'Wrap-up',   detail: 'Log work, chore commit (status/log/reports), write workflow report' },
   ]
 }
 
 // ----------------------------------------------------------------
-// Parse args: "phase0-blockC" or "phase0-blockC 2"
+// Parse args: "<spec-slug>" or "<spec-slug> 2"
 // ----------------------------------------------------------------
 const rawArgs = typeof args === 'string' ? args.trim() : ''
 if (!rawArgs) {
-  log('ERROR: No block ID provided.')
-  log('Usage: /sdlc-run phase0-blockC')
-  log('       /sdlc-run phase0-blockC 2')
-  return { error: 'Missing required argument: block ID (e.g. "phase0-blockC" or "phase0-blockC 2")' }
+  log('ERROR: No spec name provided.')
+  log('Usage: /sdlc-run <spec-slug>')
+  log('       /sdlc-run <spec-slug> 2')
+  return { error: 'Missing required argument: spec name (e.g. "<spec-slug>" or "<spec-slug> 2")' }
 }
 
 const parts = rawArgs.split(/\s+/)
 const blockId = parts[0]
 const taskNumber = parts.length > 1 ? parseInt(parts[1], 10) : null
-const specFile = `planning/tasks/${blockId}/tasks.md`
+const specFile = `planning/${blockId}/tasks.md`
 const stem = taskNumber !== null ? `${blockId}-task${taskNumber}` : blockId
-const reportsDir = `planning/tasks/${blockId}/reports`
+const reportsDir = `planning/${blockId}/sdlc/reports`
 const taskPrefix = taskNumber !== null ? `task${taskNumber}-` : ''
 const implementReport = `${reportsDir}/${taskPrefix}implement.md`
 const testReport      = `${reportsDir}/${taskPrefix}test.md`
 const reviewReport    = `${reportsDir}/${taskPrefix}review.md`
 const documentReport  = `${reportsDir}/${taskPrefix}document.md`
+const uitestReport    = `${reportsDir}/${taskPrefix}ui-test.md`
 const workflowReport  = `${reportsDir}/${taskPrefix}workflow.md`
-const breakdownFile   = `planning/tasks/${blockId}/breakdown.md`
+const breakdownFile   = `planning/${blockId}/breakdown.md`
 
 log(`Target: ${blockId}${taskNumber !== null ? ` task ${taskNumber}` : ' (all tasks)'}`)
 log(`Spec: ${specFile} | Stem: ${stem}`)
@@ -121,14 +123,14 @@ const SCOUT_SCHEMA = {
   properties: {
     startStage: {
       type: 'string',
-      enum: ['generate-tasks', 'implement', 'fix', 'test', 'review', 'document', 'wrap-up'],
+      enum: ['generate-tasks', 'implement', 'fix', 'test', 'review', 'ui-test', 'document', 'wrap-up'],
       description: 'The stage to start from, determined by which report files exist'
     },
     specFileExists: { type: 'boolean' },
     blockStatus: {
       type: 'string',
       enum: ['Not started', 'In progress', 'Done', 'Blocked', 'Skipped', 'Unknown'],
-      description: 'Current status of this block in STATUS.md progress table'
+      description: 'Current status of this spec in status.md progress table'
     },
     existingReports: {
       type: 'array',
@@ -139,10 +141,10 @@ const SCOUT_SCHEMA = {
       type: 'string',
       description: 'Verdict extracted from the review report if it exists: PASS, FAIL, PARTIAL, or empty string if no review report'
     },
-    currentFocus: { type: 'string', description: 'The Current focus line from STATUS.md' },
-    lastDevlogEntry: { type: 'string', description: 'Summary of the most recent DEVLOG entry (first 6 lines)' },
+    currentFocus: { type: 'string', description: 'The Current focus line from status.md' },
+    lastDevlogEntry: { type: 'string', description: 'Summary of the most recent log entry (first 6 lines)' },
     statusSummary: { type: 'string', description: 'Human-readable summary of what the scout found and why it chose startStage' },
-    discrepancies: { type: 'string', description: 'Any discrepancies between DEVLOG entries and report files, or empty string if none' }
+    discrepancies: { type: 'string', description: 'Any discrepancies between log entries and report files, or empty string if none' }
   }
 }
 
@@ -205,6 +207,17 @@ const FINALIZE_SCHEMA = {
   }
 }
 
+const UI_TEST_SCHEMA = {
+  type: 'object',
+  required: ['reportFile', 'verdict'],
+  properties: {
+    reportFile: { type: 'string' },
+    verdict: { type: 'string', enum: ['PASS', 'WARN', 'FAIL', 'SKIPPED'] },
+    failureReasons: { type: 'array', items: { type: 'string' } },
+    notes: { type: 'string' }
+  }
+}
+
 // ----------------------------------------------------------------
 // MODEL TIERING — the primary token lever for this pipeline.
 //
@@ -222,14 +235,15 @@ const FINALIZE_SCHEMA = {
 // ----------------------------------------------------------------
 const MODEL = {
   scout:         'haiku',    // deterministic decision tree: ls a few files, apply a fixed 7-rule order
-  startBlock:    'haiku',    // one surgical STATUS.md edit + a date stamp
+  startBlock:    'haiku',    // one surgical status.md edit + a date stamp
   generateTasks: 'opus',     // PLANNING — authors the spec that drives everything (fallback path)
-  implement:     'sonnet',   // writes code + tests against a scoped spec/breakdown
+  implement:     'sonnet',   // writes content/code + tests against a scoped spec/breakdown
   fix:           'sonnet',   // targeted fixes; failures escalate, never silently ship
-  test:          'haiku',    // run 8 fixed commands, read exit codes; review re-runs pytest authoritatively
-  review:        'sonnet',   // verify criteria; gated by an authoritative fresh-test run
+  test:          'haiku',    // runs the project's validation suite, reads exit codes; review re-runs the gating checks
+  review:        'sonnet',   // verify criteria; gated by an authoritative fresh run of the gating checks
+  uiTest:        'sonnet',   // live browser smoke checks (when uiTest.enabled); needs judgment to interpret results
   document:      'sonnet',   // surgical doc patches, gated on PASS
-  logWork:       'sonnet',   // authors the human-facing DEVLOG prose + edits STATUS — keep the quality
+  logWork:       'sonnet',   // authors the human-facing log prose + edits status — keep the quality
   finalize:      'haiku',    // assembles a JS-precomputed table + scripted git add; can't break the pipeline
 }
 
@@ -237,6 +251,130 @@ const MODEL = {
 // so the agent inherits the session model rather than receiving model: undefined).
 function withModel(base, model) {
   return model ? { ...base, model } : base
+}
+
+// ----------------------------------------------------------------
+// HARNESS CONFIG — mechanism/policy split (see planning/harness.json)
+//
+// The engine ships NO stack defaults. A project declares its validation policy in
+// planning/harness.json. The workflow runtime has no filesystem access, so a dedicated
+// micro-loader agent reads + parses the file (the same way sdlc-block loads execution-plan.json).
+// Returns the parsed config object, or null when the file is absent or invalid — callers then
+// degrade to the spec's `## Validation Commands` section and disable the UI-test stage.
+// ----------------------------------------------------------------
+const HARNESS_CONFIG_SCHEMA = {
+  type: 'object',
+  required: ['present'],
+  properties: {
+    present: { type: 'boolean', description: 'true if planning/harness.json exists and parsed as valid JSON' },
+    config: {
+      type: 'object',
+      description: 'The parsed harness.json (omit when present is false)',
+      properties: {
+        stack: { type: 'string' },
+        validation: {
+          type: 'object',
+          properties: {
+            checks: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name:    { type: 'string' },
+                  command: { type: 'string' },
+                  purpose: { type: 'string' },
+                  gates:   { type: 'boolean' }
+                }
+              }
+            }
+          }
+        },
+        uiTest: {
+          type: 'object',
+          properties: {
+            enabled:          { type: 'boolean' },
+            devServerCommand: { type: 'string' },
+            readySignal:      { type: 'string' },
+            port:             { type: 'integer' },
+            routes:           { type: 'array', items: { type: 'string' } }
+          }
+        }
+      }
+    },
+    notes: { type: 'string' }
+  }
+}
+
+// Spawn the micro-loader agent and return the parsed config (or null). Wired into the stages
+// in P4; defined here so the loader path exists from P1. No stack defaults on absence.
+async function loadHarnessConfig() {
+  const result = await agent(`
+You are the harness-config loader for the SDLC pipeline. Your ONLY job is to read the project's
+validation-policy file and return it as structured data. Do not run any checks or modify anything.
+
+STEP 1 — Read the config file (from the repo root):
+  cat planning/harness.json 2>/dev/null && echo "__HARNESS_PRESENT__" || echo "__HARNESS_ABSENT__"
+
+STEP 2 — Decide:
+  - "__HARNESS_ABSENT__" (file missing) → present=false, omit config.
+  - File printed but NOT valid JSON → present=false, notes="harness.json present but invalid JSON: <reason>".
+  - File printed and valid JSON → present=true, and copy the parsed object into "config", keeping ONLY
+    these fields when present: stack; validation.checks[] ({name, command, purpose, gates});
+    uiTest ({enabled, devServerCommand, readySignal, port, routes[]}). Ignore any other fields.
+
+Return your findings using the StructuredOutput tool.
+`, { label: 'harness-config', schema: HARNESS_CONFIG_SCHEMA, model: 'haiku' })
+
+  if (!result || !result.present || !result.config) return null
+  return result.config
+}
+
+// Render the inner project-validation check list for the Test stage from harness config.
+// Returns the numbered CHECK blocks the agent runs before the universal emoji gate. When the
+// config is absent (or carries no checks), returns instructions to fall back to the spec's
+// optional `## Validation Commands` section — the engine ships NO stack defaults.
+// changedPaths is reserved for the deferred conditionalChecks feature (unused in the MVP).
+function renderCheckList(cfg, { changedPaths } = {}) {
+  const checks = cfg?.validation?.checks ?? []
+  if (!checks.length) {
+    return `The project ships no \`planning/harness.json\` validation suite, so derive the checks
+from the spec instead:
+  - Read the spec's optional "## Validation Commands" section.
+  - Run each command it lists, IN ORDER. Each command is one check — record test_name (a short
+    slug for the command), execution_command (the command), test_purpose ("from the spec's
+    Validation Commands"), passed (true iff exit code 0), and error (output on failure).
+  - If the spec has no "## Validation Commands" section, run no project checks — record a single
+    informational row (test_name "no_validation_suite", passed true, empty error) noting the
+    project declared no validation suite. Then run the universal emoji gate below.`
+  }
+  return checks.map((c, i) => {
+    const n = i + 1
+    const gate = c.gates
+      ? 'GATING — a failure here blocks the review verdict'
+      : 'non-gating — informational; a failure here does not block the verdict'
+    return `CHECK ${n} — ${c.name} (${c.purpose}) [${gate}]:
+  ${c.command}
+  echo "CHECK${n}_EXIT:$?"`
+  }).join('\n\n')
+}
+
+// Render the UI-test stage prompt body from harness config. Called ONLY when cfg.uiTest.enabled.
+// Interpolates the MVP fields (devServerCommand / readySignal / port / routes); the surrounding
+// stage gate decides whether this runs at all.
+function renderUiTestPrompt(cfg, port) {
+  const ui = cfg.uiTest
+  const routes = (Array.isArray(ui.routes) && ui.routes.length) ? ui.routes : ['/']
+  const ready = ui.readySignal || 'ready'
+  const devCmd = ui.devServerCommand || 'echo "ERROR: uiTest.enabled but devServerCommand missing in planning/harness.json" && false'
+  const routeChecks = routes.map((r, i) => `  CHECK ${i + 1} — Route ${r} renders without error:
+    playwright-cli goto http://localhost:${port}${r}
+    playwright-cli snapshot
+    playwright-cli console
+    Verify: the page title / headings do not contain "404", "500", "Error", or "Not Found";
+    the page shows real content (not a bare framework error screen); the console has no
+    error-level entries ("warning"-level entries → WARN, not FAIL).`).join('\n\n')
+  const routeRows = routes.map(r => `  | Route ${r} renders | PASS/WARN/FAIL | |`).join('\n')
+  return { routes, ready, devCmd, port, routeChecks, routeRows }
 }
 
 // ----------------------------------------------------------------
@@ -253,8 +391,8 @@ const scout = await agent(`
 You are the pipeline scout for the SDLC workflow system.
 
 Target:
-  Block ID:    ${blockId}
-  Task number: ${taskNumber !== null ? taskNumber : 'none (full block)'}
+  Spec ID:     ${blockId}
+  Task number: ${taskNumber !== null ? taskNumber : 'none (full spec)'}
   Spec file:   ${specFile}
   Report stem: ${stem}
   Reports dir: ${reportsDir}
@@ -264,21 +402,22 @@ Your job is to determine which SDLC stage to start from, based on which report f
 STEP 1 — Check spec file:
   ls -la ${specFile} 2>/dev/null && echo "SPEC_EXISTS" || echo "SPEC_MISSING"
 
-STEP 2 — Check report files (block directory: ${reportsDir}):
+STEP 2 — Check report files (spec directory: ${reportsDir}):
   ls ${implementReport} 2>/dev/null && echo "HAS_IMPLEMENT" || echo "NO_IMPLEMENT"
   ls ${testReport} 2>/dev/null && echo "HAS_TEST" || echo "NO_TEST"
   ls ${reviewReport} 2>/dev/null && echo "HAS_REVIEW" || echo "NO_REVIEW"
+  ls ${uitestReport} 2>/dev/null && echo "HAS_UITEST" || echo "NO_UITEST"
   ls ${documentReport} 2>/dev/null && echo "HAS_DOCUMENT" || echo "NO_DOCUMENT"
   ls ${reportsDir}/*.md 2>/dev/null | head -20 || echo "NO_BLOCK_REPORTS"
 
-STEP 3 — Read STATUS.md to find this block's status and Current focus line:
-  head -60 planning/STATUS.md
+STEP 3 — Read status.md to find this spec's status and Current focus line:
+  head -60 planning/status.md
 
-STEP 4 — Read the most recent DEVLOG entry (at repo root):
-  head -60 DEVLOG.md
+STEP 4 — Read the most recent log entry (at repo root):
+  head -60 log.md
 
 STEP 5 — If the review report exists, extract the verdict:
-  grep -iE "\\*\\*Verdict|## Verdict|^Verdict:" ${reportsDir}/${stem}-review.md 2>/dev/null | head -5 || echo "NO_REVIEW_REPORT"
+  grep -iE "\\*\\*Verdict|## Verdict|^Verdict:" ${reviewReport} 2>/dev/null | head -5 || echo "NO_REVIEW_REPORT"
 
 STEP 6 — Determine startStage using this EXACT priority order:
   1. Spec file MISSING → "generate-tasks"
@@ -286,12 +425,13 @@ STEP 6 — Determine startStage using this EXACT priority order:
   3. Implement report exists, no test report → "test"
   4. Test report exists, no review report → "review"
   5. Review report exists with FAIL or PARTIAL verdict → "fix" (targeted fix cycle, not full re-implement)
-  6. Review report exists with PASS verdict, no document report → "document"
-  7. Document report exists → "wrap-up"
+  6. Review report exists with PASS verdict, no ui-test report → "ui-test"
+  7. Review report exists with PASS verdict, ui-test report exists, no document report → "document"
+  8. Document report exists → "wrap-up"
 
-STEP 7 — Find the block's status in STATUS.md progress table. Look for a row containing "${blockId}" and extract its Status column value (Not started / In progress / Done / Blocked / Skipped).
+STEP 7 — Find the spec's status in status.md progress table. Look for a row containing "${blockId}" and extract its Status column value (Not started / In progress / Done / Blocked / Skipped).
 
-STEP 8 — Note any discrepancy: if DEVLOG says a stage is done but the matching report file is missing, record that.
+STEP 8 — Note any discrepancy: if log says a stage is done but the matching report file is missing, record that.
 
 Collect the list of existing report files from the ls output in STEP 2 and STEP 6.
 
@@ -303,19 +443,19 @@ if (!scout) {
   return { error: 'Scout failed', blockId, stem }
 }
 
-log(`Scout: start from "${scout.startStage}" | block status: "${scout.blockStatus}"`)
+log(`Scout: start from "${scout.startStage}" | spec status: "${scout.blockStatus}"`)
 if (scout.discrepancies) log(`Discrepancies: ${scout.discrepancies}`)
 if (scout.statusSummary) log(scout.statusSummary)
 
-// Auto-flip block to "In progress" if it is "Not started"
+// Auto-flip spec to "In progress" if it is "Not started"
 if (scout.blockStatus === 'Not started') {
-  log(`Block "${blockId}" is Not started — marking In progress in STATUS.md...`)
+  log(`Spec "${blockId}" is Not started — marking In progress in status.md...`)
   await agent(`
-You need to mark block "${blockId}" as "In progress" in planning/STATUS.md.
+You need to mark spec "${blockId}" as "In progress" in planning/status.md.
 
 Instructions:
-1. Read the file: planning/STATUS.md
-2. Find the row in the Progress Table where the Block/Project column contains "${blockId}"
+1. Read the file: planning/status.md
+2. Find the row in the Progress Table where the Spec column contains "${blockId}"
 3. Change that row's Status cell from "Not started" to "In progress"
 4. Update the "Current focus:" line near the top of the file to:
    "${blockId}${taskNumber !== null ? ` — Task ${taskNumber}` : ''}"
@@ -343,34 +483,36 @@ if (currentStage === 'generate-tasks') {
   log('Spec file not found — running generate-tasks...')
 
   const genResult = await agent(`
-You need to generate the task spec for block "${blockId}".
+You need to generate the task spec for spec "${blockId}".
 
 Spec file to create: ${specFile}
 
 Instructions:
 
-1. Read planning/MASTER_PLAN.md — find the section covering "${blockId}". Look for phase/block headers. Read that entire section.
+1. Read planning/master-plan.md — find the section covering "${blockId}". Look for phase/block headers. Read that entire section.
 
-2. Read planning/Agentic_Engineering_Projects_and_Learning_Plan.md — find the matching section for "${blockId}".
+2. Read CLAUDE.md and planning/context.md — internalize and enforce the project's standing rules.
+   CLAUDE.md is the authority; do not assume any stack, locale-parity, narrative, or content-layout
+   rule unless written there. Universal harness rules always apply: no fabricated metrics or quotes,
+   no emoji, every change ships with tests.
 
-3. Read CLAUDE.md — note all standing rules (especially Rule 1: every task ships with tests, no exceptions) and the known bugs table.
+3. Read the generic spec skeleton as a format reference: .claude/workflows/templates/spec-template.md
+   Study its structure: Goal, Context Pointers, Step-by-Step Tasks (numbered ### sections with
+   sub-steps), Acceptance Criteria, Validation Commands, Notes section.
 
-4. Read an existing spec as format reference: planning/tasks/phase0-blockC/tasks.md
-   Study its structure carefully: Goal, Context Pointers, Step-by-Step Tasks (numbered ### sections with sub-steps), Acceptance Criteria, Validation Commands, Notes section.
+   Also create the spec directory structure now if it does not yet exist:
+   mkdir -p planning/${blockId}/sdlc/reports
 
-   Also create the block directory structure now if it does not yet exist:
-   mkdir -p planning/tasks/${blockId}/reports
-
-5. Write ${specFile} following that exact format:
+4. Write ${specFile} following that exact format:
    ## Goal
    [one-sentence purpose]
 
    ## Context Pointers
-   [links to master plan sections, relevant code files, relevant DECISIONS entries]
+   [links to master plan sections, relevant content/code files, relevant DECISIONS entries]
 
    ## Step-by-Step Tasks
    ### 1. [Task Name]
-   [sub-steps with exact file paths and class/method names]
+   [sub-steps with exact file paths and component/function names]
 
    ### 2. [Task Name]
    ...
@@ -382,16 +524,19 @@ Instructions:
    [bullet list of what "done" looks like, testable and specific]
 
    ## Validation Commands
-   [bash commands to verify completion]
+   [bash commands to verify completion — use the project's own validation suite. Copy the commands
+    from planning/harness.json (validation.checks[].command), in order. If that file is absent,
+    write the commands the project's CLAUDE.md "Build / test / run" section documents.]
 
    ## Notes
    [empty section for in-progress updates]
 
    Rules:
-   - Every workflow task must include writing tests (CLAUDE.md Rule 1)
+   - Follow every CLAUDE.md standing rule; record any deferral in the Notes section
+   - The Validation Commands section must mirror planning/harness.json (or the project's documented suite)
    - The final task must always be "Validate"
    - Tasks should be sized for the 21 hrs/week schedule
-   - Include exact file paths and class/method names
+   - Include exact file paths and component/function names
 
 Return your result using the StructuredOutput tool with fields:
   reportFile: path to the spec file written (${specFile})
@@ -410,10 +555,18 @@ Return your result using the StructuredOutput tool with fields:
   currentStage = 'implement'
 }
 
+// Load the project's validation policy once (mechanism/policy split — see planning/harness.json).
+// null when absent/invalid → the Test stage falls back to the spec's ## Validation Commands and
+// the UI-test stage is skipped. The engine ships no stack defaults.
+const harnessCfg = await loadHarnessConfig()
+log(harnessCfg
+  ? `Harness config loaded: ${(harnessCfg.validation?.checks || []).length} validation check(s); uiTest ${harnessCfg.uiTest?.enabled ? 'enabled' : 'disabled'}.`
+  : 'No planning/harness.json — validation falls back to the spec; UI-test disabled.')
+
 // ================================================================
 // PHASES 3–5: IMPLEMENT → (FIX →) TEST → REVIEW (with retry loop)
 // ================================================================
-while (['implement', 'fix', 'test', 'review'].includes(currentStage) && reviewAttempts < MAX_REVIEW_ATTEMPTS) {
+while (['implement', 'fix', 'test', 'review', 'ui-test'].includes(currentStage) && reviewAttempts < MAX_REVIEW_ATTEMPTS) {
 
   // ----------------------------------------------------------
   // IMPLEMENT (first pass only — retries go through fix instead)
@@ -426,14 +579,17 @@ while (['implement', 'fix', 'test', 'review'].includes(currentStage) && reviewAt
 You are the implementation agent for the SDLC pipeline.
 
 Target:
-  Block:         ${blockId}
+  Spec:          ${blockId}
   Task:          ${taskNumber !== null ? `Task ${taskNumber} only` : 'all tasks'}
   Spec file:     ${specFile}
   Report to write: ${implementReport}
 
 Instructions:
 
-1. Read CLAUDE.md — internalize all standing rules and the known bugs table before writing any code.
+1. Read CLAUDE.md and planning/context.md — internalize and enforce the project's standing rules
+   before writing any code or content. CLAUDE.md is the authority; do not assume any stack,
+   locale-parity, narrative, or content-layout rule unless written there. Universal harness rules
+   always apply: no fabricated metrics or quotes, no emoji, every change ships with tests.
 
 2. Read the spec file: ${specFile}
    ${taskNumber !== null
@@ -460,10 +616,9 @@ Instructions:
 3. Execute each step in the task(s) methodically — use Read, Edit, Write, and Bash tools as needed.
 
 4. As you implement:
-   - Follow every CLAUDE.md rule (no hardcoded prompts, no deployment logic in nodes, etc.)
-   - Check the CLAUDE.md known bugs table — if your change touches those files, fix those bugs too
-   - Write tests for all new code (CLAUDE.md Rule 1 — no exceptions)
-   - Never hardcode system prompts in Python — use .j2 files in app/prompts/ via PromptManager
+   - Follow every CLAUDE.md standing rule (do not invent stack/locale/narrative rules not written there)
+   - Write or update tests for new code/logic — every change ships with the validation that proves it
+   - Verify any model ids / package names via the claude-api skill — never from memory
 
 5. Run the Validation Commands from the spec to confirm correctness before writing the report.
 
@@ -475,7 +630,7 @@ Instructions:
 
    **Date:** [run: date +%Y-%m-%d]
    **Plan:** ${specFile}
-   **Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full block'}
+   **Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full spec'}
 
    ## What Was Built or Changed
    - [bullet list of changes, each with file path]
@@ -483,7 +638,7 @@ Instructions:
    ## Files Created or Modified
    | File | Action |
    |---|---|
-   | path/to/file.py | created / modified |
+   | path/to/file.tsx | created / modified |
 
    ## Validation Output
    **Commands run:**
@@ -510,16 +665,16 @@ Instructions:
 7. Commit your changes now. Never use git add -A or git add . — stage files explicitly by name.
 
    Run: git status
-   Identify all changed/new files under app/, tests/, and the implement report.
+   Identify all changed/new files under app/, components/, lib/, content/, scripts/, __tests__/, and the implement report.
 
-   Stage code files first, then the report:
-     git add app/file1.py tests/file2.py ${implementReport}  (list each file explicitly)
+   Stage code/content files first, then the report:
+     git add components/Widget.tsx __tests__/widget.test.ts ${implementReport}  (list each file explicitly)
 
    Commit using HEREDOC:
      git commit -m "$(cat <<'EOF'
      feat: implement ${stem}
 
-     
+
      EOF
      )"
 
@@ -565,7 +720,7 @@ You are the fix agent for the SDLC pipeline. Your job is to make targeted fixes 
 in the last review — NOT to re-implement the entire spec from scratch.
 
 Target:
-  Block:            ${blockId}
+  Spec:             ${blockId}
   Task:             ${taskNumber !== null ? `Task ${taskNumber}` : 'all tasks'}
   Spec file:        ${specFile}
   Review report:    ${reviewReport}
@@ -605,7 +760,7 @@ Instructions:
    - Do not modify passing criteria or unrelated code
    - Follow all CLAUDE.md standing rules
 
-6. Run ONLY the Validation Commands from the spec (not the full 8-test suite — that belongs to /test):
+6. Run ONLY the Validation Commands from the spec (not the full validation suite — that belongs to /test):
    Find the "## Validation Commands" section of ${specFile} and run those commands.
 
 7. Build the complete file list: union of the prior implement table PLUS any new files you touched.
@@ -619,7 +774,7 @@ Instructions:
 
    **Date:** [run: date +%Y-%m-%d]
    **Plan:** ${specFile}
-   **Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full block'}
+   **Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full spec'}
    **Fix pass:** ${fixPass}
 
    ## Failures Addressed
@@ -631,7 +786,7 @@ Instructions:
    ## Files Created or Modified
    | File | Action |
    |---|---|
-   | path/to/file.py | created / modified |
+   | path/to/file.tsx | created / modified |
    [IMPORTANT: include ALL files from the prior implement report PLUS any newly touched files]
 
    ## Validation Output
@@ -656,10 +811,10 @@ Instructions:
 9. Commit your changes now. Never use git add -A or git add . — stage files explicitly by name.
 
    Run: git status
-   Identify all changed/new files under app/, tests/, and the updated implement report.
+   Identify all changed/new files under app/, components/, lib/, content/, scripts/, __tests__/, and the updated implement report.
 
    Stage targeted changes and the updated report:
-     git add app/file1.py tests/file2.py ${implementReport}  (list each file explicitly)
+     git add components/Widget.tsx __tests__/widget.test.ts ${implementReport}  (list each file explicitly)
 
    Commit using HEREDOC:
      git commit -m "$(cat <<'EOF'
@@ -698,50 +853,43 @@ Return your result using the StructuredOutput tool:
   // ----------------------------------------------------------
   if (currentStage === 'test') {
     phase('Test')
-    log('Running 8-check test suite...')
+    log('Running the project validation suite...')
 
     const testResult = await agent(`
-You are the test agent for the SDLC pipeline. Run the 8-check validation suite and write a test report.
+You are the test agent for the SDLC pipeline. Run the project's validation suite (from
+planning/harness.json, or the spec fallback) plus the universal emoji gate, and write a test report.
 
 Target:
   Spec:            ${specFile}
   Report to write: ${testReport}
 
-Run ALL 8 checks IN ORDER using the Bash tool. Capture the full output (stdout + stderr) for each.
+Run EVERY check below IN ORDER using the Bash tool. Capture the full output (stdout + stderr) for
+each. Run from the repo root.
 
-Run from the repo root unless stated otherwise.
+${renderCheckList(harnessCfg)}
 
-CHECK 1 — App import (run from app/ directory):
-  cd app && uv run python -c "import main" 2>&1
-  echo "CHECK1_EXIT:$?"
+EMOJI CHECK — Emoji prohibition (universal harness gate — always runs last):
+  Hard FAIL if any markdown file changed by this work introduces an emoji.
 
-CHECK 2 — Worker import (run from app/ directory):
-  cd app && uv run python -c "import worker.config" 2>&1
-  echo "CHECK2_EXIT:$?"
-
-CHECK 3 — Database session import (run from app/ directory):
-  cd app && uv run python -c "import database.session" 2>&1
-  echo "CHECK3_EXIT:$?"
-
-CHECK 4 — Repository import (run from app/ directory):
-  cd app && uv run python -c "import database.repository" 2>&1
-  echo "CHECK4_EXIT:$?"
-
-CHECK 5 — Ruff lint (run from repo root):
-  uv run ruff check app/ 2>&1
-  echo "CHECK5_EXIT:$?"
-
-CHECK 6 — Pylint (run from repo root):
-  uv run pylint app/ 2>&1
-  echo "CHECK6_EXIT:$?"
-
-CHECK 7 — Pytest collect (run from repo root):
-  uv run pytest --collect-only -q 2>&1
-  echo "CHECK7_EXIT:$?"
-
-CHECK 8 — Pytest full (run from repo root):
-  uv run pytest 2>&1
-  echo "CHECK8_EXIT:$?"
+  Files modified by this work vs main (hard FAIL if emoji found):
+  python3 - <<'PYEOF'
+import subprocess, re, sys, os
+EMOJI = re.compile(r'[\U0001F300-\U0001FAFF\U00002600-\U000027BF]')
+changed = subprocess.run(['git','diff','main..HEAD','--name-only'], capture_output=True, text=True).stdout.splitlines()
+md_files = [f for f in changed if f.endswith(('.md','.mdx')) and os.path.isfile(f)]
+hits = []
+for path in md_files:
+    for n, line in enumerate(open(path, errors='ignore'), 1):
+        if EMOJI.search(line):
+            hits.append(f'{path}:{n}: {line.rstrip()[:100]}')
+if hits:
+    print('EMOJI CHECK FAIL: emoji in modified files (violates the no-emoji harness rule):')
+    for h in hits[:25]: print(h)
+    sys.exit(1)
+print('EMOJI CHECK: OK — no emoji in modified files')
+sys.exit(0)
+PYEOF
+  echo "EMOJI_EXIT:$?"
 
 For each check record:
   test_name: descriptive name
@@ -758,7 +906,7 @@ Use EXACTLY this format:
 
 **Date:** [run: date +%Y-%m-%d]
 **Spec:** ${specFile}
-**Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full block'}
+**Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full spec'}
 
 ## Summary
 
@@ -782,7 +930,7 @@ Use EXACTLY this format:
 
 Return your result using the StructuredOutput tool:
   reportFile: "${testReport}"
-  allPassed: true only if ALL 8 checks passed (exit code 0)
+  allPassed: true only if EVERY check passed (each exit code 0, emoji gate clean)
   passCount: integer count of checks that passed
   failCount: integer count of checks that failed
   failedTests: array of test_name strings for failed checks
@@ -819,7 +967,7 @@ Return your result using the StructuredOutput tool:
 You are the review agent for the SDLC pipeline. Verify the implementation against the spec and issue a verdict.
 
 Target:
-  Block:            ${blockId}
+  Spec:             ${blockId}
   Task:             ${taskNumber !== null ? `Task ${taskNumber}` : 'all tasks'}
   Spec file:        ${specFile}
   Implement report: ${implementReport}
@@ -837,20 +985,45 @@ Instructions:
 3. Read the test report: ${testReport}
    This is historical context. You will run your own fresh tests below.
 
-4. Run the FRESH authoritative test suite (this result determines the verdict, not the test report):
-   uv run pytest 2>&1
+4. Run the FRESH authoritative checks (this result determines the verdict, not the test report):
+   Re-run each GATING validation check — those whose test_purpose in the test report (${testReport})
+   is marked "GATING", i.e. the checks with gates:true in planning/harness.json. Use each check's
+   execution_command verbatim. If the project ships no harness suite, re-run the commands in the
+   spec's "## Validation Commands" section. A fresh failure of any gating check ALWAYS prevents PASS.
 
-5. For each acceptance criterion, read the relevant source files and determine one of:
+5. Scope your review to ${taskNumber !== null ? `Task ${taskNumber} only` : 'all tasks'}.
+   ${taskNumber !== null
+     ? `The spec may list criteria spanning multiple tasks. For each criterion:
+   - If tagged for a different task (e.g. "[T${taskNumber + 1}]") OR clearly belongs to a later
+     task's scope → mark SKIP with a note. SKIP criteria do NOT affect the verdict.
+   - All others: evaluate normally.`
+     : `Evaluate all criteria — this is a full-spec run.`}
+
+   For each in-scope criterion, read the relevant source files and determine one of:
    MET — criterion is fully satisfied by the current code
    PARTIAL — criterion is partially satisfied
    NOT_MET — criterion is not satisfied
+   Also check compliance with the project's CLAUDE.md standing rules — a violation is a failing
+   criterion. CLAUDE.md is the authority: do not assume any stack, locale-parity, narrative, or
+   content-layout rule unless it is written there. Universal harness rules always apply: no
+   fabricated metrics or quotes, no emoji, every change ships with tests.
+   IDENTITY INTEGRITY: flag any handle, profile link, or URL that contradicts the verified
+   identities/handles declared in CLAUDE.md, or that appears fabricated. Mark such a criterion
+   NOT_MET — only the CLAUDE.md-declared identities are authoritative.
+
+5.5. HARD RULE — do NOT fix environment or infrastructure issues yourself:
+   If a fresh gating check fails due to environment/infrastructure causes (missing module files,
+   missing hooks, import/dependency resolution failures), do NOT fix them yourself.
+   Return verdict: FAIL with failureReasons: ["Environment issue — missing files; the fix
+   agent must resolve them and re-run the pipeline."]. A review agent that resolves
+   infrastructure issues itself bypasses the test gate that validates the fix.
 
 6. Determine the verdict:
-   PASS — ALL criteria are MET AND fresh pytest passes (exit 0)
-   PARTIAL — some criteria are PARTIAL, OR tests pass but some criteria are not fully met
-   FAIL — any criterion is NOT_MET, OR fresh pytest fails
+   PASS — ALL criteria are MET AND every fresh gating check passes (exit 0)
+   PARTIAL — some criteria are PARTIAL, OR gating checks pass but some criteria are not fully met
+   FAIL — any criterion is NOT_MET, OR any fresh gating check fails
 
-   A fresh test failure ALWAYS prevents PASS — even if all acceptance criteria appear met from reading the code.
+   A fresh gating-check failure ALWAYS prevents PASS — even if all acceptance criteria appear met from reading the code.
 
 7. Write the review report to: ${reviewReport}
 
@@ -860,7 +1033,7 @@ Instructions:
 
    **Date:** [run: date +%Y-%m-%d]
    **Spec:** ${specFile}
-   **Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full block'}
+   **Scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'Full spec'}
    **Verdict:** PASS / PARTIAL / FAIL
 
    ## Acceptance Criteria Check
@@ -869,7 +1042,7 @@ Instructions:
    | [criterion text] | MET / PARTIAL / NOT_MET | [file:line or test name] |
 
    ## Fresh Test Results
-   [paste pytest summary — pass/fail counts, any failure output]
+   [paste the fresh gating-check output — per-check pass/fail and any failure output]
 
    ## Verdict: PASS / PARTIAL / FAIL
    [one paragraph explaining the verdict]
@@ -899,7 +1072,7 @@ Return your result using the StructuredOutput tool:
     }
 
     if (lastReviewResult.verdict === 'PASS') {
-      currentStage = 'document'
+      currentStage = 'ui-test'
     } else if (reviewAttempts < MAX_REVIEW_ATTEMPTS) {
       log(`Review ${lastReviewResult.verdict} — running fix pass ${reviewAttempts + 1}/${MAX_REVIEW_ATTEMPTS}...`)
       currentStage = 'fix'
@@ -908,7 +1081,130 @@ Return your result using the StructuredOutput tool:
       currentStage = 'wrap-up'
     }
   }
-} // end implement→fix→test→review retry loop
+
+  // ----------------------------------------------------------
+  // UI TEST (after Review PASS — browser smoke check)
+  // ----------------------------------------------------------
+  if (currentStage === 'ui-test') {
+    phase('UI Test')
+
+    if (!harnessCfg?.uiTest?.enabled) {
+      log('UI test stage disabled (harness.json uiTest.enabled is false or config absent) — SKIPPED.')
+      stageResults.push({ stage: 'ui-test', verdict: 'SKIPPED', success: true, notes: 'uiTest disabled in harness.json' })
+      currentStage = 'document'
+    } else {
+      log('Running UI test stage...')
+      const ui = renderUiTestPrompt(harnessCfg, harnessCfg.uiTest.port ?? 3000)
+
+      const uitestResult = await agent(`
+You are the UI test agent for the SDLC pipeline. Run a quick live browser smoke check using
+playwright-cli to catch visual/runtime regressions that the validation suite cannot catch.
+
+Target:
+  Spec:              ${blockId}
+  Task:              ${taskNumber !== null ? `Task ${taskNumber}` : 'all tasks'}
+  Implement report:  ${implementReport}
+  Report to write:   ${uitestReport}
+  Dev server URL:    http://localhost:${ui.port}
+
+STEP 1 — Triage: did this work change application source?
+
+  Read the implement report: ${implementReport}
+  Scan the "Files Modified" list. If EVERY changed file is documentation/markdown or planning
+  metadata only (no application source), set verdict = SKIPPED, write the report, and stop.
+  Otherwise continue to STEP 2.
+
+STEP 2 — Start the dev server.
+
+  Check if port ${ui.port} is already in use:
+    lsof -ti :${ui.port} 2>/dev/null && echo "PORT_IN_USE" || echo "PORT_FREE"
+
+  If PORT_IN_USE: the server is already running — skip to STEP 3.
+  If PORT_FREE: start the server in the background:
+    ${ui.devCmd} > /tmp/uitest-run.log 2>&1 &
+    echo "SERVER_PID=$!"
+
+  Wait up to 60 seconds for the ready signal:
+    for i in $(seq 1 30); do grep -q "${ui.ready}" /tmp/uitest-run.log 2>/dev/null && echo "READY" && break; sleep 2; done
+    tail -20 /tmp/uitest-run.log
+
+  If "READY" not seen within 60 s, write the report with verdict = FAIL (dev server did not start),
+  kill the background process, and stop.
+
+STEP 3 — Run smoke checks using playwright-cli, one per configured route.
+
+  Open a browser session:
+    playwright-cli open http://localhost:${ui.port}${ui.routes[0]}
+
+  For each route below, record PASS, WARN, or FAIL with quoted evidence:
+
+${ui.routeChecks}
+
+  Also confirm at least one internal link works: from any route's snapshot, pick an internal link
+  and \`playwright-cli click <ref>\`, then \`playwright-cli snapshot\` — the target must load without
+  an error page.
+
+  Close the browser session:
+    playwright-cli close
+
+STEP 4 — Kill the dev server (only if YOU started it in STEP 2).
+  If SERVER_PID was captured: kill $SERVER_PID 2>/dev/null || true
+
+STEP 5 — Determine verdict and write report.
+
+  Verdict rules:
+  - PASS:    All route checks passed with no errors.
+  - WARN:    All checks passed but console warnings were found.
+  - FAIL:    One or more checks failed — list each with quoted evidence.
+  - SKIPPED: No application source changed (from STEP 1 triage).
+
+  Write the report to ${uitestReport}:
+  \`\`\`markdown
+  # UI Test Report: ${stem}
+
+  **Verdict:** <PASS|WARN|FAIL|SKIPPED>
+  **Date:** <today>
+
+  ## Smoke Check Results
+
+  | Check | Result | Notes |
+  |---|---|---|
+${ui.routeRows}
+
+  ## Summary
+  <one paragraph — what was tested and what was found>
+  \`\`\`
+
+  Commit the report:
+    git add ${uitestReport}
+    git commit -m "test(ui): ui smoke check for ${stem}"
+
+Return the result using StructuredOutput.
+`, withModel({ label: 'ui-test', schema: UI_TEST_SCHEMA, phase: 'UI Test' }, MODEL.uiTest))
+
+      if (!uitestResult) {
+        log('UI test agent returned null — treating as WARN, continuing to document')
+        stageResults.push({ stage: 'ui-test', verdict: 'WARN', success: true, notes: 'Agent returned null' })
+        currentStage = 'document'
+      } else {
+        stageResults.push({ stage: 'ui-test', ...uitestResult, success: uitestResult.verdict !== 'FAIL' })
+        log(`UI test verdict: ${uitestResult.verdict}`)
+
+        if (uitestResult.verdict === 'FAIL') {
+          if (reviewAttempts < MAX_REVIEW_ATTEMPTS) {
+            log(`UI test FAIL — running fix pass ${reviewAttempts + 1}/${MAX_REVIEW_ATTEMPTS}...`)
+            currentStage = 'fix'
+          } else {
+            log(`UI test FAILED after ${MAX_REVIEW_ATTEMPTS} attempts — skipping to wrap-up`)
+            currentStage = 'wrap-up'
+          }
+        } else {
+          currentStage = 'document'
+        }
+      }
+    }
+  }
+} // end implement→fix→test→review→ui-test retry loop
 
 // ================================================================
 // PHASE 6: DOCUMENT (gates on PASS verdict)
@@ -921,7 +1217,7 @@ if (currentStage === 'document') {
 You are the documentation agent for the SDLC pipeline. Surgically patch docs/ to reflect the completed implementation.
 
 Target:
-  Block:            ${blockId}
+  Spec:             ${blockId}
   Task:             ${taskNumber !== null ? `Task ${taskNumber}` : 'all tasks'}
   Review report:    ${reviewReport}
   Implement report: ${implementReport}
@@ -937,20 +1233,21 @@ Instructions:
    Find the "## Files Created or Modified" table. This scopes which source files changed.
 
 3. For each source file in that table, identify which docs/*.md files reference it.
-   Search for the filename and the key class/function/method names that changed.
-   Use Bash: grep -rl "ClassName\\|function_name\\|filename" docs/ 2>/dev/null
+   Search for the filename and the key component/function/route names that changed.
+   Use Bash: grep -rl "ComponentName\\|function_name\\|filename" docs/ 2>/dev/null
 
 4. Read each relevant doc file (use the Read tool).
 
 5. Surgically patch ONLY the affected sections:
-   - Update class signatures, method lists, parameter tables, descriptions that changed
-   - Add documentation for any new public APIs
+   - Update component signatures, prop tables, route lists, descriptions that changed
+   - Add documentation for any new public APIs or content areas
    - Never delete documented items that still exist in the code
    - Keep surrounding unchanged content intact
    - Use the Edit tool — never rewrite entire doc files
 
-6. IMPORTANT: If docs/app-architecture-overview.md needs updating, add it to the
-   "NEEDS_REVIEW" section of the document report but do NOT edit that file directly.
+6. IMPORTANT: If a top-level architecture/overview doc (e.g. a docs/ index, or changes that touch core
+   wiring / entry points / routing) needs updating, add it to the "NEEDS_REVIEW" section of
+   the document report but do NOT edit that file directly. Never edit CLAUDE.md.
 
 7. Write the document report to: ${documentReport}
 
@@ -967,7 +1264,7 @@ Instructions:
    |---|---|---|
 
    ## Docs Flagged NEEDS_REVIEW
-   [list any docs that need human review — always include app-architecture-overview.md if it references changed files]
+   [list any docs that need human review — flag a top-level architecture/overview doc if it references changed files]
 
    ## Docs Clean (checked, no changes needed)
    [list any docs checked but requiring no updates]
@@ -987,7 +1284,7 @@ Instructions:
      git commit -m "$(cat <<'EOF'
      docs: update docs for ${stem}
 
-     
+
      EOF
      )"
 
@@ -1029,53 +1326,53 @@ const stageResultsSummary = stageResults
 log(`Wrap-up. Final verdict: ${finalVerdict}. Pipeline: ${stageResultsSummary}`)
 
 // ----------------------------------------------------------------
-// LOG-WORK: update STATUS.md + append DEVLOG entry
+// LOG-WORK: update status.md + append log entry
 // ----------------------------------------------------------------
 log('Running log-work...')
 
 const wrapupResult = await agent(`
-You are the log-work agent for the SDLC pipeline. Update STATUS.md and append a DEVLOG entry.
+You are the log-work agent for the SDLC pipeline. Update status.md and append a log entry.
 
 Target:
-  Block:           ${blockId}
-  Task:            ${taskNumber !== null ? `Task ${taskNumber}` : 'all tasks (full block)'}
+  Spec:            ${blockId}
+  Task:            ${taskNumber !== null ? `Task ${taskNumber}` : 'all tasks (full spec)'}
   Final verdict:   ${finalVerdict}
   Review attempts: ${reviewAttempts}
   Pipeline summary: ${stageResultsSummary}
 
 Instructions:
 
-1. Read planning/STATUS.md
+1. Read planning/status.md
 2. Read ${specFile}
-3. Read DEVLOG.md (at the repo root — NOT in planning/)
+3. Read log.md (at the repo root — NOT in planning/)
 4. Run: git log --oneline -10
    (Code and doc changes are already committed by their respective agents — git log shows the full picture)
 
-6. Update planning/STATUS.md using the Edit tool:
+6. Update planning/status.md using the Edit tool:
    ${taskNumber !== null
-     ? `- Task ${taskNumber} is done. Check if there are more tasks in the block.
-        - If more tasks remain: keep block status as "In progress", update "Current focus" to the next task.
-        - If this was the last task: flip block status to "Done", update "Current focus" to the next block.`
-     : `- Full block "${blockId}" is done. Flip its Status to "Done" in the Progress Table.
-        - Update "Current focus" to the next block or phase.`}
+     ? `- Task ${taskNumber} is done. Check if there are more tasks in the spec.
+        - If more tasks remain: keep spec status as "In progress", update "Current focus" to the next task.
+        - If this was the last task: flip spec status to "Done", update "Current focus" to the next spec.`
+     : `- Full spec "${blockId}" is done. Flip its Status to "Done" in the Progress Table.
+        - Update "Current focus" to the next spec or phase.`}
    - Update "Last updated" — run: date +%Y-%m-%d
 
-7. Prepend a new entry to DEVLOG.md directly below the YAML frontmatter and main header block (do NOT write it at the very top of the file before the `---` boundaries, the frontmatter must remain at the top).
+7. Append a new entry to log.md (prepend at the TOP, newest entries first).
    The entry must follow this format:
 
    ## [YYYY-MM-DD — run date +%Y-%m-%d to get this]
-   [One paragraph: what was implemented, how the review went (${finalVerdict} verdict${reviewAttempts > 1 ? ` after ${reviewAttempts} attempts` : ''}), any notable findings, decisions made. End with: "Next: [next task or block]."]
+   [One paragraph: what was implemented, how the review went (${finalVerdict} verdict${reviewAttempts > 1 ? ` after ${reviewAttempts} attempts` : ''}), any notable findings, decisions made. End with: "Next: [next task or spec]."]
 
    \`\`\`
    [git log --oneline -5 output — shows the commits made during this pipeline run]
    \`\`\`
 
-8. If the implement report's "Decisions and Trade-offs" section contains any settled architectural choices, mention them in your notes — but do NOT edit DECISIONS.md yourself (that is a manual step).
+8. If the implement report's "Decisions and Trade-offs" section contains any settled choices, mention them in your notes — but do NOT edit DECISIONS.md yourself (that is a manual step).
 
 Return your result using the StructuredOutput tool:
-  statusUpdated: true if STATUS.md was successfully updated
-  devlogUpdated: true if DEVLOG.md was successfully updated
-  nextFocus: the new "Current focus" value written to STATUS.md
+  statusUpdated: true if status.md was successfully updated
+  devlogUpdated: true if log.md was successfully updated
+  nextFocus: the new "Current focus" value written to status.md
   notes: any settled decisions that should be added to DECISIONS.md
 `, withModel({ label: 'log-work', schema: WRAPUP_SCHEMA, phase: 'Wrap-up' }, MODEL.logWork))
 
@@ -1104,11 +1401,11 @@ const finalizeResult = await agent(`
 You are the finalize agent for the SDLC pipeline. Write the workflow report and make the final wrap-up commit.
 
 Context: Code, doc, and fix changes have already been committed by their respective agents during the pipeline run.
-Your job is to write the workflow report, then commit the remaining planning files (STATUS.md, DEVLOG.md,
+Your job is to write the workflow report, then commit the remaining planning files (status.md, log.md,
 test/review reports, and the workflow report itself) as a single chore: commit.
 
 Target:
-  Block:          ${blockId}
+  Spec:           ${blockId}
   Task:           ${taskNumber !== null ? `Task ${taskNumber}` : 'all tasks'}
   Final verdict:  ${finalVerdict}
   Review attempts: ${reviewAttempts}
@@ -1128,7 +1425,7 @@ STEP 2 — Write the workflow report to: ${workflowReport}
   # SDLC Workflow Report — ${blockId}${taskNumber !== null ? ` Task ${taskNumber}` : ''}
 
   **Date:** [run: date +%Y-%m-%d]
-  **Block:** ${blockId}
+  **Spec:** ${blockId}
   **Task scope:** ${taskNumber !== null ? `Task ${taskNumber}` : 'All tasks'}
   **Pipeline started from:** ${scout.startStage}
   **Review attempts:** ${reviewAttempts} of ${MAX_REVIEW_ATTEMPTS} max
@@ -1143,7 +1440,7 @@ STEP 2 — Write the workflow report to: ${workflowReport}
   ${stageTable}
 
   ## Key Findings
-  [Summarize: what was implemented, any known bugs from CLAUDE.md that were touched, notable decisions]
+  [Summarize: what was implemented, notable decisions, any bilingual-parity deferrals]
 
   ## Files Modified
   [List source files that were created or modified — from the implement report]
@@ -1158,21 +1455,22 @@ STEP 3 — Commit the remaining planning files as a single chore: commit.
   Never use git add -A or git add . — stage files explicitly by name.
 
   Run: git status
-  Look for any uncommitted files in: planning/STATUS.md, DEVLOG.md,
+  Look for any uncommitted files in: planning/status.md, log.md,
   ${testReport}, ${reviewReport},
   and ${workflowReport} (which you just wrote).
 
   Stage them:
-    git add planning/STATUS.md DEVLOG.md ${workflowReport}
+    git add planning/status.md log.md ${workflowReport}
     git add ${testReport} 2>/dev/null || true
     git add ${reviewReport} 2>/dev/null || true
+    git add ${uitestReport} 2>/dev/null || true
     (only add files that actually exist and are untracked/modified)
 
   Commit using HEREDOC:
     git commit -m "$(cat <<'EOF'
     chore: wrap up ${stem}
 
-    
+
     EOF
     )"
 

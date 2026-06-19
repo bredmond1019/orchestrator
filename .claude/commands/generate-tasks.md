@@ -2,55 +2,60 @@
 
 ## Variables
 
-$ARGUMENTS — the target phase and block, e.g. `phase0-blockC` or `phase1-projectA`.
-             Required. If omitted, stop and say: "Usage: /generate-tasks <phase>-<block>  (e.g. phase0-blockC)"
+$ARGUMENTS — the spec's `planning/` directory name (its phase-dotted slug),
+             e.g. `<spec-slug>` or `2.1-learn-paths-structural-fixes`.
+             New master-plan specs follow the `P.N-slug` convention (see
+             `planning/index.md` → *Task directory naming convention*); ad-hoc work uses
+             `/chore`, `/feature`, or `/plan` instead.
+             Required. If omitted, stop and say: "Usage: /generate-tasks <P.N-slug>  (e.g. <spec-slug>)"
 
 ## Instructions
 
-1. Run `/prime` to orient to the repo (standing rules, known bugs, architecture).
+1. Run `/prime` to orient to the repo (standing rules, architecture).
 
 2. Parse `$ARGUMENTS` to extract the phase number and block/project identifier
    (e.g. `phase0-blockC` → phase 0, block C).
    - Accept any of these forms: `phase0-blockC`, `phase0blockC`, `0-C`, `Phase 0 Block C`.
    - If the argument cannot be parsed into a phase + block, stop and explain the expected format.
 
-3. Check whether a spec already exists at `planning/tasks/phaseN-blockX/tasks.md` (using the
-   normalized directory form, e.g. `planning/tasks/phase0-blockC/tasks.md`).
+3. Check whether a spec already exists at `planning/phaseN-blockX/tasks.md` (using the
+   normalized directory form, e.g. `planning/<spec-slug>/tasks.md`).
    - If it exists, read it and report: "Spec already exists at <path>. Overwrite? (re-run with
      `--force` appended to overwrite, or run `/breakdown <path>` to decompose it instead.)"
    - If `$ARGUMENTS` contains `--force`, proceed and overwrite.
 
 4. Read ONLY the relevant section for the requested block in:
-   - `planning/MASTER_PLAN.md` (the phase/block definition)
-   - `planning/Agentic_Engineering_Projects_and_Learning_Plan.md` (the matching project section, if applicable)
-   - Do NOT read STATUS.md — the target block is given explicitly.
+   - `planning/master-plan.md` (the phase/block definition)
+   - Do NOT read status.md — the target block is given explicitly.
 
 5. THINK HARD about correct scope:
    - Do not invent work beyond what the block defines.
    - Size tasks to roughly 21 hours spread across Mon/Wed/Fri sessions.
-   - Every workflow task must include writing tests (standing rule from CLAUDE.md).
+   - Enforce **the project's standing rules** as written in `CLAUDE.md` — do not assume any stack, locale-parity, or content-layout rule unless written there. Every task must leave the project's gated checks (`planning/harness.json` → `validation.checks[]` with `gates: true`) passing.
    - Foundational steps come first; the final step is always Validate.
 
-6. Create the directory `planning/tasks/phaseN-blockX/` if it does not exist, then write the spec to `planning/tasks/phaseN-blockX/tasks.md` using the Output Format below.
+6. Create the directory `planning/phaseN-blockX/` if it does not exist, then write the spec to `planning/phaseN-blockX/tasks.md` using the Output Format below.
 
-7. Report the path written and suggest the next step:
-   "Spec written to planning/tasks/phaseN-blockX/tasks.md. Run `/breakdown planning/tasks/phaseN-blockX/tasks.md` to decompose into atomic sub-steps."
+7. **Commit the spec.** Leave the working tree clean so a downstream `/sdlc-block` run never trips
+   its clean-tree merge guard (an uncommitted `tasks.md` blocks every merge):
+   ```bash
+   git add planning/phaseN-blockX/
+   git commit -m "chore: add spec for phaseN-blockX"
+   ```
+   (Use the normalized directory slug, e.g. `chore: add spec for <spec-slug>`.)
+
+8. Report the path written and suggest the next step:
+   "Spec written and committed to planning/phaseN-blockX/tasks.md. Run `/breakdown planning/phaseN-blockX/tasks.md` to decompose into atomic sub-steps."
 
 ## Context / Files to Read
 
-- `planning/MASTER_PLAN.md` (target block section only)
-- `planning/Agentic_Engineering_Projects_and_Learning_Plan.md` (matching project section only, if applicable)
-- `CLAUDE.md` (standing rules — tests, prompt files, workflow registration, known bugs)
+- `planning/master-plan.md` (target block section only)
+- `CLAUDE.md` (the project's standing rules)
+- `planning/harness.json` (the project's validation checks)
 
 ## Output Format
 
 ```md
----
-type: Specification
-title: <Block/Project> <X>
-description: <one sentence, taken directly from the plan>
----
-
 # Task Spec — Phase <N>, <Block/Project> <X>
 
 ## Goal
@@ -78,12 +83,9 @@ description: <one sentence, taken directly from the plan>
 
 ## Validation Commands
 ```
-uv run pylint app/
-uv run pytest
-cd app && uv run python -c "from main import app"
-cd app && uv run python -c "from worker.config import celery_app"
+<the project's validation commands — see `planning/harness.json` (`validation.checks[]`) or CLAUDE.md; one command per line, in order>
 ```
-<!-- Add any workflow- or feature-specific checks above the four standard lines. -->
+<!-- Add any spec-specific checks above the standard project checks. -->
 
 ## Notes
 <filled in as work happens>
@@ -93,11 +95,11 @@ cd app && uv run python -c "from worker.config import celery_app"
 
 Output the path to the file created and the next-step options:
 ```
-planning/tasks/phase0-blockC/tasks.md
+planning/<spec-slug>/tasks.md
 
 Next (optional — decompose into atomic sub-steps):
-  /breakdown planning/tasks/phase0-blockC/tasks.md
+  /breakdown planning/<spec-slug>/tasks.md
 
 Next (skip breakdown — implement directly):
-  /implement planning/tasks/phase0-blockC/tasks.md
+  /implement planning/<spec-slug>/tasks.md
 ```

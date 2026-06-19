@@ -9,20 +9,26 @@ $ARGUMENTS — description of the chore to plan.
 1. If `$ARGUMENTS` is not provided, stop and ask the user to describe the chore.
 2. Research the codebase: read `CLAUDE.md`, then any files directly relevant to the chore.
 3. Create a plan using the Plan Format below.
-4. Save it to `planning/tasks/chore-{descriptive-name}.md` where `{descriptive-name}` is a short slug based on the chore (e.g. `fix-session-import`, `update-router-keys`, `add-missing-indexes`).
-5. Return only the path to the file created.
+4. Choose a short descriptive slug for the chore (e.g. `remove-k8s-secret`, `fix-devin-typos`, `update-stale-handles`).
+5. Create the directory `planning/chore-{descriptive-name}/` if it does not exist, then save the plan to `planning/chore-{descriptive-name}/tasks.md`.
+6. Return only the path to the file created.
 
 ## Codebase Structure
 
-- `CLAUDE.md` — standing rules, known bugs, build/test/run commands (start here)
-- `app/` — FastAPI app (`main.py`), Celery worker (`worker/`), core utilities (`core/`)
-- `app/workflows/` — workflow DAGs and per-workflow node directories
-- `app/schemas/` — Pydantic event schemas
-- `app/prompts/` — Jinja2 prompt templates (never hardcode prompts in Python)
-- `app/api/` — FastAPI routes and endpoints
-- `app/database/` — SQLAlchemy models, sessions, repository
-- `planning/tasks/` — task specs (plan files live here)
-- `docker/` — Docker stack (`start.sh` / `stop.sh`)
+- `CLAUDE.md` — standing rules, the SDLC pipeline, build/test/validate commands (start here)
+- `planning/context.md` — why the project exists + audit findings; `planning/status.md` — progress
+- `planning/harness.json` — the project's validation commands + UI-test config
+- `planning/` — task specs and plan files (one concept folder per task)
+
+Read `CLAUDE.md` for the project's actual stack, directory layout, and conventions — do not assume
+any framework, language, or directory structure that isn't written there.
+
+## Standing rules to respect
+
+Read `CLAUDE.md` and `planning/context.md` — internalize and enforce **the project's standing rules**.
+CLAUDE.md is the authority; do not assume any stack, locale-parity, narrative, or content-layout rule
+unless written there. Universal harness rules still apply: no fabricated metrics/quotes, no emoji,
+every change ships with tests.
 
 ## Plan Format
 
@@ -56,12 +62,9 @@ IMPORTANT: Execute every step in order, top to bottom.
 
 ## Validation Commands
 ```
-uv run pylint app/
-uv run pytest
-cd app && uv run python -c "from main import app"
-cd app && uv run python -c "from worker.config import celery_app"
+<the project's validation commands — see `planning/harness.json` (`validation.checks[]`) or CLAUDE.md; one command per line, in order>
 ```
-<add any chore-specific checks above the four standard lines>
+<add any chore-specific checks above the standard project checks>
 
 ## Notes
 <optional context, edge cases, or gotchas>
@@ -71,11 +74,11 @@ cd app && uv run python -c "from worker.config import celery_app"
 
 Output the path to the plan file created and the next-step options:
 ```
-planning/tasks/chore-{name}.md
+planning/chore-{name}/tasks.md
 
 Next (optional — decompose into atomic sub-steps):
-  /breakdown planning/tasks/chore-{name}.md
+  /breakdown planning/chore-{name}/tasks.md
 
 Next (skip breakdown — implement directly):
-  /implement planning/tasks/chore-{name}.md
+  /implement planning/chore-{name}/tasks.md
 ```

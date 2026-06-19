@@ -4,8 +4,11 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 
 ## Before you start
 
-- **Strategic context:** `planning/CONTEXT.md` (read first) → `planning/STATUS.md` (current state)
+- **Strategic context:** `planning/context.md` (read first) → `planning/status.md` (current state)
 - **Architecture reference:** `docs/app-architecture-overview.md`
+- **SDLC pipeline config:** `planning/harness.json` — the validation suite the SDLC engines run
+  (the 8-check suite, now externalized via base-template's richer check kinds). This is the source of
+  truth for `/test`; keep the lint/test commands below in sync with it.
 - **Decisions log:** `planning/decisions/` (start at `planning/decisions/index.md`) — check before relitigating any settled choice
 
 ---
@@ -54,6 +57,7 @@ cd app && uv run celery -A worker.config.celery_app worker --loglevel=info
 cd app && alembic upgrade head
 
 # Lint (ruff first — fast; pylint second — deep)
+# NOTE: the SDLC pipeline runs these (and more) from planning/harness.json — keep in sync.
 uv run ruff check app/
 uv run pylint app/
 

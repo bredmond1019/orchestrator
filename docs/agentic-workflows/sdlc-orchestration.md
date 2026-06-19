@@ -125,12 +125,12 @@ After a wave's tasks settle, passing branches merge into main in `mergeOrder`:
    - **Any exclusive file conflicts** → abort, mark the task **merge-escalated**, preserve the branch. A silent bad merge is worse than a halt; `-X union` is **never** applied globally.
 3. On success, the worktree is removed and the branch deleted. On escalation, both are preserved.
 
-`STATUS.md` and `DEVLOG.md` are **never** touched inside worktrees (`sdlc-task` already defers them to per-task log files).
+`status.md` and `log.md` are **never** touched inside worktrees (`sdlc-task` already defers them to per-task log files).
 
 ### 4. Report — write once, surface escalations
 
 - Writes `planning/tasks/<blockId>/reports/block-workflow.md`: an outcome table (task → result/verdict/merge/commit), an **Escalations** section with worktree paths + review reports, and the resume command.
-- Applies `DEVLOG.md` entries from each merged task's log and writes a **single authoritative `STATUS.md` update** — block → `Done`/`In progress`, Current focus → next block (or the lowest unmerged task). This is the fix for the "Current focus thrash" that per-task log application caused under out-of-order parallel waves.
+- Applies `log.md` entries from each merged task's log and writes a **single authoritative `status.md` update** — block → `Done`/`In progress`, Current focus → next block (or the lowest unmerged task). This is the fix for the "Current focus thrash" that per-task log application caused under out-of-order parallel waves.
 - Overall verdict: **PASS** (all selected tasks merged) / **PARTIAL** (some merged, some escalated/skipped) / **BLOCKED** (nothing merged).
 
 ---
