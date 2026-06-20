@@ -139,6 +139,12 @@ here. The registry is stripped out before the context is returned:
 task_context.metadata.pop("nodes")
 ```
 
+A `field_serializer` on `TaskContext` also strips the transient `"nodes"` key from
+any `model_dump(mode="json")` call made while the run loop is active. This means
+mid-run snapshots — such as those passed to the `on_progress` callback — are
+always JSON-safe, even before `run()` returns. The runtime access path for
+`ParallelNode` (`task_context.metadata["nodes"][self.__class__]`) is unaffected.
+
 This field is also where you'd put workflow-level configuration that shouldn't live
 in the event schema — priority flags, feature flags, per-run overrides.
 
@@ -302,6 +308,12 @@ not guaranteed to be JSON-serializable. The actual production code in tasks.py u
 > actually enforces JSON safety. This is not a detail — it is the mechanism. A bare
 > `.model_dump()` call returns Python-native types that will cause JSON serialization
 > to fail downstream.
+
+`.model_dump(mode='json')` is also safe to call **mid-run** (i.e., inside an
+`on_progress` callback while the run loop is still executing). A `field_serializer`
+on `TaskContext` strips the transient `metadata["nodes"]` class-keyed registry from
+any JSON dump, so partial snapshots at node boundaries are always serializable.
+This invariant is covered by `TestMidRunSnapshot` in `tests/core/test_observability.py`.
 
 This is how you inspect a run after the fact: query the `events` table, pull the
 `task_context` JSON column, and you have a complete audit trail of what every node
