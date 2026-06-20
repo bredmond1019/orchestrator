@@ -1342,8 +1342,13 @@ workflow output.
 
 - `data` is populated by the API endpoint when the event is first received, before
   the Celery task runs. It holds the original request body as-is.
-- `task_context` is written back by the worker after `Workflow.run()` completes,
-  storing the serialized `TaskContext` (including `nodes` output from every step).
+- `task_context` is written back **incrementally** by the worker: a `persist_progress`
+  closure (passed as `on_progress` to `Workflow.run()`) assigns the serialized
+  `TaskContext` snapshot to `db_event.task_context` and calls `session.flush()` at each
+  node boundary, inside the open `db_session` transaction. After `Workflow.run()` returns,
+  the worker performs a final authoritative write via `repository.update(obj=db_event)`,
+  ensuring the completed `TaskContext` is committed regardless of boundary-flush count.
+  See `app/worker/tasks.py`.
 
 **Commit semantics:** The API endpoint stages the `Event` row with `session.add()` +
 `session.flush()` (assigns `event.id` without committing), then calls `send_task()`.
