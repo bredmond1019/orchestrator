@@ -1,7 +1,7 @@
 {
   "$schema": "../.claude/workflows/harness.schema.json",
   "stack": "python-fastapi",
-  "_comment": "SDLC validation suite for ai-event-system. Mirrors the original 8-check suite (CHECK 0-8.5) now externalized to harness.json via the richer check kinds (base-template D6). The original CHECK 0c (raise ... from e) is intentionally dropped: it duplicated ruff B904 (flake8-bugbear, already in [tool.ruff.lint] select and gating via net-new-lint), but with a multi-line false-positive grep. Keep app/ build/test commands in CLAUDE.md in sync with this file.",
+  "_comment": "SDLC validation suite for ai-event-system. Mirrors the original 8-check suite (CHECK 0-8.5) now externalized to harness.json via the richer check kinds (base-template D6). The original CHECK 0c (raise ... from e) is intentionally dropped: it duplicated ruff B904 (flake8-bugbear, already in [tool.ruff.lint] select and gating via net-new-lint), but with a multi-line false-positive grep. Keep app/ build/test commands in CLAUDE.md in sync with this file. Tool commands use `python -m <tool>` so the PROJECT venv's tool runs, not a global uv-tool install (a bare `uv run pytest`/`uv run pylint` can resolve to a global tool missing this repo's deps).",
   "validation": {
     "checks": [
       {
@@ -38,21 +38,21 @@
         "name": "net-new-lint",
         "purpose": "Ruff — fail only on violations this task introduced (diff vs worktree-creation baseline)",
         "gates": true,
-        "baselineCommand": "uv run ruff check app/ --output-format=json",
-        "command": "uv run ruff check app/ --output-format=json",
+        "baselineCommand": "uv run python -m ruff check app/ --output-format=json",
+        "command": "uv run python -m ruff check app/ --output-format=json",
         "compareKeys": ["filename", "code", "message"]
       },
-      { "name": "pylint", "command": "uv run pylint app/", "purpose": "Pylint", "gates": true },
+      { "name": "pylint", "command": "uv run python -m pylint app/", "purpose": "Pylint", "gates": true },
       {
         "kind": "count-delta",
         "name": "pytest-count",
         "purpose": "Pytest collection count must not drop vs the previous task (catches silently-removed tests)",
         "gates": true,
-        "command": "uv run pytest --collect-only -q",
+        "command": "uv run python -m pytest --collect-only -q",
         "countPattern": "[0-9]+ tests? collected",
         "failOn": "decrease"
       },
-      { "name": "pytest", "command": "uv run pytest", "purpose": "Full test suite — AUTHORITATIVE for verdict", "gates": true }
+      { "name": "pytest", "command": "uv run python -m pytest", "purpose": "Full test suite — AUTHORITATIVE for verdict", "gates": true }
     ]
   },
   "uiTest": { "enabled": false }
