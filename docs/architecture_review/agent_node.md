@@ -108,7 +108,7 @@ When a node is instantiated, `__init__` immediately:
 2. Calls `self.get_agent_config()` — which is your subclass's method — to get the config.
 3. Passes everything to pydantic-ai's `Agent(...)`, which is now stored as `self.agent`.
 
-After `__init__`, `self.agent` is ready to call. Your `process()` method will call `self.agent.run_sync(...)`.
+After `__init__`, `self.agent` is ready to call. New subclasses should call `self.run_agent_recorded(task_context, user_prompt)` instead of `self.agent.run_sync(...)` directly — it runs the agent and stamps per-node token usage into `NodeRun.usage` automatically (see Step 6 below).
 
 The inner classes `DepsType` and `OutputType` are empty base Pydantic models. Subclasses extend them with real fields (see the `FilterSpamNode` example below).
 
@@ -229,7 +229,7 @@ Builds a `boto3` Bedrock runtime client from env vars, then wraps it in pydantic
 
 ## Step 6 — Putting it together: a real subclass
 
-Here's `FilterSpamNode` from the customer care workflow — the clearest example of everything working together:
+Here's `FilterSpamNode` from the customer care workflow — the clearest example of the wiring. Note: `customer_care` is frozen (Rule 3) and still uses `self.agent.run_sync()` directly. **New nodes should use `self.run_agent_recorded()` instead** to get automatic token-usage recording.
 
 ```python
 # app/workflows/customer_care_workflow_nodes/filter_spam.py
@@ -268,6 +268,33 @@ Walk through what happens when `FilterSpamNode()` is instantiated and called:
 5. When `process(task_context)` is called later, `self.agent.run_sync(user_prompt=...)` fires the API call.
 6. pydantic-ai validates the response against `OutputType` — if the model returns something that doesn't validate, it retries automatically.
 7. The validated result is stored into `task_context` via `update_node(...)`.
+
+### `run_agent_recorded` — usage-capturing replacement for `run_sync`
+
+```python
+def run_agent_recorded(self, task_context: TaskContext, user_prompt: str):
+```
+
+This helper (added in Task 6 of the incremental-execution-observability spec) calls
+`self.agent.run_sync(user_prompt=user_prompt)`, reads `result.usage()`, and writes
+`{input_tokens, output_tokens, model}` onto `task_context.node_runs[self.node_name].usage`.
+It is a no-op when no `NodeRun` has been seeded (e.g. in unit tests that run nodes
+outside the framework). Returns the pydantic-ai result unchanged.
+
+**Recommended pattern for new nodes:**
+
+```python
+def process(self, task_context: TaskContext) -> TaskContext:
+    event: MyEventSchema = task_context.event
+    result = self.run_agent_recorded(task_context, user_prompt=event.model_dump_json())
+    task_context.update_node(self.node_name, result=result.output)
+    return task_context
+```
+
+A `getattr` fallback inside `run_agent_recorded` covers both newer pydantic-ai
+(`input_tokens`/`output_tokens`) and the pinned `>=0.1.5` token names
+(`request_tokens`/`response_tokens`), so an SDK upgrade will not silently zero
+out recorded usage.
 
 > **`@abstractmethod` enforcement:** Both `get_agent_config()` and `process()` are formal `@abstractmethod` declarations (confirmed in `agent.py`). Forgetting to implement either raises `TypeError` at instantiation time — when `AgentNode()` is called — not at call time when `process()` would execute. This means a misconfigured node fails at worker startup, not when an event arrives.
 
