@@ -5,7 +5,7 @@
 **Verdict:** PASS
 **Date:** 2026-06-20
 **Branch:** incremental-execution-observability-task7
-**Applied:** false
+**Applied:** true
 
 ---
 
