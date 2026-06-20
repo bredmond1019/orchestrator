@@ -656,6 +656,94 @@ engine instantiates a fresh instance when executing the next node.
 
 ---
 
+## Content Pipeline Nodes (Phase 1 Project A — Task 3)
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/`
+
+Three nodes implement URL classification and content fetching for the content ingestion pipeline.
+
+### `SourceRouterNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/source_router_node.py`
+
+```python
+class SourceRouterNode(BaseRouter):
+    def __init__(self):
+        self.routes = [YouTubeRouter()]
+        self.fallback = FetchArticleNode()
+```
+
+Classifies `event.url` by hostname and routes to the appropriate fetch node. Follows
+the `BaseRouter` / `RouterNode` shape (`ticket_router_node.py` reference pattern).
+
+- **YouTube** (`youtube.com`, `youtu.be`, any subdomain) → `FetchTranscriptNode`
+- **All other URLs** → `FetchArticleNode` (fallback)
+
+Unparseable or empty hostnames fall through to the article fallback — they never raise.
+
+#### `YouTubeRouter`
+
+```python
+class YouTubeRouter(RouterNode):
+    def determine_next_node(self, task_context: TaskContext) -> Node | None:
+```
+
+The single `RouterNode` rule in `SourceRouterNode.routes`. Uses
+`urllib.parse.urlparse(...).hostname` plus a suffix check (avoids matching a URL that
+merely contains "youtube.com" in its path). Returns `FetchTranscriptNode()` on match,
+`None` otherwise.
+
+---
+
+### `FetchTranscriptNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/fetch_transcript_node.py`
+
+```python
+class FetchTranscriptNode(Node):
+    def process(self, task_context: TaskContext) -> TaskContext:
+```
+
+Fetches the YouTube transcript for `event.url` via `TranscriptService().fetch_transcript(url)`.
+
+#### Node output keys
+
+| Key | Type | Value |
+|---|---|---|
+| `text` | `str` | Raw transcript text on success; `""` on failure |
+| `title` | `None` | Always `None` — shape-parity with `FetchArticleNode` |
+| `fetch_status` | `str` | `"ok"` on success; `"failed"` if the service raises |
+
+`ValueError` (bad URL) and `RuntimeError` (no transcript / empty) from `TranscriptService`
+are caught and recorded as `fetch_status="failed"`. The pipeline continues normally.
+Unexpected exceptions propagate.
+
+---
+
+### `FetchArticleNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/fetch_article_node.py`
+
+```python
+class FetchArticleNode(Node):
+    def process(self, task_context: TaskContext) -> TaskContext:
+```
+
+Extracts readable article text from `event.url` via
+`ArticleExtractionService().extract(url)`. The service uses trafilatura first, then
+Firecrawl as a fallback for JS-heavy pages (D24). It **never raises** — it always
+returns an `ArticleResult`.
+
+#### Node output keys
+
+| Key | Type | Value |
+|---|---|---|
+| `text` | `str` | Extracted article text (may be `""` on failure) |
+| `title` | `str \| None` | Page title when extractable; `None` otherwise |
+| `fetch_status` | `str` | `"ok"`, `"fallback_used"` (Firecrawl path), or `"failed"` |
+
+---
+
 ## ToolUse Node
 
 **Source:** `app/core/nodes/tool_use.py`
