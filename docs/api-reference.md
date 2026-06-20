@@ -614,12 +614,15 @@ subclasses must define them as instance attributes.
 ```python
 def process(self, task_context: TaskContext) -> TaskContext:
     next_node = self.route(task_context)
-    task_context.nodes[self.node_name] = {"next_node": next_node.node_name}
+    task_context.nodes[self.node_name] = {"next_node": next_node.node_name if next_node else None}
     return task_context
 ```
 
-Writes the routing decision as `{"next_node": "<ClassName>"}` under the router's
-own key in `task_context.nodes`, then returns the context.
+Writes the routing decision as `{"next_node": "<ClassName>"}` (or `{"next_node": null}` when the
+router terminates a branch) under the router's own key in `task_context.nodes`, then returns the
+context. When `route()` returns `None` (e.g. `BlogDecisionRouterNode` on the digest-only path),
+`next_node.node_name` would crash — the guard records `None` instead and lets the workflow engine
+handle termination via `_handle_router()` returning `None`.
 
 #### `route(task_context: TaskContext) -> Node`
 

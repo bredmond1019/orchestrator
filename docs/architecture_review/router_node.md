@@ -78,7 +78,7 @@ Each rule reads whatever it needs from `task_context.nodes` (results written by 
 class BaseRouter(Node):
     def process(self, task_context: TaskContext) -> TaskContext:
         next_node = self.route(task_context)
-        task_context.nodes[self.node_name] = {"next_node": next_node.node_name}
+        task_context.nodes[self.node_name] = {"next_node": next_node.node_name if next_node else None}
         return task_context
 
     def route(self, task_context: TaskContext) -> Node:
@@ -130,10 +130,13 @@ The **fallback** (`GenerateResponseNode`) handles everything that doesn't match 
 `BaseRouter.process()` stores the winning node's *name* in `task_context` for traceability:
 
 ```python
-task_context.nodes[self.node_name] = {"next_node": next_node.node_name}
+task_context.nodes[self.node_name] = {"next_node": next_node.node_name if next_node else None}
 ```
 
 This entry is an **audit trail only** — it is NOT how the engine decides where to go next.
+When `route()` returns `None` (terminal router, e.g. digest-only path), `None` is recorded rather
+than crashing on `None.node_name`. The engine's `_handle_router()` independently handles the
+`None` return to stop the walk.
 
 After the router's `process()` returns, the engine calls `_get_next_node_class()`, which detects `is_router=True`, then independently instantiates a second fresh router and calls `route()` again directly:
 
