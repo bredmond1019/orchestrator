@@ -10,6 +10,35 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-20 — incremental-execution-observability spec complete
+
+Completed the incremental-execution-observability spec via `/sdlc-block` (8 tasks, 6 parallel dependency-ordered waves, all PASS, auto-merged). The three phases — (1) node-level status/timing envelope on TaskContext with framework-stamped node_context and injected on_progress callback, (2) per-node token/cost capture in AgentNode and ToolUseNode helper classes, and (3) read-only workflow graph introspection endpoint (GET /workflows, GET /workflows/{type}/graph) — all landed across the eight merged tasks. 238 tests pass (+15 from baseline). Also fixed CLAUDE.md and planning/harness.json to use `uv run python -m <tool>` consistently so project venv tools run instead of global uv-tool installs (bare `uv run pytest` can resolve to a global missing this repo's deps). Next: Phase 1, Project A — `content_pipeline` workflow implementation.
+
+```diff
+CLAUDE.md             | 10 ++++++----
+planning/harness.json | 12 ++++++------
+app/api/graph.py      | 42 ++++++++
+app/api/models.py     |  9 +
+app/api/router.py     |  3 +-
+app/core/nodes/agent.py     | 28 +++++++
+app/core/nodes/tool_use.py  | 15 +++
+app/core/task.py      | 18 ++-
+app/core/workflow.py   | 52 ++++++++-
+app/worker/tasks.py    | 15 +-
+docs/api-reference.md  | 177 ++++++++++++++++++++++++
+docs/architecture_review/agent_node.md      | 31 +++-
+docs/architecture_review/task_context.md    | 12 ++
+docs/architecture_review/workflow.md        | 101 ++++++++++++++--
+tests/api/test_graph.py  | 45 +++++++
+tests/core/test_nodes_usage.py      | 202 +++++++++++++++++++++++++++
+tests/core/test_observability.py    | 177 ++++++++++++++++++++++++
+tests/core/test_workflow.py         | 139 +++++++++++++++++-
+tests/worker/test_tasks.py          | 118 +++++++++++++++
+4 files changed, 12 insertions(+), 10 deletions(-)
+```
+
+---
+
 ## 2026-06-20 (task 8 — validate all gates and confirm spec complete)
 
 Ran the full validation suite for the incremental-execution-observability spec: import smoke tests (`main`, `worker.config`, `database.session`, `database.repository`), ruff lint, pylint, pytest collection, and pytest full run. All eight acceptance criteria confirmed green — `TaskContext.node_runs` with `NodeStatus`/`NodeRun` (including `usage`) survives `model_dump(mode="json")`; `Workflow.node_context` stamps `RUNNING`/`SUCCESS`/`FAILED` and timestamps without any node being edited; `Workflow.run()` backward-compatible with `on_progress` callback firing at each node boundary; worker persists `task_context` incrementally via flush inside the open transaction; `AgentNode` and `ToolUseNode` populate `NodeRun.usage`, non-LLM nodes leave it `None`; `GET /workflows` and `GET /workflows/{type}/graph` return correct nodes/edges for `customer_care`, unknown type returns 404; no "bastion" string in `app/`; new test count strictly greater than baseline. Review passed on the first attempt. Spec is closed — all three phases (1 incremental persistence, 2 token capture, 3 graph introspection) landed across 8 tasks. Next: Phase 1, Project A — `content_pipeline` workflow implementation.
