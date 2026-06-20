@@ -476,6 +476,44 @@ If `model_provider` does not match any enum value, the implementation falls back
 For Ollama: if `OLLAMA_BASE_URL` is not set in the environment, `__init__` raises
 `KeyError("OLLAMA_BASE_URL not set in .env")` immediately.
 
+### `run_agent_recorded(task_context, user_prompt) -> Any` — Usage Recording Helper
+
+```python
+def run_agent_recorded(self, task_context: TaskContext, user_prompt: str):
+```
+
+Runs `self.agent.run_sync(user_prompt=user_prompt)` and stamps token usage onto
+`task_context.node_runs[self.node_name].usage` before returning the pydantic-ai result.
+
+**New AgentNode subclasses should call this instead of `self.agent.run_sync` directly**
+so per-node token usage is captured in one place. The method is a no-op when no
+`NodeRun` is seeded for this node (e.g. when running outside the framework).
+
+The recorded usage dict has the shape:
+
+```python
+{
+    "input_tokens": int | None,
+    "output_tokens": int | None,
+    "model": str,   # from get_agent_config().model_name
+}
+```
+
+A `getattr` fallback covers both current pydantic-ai (`input_tokens`/`output_tokens`)
+and the pinned `>=0.1.5` token-name variant (`request_tokens`/`response_tokens`).
+
+**Usage pattern:**
+
+```python
+def process(self, task_context: TaskContext) -> TaskContext:
+    result = self.run_agent_recorded(task_context, user_prompt=event.model_dump_json())
+    task_context.update_node(self.node_name, score=result.output.score)
+    return task_context
+```
+
+The existing `customer_care` nodes call `self.agent.run_sync()` directly and are
+frozen (Rule 3). Those nodes record no usage — that is intentional and expected.
+
 ---
 
 ## ParallelNode
@@ -679,13 +717,18 @@ Runs the tool-use loop:
 
 1. Calls `_build_initial_messages()` to seed the message list.
 2. Calls `messages.create(model, max_tokens=4096, tools, messages)`.
-3. On `stop_reason == "end_turn"`: breaks immediately.
-4. On `stop_reason == "tool_use"`: iterates `response.content`, calls
+3. Accumulates `input_tokens` and `output_tokens` from `response.usage` on every
+   iteration (uses `getattr` so it is safe when `usage` is absent).
+4. On `stop_reason == "end_turn"`: breaks immediately.
+5. On `stop_reason == "tool_use"`: iterates `response.content`, calls
    `handle_tool_call()` for each `tool_use` block, appends the assistant turn and
    a `user` turn containing the `tool_result` list, then loops.
-5. On any other `stop_reason` (e.g. `"max_tokens"`): breaks immediately.
-6. After the loop, if `iterations >= max_iterations`, logs a `WARNING` with the node
-   name and limit. Returns `task_context` whether exhausted or not.
+6. On any other `stop_reason` (e.g. `"max_tokens"`): breaks immediately.
+7. After the loop, if `iterations >= max_iterations`, logs a `WARNING` with the node
+   name and limit.
+8. Records accumulated token counts onto `task_context.node_runs[self.node_name].usage`
+   as `{input_tokens, output_tokens, model}` (only when a `NodeRun` is seeded).
+   Returns `task_context` whether exhausted or not.
 
 **Note:** `process` does not write output into `task_context.nodes[self.node_name]`
 by default — concrete subclasses are expected to do that inside `handle_tool_call()`
