@@ -358,3 +358,95 @@ class TestNodeContextEnvelope:
         ctx = LinearWorkflow().run({"action": "test"})
         dumped = ctx.model_dump(mode="json")
         assert dumped["node_runs"]["LinearNodeA"]["status"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# Tests: on_progress callback (Phase 1c)
+# ---------------------------------------------------------------------------
+
+
+class TestOnProgressCallback:
+    """Verify the injected on_progress callback firing, seeding, and snapshots."""
+
+    def test_seeds_all_nodes_pending_before_first_node(self):
+        """The first on_progress invocation sees every node seeded PENDING."""
+        snapshots: list[dict[str, NodeStatus]] = []
+
+        def spy(ctx: TaskContext) -> None:
+            snapshots.append(
+                {name: run.status for name, run in ctx.node_runs.items()}
+            )
+
+        LinearWorkflow().run({"action": "test"}, on_progress=spy)
+
+        first = snapshots[0]
+        assert set(first) == {"LinearNodeA", "LinearNodeB", "LinearNodeC"}
+        assert all(status == NodeStatus.PENDING for status in first.values())
+
+    def test_invoked_once_before_first_node_and_once_per_boundary(self):
+        """on_progress fires N+1 times for an N-node linear workflow."""
+        calls: list[int] = []
+
+        def spy(_ctx: TaskContext) -> None:
+            calls.append(1)
+
+        LinearWorkflow().run({"action": "test"}, on_progress=spy)
+
+        # 1 initial snapshot + 3 node boundaries.
+        assert len(calls) == 4
+
+    def test_mid_run_snapshot_is_partial(self):
+        """A mid-run snapshot shows some SUCCESS while later nodes stay PENDING."""
+        snapshots: list[dict[str, NodeStatus]] = []
+
+        def spy(ctx: TaskContext) -> None:
+            snapshots.append(
+                {name: run.status for name, run in ctx.node_runs.items()}
+            )
+
+        LinearWorkflow().run({"action": "test"}, on_progress=spy)
+
+        # After the first node boundary (snapshot index 1): A SUCCESS, B/C PENDING.
+        after_first = snapshots[1]
+        assert after_first["LinearNodeA"] == NodeStatus.SUCCESS
+        assert after_first["LinearNodeB"] == NodeStatus.PENDING
+        assert after_first["LinearNodeC"] == NodeStatus.PENDING
+
+    def test_final_snapshot_all_success(self):
+        """The last snapshot shows every node SUCCESS."""
+        snapshots: list[dict[str, NodeStatus]] = []
+
+        def spy(ctx: TaskContext) -> None:
+            snapshots.append(
+                {name: run.status for name, run in ctx.node_runs.items()}
+            )
+
+        LinearWorkflow().run({"action": "test"}, on_progress=spy)
+
+        final = snapshots[-1]
+        assert all(status == NodeStatus.SUCCESS for status in final.values())
+
+    def test_default_none_is_backward_compatible(self):
+        """run() without on_progress behaves identically (terminal context unchanged)."""
+        ctx_default = LinearWorkflow().run({"action": "test"})
+        ctx_noop = LinearWorkflow().run({"action": "test"}, on_progress=None)
+
+        assert ctx_default.nodes == ctx_noop.nodes
+        assert "nodes" not in ctx_default.metadata
+        for name in ("LinearNodeA", "LinearNodeB", "LinearNodeC"):
+            assert ctx_default.node_runs[name].status == NodeStatus.SUCCESS
+            assert ctx_noop.node_runs[name].status == NodeStatus.SUCCESS
+
+    def test_callback_receives_same_task_context_instance(self):
+        """The callback is handed the live TaskContext (single broad argument)."""
+        seen: list[TaskContext] = []
+
+        def spy(ctx: TaskContext) -> None:
+            seen.append(ctx)
+
+        result = LinearWorkflow().run({"action": "test"}, on_progress=spy)
+
+        assert seen, "on_progress was never called"
+        assert all(isinstance(ctx, TaskContext) for ctx in seen)
+        # All invocations and the return value reference the same live context.
+        assert all(ctx is result for ctx in seen)
