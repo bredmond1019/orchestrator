@@ -33,8 +33,11 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 17. [WorkflowRegistry](#workflowregistry)
 18. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 19. [SummarizerNode](#summarizernode)
-20. [createworkflow CLI](#createworkflow-cli)
-21. [API Layer](#api-layer)
+20. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
+21. [StorageNode](#storagenode)
+22. [digest_renderer](#digest_renderer)
+23. [createworkflow CLI](#createworkflow-cli)
+24. [API Layer](#api-layer)
 
 ---
 
@@ -1576,6 +1579,86 @@ in Phase 1 Project A Task 2).
 `LearningArtifact` inherits from `Base = declarative_base()` defined in
 `app/database/session.py`. The model is imported in `app/alembic/env.py`
 (`from database.learning_artifact import *`) so Alembic autogenerate sees its metadata.
+
+---
+
+## StorageNode
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/storage_node.py`
+
+```python
+class StorageNode(Node):
+```
+
+Concrete `Node` that closes the content pipeline: for every ingested item it (a) embeds the
+summary text at write time via `EmbeddingService`, (b) persists a `LearningArtifact` row through
+`GenericRepository` using the shared `db_session` factory (no connection string or deployment
+path lives inside the node — rule 7), and (c) writes a static HTML digest page and regenerates
+the category index. The output directory comes from the `CONTENT_DIGEST_DIR` env var.
+
+### `process(task_context) -> TaskContext`
+
+1. Reads `SummaryOutput` from `task_context.get_node_output("SummarizerNode")["result"]`.
+2. Derives `source_type` and `fetch_status` from whichever fetch node ran (via
+   `_read_source_meta`).
+3. Builds the embedding text as `f"{title}\n{tl_dr}\n{' '.join(core_concepts)}"` and calls
+   `EmbeddingService().embed_text(embed_text)` — embedding is produced **at write time** before
+   the artifact is persisted.
+4. Constructs a `LearningArtifact` with `id=task_context.event.artifact_id` (stable identity
+   from the event schema) and calls `self._persist(artifact)`.
+5. Calls `render_artifact_page(...)` and `regenerate_category_index(...)` from `digest_renderer`.
+6. Records `{"artifact_id", "page", "category", "embedded": True}` via `task_context.update_node()`.
+
+### `_persist(artifact) -> None`
+
+Single persistence seam. Opens the shared `db_session` context manager, creates a
+`GenericRepository(session, LearningArtifact)`, and calls `.create(artifact)`. Tests
+monkeypatch this method so no real database is touched.
+
+### `_read_source_meta(task_context) -> tuple[str, str]`
+
+Returns `(source_type, fetch_status)` from whichever fetch node ran. A
+`FetchTranscriptNode` output implies `source_type="youtube"`; otherwise `"article"`. An
+explicit `source_type` key on the fetch output wins. Falls back to `fetch_status="ok"` if
+the key is absent.
+
+---
+
+## digest_renderer
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/digest_renderer.py`
+
+Pure-function static-HTML renderer. Deliberately dumb: no JavaScript, no search, no tagging
+(D22 — MVP is ingestion + store + dumb display only). All output paths are supplied by the
+caller (config/env), never hardcoded.
+
+### `render_artifact_page(artifact, output_dir, category) -> Path`
+
+```python
+def render_artifact_page(artifact: dict, output_dir: Path, category: str) -> Path:
+```
+
+Writes a single static HTML page for one artifact and returns its path. The page is written to
+`output_dir/<category>/<artifact_id>.html`. Content includes title, TL;DR, read-time estimate,
+category, source URL, and the five `SummaryOutput` list fields (`core_concepts`, `key_insights`,
+`questions_raised`, `connections_to_my_work`, `further_exploration`). All interpolated values
+are HTML-escaped via `_esc`.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `artifact` | `dict` | Merged dict of `SummaryOutput.model_dump()` plus `artifact_id` and `source_url`. |
+| `output_dir` | `Path` | Root digest directory (from `CONTENT_DIGEST_DIR` env via caller). |
+| `category` | `str` | Category string; becomes the sub-folder name. |
+
+### `regenerate_category_index(output_dir, category) -> Path`
+
+```python
+def regenerate_category_index(output_dir: Path, category: str) -> Path:
+```
+
+Rewrites `output_dir/<category>/index.html` listing every artifact page. Globs for `*.html`
+(excluding `index.html`), sorts the results, and writes a minimal `<ul>` of links. Called by
+`StorageNode.process()` after every artifact write so the index is always current.
 
 ---
 
