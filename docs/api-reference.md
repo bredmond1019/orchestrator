@@ -296,7 +296,7 @@ The single shared state object threaded through every node in the workflow.
 |---|---|---|
 | `event` | `Any` | Initially the raw event dict; replaced with the parsed Pydantic schema instance by `Workflow.run()`. |
 | `nodes` | `dict[str, Any]` | Accumulates per-node results. Each node writes its output under its own name. |
-| `metadata` | `dict[str, Any]` | Workflow-level data. During execution, `"nodes"` key holds the full `Dict[Type[Node], NodeConfig]` registry; this key is removed before `run()` returns. |
+| `metadata` | `dict[str, Any]` | Workflow-level data. During execution, `"nodes"` key holds the full `Dict[Type[Node], NodeConfig]` registry; this key is removed before `run()` returns. A `field_serializer` also strips `"nodes"` from any `model_dump(mode="json")` call made mid-run, so partial snapshots passed to `on_progress` are always JSON-safe. |
 | `node_runs` | `dict[str, NodeRun]` | Per-node execution envelope (status, timing, error, token usage), keyed by node class name. A parallel, additive channel to `nodes` — never replaces node output. Written by the framework; read by callers for observability. |
 
 ### `update_node(node_name: str, **kwargs)`
