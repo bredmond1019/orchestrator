@@ -163,7 +163,7 @@ def run(self, event: Any) -> TaskContext:
 
     while current_node_class:                                    # 5. walk until None
         current_node = self.nodes[current_node_class].node
-        with self.node_context(current_node_class.__name__):     # 6. log + error handling
+        with self.node_context(current_node_class.__name__, task_context):  # 6. stamp envelope + log
             task_context = current_node().process(task_context)  # 7. execute node
 
         current_node_class = self._get_next_node_class(         # 8. advance
@@ -197,10 +197,11 @@ names the entry point. Execution always begins there.
 `_get_next_node_class` returns `None` (no more connections), the loop exits. There's
 no index, no list — just follow the graph edges until the trail ends.
 
-**6. `node_context` — log and handle errors** — The context manager (covered below)
-emits log lines before and after the node runs. If the node raises an exception, it
-logs the error and re-raises, so the caller (the Celery task) sees a clean exception
-with context.
+**6. `node_context` — stamp run envelope + log** — The context manager (covered below)
+stamps the per-node `NodeRun` envelope in `task_context.node_runs` (`RUNNING` on entry,
+`SUCCESS` or `FAILED` with timestamps on exit) and emits log lines. If the node raises,
+it stamps `FAILED` + the error message and re-raises, so the caller (the Celery task)
+sees a clean exception with context and the envelope carries the failure detail.
 
 **7. Instantiate and execute the node** — `current_node().process(task_context)`:
 - `current_node()` — creates a fresh instance of the node class each time it runs.
@@ -223,30 +224,47 @@ to the database.
 
 ---
 
-## Step 5 — `node_context`: the logging wrapper
+## Step 5 — `node_context`: the observability envelope
 
 ```python
 @contextmanager
-def node_context(self, node_name: str):
-    logging.info(f"Starting node: {node_name}")
+def node_context(self, node_name: str, task_context: TaskContext):
+    run = task_context.node_runs.setdefault(node_name, NodeRun())
+    run.status = NodeStatus.RUNNING
+    run.started_at = datetime.now(UTC).isoformat()
+    logging.info("Starting node: %s", node_name)
     try:
         yield
     except Exception as e:
-        logging.error(f"Error in node {node_name}: {str(e)}")
+        run.status = NodeStatus.FAILED
+        run.error = str(e)
+        run.completed_at = datetime.now(UTC).isoformat()
+        logging.error("Error in node %s: %s", node_name, str(e))
         raise
+    else:
+        run.status = NodeStatus.SUCCESS
+        run.completed_at = datetime.now(UTC).isoformat()
     finally:
-        logging.info(f"Finished node: {node_name}")
+        logging.info("Finished node: %s", node_name)
 ```
 
 A standard Python context manager using `@contextmanager`. It wraps every node
-execution with:
-- A `Starting node: X` log line before.
-- A `Finished node: X` log line after (in `finally` — fires even on exception).
-- An error log line + re-raise if the node throws.
+execution and does two things: stamps the per-node `NodeRun` envelope and emits
+structured log lines.
 
-The `raise` is important: this does not swallow exceptions. The error is logged for
-observability, then the original exception propagates up to the Celery task, which
-handles retry and failure logic.
+**Envelope lifecycle:**
+- On entry: creates a `NodeRun` (if not present) in `task_context.node_runs[node_name]`,
+  sets `status = RUNNING`, records `started_at` as a UTC ISO-8601 string.
+- On clean exit (`else` branch): sets `status = SUCCESS`, records `completed_at`.
+- On exception (`except` branch): sets `status = FAILED`, records `error` (stringified
+  exception) and `completed_at`, then re-raises.
+
+`SUCCESS` is set in the `else` branch (not `finally`) so it is only stamped on a
+clean exit — `FAILED` and `SUCCESS` are mutually exclusive.
+
+The `raise` is important: this does not swallow exceptions. The error is logged and
+the envelope is stamped for observability, then the original exception propagates up
+to the Celery task. Node implementations never touch `node_runs` directly.
 
 ---
 
@@ -342,7 +360,7 @@ Workflow.run(event)
   ├── metadata["nodes"] = self.nodes
   │
   └── while current_node_class:
-        ├── node_context(name)  → logs Start / Finish / Error
+        ├── node_context(name, task_context)  → stamps NodeRun envelope + logs
         ├── NodeClass().process(task_context)  → updated task_context
         └── _get_next_node_class(current, task_context)
               ├── no connections → None  (exit loop)
