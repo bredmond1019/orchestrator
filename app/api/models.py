@@ -11,3 +11,12 @@ class TaskAcceptedResponse(BaseModel):
 class EventPayload(BaseModel):
     workflow_type: str
     data: dict
+
+
+class WorkflowListResponse(BaseModel):
+    workflows: list[str]
+
+
+class WorkflowGraphResponse(BaseModel):
+    nodes: list[str]
+    edges: list[tuple[str, str]]
