@@ -9,8 +9,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-20 — incremental-execution-observability DONE (all 8 tasks complete; spec closed — status envelope, on_progress callback, worker incremental persistence, token/cost capture, graph endpoint all landed); Phase 1 Project A is next
-**Current focus:** Phase 1, Project A — `content_pipeline` workflow implementation (incremental-execution-observability spec complete — all 8 tasks merged)
+**Last updated:** 2026-06-20 — phase1-projectA in progress (Tasks 1–3 complete; Tasks 4–8 next)
+**Current focus:** Phase 1, Project A — Task 4: Summarizer node + prompt
 
 ---
 
@@ -36,7 +36,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 ### Phase 1 — Sellable Competence
 | Project | What | Status | Notes |
 |---|---|---|---|
-| A | Content pipeline (YouTube/Article → personal digest + optional blog) | Not started | Personal knowledge feed (static HTML on Mini) is the Day-1 win; digest-always, blog-on-flag; `FetchArticleNode` new. Ships with tests; deploy to Mini. See DECISIONS D21–D22 |
+| A | Content pipeline (YouTube/Article → personal digest + optional blog) | In progress | Source router and fetch nodes implemented; YouTube/article routing working; graceful failure on extraction; Tests written and passing (Tasks 1–3 complete; Tasks 4–8 next). |
 | B | Research agent (thin → hardened) | Not started | Thin cut first (~50 lines, raw tool loop) |
 | C | Proposal generator | Not started | PT + EN; run on warm leads as practice |
 | D | Document Q&A + session memory (RAG) | Not started | Reinforces proven Helpscout production pattern |
