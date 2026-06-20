@@ -1366,6 +1366,54 @@ trigger a database connection.
 
 ---
 
+## LearningArtifact SQLAlchemy Model
+
+**Source:** `app/database/learning_artifact.py`
+
+```python
+class LearningArtifact(Base):
+    __tablename__ = "learning_artifacts"
+```
+
+Persistence record for a single ingested source (YouTube transcript or extracted article).
+Produced by the content pipeline (Phase 1, Project A). Each ingested item yields exactly
+one row, carrying source provenance, a structured summary, and a 1024-dim pgvector embedding
+written at storage time.
+
+**Module-level constant:** `EMBEDDING_DIM = 1024`
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key, UUID v4 generated at insert time. |
+| `source_url` | `String(2048)` | No | — | Original YouTube or article URL that was ingested. |
+| `source_type` | `String(50)` | Yes | — | Source classification: `'youtube'` or `'article'`. |
+| `title` | `String(512)` | Yes | — | Human-readable title of the source content. |
+| `category` | `String(150)` | Yes | — | Classified category (e.g. `'ai_engineering'`, `'physics_relativity'`). |
+| `tl_dr` | `String` | Yes | — | One-line summary of the content. |
+| `summary` | `JSON` | Yes | — | Full structured `SummaryOutput` as JSON. |
+| `embedding` | `Vector(1024)` | Yes | — | 1024-dim embedding of the summary text (pgvector), written by the StorageNode. |
+| `fetch_status` | `String(50)` | Yes | — | Outcome of the fetch step: `'ok'`, `'fallback_used'`, or `'failed'`. |
+| `make_blog` | `Boolean` | Yes | `False` | Whether a blog draft was requested for this artifact. |
+| `created_at` | `DateTime` | Yes | `datetime.now` | Set on insert; not updated thereafter. |
+
+### Migration
+
+The `learning_artifacts` table is created by migration `a1b2c3d4e5f6`
+(`app/alembic/versions/a1b2c3d4e5f6_create_learning_artifacts_table.py`).
+`down_revision = '12a5c7643ab9'` — chains off the pgvector extension migration.
+The `pgvector` package (`pgvector>=0.3.0`) must be installed (added to `pyproject.toml`
+in Phase 1 Project A Task 2).
+
+### Session and Base
+
+`LearningArtifact` inherits from `Base = declarative_base()` defined in
+`app/database/session.py`. The model is imported in `app/alembic/env.py`
+(`from database.learning_artifact import *`) so Alembic autogenerate sees its metadata.
+
+---
+
 ## createworkflow CLI
 
 **Source:** `app/core/commands/init_workflow.py`
