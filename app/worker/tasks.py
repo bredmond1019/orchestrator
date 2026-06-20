@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 
+from core.task import TaskContext
 from database.event import Event
 from database.repository import GenericRepository
 from database.session import db_session
@@ -39,11 +40,17 @@ def process_incoming_event(event_id: str):
         if db_event is None:
             raise ValueError(f"Event with id {event_id} not found")
 
-        # Execute workflow and store results
+        # Execute workflow, persisting node-level progress at each boundary.
         workflow = WorkflowRegistry[db_event.workflow_type].value()
-        task_context = workflow.run(db_event.data).model_dump(mode="json")
 
-        db_event.task_context = task_context
+        def persist_progress(task_context: TaskContext) -> None:
+            # The worker (which already owns the session) is the only place that
+            # knows persistence exists; the framework stays deployment-agnostic.
+            db_event.task_context = task_context.model_dump(mode="json")
+            session.flush()
 
-        # Update event with processing results
+        result_context = workflow.run(db_event.data, on_progress=persist_progress)
+
+        # Terminal authoritative write (final state of the run).
+        db_event.task_context = result_context.model_dump(mode="json")
         repository.update(obj=db_event)
