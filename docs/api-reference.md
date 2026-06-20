@@ -211,6 +211,50 @@ ValueError("Node {name} has multiple connections but is not marked as a router."
 
 ---
 
+## NodeStatus
+
+**Source:** `app/core/task.py`
+
+```python
+class NodeStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+```
+
+Lifecycle enum for a single node execution. Serializes to its string value via
+`model_dump(mode="json")` (e.g. `"success"`), making it safe to store in the
+`task_context` JSON column without additional conversion.
+
+---
+
+## NodeRun
+
+**Source:** `app/core/task.py`
+
+```python
+class NodeRun(BaseModel):
+    status: NodeStatus = NodeStatus.PENDING
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+    usage: dict | None = None
+```
+
+Per-node execution envelope. Written entirely by the framework (`Workflow.node_context`);
+node implementations never touch it directly.
+
+| Field | Type | Description |
+|---|---|---|
+| `status` | `NodeStatus` | Lifecycle state: `PENDING` → `RUNNING` → `SUCCESS` or `FAILED`. Default `PENDING`. |
+| `started_at` | `str \| None` | ISO-8601 timestamp set when the node begins executing. `None` until then. |
+| `completed_at` | `str \| None` | ISO-8601 timestamp set when the node finishes (success or failure). |
+| `error` | `str \| None` | Stringified exception message if the node raised; `None` on success. |
+| `usage` | `dict \| None` | Token-usage dict `{input_tokens, output_tokens, model}` for LLM nodes; `None` for non-LLM nodes. |
+
+---
+
 ## TaskContext
 
 **Source:** `app/core/task.py`
@@ -218,8 +262,9 @@ ValueError("Node {name} has multiple connections but is not marked as a router."
 ```python
 class TaskContext(BaseModel):
     event: Any
-    nodes: Dict[str, Any] = Field(default_factory=dict)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    nodes: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    node_runs: dict[str, NodeRun] = Field(default_factory=dict)
 ```
 
 The single shared state object threaded through every node in the workflow.
@@ -227,8 +272,9 @@ The single shared state object threaded through every node in the workflow.
 | Field | Type | Description |
 |---|---|---|
 | `event` | `Any` | Initially the raw event dict; replaced with the parsed Pydantic schema instance by `Workflow.run()`. |
-| `nodes` | `Dict[str, Any]` | Accumulates per-node results. Each node writes its output under its own name. |
-| `metadata` | `Dict[str, Any]` | Workflow-level data. During execution, `"nodes"` key holds the full `Dict[Type[Node], NodeConfig]` registry; this key is removed before `run()` returns. |
+| `nodes` | `dict[str, Any]` | Accumulates per-node results. Each node writes its output under its own name. |
+| `metadata` | `dict[str, Any]` | Workflow-level data. During execution, `"nodes"` key holds the full `Dict[Type[Node], NodeConfig]` registry; this key is removed before `run()` returns. |
+| `node_runs` | `dict[str, NodeRun]` | Per-node execution envelope (status, timing, error, token usage), keyed by node class name. A parallel, additive channel to `nodes` — never replaces node output. Written by the framework; read by callers for observability. |
 
 ### `update_node(node_name: str, **kwargs)`
 
