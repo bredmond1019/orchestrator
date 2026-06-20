@@ -10,6 +10,102 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-20 (task 8 — validate all gates and confirm spec complete)
+
+Ran the full validation suite for the incremental-execution-observability spec: import smoke tests (`main`, `worker.config`, `database.session`, `database.repository`), ruff lint, pylint, pytest collection, and pytest full run. All eight acceptance criteria confirmed green — `TaskContext.node_runs` with `NodeStatus`/`NodeRun` (including `usage`) survives `model_dump(mode="json")`; `Workflow.node_context` stamps `RUNNING`/`SUCCESS`/`FAILED` and timestamps without any node being edited; `Workflow.run()` backward-compatible with `on_progress` callback firing at each node boundary; worker persists `task_context` incrementally via flush inside the open transaction; `AgentNode` and `ToolUseNode` populate `NodeRun.usage`, non-LLM nodes leave it `None`; `GET /workflows` and `GET /workflows/{type}/graph` return correct nodes/edges for `customer_care`, unknown type returns 404; no "bastion" string in `app/`; new test count strictly greater than baseline. Review passed on the first attempt. Spec is closed — all three phases (1 incremental persistence, 2 token capture, 3 graph introspection) landed across 8 tasks. Next: Phase 1, Project A — `content_pipeline` workflow implementation.
+
+```
+0274018 docs: update docs for incremental-execution-observability-task8
+2edfc4a feat: implement incremental-execution-observability-task8
+dd2f5dd chore: init worktree incremental-execution-observability-task8
+```
+
+---
+
+## 2026-06-20 (task 7 — workflow graph introspection endpoint, Phase 3)
+
+Implemented the read-only workflow graph introspection API (Phase 3 of the incremental execution observability spec). Added `GET /workflows` listing all registered workflow types from `WorkflowRegistry` and `GET /workflows/{workflow_type}/graph` returning the static node/edge topology serialized from each workflow's `WorkflowSchema`. Introduced a new `app/api/graph.py` module and added typed Pydantic response models (`WorkflowListResponse`, `WorkflowGraphResponse`) to `app/api/models.py`. The endpoint uses node class `__name__` as identity, consistent with the `task_context.nodes` and `node_runs` keys established in earlier tasks. Unknown workflow type returns 404. Tests cover the correct node/edge set for `customer_care` (read-only introspection of the frozen reference workflow) and the 404 path. Review passed on the first attempt with all acceptance criteria met and no regressions to existing tests. Next: Task 8 — run the full validation suite (`import` smoke tests, ruff, pylint, pytest collect + run) and confirm all gates pass with no bastion references in `app/`.
+
+```
+c066cd7 docs: update docs for incremental-execution-observability-task7
+42ba989 feat: implement incremental-execution-observability-task7
+1127c51 chore: init worktree incremental-execution-observability-task7
+```
+
+---
+
+## 2026-06-20 (task 6 — per-node token + cost capture)
+
+Implemented Phase 2 of the incremental execution observability spec: per-node token and cost capture in the framework-owned `AgentNode` and `ToolUseNode` base classes. A `usage: dict | None` field was added to `NodeRun` in `app/core/task.py`, and both `app/core/nodes/agent.py` and `app/core/nodes/tool_use.py` were updated to populate `NodeRun.usage` with `{input_tokens, output_tokens, model}` from the provider response after each LLM call. Non-LLM nodes leave `usage` as `None`. Tests assert that a stubbed provider response yields the expected token counts on the `NodeRun`, and that non-LLM nodes record no usage. The review passed on the first attempt with all validation commands green. Next: Task 7 — Workflow graph introspection endpoint (Phase 3).
+
+```
+aa833a0 docs: update docs for incremental-execution-observability-task6
+31ec381 feat: implement incremental-execution-observability-task6
+939b0fe chore: init worktree incremental-execution-observability-task6
+```
+
+---
+
+## 2026-06-20 (task 5 — Phase 1 test suite)
+
+Implemented the full test suite for the Phase 1 observability layer. Tests cover the complete `NodeRun` lifecycle: `PENDING → RUNNING → SUCCESS` transitions on a happy-path workflow, `FAILED` state (with non-null `error` and `completed_at`) when a node raises — confirming the exception still propagates. An `on_progress` spy asserts the callback fires once before the first node (all `PENDING`) and once per node boundary (correct total call count and ordering). The default `on_progress=None` path is validated against the existing test suite to confirm no behavioral regression. A mid-run `model_dump(mode="json")` snapshot test confirms the observability guarantee: a partial execution produces a mix of `SUCCESS` and `PENDING` entries in `node_runs`. The review passed on the first attempt with no defects raised. Next: Task 6 — Per-node token + cost capture (Phase 2).
+
+```
+f336fc8 docs: update docs for incremental-execution-observability-task5
+a037ba5 feat: implement incremental-execution-observability-task5
+978cd46 chore: init worktree incremental-execution-observability-task5
+```
+
+---
+
+## 2026-06-20 (task 4 — worker wires persistence at each boundary (Phase 1d))
+
+Task 4 wired the `on_progress` callback in `app/worker/tasks.py` so that the worker — which already owns the DB session — persists `db_event.task_context` incrementally at every node boundary. Inside the existing `db_session` transaction, a closure captures the repository and the `db_event` row; on each invocation it assigns `db_event.task_context = task_context.model_dump(mode="json")` and issues a flush (not a commit) so the JSON snapshot is durable mid-run without prematurely closing the transaction. The terminal authoritative `repository.update(...)` call is preserved as the final write after `workflow.run()` returns. No DB or session code was added to `workflow.py` or any node — the brain remains fully agnostic, keeping D18 and D7 intact. `customer_care` and all its nodes are unchanged. Review passed on the first attempt with no blocking findings. Next: Task 5 — Tests for Phase 1.
+
+```
+106132e docs: update docs for incremental-execution-observability-task4
+2afe0f7 feat: implement incremental-execution-observability-task4
+d4f5da4 chore: init worktree incremental-execution-observability-task4
+```
+
+---
+
+## 2026-06-20 (task 3 — injected progress callback on Workflow.run())
+
+Task 3 added the `on_progress: Callable[[TaskContext], None] | None = None` parameter to `Workflow.run()` in `app/core/workflow.py`. Before the first node executes, the framework seeds every node in the schema as `PENDING` in `node_runs` and invokes `on_progress` once so callers can observe the full DAG in its initial state. After each node boundary (success or failure), `on_progress(task_context)` is called again, enabling incremental snapshots as execution proceeds. The default `None` path is fully backward-compatible — existing behavior and all prior tests are unaffected. The signature accepts a single `TaskContext` arg, keeping the seam broad enough for a future Phase 5 publisher without changing the brain. No node was edited; `customer_care` and its nodes remain frozen. Tests confirmed: callback fires once before the first node and once per boundary (call count/order with a spy), the `None` default leaves terminal `task_context` unchanged, and a mid-run `model_dump(mode="json")` snapshot contains the expected mix of `SUCCESS` and `PENDING` entries. Review passed on the first attempt with no blocking issues. Next: Task 4 — Worker wires persistence at each boundary (Phase 1d).
+
+```
+e009aa9 docs: update docs for incremental-execution-observability-task3
+b296bd4 feat: implement incremental-execution-observability-task3
+b4bf700 chore: init worktree incremental-execution-observability-task3
+```
+
+---
+
+## 2026-06-20 (task 2 — framework stamps the envelope in node_context)
+
+Task 2 extended `Workflow.node_context` in `app/core/workflow.py` to stamp the per-node `NodeRun` envelope as execution flows through the DAG. On node entry, the framework sets the node's `NodeRun` to `RUNNING` with an ISO-8601 UTC `started_at` timestamp; on clean exit it records `SUCCESS` and `completed_at`; in the exception branch it records `FAILED` with `error` (str of the exception) and `completed_at` before re-raising. The `TaskContext` is threaded through from `run()` — already in scope at the call site — so no node was edited, keeping `customer_care` fully frozen. Tests confirmed the `PENDING → RUNNING → SUCCESS` happy-path transition, the `FAILED` path with non-null `error` and exception propagation, and that existing tests are unaffected. Review passed on the first attempt with no blocking issues. Next: Task 3 — Injected progress callback on Workflow.run() (Phase 1c).
+
+```
+18b7de7 docs: update docs for incremental-execution-observability-task2
+03d35e1 feat: implement incremental-execution-observability-task2
+498aadd chore: init worktree incremental-execution-observability-task2
+```
+
+---
+
+## 2026-06-20 (task 1 — status/timing envelope on TaskContext)
+
+Task 1 implemented the foundational observability data model for incremental execution tracking. Added `NodeStatus(StrEnum)` with `PENDING`/`RUNNING`/`SUCCESS`/`FAILED` values, `NodeRun(BaseModel)` capturing `status`, `started_at`, `completed_at`, `error`, and `usage` fields, and a `node_runs: dict[str, NodeRun]` field on `TaskContext` — all in `app/core/task.py`. The implementation is purely additive: existing `nodes` dict and `get_node_output()` semantics are untouched, and `customer_care` was not modified. Tests confirmed `model_dump(mode="json")` round-trips the new field correctly with enum values serializing to strings. Review passed on the first attempt with no blocking issues. Next: Task 2 — Framework stamps the envelope in node_context (Phase 1b).
+
+```
+4ece897 docs: update docs for incremental-execution-observability-task1
+6aef302 feat: implement incremental-execution-observability-task1
+152ba04 chore: init worktree incremental-execution-observability-task1
+```
+
+---
+
 ## 2026-06-19
 
 Executed OKF Phase 2 (D27 → D29) in lockstep with adopting base-template's rewritten SDLC engines
