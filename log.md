@@ -10,6 +10,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-20 (task 5 — Storage node with embedding and HTML digest)
+
+Implemented the storage layer: `StorageNode(Node)` persists `LearningArtifact` rows with real-time 1024-dim Voyage embeddings via `EmbeddingService`, writes static HTML digests per category with index regeneration, and uses injected `GenericRepository` for deployment-agnostic persistence (no session logic inside nodes per standing rule 7). Full pipeline now chains cleanly from source router → fetch nodes → summarizer → storage, with embeddings written at write time. Tests cover embedding service integration, repository CRUD, and HTML rendering. Review passed with PASS verdict. Next: Task 6 — Blog branch with writer, self-critic, and reviser agents.
+
+```
+0633435 docs: update docs for phase1-projectA-task5
+77ef050 feat: implement phase1-projectA-task5
+1d7a066 chore: init worktree phase1-projecta-task5
+```
+
+---
+
 ## 2026-06-20 (task 3 — Source router + fetch nodes)
 
 Implemented `SourceRouterNode` to classify YouTube vs article URLs and route to the appropriate fetch node. `FetchTranscriptNode` calls `TranscriptService.fetch_transcript()` for YouTube content, and `FetchArticleNode` calls `ArticleExtractionService.extract()` for article URLs with trafilatura-first/Firecrawl-fallback logic. Both nodes gracefully handle failures by storing `fetch_status` without crashing the pipeline. All three nodes (source router + two fetch nodes) were added to `app/workflows/content_pipeline_workflow_nodes/` with full unit tests covering YouTube routing, article routing, unknown-URL fallback, and graceful error handling. Test suite passes with PASS verdict on first review attempt. Router classification and fetch logic are ready; next is the `SummarizerNode` to process extracted content.
