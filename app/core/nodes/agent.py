@@ -62,6 +62,34 @@ class AgentNode(Node, ABC):
             ),
         )
 
+    def run_agent_recorded(self, task_context: TaskContext, user_prompt: str):
+        """Run the agent and record token usage onto this node's NodeRun.
+
+        New AgentNode subclasses should call this instead of
+        ``self.agent.run_sync`` so per-node token usage is captured by the
+        framework in one place. The base class cannot intercept direct
+        ``self.agent.run_sync(...)`` calls a subclass makes, so this helper
+        runs the agent and stamps ``{input_tokens, output_tokens, model}`` onto
+        the node's ``NodeRun.usage`` slot (only when a NodeRun exists for this
+        node). Returns the pydantic-ai result unchanged.
+
+        The ``getattr`` fallback covers both newer pydantic-ai
+        (``input_tokens``/``output_tokens``) and the pinned ``>=0.1.5`` line
+        (``request_tokens``/``response_tokens``).
+        """
+        result = self.agent.run_sync(user_prompt=user_prompt)
+        usage = result.usage()
+        run = task_context.node_runs.get(self.node_name)
+        if run is not None:
+            run.usage = {
+                "input_tokens": getattr(usage, "input_tokens", None)
+                or getattr(usage, "request_tokens", None),
+                "output_tokens": getattr(usage, "output_tokens", None)
+                or getattr(usage, "response_tokens", None),
+                "model": self.get_agent_config().model_name,
+            }
+        return result
+
     @abstractmethod
     def get_agent_config(self) -> AgentConfig:
         pass
