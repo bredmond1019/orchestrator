@@ -109,6 +109,7 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `BEDROCK_AWS_REGION` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
 | `FIRECRAWL_API_KEY` | string | — | Optional | `ArticleExtractionService` Firecrawl fallback |
 | `TAVILY_API_KEY` | string | — | Conditional | `SearchService` — required when any workflow uses web search |
+| `CONTENT_DIGEST_DIR` | string | `./_digest` | Optional | `StorageNode` — root directory for static HTML digest pages; sub-folders per category are created automatically |
 
 "Conditional" means the variable is required only when a workflow node is configured with the
 corresponding `ModelProvider` value (or service, in the case of `TAVILY_API_KEY`).
