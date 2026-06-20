@@ -8,6 +8,7 @@ nodes and routing logic.
 
 import logging
 from abc import ABC
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -119,11 +120,23 @@ class Workflow(ABC):
         """
         return node_class()
 
-    def run(self, event: Any) -> TaskContext:
+    def run(
+        self,
+        event: Any,
+        on_progress: Callable[[TaskContext], None] | None = None,
+    ) -> TaskContext:
         """Executes the workflow for a given event.
 
         Args:
             event: The event to process through the workflow
+            on_progress: Optional injected callback invoked with the live
+                ``TaskContext`` once before the first node (with every node
+                seeded ``PENDING``) and once after each node boundary. Default
+                ``None`` is a no-op. The signature is intentionally broad — a
+                single ``TaskContext`` argument — so a future publisher
+                (e.g. push / pub-sub) can be layered in without changing the
+                deployment-agnostic framework. No persistence or session code
+                lives here; the caller owns where progress goes.
 
         Returns:
             TaskContext containing the results of workflow execution
@@ -137,12 +150,23 @@ class Workflow(ABC):
         task_context.event = self.workflow_schema.event_schema(**event)
 
         task_context.metadata["nodes"] = self.nodes
+
+        # Seed every node PENDING so a freshly-dispatched run shows the full DAG,
+        # then emit the initial snapshot before any node executes.
+        for node_class in self.nodes:
+            task_context.node_runs.setdefault(node_class.__name__, NodeRun())  # pylint: disable=no-member
+        if on_progress:
+            on_progress(task_context)
+
         current_node_class = self.workflow_schema.start
 
         while current_node_class:
             current_node = self.nodes[current_node_class].node
             with self.node_context(current_node_class.__name__, task_context):
                 task_context = current_node().process(task_context)
+
+            if on_progress:
+                on_progress(task_context)
 
             current_node_class = self._get_next_node_class(
                 current_node_class, task_context
