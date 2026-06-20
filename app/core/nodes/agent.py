@@ -21,7 +21,7 @@ from pydantic_ai.providers.google_gla import GoogleGLAProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from core.nodes.base import Node
-from core.task import TaskContext
+from core.task import TaskContext, to_jsonable
 
 load_dotenv()
 
@@ -63,15 +63,23 @@ class AgentNode(Node, ABC):
         )
 
     def run_agent_recorded(self, task_context: TaskContext, user_prompt: str):
-        """Run the agent and record token usage onto this node's NodeRun.
+        """Run the agent and record per-node telemetry for this node.
 
         New AgentNode subclasses should call this instead of
-        ``self.agent.run_sync`` so per-node token usage is captured by the
+        ``self.agent.run_sync`` so per-node observability is captured by the
         framework in one place. The base class cannot intercept direct
         ``self.agent.run_sync(...)`` calls a subclass makes, so this helper
-        runs the agent and stamps ``{input_tokens, output_tokens, model}`` onto
-        the node's ``NodeRun.usage`` slot (only when a NodeRun exists for this
-        node). Returns the pydantic-ai result unchanged.
+        runs the agent and records, per the data contract:
+
+        - ``NodeRun.input`` — the ``user_prompt`` sent to the model.
+        - ``NodeRun.usage`` — ``{input_tokens, output_tokens, model}``.
+        - ``TaskContext.nodes[node_name]["output"]`` — the JSON-serializable
+          model output (``result.output``), so a consumer can read it without
+          the raw SDK result object.
+
+        Telemetry is only stamped when a ``NodeRun`` exists for this node; the
+        result is always returned unchanged so existing subclasses that read
+        ``result.output`` keep working.
 
         The ``getattr`` fallback covers both newer pydantic-ai
         (``input_tokens``/``output_tokens``) and the pinned ``>=0.1.5`` line
@@ -81,6 +89,7 @@ class AgentNode(Node, ABC):
         usage = result.usage()
         run = task_context.node_runs.get(self.node_name)
         if run is not None:
+            run.input = user_prompt
             run.usage = {
                 "input_tokens": getattr(usage, "input_tokens", None)
                 or getattr(usage, "request_tokens", None),
@@ -88,6 +97,9 @@ class AgentNode(Node, ABC):
                 or getattr(usage, "response_tokens", None),
                 "model": self.get_agent_config().model_name,
             }
+            task_context.update_node(
+                self.node_name, output=to_jsonable(result.output)
+            )
         return result
 
     @abstractmethod

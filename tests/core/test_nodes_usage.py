@@ -1,13 +1,19 @@
-"""Unit tests for per-node token/cost capture on AgentNode and ToolUseNode."""
+"""Unit tests for per-node telemetry capture on AgentNode and ToolUseNode.
+
+Covers token/cost usage, per-node input capture, and the data-contract
+guarantee that node output stored under ``TaskContext.nodes[name]`` is
+JSON-serializable.
+"""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from core.nodes.agent import AgentConfig, AgentNode, ModelProvider
 from core.nodes.base import Node
 from core.nodes.tool_use import ToolUseNode
-from core.task import NodeRun, NodeStatus, TaskContext
+from core.task import NodeRun, NodeStatus, TaskContext, to_jsonable
 
 
 # ---------------------------------------------------------------------------
@@ -37,10 +43,16 @@ class ConcreteToolUseNode(ToolUseNode):
         return f"echo:{tool_input.get('text', '')}"
 
 
-def _end_turn_response(input_tokens: int, output_tokens: int):
+def _end_turn_response(input_tokens: int, output_tokens: int, text: str | None = None):
     r = MagicMock()
     r.stop_reason = "end_turn"
-    r.content = []
+    if text is None:
+        r.content = []
+    else:
+        block = MagicMock()
+        block.type = "text"
+        block.text = text
+        r.content = [block]
     r.usage = MagicMock(input_tokens=input_tokens, output_tokens=output_tokens)
     return r
 
@@ -200,3 +212,104 @@ def test_non_llm_node_has_no_usage():
     node.process(ctx)
 
     assert ctx.node_runs[node.node_name].usage is None
+
+
+def test_non_llm_node_has_no_input():
+    """A non-LLM node leaves NodeRun.input as None (contract default)."""
+    node = PlainNode()
+    ctx = TaskContext(event={"input": "x"})
+    ctx.node_runs[node.node_name] = NodeRun(status=NodeStatus.RUNNING)
+
+    node.process(ctx)
+
+    assert ctx.node_runs[node.node_name].input is None
+
+
+# ---------------------------------------------------------------------------
+# Per-node input capture + serializable output (data contract)
+# ---------------------------------------------------------------------------
+
+
+class _StubOutput(BaseModel):
+    """A Pydantic model standing in for an AgentNode output_type result."""
+
+    label: str
+    score: float
+
+
+class TestToJsonable:
+    def test_basemodel_dumped_to_dict(self):
+        assert to_jsonable(_StubOutput(label="x", score=0.5)) == {
+            "label": "x",
+            "score": 0.5,
+        }
+
+    def test_plain_values_pass_through(self):
+        assert to_jsonable("hi") == "hi"
+        assert to_jsonable({"a": 1}) == {"a": 1}
+        assert to_jsonable(None) is None
+
+
+class TestAgentNodeInputAndOutput:
+    def test_records_input_and_serializable_output(self):
+        node = StubAgentNode()
+        result = MagicMock()
+        result.usage.return_value = MagicMock(input_tokens=1, output_tokens=1)
+        result.output = _StubOutput(label="ok", score=0.9)
+        node.agent = MagicMock()
+        node.agent.run_sync.return_value = result
+
+        ctx = TaskContext(event={"input": "x"})
+        ctx.node_runs[node.node_name] = NodeRun(status=NodeStatus.RUNNING)
+
+        node.run_agent_recorded(ctx, "the prompt")
+
+        assert ctx.node_runs[node.node_name].input == "the prompt"
+        assert ctx.nodes[node.node_name]["output"] == {"label": "ok", "score": 0.9}
+        # The contract guarantee: the whole context still JSON-serializes.
+        dumped = ctx.model_dump(mode="json")
+        assert dumped["nodes"][node.node_name]["output"]["label"] == "ok"
+
+    def test_no_node_run_records_no_input_or_output(self):
+        node = StubAgentNode()
+        result = MagicMock()
+        result.usage.return_value = MagicMock(input_tokens=1, output_tokens=1)
+        result.output = _StubOutput(label="ok", score=0.9)
+        node.agent = MagicMock()
+        node.agent.run_sync.return_value = result
+
+        ctx = TaskContext(event={"input": "x"})  # no NodeRun seeded
+
+        node.run_agent_recorded(ctx, "the prompt")
+
+        assert node.node_name not in ctx.nodes
+
+
+class TestToolUseNodeInputAndOutput:
+    @pytest.fixture
+    def node(self, monkeypatch):
+        monkeypatch.setenv("TOOL_USE_MODEL", "claude-haiku-4-5-20251001")
+        with patch("core.nodes.tool_use.anthropic.Anthropic") as mock_cls:
+            mock_instance = MagicMock()
+            mock_cls.return_value = mock_instance
+            node = ConcreteToolUseNode()
+            node._client = mock_instance
+            yield node, mock_instance
+
+    def test_records_input_snapshot_and_text_output(self, node):
+        node_obj, client = node
+        client.messages.create.return_value = _end_turn_response(1, 1, text="done!")
+        ctx = TaskContext(event={"input": "x"})
+        ctx.nodes["Upstream"] = {"k": "v"}
+        ctx.node_runs[node_obj.node_name] = NodeRun(status=NodeStatus.RUNNING)
+        # Capture the expected input BEFORE process mutates ctx.nodes with this
+        # node's own output entry (default _build_initial_messages reads nodes).
+        expected_content = str(ctx.nodes)
+
+        node_obj.process(ctx)
+
+        run = ctx.node_runs[node_obj.node_name]
+        assert run.input == [{"role": "user", "content": expected_content}]
+        assert ctx.nodes[node_obj.node_name]["output"] == "done!"
+        # Whole context JSON-serializes (input snapshot is plain dicts).
+        ctx.model_dump(mode="json")

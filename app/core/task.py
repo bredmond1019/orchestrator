@@ -11,6 +11,21 @@ from typing import Any
 from pydantic import BaseModel, Field, field_serializer
 
 
+def to_jsonable(value: Any) -> Any:
+    """Best-effort conversion of a node output to JSON-serializable data.
+
+    The data contract requires whatever a node stores under
+    ``TaskContext.nodes[name]`` to survive ``model_dump(mode="json")`` so any
+    consumer (e.g. an observability reader) can parse it. Pydantic models —
+    including ``output_type`` results returned by the LLM node base classes —
+    are dumped to plain dicts; everything else (str, dict, list, scalars) is
+    already JSON-serializable and passes through unchanged.
+    """
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    return value
+
+
 class NodeStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
@@ -19,21 +34,25 @@ class NodeStatus(StrEnum):
 
 
 class NodeRun(BaseModel):
-    """Per-node execution envelope: status, timing, error, and token usage.
+    """Per-node execution envelope: status, timing, error, input, and usage.
 
     Parallel/additive to ``TaskContext.nodes`` — it never replaces node output,
     it records *how* each node ran. Written entirely by the framework (see
-    ``Workflow.node_context``) so reference workflows stay frozen.
+    ``Workflow.node_context`` and the LLM node base classes) so reference
+    workflows stay frozen.
 
-    ``usage`` carries ``{input_tokens, output_tokens, model}`` for LLM nodes
-    (populated by the framework's LLM node base classes); it remains ``None``
-    for non-LLM nodes.
+    ``input`` carries the prompt/messages a node sent (populated by the LLM
+    node base classes); it remains ``None`` for non-LLM nodes unless an author
+    sets it, and must be JSON-serializable. ``usage`` carries
+    ``{input_tokens, output_tokens, model}`` for LLM nodes; it is ``None`` for
+    non-LLM nodes. Per-node *output* lives in ``TaskContext.nodes[name]``.
     """
 
     status: NodeStatus = NodeStatus.PENDING
     started_at: str | None = None
     completed_at: str | None = None
     error: str | None = None
+    input: Any | None = None
     usage: dict | None = None
 
 
