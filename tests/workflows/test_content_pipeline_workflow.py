@@ -4,7 +4,10 @@ Task 9 only scaffolds the workflow and registers it — no node logic yet.
 These tests guard the scaffold: registration, schema wiring, and the start node.
 """
 
-from pydantic import BaseModel
+from uuid import UUID
+
+import pytest
+from pydantic import BaseModel, ValidationError
 from schemas.content_pipeline_schema import ContentPipelineEventSchema
 from workflows.content_pipeline_workflow import ContentPipelineWorkflow
 from workflows.content_pipeline_workflow_nodes.initial_node import InitialNode
@@ -23,10 +26,19 @@ def test_workflow_schema_wired_to_event_schema() -> None:
     assert schema.start is InitialNode
 
 
-def test_event_schema_is_pydantic_stub() -> None:
-    """The generated event schema is a (still-empty) Pydantic model."""
+def test_event_schema_fields_and_defaults() -> None:
+    """The event schema requires `url` and defaults `make_blog` to False."""
     assert issubclass(ContentPipelineEventSchema, BaseModel)
-    assert ContentPipelineEventSchema().model_dump() == {}
+    event = ContentPipelineEventSchema(url="https://youtu.be/abc123")
+    assert event.url == "https://youtu.be/abc123"
+    assert event.make_blog is False
+    assert isinstance(event.artifact_id, UUID)
+    assert event.timestamp.tzinfo is not None
+    # make_blog can be explicitly enabled.
+    assert ContentPipelineEventSchema(url="https://x.com", make_blog=True).make_blog is True
+    # url is required.
+    with pytest.raises(ValidationError):
+        ContentPipelineEventSchema()
 
 
 def test_workflow_instantiates() -> None:
