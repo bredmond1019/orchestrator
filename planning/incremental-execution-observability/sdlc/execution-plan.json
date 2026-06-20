@@ -1,0 +1,179 @@
+{
+  "blockId": "incremental-execution-observability",
+  "additiveFiles": [],
+  "tasks": {
+    "1": {
+      "num": 1,
+      "title": "Status/timing envelope on TaskContext (Phase 1a)",
+      "dependsOn": [],
+      "filesCreated": [],
+      "filesModified": [
+        "app/core/task.py"
+      ],
+      "evidence": "Adds NodeStatus(StrEnum), NodeRun(BaseModel) and node_runs field to app/core/task.py; no prior task consumed."
+    },
+    "2": {
+      "num": 2,
+      "title": "Framework stamps the envelope in node_context (Phase 1b)",
+      "dependsOn": [
+        1
+      ],
+      "filesCreated": [],
+      "filesModified": [
+        "app/core/workflow.py"
+      ],
+      "evidence": "'Add from core.task import NodeRun, NodeStatus to the existing ... line' and 'set the node's NodeRun to RUNNING' — consumes NodeRun/NodeStatus created in Task 1."
+    },
+    "3": {
+      "num": 3,
+      "title": "Injected progress callback on Workflow.run() (Phase 1c)",
+      "dependsOn": [
+        1,
+        2
+      ],
+      "filesCreated": [],
+      "filesModified": [
+        "app/core/workflow.py"
+      ],
+      "evidence": "'Edits app/core/workflow.py — same file as Step 2. Do Step 2 first.' and 'seed every node in the schema as PENDING in node_runs' (uses NodeRun from Task 1)."
+    },
+    "4": {
+      "num": 4,
+      "title": "Worker wires persistence at each boundary (Phase 1d)",
+      "dependsOn": [
+        3
+      ],
+      "filesCreated": [],
+      "filesModified": [
+        "app/worker/tasks.py"
+      ],
+      "evidence": "'Pass it: workflow.run(db_event.data, on_progress=...)' — consumes the on_progress parameter added in Task 3."
+    },
+    "5": {
+      "num": 5,
+      "title": "Tests for Phase 1",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "filesCreated": [
+        "tests/core/test_observability.py"
+      ],
+      "filesModified": [],
+      "evidence": "'node_runs transitions PENDING → RUNNING → SUCCESS' (Task 1/2), 'on_progress is invoked once before the first node and once per boundary' (Task 3), and 'Step 5 depends on 1–4' in the breakdown dependency summary."
+    },
+    "6": {
+      "num": 6,
+      "title": "Per-node token + cost capture (Phase 2)",
+      "dependsOn": [
+        1
+      ],
+      "filesCreated": [
+        "tests/core/test_nodes_usage.py"
+      ],
+      "filesModified": [
+        "app/core/nodes/agent.py",
+        "app/core/nodes/tool_use.py"
+      ],
+      "evidence": "'Edits app/core/task.py (already has the usage field from Step 1.1 — no further edit needed there)' and 'Add the field to NodeRun in task.py' — depends on the usage field added by Task 1; breakdown summary '1 → 6'."
+    },
+    "7": {
+      "num": 7,
+      "title": "Workflow graph introspection endpoint (Phase 3)",
+      "dependsOn": [],
+      "filesCreated": [
+        "app/api/graph.py",
+        "tests/api/test_graph.py"
+      ],
+      "filesModified": [
+        "app/api/router.py",
+        "app/api/models.py"
+      ],
+      "evidence": "'No overlap with Steps 1–6.' and breakdown summary '7 (independent)' — reads existing WorkflowRegistry/WorkflowSchema only, no dependency on tasks 1–6."
+    },
+    "8": {
+      "num": 8,
+      "title": "Validate",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "filesCreated": [],
+      "filesModified": [],
+      "evidence": "'Run the Validation Commands ... and confirm all pass ... collection count not decreased' and breakdown summary 'Step 8 depends on everything.'"
+    }
+  },
+  "waves": [
+    {
+      "label": "Wave 1",
+      "parallel": true,
+      "tasks": [
+        1,
+        7
+      ],
+      "mergeOrder": [
+        1,
+        7
+      ]
+    },
+    {
+      "label": "Wave 2",
+      "parallel": true,
+      "tasks": [
+        2,
+        6
+      ],
+      "mergeOrder": [
+        2,
+        6
+      ]
+    },
+    {
+      "label": "Wave 3",
+      "parallel": false,
+      "tasks": [
+        3
+      ],
+      "mergeOrder": [
+        3
+      ]
+    },
+    {
+      "label": "Wave 4",
+      "parallel": false,
+      "tasks": [
+        4
+      ],
+      "mergeOrder": [
+        4
+      ]
+    },
+    {
+      "label": "Wave 5",
+      "parallel": false,
+      "tasks": [
+        5
+      ],
+      "mergeOrder": [
+        5
+      ]
+    },
+    {
+      "label": "Wave 6",
+      "parallel": false,
+      "tasks": [
+        8
+      ],
+      "mergeOrder": [
+        8
+      ]
+    }
+  ]
+}
