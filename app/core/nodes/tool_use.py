@@ -51,6 +51,8 @@ class ToolUseNode(Node):
     def process(self, task_context: TaskContext) -> TaskContext:
         messages: list[dict] = self._build_initial_messages(task_context)
         iterations = 0
+        input_tokens = 0
+        output_tokens = 0
 
         while iterations < self.max_iterations:
             response = self._client.messages.create(
@@ -60,6 +62,11 @@ class ToolUseNode(Node):
                 messages=messages,
             )
             iterations += 1
+
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                input_tokens += getattr(usage, "input_tokens", 0) or 0
+                output_tokens += getattr(usage, "output_tokens", 0) or 0
 
             if response.stop_reason == "end_turn":
                 break
@@ -89,5 +96,13 @@ class ToolUseNode(Node):
                 self.node_name,
                 self.max_iterations,
             )
+
+        run = task_context.node_runs.get(self.node_name)
+        if run is not None:
+            run.usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "model": self._model,
+            }
 
         return task_context
