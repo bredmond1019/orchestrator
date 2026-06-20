@@ -1531,6 +1531,154 @@ No prompt text is stored in Python; all prompt content lives in the `.j2` file.
 
 ---
 
+## Content Pipeline Blog Branch Nodes (Phase 1 Project A — Task 6)
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/`
+
+Four nodes implement the optional blog-generation branch for the content pipeline.
+The branch is gated by `event.make_blog`: when false, the pipeline ends after storage;
+when true it runs `BlogWriterNode → SelfCriticNode → ReviseNode` (linear, no cycle).
+
+---
+
+### `BlogDecisionRouterNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/blog_decision_router_node.py`
+
+```python
+class BlogDecisionRouterNode(BaseRouter):
+    def __init__(self):
+        self.routes = [MakeBlogRouter()]
+        self.fallback = None
+```
+
+Routes to `BlogWriterNode` when `event.make_blog` is `True`; has no fallback so
+`BaseRouter.route` returns `None` on the false path (digest-only run terminates after
+the storage step). Follows the `ticket_router_node.py` reference pattern.
+
+#### `MakeBlogRouter`
+
+```python
+class MakeBlogRouter(RouterNode):
+    def determine_next_node(self, task_context: TaskContext) -> Node | None:
+```
+
+The single `RouterNode` rule in `BlogDecisionRouterNode.routes`. Returns
+`BlogWriterNode()` when `task_context.event.make_blog` is truthy; `None` otherwise.
+
+---
+
+### `BlogWriterNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/blog_writer_node.py`
+
+```python
+class BlogWriterNode(AgentNode):
+```
+
+First node of the blog branch. Converts the structured `SummaryOutput` produced by
+`SummarizerNode` into a draft blog post written in Brandon's voice.
+
+#### `OutputType`
+
+| Field | Type | Description |
+|---|---|---|
+| `title` | `str` | Clear, specific title for the blog post. |
+| `body_markdown` | `str` | Full post body in Markdown. |
+| `reasoning` | `str` | Short note on the chosen angle and structure. |
+
+#### `get_agent_config() -> AgentConfig`
+
+Loads `app/prompts/blog_writer.j2` via `PromptManager`; uses `ModelProvider.ANTHROPIC`
+with `claude-opus-4-8`. No prompt text is hardcoded in Python.
+
+#### `process(task_context) -> TaskContext`
+
+Reads `SummarizerNode`'s `result` (a `SummaryOutput`) via
+`task_context.get_node_output("SummarizerNode")["result"]`, serialises it with
+`model_dump_json()`, calls `run_agent_recorded()`, and stores the `OutputType` instance
+under this node's `result` key.
+
+### System Prompt
+
+`app/prompts/blog_writer.j2` — instructs the agent to write in Brandon's voice; voice
+guidance is intended to be reused by Project C.
+
+---
+
+### `SelfCriticNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/self_critic_node.py`
+
+```python
+class SelfCriticNode(AgentNode):
+```
+
+Second node of the blog branch. Critiques the `BlogWriterNode` draft for clarity,
+accuracy against the source summary, voice consistency, and structure.
+
+#### `OutputType`
+
+| Field | Type | Description |
+|---|---|---|
+| `critique` | `str` | Short overall assessment of the draft. |
+| `issues` | `list[str]` | Concrete, actionable problems found in the draft (default `[]`). |
+| `approved` | `bool` | `True` only when the draft has no material issues (default `False`). |
+
+#### `get_agent_config() -> AgentConfig`
+
+Loads `app/prompts/blog_self_critic.j2` via `PromptManager`; uses
+`ModelProvider.ANTHROPIC` with `claude-opus-4-8`.
+
+#### `process(task_context) -> TaskContext`
+
+Reads `BlogWriterNode`'s `result` via `get_node_output("BlogWriterNode")["result"]`,
+serialises it, calls `run_agent_recorded()`, and stores the critique `OutputType`.
+
+### System Prompt
+
+`app/prompts/blog_self_critic.j2` — critique criteria: clarity, accuracy vs. source,
+voice consistency, structure.
+
+---
+
+### `ReviseNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/revise_node.py`
+
+```python
+class ReviseNode(AgentNode):
+```
+
+Terminal node of the blog branch (no downstream connection). Applies the
+`SelfCriticNode` critique to the `BlogWriterNode` draft and produces the final revised
+post. Threads both draft and critique into one JSON user prompt.
+
+#### `OutputType`
+
+| Field | Type | Description |
+|---|---|---|
+| `title` | `str` | Revised (or unchanged) post title. |
+| `body_markdown` | `str` | Full revised post body in Markdown. |
+
+#### `get_agent_config() -> AgentConfig`
+
+Loads `app/prompts/blog_reviser.j2` via `PromptManager`; uses
+`ModelProvider.ANTHROPIC` with `claude-opus-4-8`.
+
+#### `process(task_context) -> TaskContext`
+
+Reads `BlogWriterNode` draft and `SelfCriticNode` critique via `get_node_output()`,
+builds a combined `{"draft": ..., "critique": ...}` JSON user prompt,
+calls `run_agent_recorded()`, and stores the revised `OutputType`.
+
+### System Prompt
+
+`app/prompts/blog_reviser.j2` — instructs the agent to apply critique changes while
+preserving Brandon's voice; frontmatter included for `PromptManager` rendering.
+
+---
+
 ## LearningArtifact SQLAlchemy Model
 
 **Source:** `app/database/learning_artifact.py`
