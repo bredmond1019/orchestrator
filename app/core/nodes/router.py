@@ -34,7 +34,9 @@ class BaseRouter(Node):
             Updated TaskContext with routing decision recorded
         """
         next_node = self.route(task_context)
-        task_context.nodes[self.node_name] = {"next_node": next_node.node_name}
+        task_context.nodes[self.node_name] = {
+            "next_node": next_node.node_name if next_node else None
+        }
         return task_context
 
     def route(self, task_context: TaskContext) -> Node:

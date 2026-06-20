@@ -193,6 +193,18 @@ class TestBaseRouterProcess:
         assert "SingleMatchRouter" in empty_context.nodes
         assert "StubNodeAlpha" not in empty_context.nodes
 
+    def test_process_records_none_when_route_terminates(self, empty_context):
+        """A terminal router (no match, no fallback) records next_node=None.
+
+        ``process()`` must not crash when ``route()`` returns None; a router
+        that legitimately ends a branch records ``{"next_node": None}`` rather
+        than dereferencing ``None.node_name``.
+        """
+        router = NoMatchNoFallbackRouter()
+        result = router.process(empty_context)
+        assert result is empty_context
+        assert empty_context.nodes["NoMatchNoFallbackRouter"] == {"next_node": None}
+
 
 # ---------------------------------------------------------------------------
 # Tests: BaseRouter.route() — first-match wins
