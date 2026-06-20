@@ -71,9 +71,19 @@ Return the subagent's result to the user.
      ```
    - Register it in `planning/decisions/index.md` by appending a row to the table (newest at
      the bottom — append-only; never edit or renumber prior entries).
-6. Never edit the master plan file (`master-plan.md`).
+6. **Data-contract sync check.** Ask: did this work change the data contract — the `events` table
+   schema, the `task_context` / `node_runs` JSON shape, or the `/`, `/health`, `/workflows`,
+   `/workflows/{type}/graph`, or reserved read endpoints? If **yes**:
+   - Bump the version in `docs/data-contract.md` (semver: additive=minor, breaking=major) and add a
+     row to its changelog table.
+   - Re-pin the consumer: update the pinned version + any changed field mappings in
+     `../bastion/docs/data-contract.md`, and note it in `../bastion/planning/status.md`.
+   - This keeps the orchestrator and bastion in sync (brain D20 / orchestrator D30 / bastion D3).
+   If **no**, skip silently.
 
-7. **Sync the company brain.** After status.md and log.md are confirmed:
+7. Never edit the master plan file (`master-plan.md`).
+
+8. **Sync the company brain.** After status.md and log.md are confirmed:
    - Read `../docs/projects/{{SLUG}}.md` in the company brain.
    - Update the **Current Status** date and focus line to match the new status.md state.
    - Update the Status column in the 13-spec table for any rows that changed.

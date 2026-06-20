@@ -48,8 +48,23 @@ class ToolUseNode(Node):
         """Override to customise the initial user message for the loop."""
         return [{"role": "user", "content": str(task_context.nodes)}]
 
+    @staticmethod
+    def _extract_text(response) -> str:
+        """Join the text blocks of an Anthropic response into a plain string."""
+        if response is None:
+            return ""
+        return "".join(
+            block.text
+            for block in response.content
+            if getattr(block, "type", None) == "text"
+        )
+
     def process(self, task_context: TaskContext) -> TaskContext:
         messages: list[dict] = self._build_initial_messages(task_context)
+        # Snapshot the outbound messages for NodeRun.input before the loop
+        # mutates `messages` with (non-serializable) SDK content blocks.
+        run_input = [dict(message) for message in messages]
+        last_response = None
         iterations = 0
         input_tokens = 0
         output_tokens = 0
@@ -61,6 +76,7 @@ class ToolUseNode(Node):
                 tools=self.tools,
                 messages=messages,
             )
+            last_response = response
             iterations += 1
 
             usage = getattr(response, "usage", None)
@@ -99,10 +115,14 @@ class ToolUseNode(Node):
 
         run = task_context.node_runs.get(self.node_name)
         if run is not None:
+            run.input = run_input
             run.usage = {
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "model": self._model,
             }
+            task_context.update_node(
+                self.node_name, output=self._extract_text(last_response)
+            )
 
         return task_context
