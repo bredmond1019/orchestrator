@@ -32,8 +32,9 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 16. [TranscriptService](#transcriptservice)
 17. [WorkflowRegistry](#workflowregistry)
 18. [Event SQLAlchemy Model](#event-sqlalchemy-model)
-19. [createworkflow CLI](#createworkflow-cli)
-20. [API Layer](#api-layer)
+19. [SummarizerNode](#summarizernode)
+20. [createworkflow CLI](#createworkflow-cli)
+21. [API Layer](#api-layer)
 
 ---
 
@@ -1363,6 +1364,82 @@ The engine is created lazily on first use: `db_session()` calls `_get_engine()`,
 initialises `_ENGINE` (a module-level sentinel, initially `None`) to a live
 `create_engine(...)` instance on the first call. Importing `session.py` does not
 trigger a database connection.
+
+---
+
+## SummarizerNode
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/summarizer_node.py`
+
+```python
+class SummarizerNode(AgentNode):
+```
+
+Concrete `AgentNode` that turns fetched source text (from `FetchTranscriptNode` or
+`FetchArticleNode`) into a structured `SummaryOutput`. Produces the per-artifact
+summary stored on `LearningArtifact.summary` and consumed by `StorageNode` (Task 5).
+
+### `SummaryOutput`
+
+```python
+class SummaryOutput(AgentNode.OutputType):
+```
+
+Module-level Pydantic model that is also assigned as `SummarizerNode.OutputType`.
+Exported from this module so downstream nodes (e.g. `StorageNode`) can import it
+without creating a circular dependency.
+
+| Field | Type | Description |
+|---|---|---|
+| `title` | `str` | Clean, human-readable title for the artifact. |
+| `category` | `str` | Free-form category string; preferred values: `ai_engineering`, `physics_relativity`, `music`, `other`. |
+| `tl_dr` | `str` | One-line core takeaway. |
+| `read_time_estimate` | `str` | Short human read-time estimate, e.g. `'6 min'`. |
+| `core_concepts` | `list[str]` | Key ideas the source teaches. |
+| `key_insights` | `list[str]` | Non-obvious, memorable points worth retaining. |
+| `questions_raised` | `list[str]` | Open questions the source provokes. |
+| `connections_to_my_work` | `list[str]` | Explicit links to Brandon's agentic-engineering / AI-architecture work. |
+| `further_exploration` | `list[str]` | Concrete next things to read, watch, or try. |
+
+### `get_agent_config() -> AgentConfig`
+
+```python
+def get_agent_config(self) -> AgentConfig:
+    return AgentConfig(
+        system_prompt=PromptManager().get_prompt("content_summarizer"),
+        output_type=SummaryOutput,
+        deps_type=None,
+        model_provider=ModelProvider.ANTHROPIC,
+        model_name="claude-opus-4-8",
+    )
+```
+
+Loads the system prompt from `app/prompts/content_summarizer.j2` via `PromptManager`.
+Uses `ModelProvider.ANTHROPIC` with `claude-opus-4-8` (top-tier Anthropic model per
+the D19 model strategy). No prompt text is hardcoded in Python.
+
+### `process(task_context) -> TaskContext`
+
+Reads the upstream fetched text from whichever fetch node ran (via
+`_read_source_text()`), calls `self.run_agent_recorded(task_context, source_text)`
+for per-node token telemetry, and stores the resulting `SummaryOutput` under the
+node's `result` key via `task_context.update_node()`.
+
+If no fetch node produced text (e.g. a failed fetch), `process()` passes an empty
+string to the agent rather than raising — the pipeline continues with a best-effort
+summary of an empty source.
+
+### `_read_source_text(task_context) -> str`
+
+Iterates `_FETCH_NODE_NAMES = ("FetchTranscriptNode", "FetchArticleNode")` in
+priority order and returns the first non-empty `text` value found in
+`task_context.nodes`. Returns `""` if no text is available.
+
+### System Prompt
+
+`app/prompts/content_summarizer.j2` — biased toward agentic/harness/AI-architecture
+and RAG-memory topics; personal categories include physics/relativity and music.
+No prompt text is stored in Python; all prompt content lives in the `.j2` file.
 
 ---
 
