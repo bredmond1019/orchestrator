@@ -55,15 +55,34 @@ can read any upstream row.
 ## Step 1 — The model definition
 
 ```python
+class NodeStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class NodeRun(BaseModel):
+    status: NodeStatus = NodeStatus.PENDING
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+    usage: dict | None = None
+
+
 class TaskContext(BaseModel):
     event: Any
-    nodes: Dict[str, Any] = Field(
+    nodes: dict[str, Any] = Field(
         default_factory=dict,
         description="Stores results and state from each node's execution",
     )
-    metadata: Dict[str, Any] = Field(
+    metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Stores workflow-level metadata and configuration",
+    )
+    node_runs: dict[str, NodeRun] = Field(
+        default_factory=dict,
+        description="Per-node execution envelope (status/timing/usage), keyed by node class name",
     )
 ```
 
@@ -74,7 +93,7 @@ class TaskContext(BaseModel):
 - **Immutable field definitions** — the schema is explicit; you can't accidentally
   introduce a new top-level field without declaring it.
 
-### The three fields
+### The four fields
 
 **`event: Any`**
 
@@ -122,6 +141,25 @@ task_context.metadata.pop("nodes")
 
 This field is also where you'd put workflow-level configuration that shouldn't live
 in the event schema — priority flags, feature flags, per-run overrides.
+
+**`node_runs: dict[str, NodeRun]`**
+
+The execution-envelope ledger. Keys are node class names (same key space as `nodes`).
+Values are `NodeRun` instances carrying `status`, `started_at`, `completed_at`,
+`error`, and `usage`. This is a **parallel, additive channel** — it never replaces
+or interferes with the output stored in `nodes`.
+
+`NodeRun` is written exclusively by the framework (`Workflow.node_context`); node
+implementations never write to it directly. Callers and Celery tasks read it to
+understand how each node ran without inspecting the output payload in `nodes`.
+
+`NodeStatus` transitions follow `PENDING → RUNNING → SUCCESS | FAILED`. The enum
+serializes to its string value via `model_dump(mode="json")` (e.g. `"success"`),
+so the full `TaskContext` snapshot remains JSON-safe when persisted.
+
+For LLM nodes (`AgentNode`, `ToolUseNode`), the framework also populates
+`NodeRun.usage` with `{input_tokens, output_tokens, model}`; for all other nodes
+`usage` remains `None`.
 
 ---
 
@@ -276,8 +314,9 @@ produced.
 | Field | Type | Set by | Read by |
 |---|---|---|---|
 | `event` | `Any` → typed Pydantic model | `Workflow.run()` | Every node (typed access via `.event.field`) |
-| `nodes` | `Dict[str, Any]` | Each node via `update_node()` | Any downstream node, the router, the caller |
-| `metadata` | `Dict[str, Any]` | `Workflow.run()` (injects node registry) | Parallel nodes, routers; stripped before return |
+| `nodes` | `dict[str, Any]` | Each node via `update_node()` | Any downstream node, the router, the caller |
+| `metadata` | `dict[str, Any]` | `Workflow.run()` (injects node registry) | Parallel nodes, routers; stripped before return |
+| `node_runs` | `dict[str, NodeRun]` | Framework via `Workflow.node_context` | Callers, Celery tasks, observability tooling |
 
 ---
 
