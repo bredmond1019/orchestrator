@@ -10,6 +10,7 @@ from database.session import Base
 
 # This import is required for autogenerate support
 from database.event import *
+from database.learning_artifact import *
 
 """
 Alembic Environment Module
