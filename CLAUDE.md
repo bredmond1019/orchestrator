@@ -58,11 +58,13 @@ cd app && alembic upgrade head
 
 # Lint (ruff first — fast; pylint second — deep)
 # NOTE: the SDLC pipeline runs these (and more) from planning/harness.json — keep in sync.
-uv run ruff check app/
-uv run pylint app/
+# Use `python -m <tool>` so the PROJECT venv's tool runs, not a global uv-tool install
+# (a bare `uv run pytest`/`uv run pylint` can resolve to a global tool missing this repo's deps).
+uv run python -m ruff check app/
+uv run python -m pylint app/
 
 # Run tests
-uv run pytest
+uv run python -m pytest
 
 # Full Docker stack
 cd docker && ./start.sh    # up (reads docker/.env)
@@ -103,7 +105,7 @@ After scaffolding:
 - **In `except` blocks, always `raise ... from e`** to preserve the exception chain.
 - **No f-strings in `logging` calls** — use `logging.info("msg: %s", value)`.
 
-Run `uv run ruff check app/ --fix` before committing to auto-resolve most violations.
+Run `uv run python -m ruff check app/ --fix` before committing to auto-resolve most violations.
 
 ---
 
