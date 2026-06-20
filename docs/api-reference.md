@@ -64,13 +64,28 @@ When a `Workflow` instance is created, four steps execute in order:
    `NodeConfig` listed in the schema, including nodes that appear only as connection targets.
 4. `load_dotenv()` — loads environment variables from `.env`.
 
-### `run(event: Any) -> TaskContext`
+### `run(event: Any, on_progress: Callable[[TaskContext], None] | None = None) -> TaskContext`
 
 Main entry point called by the Celery worker.
 
 ```python
-def run(self, event: Any) -> TaskContext:
+def run(
+    self,
+    event: Any,
+    on_progress: Callable[[TaskContext], None] | None = None,
+) -> TaskContext:
 ```
+
+`on_progress` is an optional callback invoked with a snapshot of `TaskContext` at two points:
+
+- **Before the first node:** every node in `self.nodes` is seeded `PENDING` in
+  `task_context.node_runs` (via `setdefault`), then `on_progress(task_context)` is called once
+  so a freshly-dispatched run immediately surfaces the full DAG as pending.
+- **After each node boundary:** once per node after `node_context()` exits (success or failure),
+  `on_progress(task_context)` is called with the updated snapshot before computing the next node.
+
+Passing `None` (the default) disables all callback invocations — the parameter is fully
+backward-compatible with existing call sites.
 
 Execution steps:
 
@@ -78,13 +93,15 @@ Execution steps:
 2. Re-parse the raw event dict through the schema's Pydantic model:
    `task_context.event = self.workflow_schema.event_schema(**event)`.
 3. Write the nodes registry into `task_context.metadata["nodes"]`.
-4. Set `current_node_class = self.workflow_schema.start`.
-5. Loop while `current_node_class` is not `None`:
+4. Seed all nodes `PENDING` in `task_context.node_runs` and invoke `on_progress` once (if set).
+5. Set `current_node_class = self.workflow_schema.start`.
+6. Loop while `current_node_class` is not `None`:
    - Look up the node class via `self.nodes[current_node_class].node`, then
      instantiate it and call `process(task_context)` inside `node_context()`.
+   - Invoke `on_progress(task_context)` (if set) after the boundary exits.
    - Resolve the next node via `_get_next_node_class()`.
-6. Remove `"nodes"` from `task_context.metadata` before returning.
-7. Return the final `TaskContext`.
+7. Remove `"nodes"` from `task_context.metadata` before returning.
+8. Return the final `TaskContext`.
 
 ### `_get_next_node_class(current_node_class, task_context) -> Optional[Type[Node]]`
 

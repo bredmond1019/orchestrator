@@ -154,23 +154,36 @@ after `_initialize_nodes` the dict will have entries for all four classes, even 
 This is the heart of the framework. Read it carefully.
 
 ```python
-def run(self, event: Any) -> TaskContext:
+def run(
+    self,
+    event: Any,
+    on_progress: Callable[[TaskContext], None] | None = None,
+) -> TaskContext:
     task_context = TaskContext(event=event)                      # 1. create shared state
     task_context.event = self.workflow_schema.event_schema(**event)  # 2. parse + validate event
     task_context.metadata["nodes"] = self.nodes                  # 3. inject registry
 
-    current_node_class = self.workflow_schema.start              # 4. begin at start node
+    # 4. seed all nodes PENDING + emit initial snapshot
+    for node_cls in self.nodes:
+        task_context.node_runs.setdefault(node_cls.__name__, NodeRun(status=NodeStatus.PENDING))
+    if on_progress:
+        on_progress(task_context)
 
-    while current_node_class:                                    # 5. walk until None
+    current_node_class = self.workflow_schema.start              # 5. begin at start node
+
+    while current_node_class:                                    # 6. walk until None
         current_node = self.nodes[current_node_class].node
-        with self.node_context(current_node_class.__name__, task_context):  # 6. stamp envelope + log
-            task_context = current_node().process(task_context)  # 7. execute node
+        with self.node_context(current_node_class.__name__, task_context):  # 7. stamp envelope + log
+            task_context = current_node().process(task_context)  # 8. execute node
 
-        current_node_class = self._get_next_node_class(         # 8. advance
+        if on_progress:                                          # 9. emit boundary snapshot
+            on_progress(task_context)
+
+        current_node_class = self._get_next_node_class(         # 10. advance
             current_node_class, task_context
         )
 
-    task_context.metadata.pop("nodes")                          # 9. clean up
+    task_context.metadata.pop("nodes")                          # 11. clean up
     return task_context
 ```
 
@@ -190,20 +203,26 @@ inside `task_context.metadata`. This makes it available to nodes that need to kn
 about the graph structure — most nodes don't need this, but parallel nodes and routers
 do.
 
-**4. Set `current_node_class` to the start node** — The `start` field on the schema
+**4. Seed all nodes `PENDING` and emit the initial snapshot** — Every node in
+`self.nodes` is seeded with `NodeStatus.PENDING` in `task_context.node_runs` using
+`setdefault` (so a `NodeRun` already stamped by a prior step is never overwritten). If
+`on_progress` is provided, it is invoked once here — this gives an observer the full DAG
+in `PENDING` state before any node runs. Passing `None` (the default) skips this entirely.
+
+**5. Set `current_node_class` to the start node** — The `start` field on the schema
 names the entry point. Execution always begins there.
 
-**5. `while current_node_class:`** — The loop runs as long as there's a next node. When
+**6. `while current_node_class:`** — The loop runs as long as there's a next node. When
 `_get_next_node_class` returns `None` (no more connections), the loop exits. There's
 no index, no list — just follow the graph edges until the trail ends.
 
-**6. `node_context` — stamp run envelope + log** — The context manager (covered below)
+**7. `node_context` — stamp run envelope + log** — The context manager (covered below)
 stamps the per-node `NodeRun` envelope in `task_context.node_runs` (`RUNNING` on entry,
 `SUCCESS` or `FAILED` with timestamps on exit) and emits log lines. If the node raises,
 it stamps `FAILED` + the error message and re-raises, so the caller (the Celery task)
 sees a clean exception with context and the envelope carries the failure detail.
 
-**7. Instantiate and execute the node** — `current_node().process(task_context)`:
+**8. Instantiate and execute the node** — `current_node().process(task_context)`:
 - `current_node()` — creates a fresh instance of the node class each time it runs.
 - `.process(task_context)` — calls the node's one required method, which reads from
   `task_context`, does its work (an AI call, a DB write, a calculation), writes results
@@ -212,12 +231,18 @@ sees a clean exception with context and the envelope carries the failure detail.
 Note: the node is re-instantiated on every execution. Nodes are stateless — all state
 lives in `task_context`.
 
-**8. Advance to the next node** — `_get_next_node_class` is called with the current
+**9. Emit boundary snapshot** — After `node_context` exits (whether success or failure),
+`on_progress(task_context)` is invoked if a callback was provided. The envelope for the
+just-completed node already carries `SUCCESS` or `FAILED` at this point. This is the
+per-boundary observability hook: a worker closure can use it to flush the updated
+`task_context` to the database after each node rather than only at the end.
+
+**10. Advance to the next node** — `_get_next_node_class` is called with the current
 node class and the (now-updated) context. It returns either the next node class or
 `None`. For linear workflows this is trivial: take `connections[0]`. For router nodes
 it evaluates routing logic against the context.
 
-**9. Clean up and return** — Before returning, `nodes` is removed from
+**11. Clean up and return** — Before returning, `nodes` is removed from
 `task_context.metadata`. This prevents the internal node registry (which contains
 Python class references) from being serialized to JSON when the context is persisted
 to the database.
