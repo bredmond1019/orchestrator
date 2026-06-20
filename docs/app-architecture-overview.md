@@ -218,7 +218,7 @@ class-level signatures live in [api-reference.md](api-reference.md); env vars in
 | `ChunkingService` | `services/chunking_service.py` | `tiktoken` token-boundary chunking; PDF via `pymupdf` |
 | `ToolUseNode` | `core/nodes/tool_use.py` | raw Anthropic SDK tool loop (the "educational loop" below) — abstract base; subclass + implement `handle_tool_call`; bounded by `max_iterations`; model from `TOOL_USE_MODEL` env |
 | Generic API contract | `api/endpoint.py`, `api/health.py`, `api/schema_registry.py`, `api/models.py` | `EventPayload` dispatcher (schema looked up by `workflow_type`, `422` on unknown), `GET /health`, typed `TaskAcceptedResponse` — the brain's HTTP surface that shells drive (D16 Layer 3) |
-| Project A scaffold | `workflows/content_pipeline_workflow*`, `schemas/content_pipeline_schema.py` | stub only; registered as `WorkflowRegistry.CONTENT_PIPELINE` |
+| Project A — Task 1 | `workflows/content_pipeline_workflow*`, `schemas/content_pipeline_schema.py` | `ContentPipelineEventSchema` has real fields: `url: str` (required), `make_blog: bool = False`, `artifact_id: UUID` (auto-generated), `timestamp: datetime` (UTC auto-set); workflow nodes still stubs; registered as `WorkflowRegistry.CONTENT_PIPELINE` |
 
 The `WorkflowRegistry` enum scaling concern is resolved in practice: each project adds one entry
 (`CONTENT_PIPELINE` is the first beyond `customer_care`).
