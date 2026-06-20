@@ -1395,10 +1395,11 @@ workflow is functional:
 
 ## API Layer
 
-**Sources:** `app/api/models.py`, `app/api/health.py`, `app/api/schema_registry.py`, `app/api/endpoint.py`
+**Sources:** `app/api/models.py`, `app/api/health.py`, `app/api/schema_registry.py`, `app/api/endpoint.py`, `app/api/graph.py`
 
-The API layer exposes a single generic dispatch endpoint and a health endpoint. All
-request and response types are typed Pydantic models — no raw `dict` responses.
+The API layer exposes a generic dispatch endpoint, read-only workflow graph introspection
+endpoints, and a health endpoint. All request and response types are typed Pydantic
+models — no raw `dict` responses.
 
 ### `EventPayload`
 
@@ -1436,6 +1437,41 @@ Typed 202 response body returned by `POST /events` on successful dispatch.
 | `task_id` | `str` | The Celery task UUID assigned to the dispatched workflow run. |
 | `message` | `str` | Human-readable confirmation string. |
 
+### `WorkflowListResponse`
+
+**Source:** `app/api/models.py`
+
+```python
+class WorkflowListResponse(BaseModel):
+    workflows: list[str]
+```
+
+Typed 200 response body for `GET /workflows`. Contains all registered workflow type
+names as strings (matching `WorkflowRegistry` enum member names).
+
+| Field | Type | Description |
+|---|---|---|
+| `workflows` | `list[str]` | Registered workflow type names (e.g. `["CUSTOMER_CARE", "CONTENT_PIPELINE"]`). |
+
+### `WorkflowGraphResponse`
+
+**Source:** `app/api/models.py`
+
+```python
+class WorkflowGraphResponse(BaseModel):
+    nodes: list[str]
+    edges: list[tuple[str, str]]
+```
+
+Typed 200 response body for `GET /workflows/{workflow_type}/graph`. Serializes the
+static `WorkflowSchema` DAG as a node list and an edge list. Node identity uses each
+node class's `__name__`, which aligns with `task_context.node_runs` keys at runtime.
+
+| Field | Type | Description |
+|---|---|---|
+| `nodes` | `list[str]` | Ordered list of node class names in the workflow DAG. |
+| `edges` | `list[tuple[str, str]]` | Directed edges as `(source_node_name, target_node_name)` pairs. |
+
 ### `HealthResponse`
 
 **Source:** `app/api/health.py`
@@ -1463,6 +1499,34 @@ GET /health → 200 HealthResponse(status="ok", version="0.1.0")
 
 No authentication required. Returns immediately without touching the database or
 message broker. Use this endpoint for liveness probes.
+
+### `GET /workflows`
+
+**Source:** `app/api/graph.py`
+
+```
+GET /workflows → 200 WorkflowListResponse(workflows=["CUSTOMER_CARE", "CONTENT_PIPELINE", ...])
+```
+
+Returns the names of all registered workflow types from `WorkflowRegistry`. No
+authentication required. Does not touch the database or message broker.
+
+### `GET /workflows/{workflow_type}/graph`
+
+**Source:** `app/api/graph.py`
+
+```
+GET /workflows/CUSTOMER_CARE/graph → 200 WorkflowGraphResponse(nodes=[...], edges=[...])
+GET /workflows/UNKNOWN/graph      → 404 {"detail": "Unknown workflow_type: 'UNKNOWN'"}
+```
+
+Returns the static `WorkflowSchema` DAG for the given workflow type as a node list and
+edge list. Node names match the class `__name__` values used as keys in
+`task_context.node_runs` at runtime, so the static graph can be correlated with live
+execution state.
+
+Responds with `404` if `workflow_type` does not match any registered `WorkflowRegistry`
+member.
 
 ### `SCHEMA_MAP`
 
