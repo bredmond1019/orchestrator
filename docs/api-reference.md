@@ -97,15 +97,21 @@ Resolves the successor after each node completes.
   class of the returned node instance (`next_node.__class__`).
 - Otherwise: returns `node_config.connections[0]` — the single linear successor.
 
-### `node_context(node_name: str)` — Context Manager
+### `node_context(node_name: str, task_context: TaskContext)` — Context Manager
 
 ```python
 @contextmanager
-def node_context(self, node_name: str):
+def node_context(self, node_name: str, task_context: TaskContext):
 ```
 
-Wraps every node execution. Emits `logging.info` on entry and exit, and
-`logging.error` on exception before re-raising. No return value is yielded.
+Wraps every node execution. On entry, sets the node's `NodeRun` to `RUNNING` and
+records a UTC `started_at` timestamp. On a clean exit, sets status to `SUCCESS` and
+records `completed_at`. If the node raises, sets status to `FAILED`, records the
+stringified exception in `error` and records `completed_at`, then re-raises.
+
+Emits `logging.info` on entry and exit, and `logging.error` on exception. No value
+is yielded. The envelope is written entirely by the framework — individual nodes
+never touch `node_runs` directly.
 
 ---
 
