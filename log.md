@@ -10,6 +10,42 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-20 (task 3 — Source router + fetch nodes)
+
+Implemented `SourceRouterNode` to classify YouTube vs article URLs and route to the appropriate fetch node. `FetchTranscriptNode` calls `TranscriptService.fetch_transcript()` for YouTube content, and `FetchArticleNode` calls `ArticleExtractionService.extract()` for article URLs with trafilatura-first/Firecrawl-fallback logic. Both nodes gracefully handle failures by storing `fetch_status` without crashing the pipeline. All three nodes (source router + two fetch nodes) were added to `app/workflows/content_pipeline_workflow_nodes/` with full unit tests covering YouTube routing, article routing, unknown-URL fallback, and graceful error handling. Test suite passes with PASS verdict on first review attempt. Router classification and fetch logic are ready; next is the `SummarizerNode` to process extracted content.
+
+```
+51093ec docs: update docs for phase1-projectA-task3
+f2df0c4 feat: implement phase1-projectA-task3
+34bb691 chore: init worktree phase1-projecta-task3
+```
+
+---
+
+### 2026-06-20 (task 2 — LearningArtifact model + migration)
+
+Implemented the `LearningArtifact` SQLAlchemy model with pgvector `Vector(1024)` embedding column, Alembic migration from the pgvector baseline, and test suite covering model instantiation and repository round-trip persistence. Completed event schema from Task 1 in prior session. Review passed PASS on first attempt; all validation gates confirmed (migration applies cleanly, imports succeed, test count increased per spec). Next: Task 3 — Source router + fetch nodes (YouTube/article classification + dual-fetch path).
+
+```
+0ddded0 docs: update docs for phase1-projectA-task2
+1c8d320 feat: implement phase1-projectA-task2
+fdb543f chore: init worktree phase1-projecta-task2-11
+```
+
+---
+
+### 2026-06-20 (task 1 — event schema + field validation)
+
+Completed Task 1 of the content_pipeline spec: implemented `ContentPipelineEventSchema` with required `url: str`, optional `make_blog: bool = False`, and identity fields (`artifact_id: UUID`, `timestamp`). Replaced the scaffold smoke test with a real validation test asserting all new fields and the `make_blog` default while keeping registration and graph smoke tests intact. Pipeline passed all review gates (lint, test, import checks, `WorkflowValidator` on stub graph). Review verdict: PASS on first attempt. Next: Task 2 — `LearningArtifact` model + migration (SQLAlchemy table with pgvector embedding column, Alembic migration, repository round-trip tests).
+
+```
+78a6651 docs: update docs for phase1-projectA-task1
+e34220c feat: implement phase1-projectA-task1
+e1d7771 chore: init worktree phase1-projecta-task1
+```
+
+---
+
 ## 2026-06-20 — incremental-execution-observability spec complete
 
 Completed the incremental-execution-observability spec via `/sdlc-block` (8 tasks, 6 parallel dependency-ordered waves, all PASS, auto-merged). The three phases — (1) node-level status/timing envelope on TaskContext with framework-stamped node_context and injected on_progress callback, (2) per-node token/cost capture in AgentNode and ToolUseNode helper classes, and (3) read-only workflow graph introspection endpoint (GET /workflows, GET /workflows/{type}/graph) — all landed across the eight merged tasks. 238 tests pass (+15 from baseline). Also fixed CLAUDE.md and planning/harness.json to use `uv run python -m <tool>` consistently so project venv tools run instead of global uv-tool installs (bare `uv run pytest` can resolve to a global missing this repo's deps). Next: Phase 1, Project A — `content_pipeline` workflow implementation.
