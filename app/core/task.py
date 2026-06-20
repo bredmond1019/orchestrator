@@ -5,9 +5,36 @@ This module defines the context object that gets passed between workflow nodes.
 It maintains the state and metadata throughout workflow execution.
 """
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class NodeStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class NodeRun(BaseModel):
+    """Per-node execution envelope: status, timing, error, and token usage.
+
+    Parallel/additive to ``TaskContext.nodes`` — it never replaces node output,
+    it records *how* each node ran. Written entirely by the framework (see
+    ``Workflow.node_context``) so reference workflows stay frozen.
+
+    ``usage`` carries ``{input_tokens, output_tokens, model}`` for LLM nodes
+    (populated by the framework's LLM node base classes); it remains ``None``
+    for non-LLM nodes.
+    """
+
+    status: NodeStatus = NodeStatus.PENDING
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+    usage: dict | None = None
 
 
 class TaskContext(BaseModel):
@@ -21,6 +48,8 @@ class TaskContext(BaseModel):
         event: The original event that triggered the workflow
         nodes: Dictionary storing results and state from each node's execution
         metadata: Dictionary storing workflow-level metadata and configuration
+        node_runs: Per-node execution envelope (status/timing/usage), keyed by
+            node class name; a parallel, additive channel to ``nodes``
 
     Example:
         context = TaskContext(
@@ -38,6 +67,10 @@ class TaskContext(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Stores workflow-level metadata and configuration",
+    )
+    node_runs: dict[str, NodeRun] = Field(
+        default_factory=dict,
+        description="Per-node execution envelope (status/timing/usage), keyed by node class name",
     )
 
     def update_node(self, node_name: str, **kwargs):
