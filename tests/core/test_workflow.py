@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from core.nodes.base import Node
 from core.nodes.router import BaseRouter, RouterNode
 from core.schema import NodeConfig, WorkflowSchema
-from core.task import TaskContext
+from core.task import NodeStatus, TaskContext
 from core.workflow import Workflow
 
 
@@ -313,3 +313,48 @@ class TestMetadataCleanup:
         """Stub nodes add nothing to metadata; it is empty after run() cleans up."""
         ctx = LinearWorkflow().run({"action": "test"})
         assert ctx.metadata == {}
+
+
+# ---------------------------------------------------------------------------
+# Tests: node_context run envelope (status / timing / error)
+# ---------------------------------------------------------------------------
+
+
+class TestNodeContextEnvelope:
+    """Verify node_context stamps the per-node NodeRun envelope."""
+
+    def test_successful_nodes_marked_success_with_timestamps(self):
+        """Every node that runs cleanly is SUCCESS with started_at/completed_at."""
+        ctx = LinearWorkflow().run({"action": "test"})
+        for name in ("LinearNodeA", "LinearNodeB", "LinearNodeC"):
+            run = ctx.node_runs[name]
+            assert run.status == NodeStatus.SUCCESS
+            assert run.started_at is not None
+            assert run.completed_at is not None
+            assert run.error is None
+
+    def test_failing_node_envelope_is_observable(self):
+        """The FAILED envelope (status/error/completed_at) is stamped before re-raise."""
+
+        class _CapturingFailingWorkflow(FailingWorkflow):
+            captured: TaskContext | None = None
+
+            def node_context(self, node_name, task_context):
+                type(self).captured = task_context
+                return super().node_context(node_name, task_context)
+
+        wf = _CapturingFailingWorkflow()
+        with pytest.raises(RuntimeError, match="Intentional test error"):
+            wf.run({"action": "test"})
+        ctx = _CapturingFailingWorkflow.captured
+        assert ctx is not None
+        run = ctx.node_runs["FailingNode"]
+        assert run.status == NodeStatus.FAILED
+        assert run.error == "Intentional test error"
+        assert run.completed_at is not None
+
+    def test_envelope_survives_json_dump(self):
+        """node_runs round-trips through model_dump(mode='json') with string status."""
+        ctx = LinearWorkflow().run({"action": "test"})
+        dumped = ctx.model_dump(mode="json")
+        assert dumped["node_runs"]["LinearNodeA"]["status"] == "success"
