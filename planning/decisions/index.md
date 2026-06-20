@@ -42,6 +42,7 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided Â
 | D27 | Adopt OKF Phase 2 conventions (lowercase names, concept-folder planning, index.md); retire scaffold-project | [D27-adopt-okf-phase-2-conventions.md](D27-adopt-okf-phase-2-conventions.md) |
 | D28 | Persist node-level execution state incrementally (injected callback; brain stays agnostic) | [D28-node-level-execution-state.md](D28-node-level-execution-state.md) |
 | D29 | Execute OKF Phase 2; adopt base-template's richer-check + token-telemetry engines; harness.json | [D29-execute-okf-and-adopt-richer-check-engines.md](D29-execute-okf-and-adopt-richer-check-engines.md) |
+| D30 | Orchestrator owns the versioned data contract; capture per-node input + serializable output | [D30-data-contract-ownership.md](D30-data-contract-ownership.md) |
 
 ---
 
