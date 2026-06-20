@@ -8,7 +8,7 @@ It maintains the state and metadata throughout workflow execution.
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class NodeStatus(StrEnum):
@@ -72,6 +72,22 @@ class TaskContext(BaseModel):
         default_factory=dict,
         description="Per-node execution envelope (status/timing/usage), keyed by node class name",
     )
+
+    @field_serializer("metadata")
+    def _serialize_metadata(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        """Drop the transient runtime node registry from serialized output.
+
+        During a run the framework stashes the workflow's node registry under
+        ``metadata["nodes"]`` (a ``dict`` keyed by node *class*) so parallel
+        nodes can resolve their config; it is popped when the run completes.
+        Those class objects are not JSON-serializable, which would break a
+        mid-run ``model_dump(mode="json")`` snapshot (the observability
+        guarantee the worker relies on to persist progress at each boundary).
+        Excluding the key here keeps ``TaskContext`` JSON-serializable at any
+        point in the run without changing how nodes access the registry at
+        runtime.
+        """
+        return {key: value for key, value in metadata.items() if key != "nodes"}
 
     def update_node(self, node_name: str, **kwargs):
         self.nodes[node_name] = {**self.nodes.get(node_name, {}), **kwargs}  # pylint: disable=no-member
