@@ -9,8 +9,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-20 — phase1-projectA in progress (Tasks 1–5 complete; Tasks 6–8 next — blog generation, workflow assembly, integration validation)
-**Current focus:** Phase 1, Project A — Task 6: Blog branch (writer → self-critic → revise) + blog router
+**Last updated:** 2026-06-20 — phase1-projectA complete (Tasks 1–8 all done); phase1-projectB next — thin cut first (~50 lines, raw tool loop)
+**Current focus:** Phase 1, Project B — Research agent (thin → hardened)
 
 ---
 
@@ -36,7 +36,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 ### Phase 1 — Sellable Competence
 | Project | What | Status | Notes |
 |---|---|---|---|
-| A | Content pipeline (YouTube/Article → personal digest + optional blog) | In progress | Tasks 1–5 complete: event schema, learning_artifact model + migration, source router + fetch nodes, summarizer node + prompt, storage node with 1024-dim embedding and HTML digest generation. Tasks 6–8 next: blog branch (writer/critic/reviser agents), workflow wiring + integration tests, final validation. |
+| A | Content pipeline (YouTube/Article → personal digest + optional blog) | Done | All 8 tasks complete: event schema, learning_artifact model + migration, source router + fetch nodes, summarizer node + prompt, storage node with embedding + HTML digest, blog branch (writer/critic/reviser agents), workflow wiring + integration tests, final validation. Spec ready for review. |
 | B | Research agent (thin → hardened) | Not started | Thin cut first (~50 lines, raw tool loop) |
 | C | Proposal generator | Not started | PT + EN; run on warm leads as practice |
 | D | Document Q&A + session memory (RAG) | Not started | Reinforces proven Helpscout production pattern |

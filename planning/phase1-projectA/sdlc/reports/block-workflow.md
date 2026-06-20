@@ -1,25 +1,20 @@
 # Spec Orchestration Report — phase1-projectA
 
 **Date:** 2026-06-20
-**Overall verdict:** PARTIAL
-**Tasks merged:** 1  |  **Escalated:** 1  |  **Skipped:** 2  |  **Playwright:** SKIP
+**Overall verdict:** PASS
+**Tasks merged:** 2  |  **Escalated:** 0  |  **Skipped:** 0  |  **Playwright:** SKIP
 
 ## Outcome by Task
 | Task | Result | Verdict | Merge | Commit | Notes |
 |---|---|---|---|---|---|
-| 5 | merged | PASS | auto | d6c82c5 | — |
-| 6 | escalate | PASS | — | — | merge conflict: docs/app-architecture-overview.md |
-| 7 | skipped | — | — | — | blocked by upstream escalation |
-| 8 | skipped | — | — | — | blocked by upstream escalation |
+| 7 | merged | PASS | auto | 6f5443c | — |
+| 8 | merged | PASS | auto | e447974 | — |
 
 ## Playwright Verification
 _Skipped — no tasks merged, nothing to verify._
 
 ## Escalations (need your attention)
-- **Task 6** — verdict PASS. 
-    - Review: `planning/phase1-projectA/sdlc/reports/task6-review.md`
-    - Worktree (preserved): `/Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task6` (branch `phase1-projecta-task6`)
-    - Reasons: merge conflict: docs/app-architecture-overview.md
+_None._
 
 ## Resume
 After fixing any blocker (or editing planning/phase1-projectA/sdlc/execution-plan.json), re-run:  /sdlc-block phase1-projectA
@@ -35,12 +30,12 @@ outTok = output-token delta ("—" when no +Nk budget target was set). These orc
 sequentially, so their outTok is clean. NOTE: per-task outTok for tasks that ran in a PARALLEL wave is
 shared-pool-contaminated and is reported there as "— (parallel)" rather than a misleading number (D12).
 
-**Total orchestrator outTok:** 10241
+**Total orchestrator outTok:** 9083
 
 | Stage | Model | promptTok | outTok |
 |---|---|---|---|
-| pre-flight | sonnet | 793 | 2323 |
-| harness-config | sonnet | 294 | 1475 |
-| analyze | opus | 1865 | 4433 |
-| merge-5 | sonnet | 970 | 1038 |
-| merge-6 | sonnet | 970 | 972 |
+| pre-flight | sonnet | 793 | 1342 |
+| harness-config | sonnet | 294 | 1480 |
+| analyze | opus | 1865 | 4313 |
+| merge-7 | sonnet | 970 | 944 |
+| merge-8 | sonnet | 970 | 1004 |

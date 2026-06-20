@@ -10,6 +10,30 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-20 (task 8 — Validate)
+
+Final validation of the complete content pipeline: all lint, test, import, and database migration checks passed. The workflow graph is fully wired (SourceRouterNode → fetch nodes → SummarizerNode → StorageNode → BlogDecisionRouterNode → blog branch), all prompts are externalized to `.j2` files, embedding generation is integrated at write time, and 1024-dim Voyage vectors are persisted to pgvector. Digest-only and blog-generation paths both tested end-to-end with mocked agents and services. The implementation enforces deployment-agnostic design: all persistence and service calls are injected, no hardcoded paths or credentials. Next: Phase 1, Project B — Research agent (thin → hardened).
+
+```
+2673cfd docs: update docs for phase1-projectA-task8
+6ceb01f feat: implement phase1-projectA-task8
+f9e7078 chore: init worktree phase1-projecta-task8
+```
+
+---
+
+## 2026-06-20 (task 7 — Workflow wiring + integration tests)
+
+Task 7 delivered the complete content_pipeline workflow assembly: rewrote `ContentPipelineWorkflow.workflow_schema` with `SourceRouterNode` as start, wired both fetch nodes through the summarizer and storage, added the blog decision router branching to the writer→critic→revise chain, marked routers with `is_router=True` in NodeConfig, deleted the scaffold initial_node.py, and confirmed workflow validator passes with no cycles. Rewrote the integration test suite with two end-to-end paths (digest-only and blog-inclusive), verified both services and agents mock cleanly, and confirmed net test count increased. All code follows Python 3.10+ syntax, module docstrings on line 1, prompts via PromptManager, and no deployment logic inside nodes — repository injection confirmed at the workflow/worker boundary matching Task 5's design. Review passed on first attempt with PASS verdict. Next: Task 8 — Validate - Run the full validation commands (ruff, pylint, pytest, imports, migration apply) to confirm all gates pass.
+
+```
+139dc00 docs: update docs for phase1-projectA-task7
+a45128d feat: implement phase1-projectA-task7
+de068db chore: init worktree phase1-projecta-task7
+```
+
+---
+
 ## 2026-06-20 (task 5 — Storage node with embedding and HTML digest)
 
 Implemented the storage layer: `StorageNode(Node)` persists `LearningArtifact` rows with real-time 1024-dim Voyage embeddings via `EmbeddingService`, writes static HTML digests per category with index regeneration, and uses injected `GenericRepository` for deployment-agnostic persistence (no session logic inside nodes per standing rule 7). Full pipeline now chains cleanly from source router → fetch nodes → summarizer → storage, with embeddings written at write time. Tests cover embedding service integration, repository CRUD, and HTML rendering. Review passed with PASS verdict. Next: Task 6 — Blog branch with writer, self-critic, and reviser agents.
