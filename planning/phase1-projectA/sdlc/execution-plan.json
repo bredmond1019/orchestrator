@@ -1,0 +1,194 @@
+{
+  "blockId": "phase1-projectA",
+  "additiveFiles": [],
+  "tasks": {
+    "1": {
+      "num": 1,
+      "title": "Event schema (ContentPipelineEventSchema)",
+      "dependsOn": [],
+      "evidence": "Task 1 header: 'deps: none'",
+      "filesCreated": [],
+      "filesModified": [
+        "app/schemas/content_pipeline_schema.py",
+        "tests/workflows/test_content_pipeline_workflow.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "2": {
+      "num": 2,
+      "title": "LearningArtifact model + Alembic migration",
+      "dependsOn": [],
+      "evidence": "Task 2 header: 'deps: none'",
+      "filesCreated": [
+        "app/database/learning_artifact.py",
+        "app/alembic/versions/<new_learning_artifacts_migration>.py",
+        "tests/database/test_learning_artifact.py"
+      ],
+      "filesModified": [
+        "app/alembic/env.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "3": {
+      "num": 3,
+      "title": "Source router + fetch nodes (transcript/article)",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "Task 3 header: 'deps: Task 1'; nodes read 'task_context.event.url' from the schema Task 1 fills in.",
+      "filesCreated": [
+        "app/workflows/content_pipeline_workflow_nodes/source_router_node.py",
+        "app/workflows/content_pipeline_workflow_nodes/fetch_transcript_node.py",
+        "app/workflows/content_pipeline_workflow_nodes/fetch_article_node.py",
+        "tests/workflows/test_content_fetch_nodes.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": true,
+      "breakdownReason": "Bundles separable units (a BaseRouter plus two distinct fetch nodes wrapping different services) across 4 heterogeneous files."
+    },
+    "4": {
+      "num": 4,
+      "title": "Summarizer node + content_summarizer prompt",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "Task 4 header: 'deps: Task 1'; node reads upstream fetched text driven by the event schema Task 1 defines.",
+      "filesCreated": [
+        "app/workflows/content_pipeline_workflow_nodes/summarizer_node.py",
+        "app/prompts/content_summarizer.j2",
+        "tests/workflows/test_content_summarizer.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "5": {
+      "num": 5,
+      "title": "Storage node (persist + embed + render HTML digest)",
+      "dependsOn": [
+        2,
+        4
+      ],
+      "evidence": "Task 5 header: 'deps: Task 2, Task 4'; 'persist a LearningArtifact row' (Task 2's model) and 'Reads SummaryOutput ... import the type from Task 4's module'.",
+      "filesCreated": [
+        "app/workflows/content_pipeline_workflow_nodes/storage_node.py",
+        "app/workflows/content_pipeline_workflow_nodes/digest_renderer.py",
+        "tests/workflows/test_content_storage_node.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "6": {
+      "num": 6,
+      "title": "Blog branch (router → writer → self-critic → revise) + prompts",
+      "dependsOn": [
+        4
+      ],
+      "evidence": "Task 6 header: 'deps: Task 4'; 'drafts a blog post ... from the SummaryOutput' which Task 4 defines.",
+      "filesCreated": [
+        "app/workflows/content_pipeline_workflow_nodes/blog_decision_router_node.py",
+        "app/workflows/content_pipeline_workflow_nodes/blog_writer_node.py",
+        "app/workflows/content_pipeline_workflow_nodes/self_critic_node.py",
+        "app/workflows/content_pipeline_workflow_nodes/revise_node.py",
+        "app/prompts/blog_writer.j2",
+        "app/prompts/blog_self_critic.j2",
+        "app/prompts/blog_reviser.j2",
+        "tests/workflows/test_content_blog_branch.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "7": {
+      "num": 7,
+      "title": "Workflow wiring + integration tests",
+      "dependsOn": [
+        3,
+        4,
+        5,
+        6
+      ],
+      "evidence": "Task 7 header: 'deps: Tasks 3, 4, 5, 6'; wires 'start=SourceRouterNode ... SourceRouterNode (router) → fetch nodes; each fetch node → SummarizerNode; SummarizerNode → StorageNode; StorageNode → BlogDecisionRouterNode ... → BlogWriterNode → SelfCriticNode → ReviseNode' — symbols created by Tasks 3,4,5,6.",
+      "filesCreated": [],
+      "filesModified": [
+        "app/workflows/content_pipeline_workflow.py",
+        "tests/workflows/test_content_pipeline_workflow.py",
+        "app/workflows/content_pipeline_workflow_nodes/initial_node.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "8": {
+      "num": 8,
+      "title": "Validate (lint, tests, imports, migration)",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "evidence": "Task 8: 'Run the Validation Commands below and confirm all pass' — validates the entire assembled workflow produced by all prior tasks; depends on Task 7's assembled graph.",
+      "filesCreated": [],
+      "filesModified": [],
+      "recommendBreakdown": false
+    }
+  },
+  "waves": [
+    {
+      "label": "Wave 1",
+      "parallel": true,
+      "tasks": [
+        1,
+        2
+      ],
+      "mergeOrder": [
+        1,
+        2
+      ]
+    },
+    {
+      "label": "Wave 2",
+      "parallel": true,
+      "tasks": [
+        3,
+        4
+      ],
+      "mergeOrder": [
+        3,
+        4
+      ]
+    },
+    {
+      "label": "Wave 3",
+      "parallel": true,
+      "tasks": [
+        5,
+        6
+      ],
+      "mergeOrder": [
+        5,
+        6
+      ]
+    },
+    {
+      "label": "Wave 4",
+      "parallel": false,
+      "tasks": [
+        7
+      ],
+      "mergeOrder": [
+        7
+      ]
+    },
+    {
+      "label": "Wave 5",
+      "parallel": false,
+      "tasks": [
+        8
+      ],
+      "mergeOrder": [
+        8
+      ]
+    }
+  ]
+}
