@@ -6,7 +6,6 @@ FetchTranscriptNode and FetchArticleNode.
 """
 
 import pytest
-
 from core.task import TaskContext
 from schemas.content_pipeline_schema import ContentPipelineEventSchema
 from services.article_extraction_service import ArticleResult
@@ -49,6 +48,39 @@ def test_youtube_url_routes_to_transcript_node(url: str):
     ctx = _context(url)
     SourceRouterNode().process(ctx)
     assert ctx.nodes["SourceRouterNode"]["next_node"] == "FetchTranscriptNode"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+    ],
+)
+def test_youtube_subdomain_routes_to_transcript_node(url: str):
+    """Real YouTube subdomains match the ``host.endswith("." + h)`` branch."""
+    ctx = _context(url)
+    SourceRouterNode().process(ctx)
+    assert ctx.nodes["SourceRouterNode"]["next_node"] == "FetchTranscriptNode"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://youtube.com.evil.com/watch?v=dQw4w9WgXcQ",
+        "https://notyoutube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtu.be.evil.com/dQw4w9WgXcQ",
+    ],
+)
+def test_youtube_lookalike_host_falls_back_to_article_node(url: str):
+    """A host that only *contains* a YouTube domain must not route to transcript.
+
+    Guards the anti-spoofing in ``_is_youtube_url`` — matching requires an exact
+    host or a true subdomain, never a suffix like ``youtube.com.evil.com``.
+    """
+    ctx = _context(url)
+    SourceRouterNode().process(ctx)
+    assert ctx.nodes["SourceRouterNode"]["next_node"] == "FetchArticleNode"
 
 
 def test_article_url_routes_to_article_node():
