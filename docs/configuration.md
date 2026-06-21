@@ -133,17 +133,19 @@ credentials to use. Each `ModelProvider` enum value and its required variables:
 | `ModelProvider.GEMINI` | `"gemini"` | `GEMINI_API_KEY` |
 | `ModelProvider.OLLAMA` | `"ollama"` | `OLLAMA_BASE_URL` |
 | `ModelProvider.BEDROCK` | `"bedrock"` | `BEDROCK_AWS_ACCESS_KEY_ID`, `BEDROCK_AWS_SECRET_ACCESS_KEY`, `BEDROCK_AWS_REGION` |
+| `ModelProvider.CLAUDE_CODE_SDK` | `"claude_code_sdk"` | `CLAUDE_CODE_BIN`, `CLAUDE_CODE_CWD`, `CLAUDE_CODE_PERMISSION_MODE`, `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` (all optional — see below) |
 
 `ModelProvider` is defined in `app/core/nodes/agent.py` as a `StrEnum`:
 
 ```python
 class ModelProvider(StrEnum):
-    OPENAI = "openai"
-    AZURE_OPENAI = "azure_openai"
-    ANTHROPIC = "anthropic"
-    GEMINI = "gemini"
-    OLLAMA = "ollama"
-    BEDROCK = "bedrock"
+    OPENAI          = "openai"
+    AZURE_OPENAI    = "azure_openai"
+    ANTHROPIC       = "anthropic"
+    GEMINI          = "gemini"
+    OLLAMA          = "ollama"
+    BEDROCK         = "bedrock"
+    CLAUDE_CODE_SDK = "claude_code_sdk"
 ```
 
 If `model_provider` does not match any case in the `match` block, the node falls back to
@@ -159,6 +161,14 @@ value `http://localhost:11434/v1` in `app/.env.example` assumes a locally runnin
 
 **Bedrock**: `BEDROCK_AWS_ACCESS_KEY_ID`, `BEDROCK_AWS_SECRET_ACCESS_KEY`, and `BEDROCK_AWS_REGION`
 are read via `os.getenv()` and passed directly to `boto3.client("bedrock-runtime", ...)`.
+
+**Claude Code SDK**: `ModelProvider.CLAUDE_CODE_SDK` routes through `ClaudeAgentSdkBackend`
+(in `app/services/claude_code/sdk_backend.py`). It uses the local `claude` CLI binary via
+`claude-agent-sdk` and requires a valid Claude Max / Pro subscription — no `ANTHROPIC_API_KEY`
+is used (the backend blanks it before spawning the CLI). All four env vars are optional with
+sensible defaults: `CLAUDE_CODE_BIN` (default: `claude` on `$PATH`), `CLAUDE_CODE_CWD` (default:
+process cwd), `CLAUDE_CODE_PERMISSION_MODE` (default: `bypassPermissions`), and
+`CLAUDE_CODE_SDK_TIMEOUT_SECONDS` (default: `180`).
 
 **VoyageAI embeddings**: `VOYAGE_API_KEY` is read via `os.environ["VOYAGE_API_KEY"]` inside
 `EmbeddingService.__init__()`. Unlike the `AgentNode` provider keys it is not gated on a
