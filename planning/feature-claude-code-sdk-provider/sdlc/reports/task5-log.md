@@ -5,7 +5,7 @@
 **Verdict:** PASS
 **Date:** 2026-06-21
 **Branch:** feature-claude-code-sdk-provider-task5
-**Applied:** false
+**Applied:** true
 
 ---
 
