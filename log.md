@@ -12,6 +12,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ## 2026-06-20
 
+Post-ship coverage audit of Phase 1, Project A (`content_pipeline`) before opening Project B. The verdict was that coverage is already strong — `uv run python -m pytest` stays at 295 green, and every node (source/blog routers, both fetch nodes with their error paths, summarizer, storage + digest renderer, the linear blog branch), the schema, the LearningArtifact model, and both end-to-end integration paths carry real behavior-level tests. So rather than manufacture a test-writing effort, I recorded an honest, non-blocking backlog in `planning/phase1-projectA/follow-ups.md`: two deferred tests (anti-spoof/subdomain cases for `_is_youtube_url`, and a test documenting that `SelfCriticNode.approved` is intentionally inert because the blog branch is a one-shot linear writer→critic→revise, not a loop), two low-effort reuse carryovers (wire the site's transcript corpus as golden fixtures; cross-check `SummaryOutput` against the site summary template), and one scope decision (the PT-BR `translate_ptbr.j2` + translation AgentNode from the reuse spec was never built — the shipped pipeline is digest + optional EN blog only — so whether translation is a Project A or a content-publishing concern needs deciding before it's scheduled). Also reconciled the cross-repo reuse spec `learn-ai/planning/5.1-reuse-for-project-a/tasks.md` against what actually shipped (Done / carried-over / decision-pending / correctly-skipped per item), added a follow-ups callout to `status.md`, and wrote `planning/handoff.md` for the next session. No product code changed; Project B (research agent) is next.
+
+```diff
+ planning/status.md | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+```
+*(plus new untracked: `planning/phase1-projectA/follow-ups.md`, `planning/handoff.md`)*
+
+---
+
+## 2026-06-20
+
 Shipped Phase 1, Project A — the content_pipeline workflow — driving all 8 tasks of its spec to completion through three /sdlc-block orchestrator segments. The pipeline turns a YouTube or article URL into a categorized, embedded LearningArtifact plus a static-HTML personal digest (always), and an opt-in self-corrected blog draft when make_blog=true. The wired DAG runs SourceRouterNode → {FetchTranscriptNode | FetchArticleNode} → SummarizerNode → StorageNode → BlogDecisionRouterNode → BlogWriterNode → SelfCriticNode → ReviseNode. New this project: a LearningArtifact SQLAlchemy model with a pgvector(1024) embedding column and its Alembic migration; embeddings written at write time; a pure-function digest_renderer for static HTML pages + category indexes; the reusable FetchArticleNode (trafilatura-first, Firecrawl-fallback); and a 9-field SummaryOutput schema. The storage node persists via the GenericRepository + db_session factory seam because the framework instantiates nodes with zero constructor args (no injection point) — this was surfaced by an authoring-time /breakdown and kept the node deployment-agnostic per rule 7. Three of eight tasks needed a human touch: tasks 4 and 6 escalated on the same additive-doc merge conflict (parallel rows appended to docs/app-architecture-overview.md), each resolved by hand in seconds; the rest auto-merged. 295 tests pass (up from 244), ruff clean. Project B (research agent) is next.
 
 ```diff
