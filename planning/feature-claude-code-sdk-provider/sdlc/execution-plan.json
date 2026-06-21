@@ -1,0 +1,173 @@
+{
+  "blockId": "feature-claude-code-sdk-provider",
+  "additiveFiles": [
+    "app/services/claude_code/__init__.py",
+    "docs/configuration.md",
+    "docs/api-reference.md"
+  ],
+  "tasks": {
+    "1": {
+      "num": 1,
+      "title": "Add the dependency + config surface",
+      "dependsOn": [],
+      "evidence": "No upstream task referenced; owns pyproject.toml and app/.env.example.",
+      "filesCreated": [],
+      "filesModified": [
+        "pyproject.toml",
+        "app/.env.example"
+      ],
+      "recommendBreakdown": false
+    },
+    "2": {
+      "num": 2,
+      "title": "Backend protocol + result type",
+      "dependsOn": [],
+      "evidence": "Defines the foundational ClaudeResult/ClaudeCodeBackend contract; no upstream dependency.",
+      "filesCreated": [
+        "app/services/claude_code/__init__.py",
+        "app/services/claude_code/backend.py",
+        "tests/services/test_claude_code_backend.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "3": {
+      "num": 3,
+      "title": "SDK backend (ClaudeAgentSdkBackend)",
+      "dependsOn": [
+        2
+      ],
+      "evidence": "'Implement ClaudeAgentSdkBackend(ClaudeCodeBackend)' and 'Map success -> ClaudeResult' — both from Task 2. **dependsOn:** Task 2.",
+      "filesCreated": [
+        "app/services/claude_code/sdk_backend.py",
+        "tests/services/test_claude_code_sdk_backend.py"
+      ],
+      "filesModified": [
+        "app/services/claude_code/__init__.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "4": {
+      "num": 4,
+      "title": "Shared ClaudeCodeModel (pydantic-ai Model, 0.1.5)",
+      "dependsOn": [
+        2
+      ],
+      "evidence": "'ClaudeCodeModel(Model) constructed with backend: ClaudeCodeBackend ... await backend.run(...)' uses the Task 2 protocol/ClaudeResult. **dependsOn:** Task 2.",
+      "filesCreated": [
+        "app/services/claude_code/model.py",
+        "tests/core/test_claude_code_model.py"
+      ],
+      "filesModified": [
+        "app/services/claude_code/__init__.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "5": {
+      "num": 5,
+      "title": "Wire CLAUDE_CODE_SDK into the provider factory",
+      "dependsOn": [
+        3,
+        4
+      ],
+      "evidence": "'constructs ClaudeAgentSdkBackend() and returns ClaudeCodeModel(backend=..., model_name=model_name)' — uses Task 3 backend and Task 4 model. **dependsOn:** Tasks 3, 4.",
+      "filesCreated": [
+        "tests/core/test_claude_code_provider_routing.py"
+      ],
+      "filesModified": [
+        "app/core/nodes/agent.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "6": {
+      "num": 6,
+      "title": "Docs",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "evidence": "configuration.md documents 'the CLAUDE_CODE_* SDK vars' (Task 1); api-reference.md adds 'ModelProvider.CLAUDE_CODE_SDK' (Task 5) and the package 'ClaudeCodeBackend, ClaudeResult, ClaudeAgentSdkBackend, ClaudeCodeModel' (Tasks 2,3,4).",
+      "filesCreated": [],
+      "filesModified": [
+        "docs/configuration.md",
+        "docs/api-reference.md"
+      ],
+      "recommendBreakdown": false
+    },
+    "7": {
+      "num": 7,
+      "title": "Validate",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "evidence": "'Run the Validation Commands below and confirm all pass' plus manual e2e exercising the full AgentNode/CLAUDE_CODE_SDK path built across all prior tasks.",
+      "filesCreated": [],
+      "filesModified": [],
+      "recommendBreakdown": false
+    }
+  },
+  "waves": [
+    {
+      "label": "Wave 1",
+      "parallel": true,
+      "tasks": [
+        1,
+        2
+      ],
+      "mergeOrder": [
+        1,
+        2
+      ]
+    },
+    {
+      "label": "Wave 2",
+      "parallel": true,
+      "tasks": [
+        3,
+        4
+      ],
+      "mergeOrder": [
+        3,
+        4
+      ]
+    },
+    {
+      "label": "Wave 3",
+      "parallel": false,
+      "tasks": [
+        5
+      ],
+      "mergeOrder": [
+        5
+      ]
+    },
+    {
+      "label": "Wave 4",
+      "parallel": false,
+      "tasks": [
+        6
+      ],
+      "mergeOrder": [
+        6
+      ]
+    },
+    {
+      "label": "Wave 5",
+      "parallel": false,
+      "tasks": [
+        7
+      ],
+      "mergeOrder": [
+        7
+      ]
+    }
+  ]
+}
