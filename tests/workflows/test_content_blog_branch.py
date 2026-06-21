@@ -150,6 +150,52 @@ class TestSelfCriticNode:
         assert stored.approved is False
 
 
+class TestApprovedFieldIsInert:
+    """``SelfCriticNode.approved`` carries no control-flow weight.
+
+    The blog branch is a strictly linear, acyclic DAG (writer -> self-critic ->
+    revise) — there is no loop-back and no conditional skip. ``ReviseNode``
+    therefore always runs, whatever the critic decided. These tests pin that
+    intent so a future reader does not mistake the unused field for a latent
+    "skip revise when approved" bug.
+    """
+
+    def test_self_critic_connects_unconditionally_to_revise(self):
+        from workflows.content_pipeline_workflow import ContentPipelineWorkflow
+
+        nodes = ContentPipelineWorkflow.workflow_schema.nodes
+        critic_cfg = next(n for n in nodes if n.node is SelfCriticNode)
+        # A single static edge to ReviseNode, and the critic is not a router —
+        # so nothing reads ``approved`` to choose the next node.
+        assert critic_cfg.connections == [ReviseNode]
+        assert critic_cfg.is_router is False
+
+    def test_revise_runs_even_when_critic_approved(self):
+        node = _make(ReviseNode)
+        revised = ReviseNode.OutputType(
+            title="Final Title", body_markdown="# Final\n\nrevised body"
+        )
+        node.agent.run_sync.return_value = _result_for(revised)
+
+        draft = BlogWriterNode.OutputType(
+            title="Draft Title", body_markdown="body", reasoning="r"
+        )
+        # approved=True must NOT short-circuit the revise step.
+        critique = SelfCriticNode.OutputType(
+            critique="looks great", issues=[], approved=True
+        )
+        ctx = TaskContext(event=ContentPipelineEventSchema(url="https://x", make_blog=True))
+        ctx.nodes["BlogWriterNode"] = {"result": draft}
+        ctx.nodes["SelfCriticNode"] = {"result": critique}
+        _seed_run(ctx, node)
+
+        node.process(ctx)
+
+        node.agent.run_sync.assert_called_once()
+        stored = ctx.nodes[node.node_name]["result"]
+        assert stored.body_markdown == "# Final\n\nrevised body"
+
+
 class TestReviseNode:
     def test_revise_reads_draft_and_critique(self):
         node = _make(ReviseNode)
