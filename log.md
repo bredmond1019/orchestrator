@@ -10,6 +10,76 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-21 (task 7 — Validation gate: CLAUDE_CODE_SDK provider acceptance suite)
+
+Task 7 completed the final validation gate for the `CLAUDE_CODE_SDK` provider feature. Tasks 1–6 implemented the full feature (backend protocol, SDK backend with env-scrub, ClaudeCodeModel with both text and structured output paths, provider routing); Task 7 ran the acceptance suite to confirm all acceptance criteria are met and the codebase remains healthy. All validation commands passed: SDK import succeeds, ruff reports zero violations, pylint scored 10.00/10, and 335 tests pass (33 Claude-specific). The review gate confirmed all six acceptance criteria are MET, including the backend protocol reusability for later session-mode feature. The manual e2e (subscription host with real token billing verification) remains as operator-run gate before production. Next: Task 1 of feature-claude-code-session-provider — Bastion session backend integration.
+
+```
+307f0b1 docs: update docs for feature-claude-code-sdk-provider-task7
+3c32c2b feat: implement feature-claude-code-sdk-provider-task7
+c6dc983 chore: init worktree feature-claude-code-sdk-provider-task7
+```
+
+## 2026-06-21 (task 6 — Docs)
+
+Completed Task 6: filled remaining documentation gaps for the `CLAUDE_CODE_SDK` provider. Earlier tasks' per-task `/document` stages had already added bulk Claude Code coverage (env-var table rows, `ModelProvider.CLAUDE_CODE_SDK` enum, `app/services/claude_code` package reference) to both `docs/configuration.md` and `docs/api-reference.md`. Task 6 closed the final gaps: expanded configuration.md §3 with explicit host prerequisites (`claude-agent-sdk` installed + `claude` CLI present and logged into a Max/Pro subscription), subscription billing note (blanks `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` in spawned CLI env), usage-reporting note (SDK mode returns real `input_tokens`/`output_tokens` + `total_cost_usd` flowing into `NodeRun.usage`), and cross-link to the brain coordination doc; also added "Cross-repo coordination" subsection to api-reference.md §package, explaining that `ClaudeCodeBackend` + `ClaudeCodeModel` are reused unchanged by the later `CLAUDE_CODE_SESSION` mode and cross-linking the brain doc and configuration.md. Review verdict: PASS (all 8 gating checks pass, 335 tests green, pylint 10/10, ruff clean, no issues). All acceptance criteria met: configuration.md documents the four env vars with descriptions, host prerequisites, API key scrub, and real-token reporting; api-reference.md adds `ModelProvider.CLAUDE_CODE_SDK`, the full package surface, and cross-repo coordination notes. Next: Task 7 — Validate (run validation commands on a subscription-authenticated host and record manual e2e result showing subscription-mode billing and real token usage).
+
+```
+6f3c8d6 docs: update docs for feature-claude-code-sdk-provider-task6
+2aedc0e feat: implement feature-claude-code-sdk-provider-task6
+e49494f chore: init worktree feature-claude-code-sdk-provider-task6
+```
+
+## 2026-06-21 (task 5 — Wire CLAUDE_CODE_SDK into the provider factory)
+
+Completed Task 5: wired `ModelProvider.CLAUDE_CODE_SDK` into the AgentNode factory via a new `__get_claude_code_sdk_model` method that constructs `ClaudeCodeModel` with `ClaudeAgentSdkBackend`. Added four routing tests following the `StubAgentNode` pattern to verify enum value dispatch, factory construction, real usage stamping in `run_agent_recorded`, and the pydantic-ai 0.1.5 tuple return contract. All 7 gating checks pass (335 tests collected, +15 net new; ruff clean; pylint 10.0/10). Documentation was patched by the document stage (configuration.md + api-reference.md updated with `CLAUDE_CODE_SDK` enum value, provider table row, env var documentation, and package export reference). Review verdict: PASS — all acceptance criteria met, no issues found. Next: Task 6 — Docs (full documentation completion + cross-linking to brain coordination doc) and Task 7 — manual subscription-mode e2e validation.
+
+```
+3280a25 docs: update docs for feature-claude-code-sdk-provider-task5
+a0473cb feat: implement feature-claude-code-sdk-provider-task5
+f29b758 chore: init worktree feature-claude-code-sdk-provider-task5
+```
+
+## 2026-06-21 (task 4 — Shared `ClaudeCodeModel` pydantic-ai Model)
+
+Implemented `ClaudeCodeModel` as the pydantic-ai 0.1.5 `Model` subclass, handling both text and structured output paths via a pluggable `ClaudeCodeBackend` protocol. The `request()` method correctly returns the pinned 0.1.5 2-tuple `(ModelResponse, Usage)`, emits `ToolCallPart` when `output_tools` is non-empty (extracting the first tool's JSON schema and calling the backend with structured-output mode), and falls back to `TextPart` for free-text output. Properties (`model_name`, `system`, `base_url`) and abstract methods (`customize_request_parameters`, `_get_instructions`, `request_stream`) are all implemented; `request_stream` raises `NotImplementedError` as documented future work. Review passed with all acceptance criteria met; 320 tests collected and passed (net +10). The model is exported from `app/services/claude_code/__init__.py` so the provider factory (Task 5) can import and instantiate it. Next: Task 5 — Wire `CLAUDE_CODE_SDK` into the provider factory.
+
+```
+d46a0ad docs: update docs for feature-claude-code-sdk-provider-task4
+69e2938 feat: implement feature-claude-code-sdk-provider-task4
+44dbf9f chore: init worktree feature-claude-code-sdk-provider-task4
+```
+
+## 2026-06-21 (task 3 — SDK backend ClaudeAgentSdkBackend)
+
+Implemented `ClaudeAgentSdkBackend` class reading `CLAUDE_CODE_*` env vars at call time, constructing `ClaudeAgentOptions`, blanking `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` to force subscription billing, draining `query()` async generator to terminal `ResultMessage`, raising descriptive `RuntimeError` on non-success/error/timeout, and mapping successful results into `ClaudeResult` with proper field mapping (result→text, structured_output→structured, usage tokens, total_cost_usd, session_id). Wrote 11 comprehensive unit tests covering option building, env scrub, result mapping (text, structured, missing fields), and all error paths, monkeypatching `claude_agent_sdk.query` to avoid network/CLI calls. All tests pass (321 total, +11 new); ruff, pylint, and standing-rules checks all clean. Review verdict: PASS — all in-scope Task 3 criteria met. Next: Task 4 — Shared ClaudeCodeModel (pydantic-ai 0.1.5 Model).
+
+```
+312798e docs: update docs for feature-claude-code-sdk-provider-task3
+0201da7 feat: implement feature-claude-code-sdk-provider-task3
+5ad6568 chore: init worktree feature-claude-code-sdk-provider-task3
+```
+
+## 2026-06-21 (task 2 — backend protocol + result type)
+
+Implemented the `ClaudeCodeBackend` protocol and `ClaudeResult` dataclass for the Claude Code SDK provider feature. Created `app/services/claude_code/` package with `backend.py` defining a `@runtime_checkable` typing.Protocol with one async method (`run`) and a dataclass carrying the LLM response shape (text, structured output, token counts, cost, model name, session ID). Added `__init__.py` re-exports for clean package seams. Wrote eight unit tests pinning the contract: construction, field set, protocol conformance (isinstance checks), and async execution via `asyncio.run`. All gating checks pass: ruff clean, pylint 10.00/10, 310 tests collected (increased from baseline). Review confirmed all Task 2 in-scope criteria met; tasks 3–5 criteria appropriately deferred. Docs: `api-reference.md` updated with `ClaudeResult` and `ClaudeCodeBackend` references; `app-architecture-overview.md` flagged NEEDS_REVIEW for later when full integration is complete. Next: Task 3 — SDK backend implementation (`ClaudeAgentSdkBackend`).
+
+```
+7a3da46 docs: update docs for feature-claude-code-sdk-provider-task2
+a100628 feat: implement feature-claude-code-sdk-provider-task2
+97b89fe chore: init worktree feature-claude-code-sdk-provider-task2
+```
+
+## 2026-06-21 (task 1 — Add the dependency + config surface)
+
+Task 1 completed successfully: added `claude-agent-sdk>=0.1.0` to `pyproject.toml` (resolved to 0.2.106) and ran `uv sync`; added `# Claude Code — SDK mode (subscription)` block to `app/.env.example` with four config variables (`CLAUDE_CODE_BIN`, `CLAUDE_CODE_CWD`, `CLAUDE_CODE_PERMISSION_MODE`, `CLAUDE_CODE_SDK_TIMEOUT_SECONDS`); documented the new variables in `docs/configuration.md` section 2. All 9 gating checks passed (302/302 tests, ruff clean, pylint 10.00/10). Review verdict: PASS. Next: Task 2 — Backend protocol + result type.
+
+```
+8e6ac47 docs: update docs for feature-claude-code-sdk-provider-task1
+d0c7c05 feat: implement feature-claude-code-sdk-provider-task1
+0191b7c chore: init worktree feature-claude-code-sdk-provider-task1
+```
+
 ## 2026-06-20
 
 Post-ship coverage audit of Phase 1, Project A (`content_pipeline`) before opening Project B. The verdict was that coverage is already strong — `uv run python -m pytest` stays at 295 green, and every node (source/blog routers, both fetch nodes with their error paths, summarizer, storage + digest renderer, the linear blog branch), the schema, the LearningArtifact model, and both end-to-end integration paths carry real behavior-level tests. So rather than manufacture a test-writing effort, I recorded an honest, non-blocking backlog in `planning/phase1-projectA/follow-ups.md`: two deferred tests (anti-spoof/subdomain cases for `_is_youtube_url`, and a test documenting that `SelfCriticNode.approved` is intentionally inert because the blog branch is a one-shot linear writer→critic→revise, not a loop), two low-effort reuse carryovers (wire the site's transcript corpus as golden fixtures; cross-check `SummaryOutput` against the site summary template), and one scope decision (the PT-BR `translate_ptbr.j2` + translation AgentNode from the reuse spec was never built — the shipped pipeline is digest + optional EN blog only — so whether translation is a Project A or a content-publishing concern needs deciding before it's scheduled). Also reconciled the cross-repo reuse spec `learn-ai/planning/5.1-reuse-for-project-a/tasks.md` against what actually shipped (Done / carried-over / decision-pending / correctly-skipped per item), added a follow-ups callout to `status.md`, and wrote `planning/handoff.md` for the next session. No product code changed; Project B (research agent) is next.
