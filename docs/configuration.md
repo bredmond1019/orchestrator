@@ -107,6 +107,10 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `BEDROCK_AWS_ACCESS_KEY_ID` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
 | `BEDROCK_AWS_SECRET_ACCESS_KEY` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
 | `BEDROCK_AWS_REGION` | string | — | Conditional | `AgentNode` / `ModelProvider.BEDROCK` |
+| `CLAUDE_CODE_BIN` | string | `claude` (on `$PATH`) | Conditional | `ClaudeAgentSdkBackend` — path to the `claude` binary; leave blank to use `claude` resolved from `$PATH` |
+| `CLAUDE_CODE_CWD` | string | repo root | Conditional | `ClaudeAgentSdkBackend` — working directory passed to the SDK subprocess; leave blank to use the process working directory |
+| `CLAUDE_CODE_PERMISSION_MODE` | string | `bypassPermissions` | Conditional | `ClaudeAgentSdkBackend` — SDK permission mode; `bypassPermissions` is required for non-interactive agent use |
+| `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` | integer | `180` | Conditional | `ClaudeAgentSdkBackend` — per-call timeout in seconds before the SDK subprocess is cancelled |
 | `FIRECRAWL_API_KEY` | string | — | Optional | `ArticleExtractionService` Firecrawl fallback |
 | `TAVILY_API_KEY` | string | — | Conditional | `SearchService` — required when any workflow uses web search |
 | `CONTENT_DIGEST_DIR` | string | `./_digest` | Optional | `StorageNode` — root directory for static HTML digest pages; sub-folders per category are created automatically |
