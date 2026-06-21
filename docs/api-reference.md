@@ -1353,6 +1353,94 @@ from services.transcript_service import TranscriptService
 
 ---
 
+## ClaudeResult
+
+**Source:** `app/services/claude_code/backend.py`
+
+```python
+@dataclass
+class ClaudeResult:
+    model: str
+    text: str | None = None
+    structured: Any | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
+    session_id: str | None = None
+```
+
+The uniform return type for every `ClaudeCodeBackend` implementation. One instance
+represents one completed LLM turn.
+
+| Field | Type | Description |
+|---|---|---|
+| `model` | `str` | The model identifier reported by the backend (required). |
+| `text` | `str \| None` | Free-text output from the LLM turn. Populated for text runs; `None` for structured-output runs. |
+| `structured` | `Any \| None` | Parsed structured output when a JSON schema was requested; `None` otherwise. Mutually exclusive with `text` in practice. |
+| `input_tokens` | `int \| None` | Input tokens consumed, as reported by the SDK's terminal `ResultMessage`. `None` if the backend cannot report them. |
+| `output_tokens` | `int \| None` | Output tokens generated. `None` if the backend cannot report them. |
+| `cost_usd` | `float \| None` | Client-side cost estimate in USD from the SDK. `None` if unavailable. |
+| `session_id` | `str \| None` | Session identifier from the underlying Claude Code session, when available. |
+
+### Package Export
+
+`ClaudeResult` is exported from `app/services/claude_code/__init__.py`:
+
+```python
+from services.claude_code import ClaudeResult
+```
+
+---
+
+## ClaudeCodeBackend
+
+**Source:** `app/services/claude_code/backend.py`
+
+```python
+@runtime_checkable
+class ClaudeCodeBackend(Protocol):
+    async def run(
+        self,
+        prompt: str,
+        *,
+        system: str | None,
+        model: str,
+        schema: dict | None,
+    ) -> ClaudeResult: ...
+```
+
+A `typing.Protocol` defining the pluggable seam between `ClaudeCodeModel` (a
+pydantic-ai `Model`) and its underlying execution engine. Decorated with
+`@runtime_checkable` so backends and tests can assert conformance with
+`isinstance(obj, ClaudeCodeBackend)`.
+
+Concrete implementations ship in later tasks:
+
+| Class | Source | Description |
+|---|---|---|
+| `ClaudeAgentSdkBackend` | `app/services/claude_code/sdk_backend.py` (Task 3) | Drives the official `claude-agent-sdk`, forces subscription auth. |
+
+### `run(prompt, *, system, model, schema) -> ClaudeResult`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `prompt` | `str` | The user-facing prompt for this turn. |
+| `system` | `str \| None` | Optional system prompt; `None` means no system prompt override. |
+| `model` | `str` | Model alias or full model name to pass to the backend. |
+| `schema` | `dict \| None` | JSON schema for structured output, or `None` for free-text output. |
+
+Returns a `ClaudeResult` carrying the output and usage metadata.
+
+### Package Export
+
+`ClaudeCodeBackend` is exported from `app/services/claude_code/__init__.py`:
+
+```python
+from services.claude_code import ClaudeCodeBackend
+```
+
+---
+
 ## WorkflowRegistry
 
 **Source:** `app/workflows/workflow_registry.py`
