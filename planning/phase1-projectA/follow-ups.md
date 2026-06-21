@@ -16,7 +16,7 @@ against the site reuse spec. None block Project B; do them when convenient.*
 
 Coverage is otherwise strong; these are the two genuine gaps.
 
-- [ ] **`_is_youtube_url` spoof/subdomain negative cases.**
+- [x] **`_is_youtube_url` spoof/subdomain negative cases.** *(Done 2026-06-21.)*
   **Where:** `tests/workflows/content_pipeline/test_fetch_nodes.py`, in the *SourceRouterNode routing* section.
   **What:** Add parametrized cases for the `host.endswith("." + h)` branch in
   `app/workflows/content_pipeline_workflow_nodes/source_router_node.py`:
@@ -25,7 +25,7 @@ Coverage is otherwise strong; these are the two genuine gaps.
   Today only `www.youtube.com` / `youtu.be` / `youtube.com` happy cases are tested, so the
   anti-spoofing logic is unexercised.
 
-- [ ] **Document that `SelfCriticNode.approved` is intentionally inert.**
+- [x] **Document that `SelfCriticNode.approved` is intentionally inert.** *(Done 2026-06-21.)*
   **Where:** `tests/workflows/test_content_blog_branch.py`, `TestSelfCriticNode` (or a short workflow-level test).
   **What:** The blog branch is a *linear* writer→critic→revise (DAG validated acyclic), so
   `ReviseNode` always runs regardless of `approved`. Add a one-line test asserting that
