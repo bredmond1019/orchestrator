@@ -5,5 +5,6 @@ Exports the backend protocol + result type now; `ClaudeAgentSdkBackend` and
 """
 
 from services.claude_code.backend import ClaudeCodeBackend, ClaudeResult
+from services.claude_code.model import ClaudeCodeModel
 
-__all__ = ["ClaudeCodeBackend", "ClaudeResult"]
+__all__ = ["ClaudeCodeBackend", "ClaudeResult", "ClaudeCodeModel"]

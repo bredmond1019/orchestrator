@@ -1497,6 +1497,74 @@ See `docs/configuration.md` for the full table. Summary:
 | `CLAUDE_CODE_CWD` | process cwd | Working directory for the subprocess |
 | `CLAUDE_CODE_PERMISSION_MODE` | `bypassPermissions` | SDK permission mode |
 | `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` | `180` | Per-call timeout in seconds |
+## ClaudeCodeModel
+
+**Source:** `app/services/claude_code/model.py`
+
+```python
+class ClaudeCodeModel(pydantic_ai.models.Model):
+    def __init__(self, backend: ClaudeCodeBackend, model_name: str) -> None: ...
+```
+
+A pydantic-ai `Model` implementation that delegates one LLM turn to a
+`ClaudeCodeBackend`. It is the seam between pydantic-ai's `Agent` machinery
+and the pluggable Claude Code execution engine. Constructed with a concrete
+backend and the requested model name (a Claude alias such as `"opus"` or a
+full id like `"claude-opus-4-8"`).
+
+**When to use:** Pass a `ClaudeCodeModel` instance to `AgentNode` via the
+`model_instance` parameter instead of relying on a `ModelProvider` enum when
+you need to drive an LLM call through the Claude Code SDK backend.
+
+### Properties
+
+| Property | Return Type | Description |
+|---|---|---|
+| `model_name` | `str` | The requested Claude model name (alias or full id) as passed to the constructor. |
+| `system` | `str` | Always `"claude-code"` — the provider identifier surfaced to pydantic-ai telemetry. |
+| `base_url` | `str \| None` | Always `None` — the backend shells out to the Claude Code engine; no HTTP base URL is used. |
+
+### `request(messages, model_settings, model_request_parameters) -> tuple[ModelResponse, Usage]`
+
+Executes one turn via the backend and adapts the result to pydantic-ai 0.1.5.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `messages` | `list[ModelMessage]` | The full message history for this turn. `SystemPromptPart` and `UserPromptPart` contents are extracted; all other message types are ignored. |
+| `model_settings` | `ModelSettings \| None` | Forwarded for interface compatibility; not used by this implementation. |
+| `model_request_parameters` | `ModelRequestParameters` | Carries `output_tools`; when non-empty the first tool's `parameters_json_schema` is passed to the backend as `schema`. |
+
+**Output path — structured:** when `model_request_parameters.output_tools` is non-empty, calls
+`backend.run(..., schema=<first output tool's JSON schema>)` and returns a
+`ToolCallPart(tool_name=output_tool.name, args=result.structured or json.loads(result.text))`.
+
+**Output path — text:** when `output_tools` is empty, calls `backend.run(..., schema=None)` and
+returns a `TextPart(content=result.text or "")`.
+
+In both cases `Usage(requests=1, request_tokens=..., response_tokens=...)` is built from the
+backend result's token fields.
+
+### `request_stream(...)`
+
+Raises `NotImplementedError` immediately. Streaming is documented future work and is out of scope
+for the Claude Code provider.
+
+### `customize_request_parameters(model_request_parameters) -> ModelRequestParameters`
+
+Returns the parameters unchanged. No provider-specific rewriting is needed.
+
+### `_get_instructions(messages) -> None`
+
+Returns `None`. System text is extracted from `SystemPromptPart` elements inside `request`;
+no model-level instruction injection is performed.
+
+### Package Export
+
+`ClaudeCodeModel` is exported from `app/services/claude_code/__init__.py`:
+
+```python
+from services.claude_code import ClaudeCodeModel
+```
 
 ---
 
