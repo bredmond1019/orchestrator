@@ -19,6 +19,7 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.bedrock import BedrockProvider
 from pydantic_ai.providers.google_gla import GoogleGLAProvider
 from pydantic_ai.providers.openai import OpenAIProvider
+from services.claude_code import ClaudeAgentSdkBackend, ClaudeCodeModel
 
 from core.nodes.base import Node
 from core.task import TaskContext, to_jsonable
@@ -33,6 +34,7 @@ class ModelProvider(StrEnum):
     GEMINI = "gemini"
     OLLAMA = "ollama"
     BEDROCK = "bedrock"
+    CLAUDE_CODE_SDK = "claude_code_sdk"
 
 
 @dataclass
@@ -41,7 +43,13 @@ class AgentConfig:
     output_type: type[Any] | None
     deps_type: type[Any] | None
     model_provider: ModelProvider
-    model_name: OpenAIModelName | AnthropicModelName | GeminiModelName | BedrockModelName
+    model_name: (
+        OpenAIModelName
+        | AnthropicModelName
+        | GeminiModelName
+        | BedrockModelName
+        | str
+    )
 
 
 class AgentNode(Node, ABC):
@@ -124,6 +132,8 @@ class AgentNode(Node, ABC):
                 return self.__get_ollama_model(model_name)
             case provider.BEDROCK.value:
                 return self.__get_bedrock_model(model_name)
+            case provider.CLAUDE_CODE_SDK.value:
+                return self.__get_claude_code_sdk_model(model_name)
             case _:
                 return self.__get_openai_model("gpt-4.1")
 
@@ -159,6 +169,11 @@ class AgentNode(Node, ABC):
 
         return OpenAIModel(
             model_name=model_name, provider=OpenAIProvider(base_url=base_url)
+        )
+
+    def __get_claude_code_sdk_model(self, model_name: str) -> Model:
+        return ClaudeCodeModel(
+            backend=ClaudeAgentSdkBackend(), model_name=model_name
         )
 
     def __get_bedrock_model(self, model_name: str) -> Model:
