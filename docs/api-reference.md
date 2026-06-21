@@ -1414,11 +1414,11 @@ pydantic-ai `Model`) and its underlying execution engine. Decorated with
 `@runtime_checkable` so backends and tests can assert conformance with
 `isinstance(obj, ClaudeCodeBackend)`.
 
-Concrete implementations ship in later tasks:
+Concrete implementations:
 
 | Class | Source | Description |
 |---|---|---|
-| `ClaudeAgentSdkBackend` | `app/services/claude_code/sdk_backend.py` (Task 3) | Drives the official `claude-agent-sdk`, forces subscription auth. |
+| `ClaudeAgentSdkBackend` | `app/services/claude_code/sdk_backend.py` | Drives the official `claude-agent-sdk`, forces subscription auth by blanking `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` in the spawned CLI env. |
 
 ### `run(prompt, *, system, model, schema) -> ClaudeResult`
 
@@ -1438,6 +1438,65 @@ Returns a `ClaudeResult` carrying the output and usage metadata.
 ```python
 from services.claude_code import ClaudeCodeBackend
 ```
+
+---
+
+## ClaudeAgentSdkBackend
+
+**Source:** `app/services/claude_code/sdk_backend.py`
+
+```python
+class ClaudeAgentSdkBackend:
+    async def run(
+        self,
+        prompt: str,
+        *,
+        system: str | None,
+        model: str,
+        schema: dict | None,
+    ) -> ClaudeResult: ...
+```
+
+Concrete implementation of the `ClaudeCodeBackend` protocol that delegates to
+`claude_agent_sdk.query()`. The spawned `claude` CLI is forced onto the Claude
+Code **subscription** (not metered API credits) by blanking `ANTHROPIC_API_KEY`
+and `ANTHROPIC_AUTH_TOKEN` in the child process environment. All configuration is
+read from `CLAUDE_CODE_*` env vars at call time (see `docs/configuration.md`).
+
+### Behaviour
+
+1. Builds `ClaudeAgentOptions` from env vars (`CLAUDE_CODE_BIN`,
+   `CLAUDE_CODE_CWD`, `CLAUDE_CODE_PERMISSION_MODE`) and the call parameters
+   (`model`, `system`, `schema`).
+2. Calls `query()` inside `asyncio.wait_for` with a timeout from
+   `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` (default `180` seconds).
+3. Drains the async stream, keeping the last `ResultMessage` as the terminal
+   result.
+4. Raises `RuntimeError` on: timeout, no terminal result, non-`success` subtype,
+   or `is_error=True` — all with a descriptive message including `subtype`,
+   `is_error`, `api_error_status`, and `errors`.
+5. Maps a successful `ResultMessage` into `ClaudeResult`:
+
+| `ResultMessage` field | `ClaudeResult` field |
+|---|---|
+| `result` | `text` |
+| `structured_output` | `structured` |
+| `usage["input_tokens"]` | `input_tokens` |
+| `usage["output_tokens"]` | `output_tokens` |
+| `total_cost_usd` | `cost_usd` |
+| `session_id` | `session_id` |
+| _(call parameter)_ `model` | `model` |
+
+### Environment Variables
+
+See `docs/configuration.md` for the full table. Summary:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CLAUDE_CODE_BIN` | `claude` (on `$PATH`) | Path to the `claude` binary |
+| `CLAUDE_CODE_CWD` | process cwd | Working directory for the subprocess |
+| `CLAUDE_CODE_PERMISSION_MODE` | `bypassPermissions` | SDK permission mode |
+| `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` | `180` | Per-call timeout in seconds |
 
 ---
 
