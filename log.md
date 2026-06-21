@@ -10,6 +10,46 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-20
+
+Shipped Phase 1, Project A — the content_pipeline workflow — driving all 8 tasks of its spec to completion through three /sdlc-block orchestrator segments. The pipeline turns a YouTube or article URL into a categorized, embedded LearningArtifact plus a static-HTML personal digest (always), and an opt-in self-corrected blog draft when make_blog=true. The wired DAG runs SourceRouterNode → {FetchTranscriptNode | FetchArticleNode} → SummarizerNode → StorageNode → BlogDecisionRouterNode → BlogWriterNode → SelfCriticNode → ReviseNode. New this project: a LearningArtifact SQLAlchemy model with a pgvector(1024) embedding column and its Alembic migration; embeddings written at write time; a pure-function digest_renderer for static HTML pages + category indexes; the reusable FetchArticleNode (trafilatura-first, Firecrawl-fallback); and a 9-field SummaryOutput schema. The storage node persists via the GenericRepository + db_session factory seam because the framework instantiates nodes with zero constructor args (no injection point) — this was surfaced by an authoring-time /breakdown and kept the node deployment-agnostic per rule 7. Three of eight tasks needed a human touch: tasks 4 and 6 escalated on the same additive-doc merge conflict (parallel rows appended to docs/app-architecture-overview.md), each resolved by hand in seconds; the rest auto-merged. 295 tests pass (up from 244), ruff clean. Project B (research agent) is next.
+
+```diff
+ app/alembic/env.py                                 |   1 +
+ ...a1b2c3d4e5f6_create_learning_artifacts_table.py |  40 ++
+ app/core/nodes/router.py                           |   4 +-
+ app/database/learning_artifact.py                  |  74 ++++
+ app/prompts/blog_reviser.j2                        |  24 ++
+ app/prompts/blog_self_critic.j2                    |  28 ++
+ app/prompts/blog_writer.j2                         |  34 ++
+ app/prompts/content_summarizer.j2                  |  45 ++
+ app/schemas/content_pipeline_schema.py             |  28 +-
+ app/workflows/content_pipeline_workflow.py         |  95 ++++-
+ app/workflows/content_pipeline_workflow_nodes/blog_decision_router_node.py |  31 ++
+ app/workflows/content_pipeline_workflow_nodes/blog_writer_node.py |  38 ++
+ app/workflows/content_pipeline_workflow_nodes/digest_renderer.py | 107 +++++
+ app/workflows/content_pipeline_workflow_nodes/fetch_article_node.py |  28 ++
+ app/workflows/content_pipeline_workflow_nodes/fetch_transcript_node.py |  41 ++
+ app/workflows/content_pipeline_workflow_nodes/initial_node.py |   7 -
+ app/workflows/content_pipeline_workflow_nodes/revise_node.py |  49 +++
+ app/workflows/content_pipeline_workflow_nodes/self_critic_node.py |  47 +++
+ app/workflows/content_pipeline_workflow_nodes/source_router_node.py |  48 +++
+ app/workflows/content_pipeline_workflow_nodes/storage_node.py | 110 +++++
+ app/workflows/content_pipeline_workflow_nodes/summarizer_node.py |  89 ++++
+ docs/api-reference.md                              | 457 ++++++++++++++++++++-
+ docs/app-architecture-overview.md                  |  16 +-
+ tests/core/test_nodes_router.py                    |  12 +
+ tests/database/test_learning_artifact.py           | 135 ++++++
+ tests/workflows/content_pipeline/test_fetch_nodes.py | 131 ++++++
+ tests/workflows/content_pipeline/test_storage_node.py | 150 +++++++
+ tests/workflows/content_pipeline/test_summarizer_node.py | 110 +++++
+ tests/workflows/test_content_blog_branch.py        | 182 ++++++++
+ tests/workflows/test_content_pipeline_workflow.py  | 260 +++++++++++-
+ 33 files changed, 2388 insertions(+), 41 deletions(-)
+```
+
+---
+
 ## 2026-06-20 (task 8 — Validate)
 
 Final validation of the complete content pipeline: all lint, test, import, and database migration checks passed. The workflow graph is fully wired (SourceRouterNode → fetch nodes → SummarizerNode → StorageNode → BlogDecisionRouterNode → blog branch), all prompts are externalized to `.j2` files, embedding generation is integrated at write time, and 1024-dim Voyage vectors are persisted to pgvector. Digest-only and blog-generation paths both tested end-to-end with mocked agents and services. The implementation enforces deployment-agnostic design: all persistence and service calls are injected, no hardcoded paths or credentials. Next: Phase 1, Project B — Research agent (thin → hardened).
