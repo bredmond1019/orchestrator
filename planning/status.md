@@ -9,8 +9,10 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-20 — Project A (content_pipeline) DONE — 8/8 tasks merged via /sdlc-block across 3 segments; Project B is next
+**Last updated:** 2026-06-20 — Project A (content_pipeline) DONE — 8/8 tasks merged via /sdlc-block across 3 segments; post-ship audit logged small follow-ups (`planning/phase1-projectA/follow-ups.md`); Project B is next
 **Current focus:** Phase 1, Project B — Research agent (thin cut first: one ToolUseNode + Tavily, ~50 lines; harden later when a real prospect pulls)
+
+> **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
 ---
 
