@@ -163,12 +163,31 @@ value `http://localhost:11434/v1` in `app/.env.example` assumes a locally runnin
 are read via `os.getenv()` and passed directly to `boto3.client("bedrock-runtime", ...)`.
 
 **Claude Code SDK**: `ModelProvider.CLAUDE_CODE_SDK` routes through `ClaudeAgentSdkBackend`
-(in `app/services/claude_code/sdk_backend.py`). It uses the local `claude` CLI binary via
-`claude-agent-sdk` and requires a valid Claude Max / Pro subscription — no `ANTHROPIC_API_KEY`
-is used (the backend blanks it before spawning the CLI). All four env vars are optional with
-sensible defaults: `CLAUDE_CODE_BIN` (default: `claude` on `$PATH`), `CLAUDE_CODE_CWD` (default:
-process cwd), `CLAUDE_CODE_PERMISSION_MODE` (default: `bypassPermissions`), and
-`CLAUDE_CODE_SDK_TIMEOUT_SECONDS` (default: `180`).
+(in `app/services/claude_code/sdk_backend.py`). Unlike the other providers, it does **not**
+authenticate with an API key — it drives the host's Claude Code subscription.
+
+*Prerequisites (host running the API/worker):*
+
+- The `claude-agent-sdk` Python package must be installed (it ships in `pyproject.toml`
+  dependencies; `uv sync` installs it). Verify with `cd app && uv run python -c "import claude_agent_sdk"`.
+- The `claude` CLI binary must be present on the host (`claude-agent-sdk` shells out to it) and
+  **logged into a Claude Max / Pro subscription** (`claude login`). The backend cannot use this
+  provider headlessly without an existing subscription session.
+
+*Subscription billing:* no `ANTHROPIC_API_KEY` is used. The backend blanks both
+`ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` in the spawned CLI's environment, so a key
+exported on the host cannot redirect billing to the metered Anthropic API.
+
+*Usage reporting:* SDK mode returns **real token usage** (`input_tokens` / `output_tokens`)
+and the SDK's client-side cost estimate (`total_cost_usd`) from the terminal `ResultMessage`;
+these flow into `NodeRun.usage` via `run_agent_recorded`.
+
+All four env vars are optional with sensible defaults: `CLAUDE_CODE_BIN` (default: `claude` on
+`$PATH`), `CLAUDE_CODE_CWD` (default: process cwd), `CLAUDE_CODE_PERMISSION_MODE` (default:
+`bypassPermissions`), and `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` (default: `180`).
+
+The cross-repo design and the contract for the sibling `CLAUDE_CODE_SESSION` (bastion) mode are
+tracked in the company-brain doc `agentic-portfolio/docs/integrations/claude-code-llm-provider.md`.
 
 **VoyageAI embeddings**: `VOYAGE_API_KEY` is read via `os.environ["VOYAGE_API_KEY"]` inside
 `EmbeddingService.__init__()`. Unlike the `AgentNode` provider keys it is not gated on a
