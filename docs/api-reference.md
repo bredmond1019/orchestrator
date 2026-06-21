@@ -1498,6 +1498,9 @@ See `docs/configuration.md` for the full table. Summary:
 | `CLAUDE_CODE_CWD` | process cwd | Working directory for the subprocess |
 | `CLAUDE_CODE_PERMISSION_MODE` | `bypassPermissions` | SDK permission mode |
 | `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` | `180` | Per-call timeout in seconds |
+
+---
+
 ## ClaudeCodeModel
 
 **Source:** `app/services/claude_code/model.py`
@@ -1568,6 +1571,15 @@ from services.claude_code import ClaudeCodeModel
 from services.claude_code import ClaudeAgentSdkBackend
 from services.claude_code import ClaudeCodeBackend, ClaudeResult
 ```
+
+### Cross-repo coordination
+
+The `ClaudeCodeBackend` protocol and `ClaudeCodeModel` are deliberately backend-agnostic so the
+later `CLAUDE_CODE_SESSION` (bastion) mode can reuse them by adding a second backend plus enum
+value — no change to the protocol or the Model. The cross-repo design and the contract for that
+sibling mode live in the company-brain doc
+`agentic-portfolio/docs/integrations/claude-code-llm-provider.md`. See also
+`docs/configuration.md` for the `CLAUDE_CODE_*` environment variables and host prerequisites.
 
 ---
 
