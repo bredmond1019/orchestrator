@@ -452,12 +452,13 @@ class AgentConfig:
 
 ```python
 class ModelProvider(StrEnum):
-    OPENAI        = "openai"
-    AZURE_OPENAI  = "azure_openai"
-    ANTHROPIC     = "anthropic"
-    GEMINI        = "gemini"
-    OLLAMA        = "ollama"
-    BEDROCK       = "bedrock"
+    OPENAI           = "openai"
+    AZURE_OPENAI     = "azure_openai"
+    ANTHROPIC        = "anthropic"
+    GEMINI           = "gemini"
+    OLLAMA           = "ollama"
+    BEDROCK          = "bedrock"
+    CLAUDE_CODE_SDK  = "claude_code_sdk"
 ```
 
 ### `get_agent_config() -> AgentConfig` — Abstract
@@ -1560,10 +1561,12 @@ no model-level instruction injection is performed.
 
 ### Package Export
 
-`ClaudeCodeModel` is exported from `app/services/claude_code/__init__.py`:
+`ClaudeCodeModel`, `ClaudeAgentSdkBackend`, `ClaudeCodeBackend`, and `ClaudeResult` are all exported from `app/services/claude_code/__init__.py`:
 
 ```python
 from services.claude_code import ClaudeCodeModel
+from services.claude_code import ClaudeAgentSdkBackend
+from services.claude_code import ClaudeCodeBackend, ClaudeResult
 ```
 
 ---
