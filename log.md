@@ -10,6 +10,19 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22
+
+Added local dev scripts: `scripts/dev-setup.sh` (one-time Homebrew Postgres/Redis install, local DB creation, pgvector extension, .env generation, Alembic migrations) and `scripts/dev.sh` (two-pane tmux launcher — FastAPI on top, Celery worker on bottom). Also generated missing Alembic migration `app/alembic/versions/cc3ad971094e_create_events_table.py` for the events table schema that existed only in Docker previously. Both scripts and the migration are local development helpers (not tracked in git, ignored by `.gitignore`). Updated `.gitignore` to explicitly ignore `/scripts/` with a comment explaining they are machine-specific and regenerated on demand by tooling. Infrastructure/tooling work only — no schema changes, no product code affected. Prerequisite for unblocking feature-claude-code-session-provider after bastion Block G ships.
+
+```diff
+ .gitignore | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+```
+
+*(plus untracked local files: `scripts/dev-setup.sh`, `scripts/dev.sh`, `app/alembic/versions/cc3ad971094e_create_events_table.py`)*
+
+---
+
 ## 2026-06-21 (session — /sdlc-block orchestration of CLAUDE_CODE_SDK + handoff)
 
 Ran `/sdlc-block feature-claude-code-sdk-provider` to a full PASS: all 7 tasks merged across 5 dependency-ordered waves with zero escalations on first attempt. Shipped `ModelProvider.CLAUDE_CODE_SDK` — a subscription-billed Claude Code provider mode via the `claude-agent-sdk` CLI integration, with env-scrub to blank `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` at call time, forcing billing to the user's Max/Pro subscription. Implemented a reusable `ClaudeCodeBackend` protocol + `ClaudeResult` dataclass (text, structured, usage, cost) and a pydantic-ai 0.1.5 `ClaudeCodeModel` seam that both the immediate subscription-mode feature and the later session-persistence feature will use interchangeably. Independent verification: ruff clean, pylint 10.00/10, 335 tests pass (+40 Claude-specific, covering full env-scrub/error-path spectrum, structured output, 2-tuple return contract). Pre-flight security fix: added `.env.local` to `.gitignore` (was leaking `ANTHROPIC_API_KEY`); committed specs + vendored SDK reference doc (0f7396b). Outstanding gate: manual operator-run subscription-host e2e (billing confirmation via real token usage reported in `NodeRun.usage`) deferred and recorded in spec Notes. Next: `feature-claude-code-session-provider` (Task 1: Bastion session backend + routing), currently blocked on bastion Block G shipping. Wrote `planning/handoff.md` to frame the session-provider feature and its bastion dependency.
