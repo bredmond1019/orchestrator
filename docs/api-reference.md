@@ -498,6 +498,8 @@ node instance.
 | `GEMINI` | `GeminiModel(model_name=..., provider=GoogleGLAProvider(http_client=...))` | `GOOGLE_API_KEY` |
 | `OLLAMA` | `OpenAIModel(model_name=..., provider=OpenAIProvider(base_url=...))` | `OLLAMA_BASE_URL` |
 | `BEDROCK` | `BedrockConverseModel(model_name=..., provider=BedrockProvider(bedrock_client=...))` | `BEDROCK_AWS_ACCESS_KEY_ID`, `BEDROCK_AWS_SECRET_ACCESS_KEY`, `BEDROCK_AWS_REGION` |
+| `CLAUDE_CODE_SDK` | `ClaudeCodeModel(backend=ClaudeAgentSdkBackend(), model_name=...)` | `CLAUDE_CODE_BIN`, `CLAUDE_CODE_CWD`, `CLAUDE_CODE_PERMISSION_MODE`, `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` |
+| `CLAUDE_CODE_SESSION` | `ClaudeCodeModel(backend=BastionSessionBackend(), model_name=...)` | `CLAUDE_CODE_TMUX_SESSION`, `CLAUDE_CODE_WORKDIR`, `CLAUDE_CODE_IO_DIR`, `CLAUDE_CODE_SESSION_TIMEOUT_SECONDS` |
 
 If `model_provider` does not match any enum value, the implementation falls back to
 `OpenAIModel("gpt-4.1")`.
@@ -1635,12 +1637,13 @@ from services.claude_code import ClaudeCodeBackend, ClaudeResult
 ### Cross-repo coordination
 
 The `ClaudeCodeBackend` protocol and `ClaudeCodeModel` are deliberately backend-agnostic. The
-`CLAUDE_CODE_SESSION` (bastion) mode is now implemented as `BastionSessionBackend`
+`CLAUDE_CODE_SESSION` (bastion) mode is implemented as `BastionSessionBackend`
 (`app/services/claude_code/bastion_backend.py`) — a second backend that reuses the same protocol
-and `ClaudeCodeModel` without any change to either. Provider routing (wiring
-`ModelProvider.CLAUDE_CODE_SESSION` into `agent.py`) is completed in Task 3. The cross-repo design
-and the contract for the bastion mode live in the company-brain doc
-`agentic-portfolio/docs/integrations/claude-code-llm-provider.md`. See also
+and `ClaudeCodeModel` without any change to either. Provider routing is wired in
+`app/core/nodes/agent.py`: `ModelProvider.CLAUDE_CODE_SDK` routes to `ClaudeAgentSdkBackend` and
+`ModelProvider.CLAUDE_CODE_SESSION` routes to `BastionSessionBackend`, both through
+`ClaudeCodeModel`. The cross-repo design and the contract for the bastion mode live in the
+company-brain doc `agentic-portfolio/docs/integrations/claude-code-llm-provider.md`. See also
 `docs/configuration.md` for the `CLAUDE_CODE_*` environment variables and host prerequisites.
 
 ---
