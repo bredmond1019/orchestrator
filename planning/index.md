@@ -19,6 +19,7 @@ The planning and context documents for becoming an expert AI / agentic / harness
 | **Test_Plan.md** | Testing standard (Option A) + the four bug fixes | You need the testing scope or per-project rule |
 | **harness.json** | SDLC pipeline validation suite (the checks `/test` runs) | You're wiring or changing what the pipeline validates |
 | **decisions/** | Why settled choices were made — one atomic file per decision + `index.md` registry (append-only) | You're tempted to relitigate a settled question |
+| **diagnostic-alignment/** | Constraint doc governing Projects B+C output schemas — ties them to The Diagnostic artifact schemas in the brain | You're speccing or reviewing Projects B or C |
 | **`<concept>/`** *(created just-in-time)* | Per-concept work orders (`tasks.md`) with pipeline state under `<concept>/sdlc/` | You're starting a specific block (OKF concept-folder model) |
 
 ## Read order for a newcomer (human or LLM)
