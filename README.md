@@ -6,7 +6,7 @@ picks up each job and runs it through a **Workflow** — a validated DAG of
 **Nodes** — passing a shared `TaskContext` through each step. New workflows are
 added as sibling directories alongside the reference `customer_care` workflow.
 
-The framework core is complete and tested (210 passing tests); it is the delivery
+The framework core is complete and tested (405 passing tests); it is the delivery
 vehicle each new automation ships into, not a hardened, deployed product.
 
 ## Prerequisites
@@ -63,7 +63,7 @@ cd docker
 uv run pytest
 ```
 
-210 tests pass, covering the framework core, shared services, the database layer,
+405 tests pass, covering the framework core, shared services, the database layer,
 and the API. Every new workflow ships with its own tests as it lands. See
 `planning/Test_Plan.md` for scope (Option A).
 
