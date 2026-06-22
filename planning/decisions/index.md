@@ -43,6 +43,8 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided Â
 | D28 | Persist node-level execution state incrementally (injected callback; brain stays agnostic) | [D28-node-level-execution-state.md](D28-node-level-execution-state.md) |
 | D29 | Execute OKF Phase 2; adopt base-template's richer-check + token-telemetry engines; harness.json | [D29-execute-okf-and-adopt-richer-check-engines.md](D29-execute-okf-and-adopt-richer-check-engines.md) |
 | D30 | Orchestrator owns the versioned data contract; capture per-node input + serializable output | [D30-data-contract-ownership.md](D30-data-contract-ownership.md) |
+| D31 | Exclude ARRAY and Vector models from SQLite test fixtures; test against real PostgreSQL only | [D31-sqlite-array-exclusion.md](D31-sqlite-array-exclusion.md) |
+| D32 | Lazy imports inside main() for standalone CLI scripts â€” keeps --dry-run and --help offline-safe | [D32-lazy-import-cli-scripts.md](D32-lazy-import-cli-scripts.md) |
 
 ---
 
