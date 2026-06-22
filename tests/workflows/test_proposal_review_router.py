@@ -164,7 +164,7 @@ class TestProposalReviewNode:
         assert fail_results[0].criterion == "CLIENT NAME"
 
     def test_review_reads_proposal_writer_output(self):
-        """Node reads exactly the ProposalWriterNode context key."""
+        """Node reads the roadmap from ProposalWriterNode["result"] and passes it to agent."""
         node = _make(ProposalReviewNode)
         review_output = ProposalReviewNode.OutputType(
             verdict="pass",
@@ -175,12 +175,13 @@ class TestProposalReviewNode:
 
         roadmap = _make_roadmap_dict()
         ctx = TaskContext(event=_make_event())
-        ctx.nodes["ProposalWriterNode"] = roadmap
+        # Writer stores roadmap under "result" key (framework agent-node convention).
+        ctx.nodes["ProposalWriterNode"] = {"result": roadmap}
         _seed_run(ctx, node)
 
         node.process(ctx)
 
-        # Agent must have been called with the writer output as JSON.
+        # Agent must have been called with the writer roadmap as JSON.
         call_args = node.agent.run_sync.call_args
         user_prompt = call_args.kwargs.get("user_prompt") or call_args.args[0]
         parsed = json.loads(user_prompt)
