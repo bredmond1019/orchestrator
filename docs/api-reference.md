@@ -36,9 +36,10 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 20. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
 21. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
 22. [StorageNode](#storagenode)
-23. [digest_renderer](#digest_renderer)
-24. [createworkflow CLI](#createworkflow-cli)
-25. [API Layer](#api-layer)
+23. [ProposalGenerator StorageNode](#proposalgenerator-storagenode)
+24. [digest_renderer](#digest_renderer)
+25. [createworkflow CLI](#createworkflow-cli)
+26. [API Layer](#api-layer)
 
 ---
 
@@ -2221,6 +2222,57 @@ Returns `(source_type, fetch_status)` from whichever fetch node ran. A
 `FetchTranscriptNode` output implies `source_type="youtube"`; otherwise `"article"`. An
 explicit `source_type` key on the fetch output wins. Falls back to `fetch_status="ok"` if
 the key is absent.
+
+---
+
+## ProposalGenerator StorageNode
+
+**Source:** `app/workflows/proposal_generator_workflow_nodes/storage_node.py`
+
+```python
+class StorageNode(Node):
+```
+
+Terminal persistence node for the proposal generator workflow. Reads the final
+`AutomationRoadmap` from whichever writer branch ran, embeds a summary string via
+`EmbeddingService`, and stores a `BrainDocument` row through `GenericRepository` using
+the shared `db_session` factory (rule 7 — no deployment logic inside the node).
+
+The artifact id is captured from `task_context.event.artifact_id` **before** the session
+commits. SQLAlchemy's default `expire_on_commit` would clear ORM attributes on the
+detached instance after the session closes; reading `doc.id` post-commit would silently
+return `None` or raise `DetachedInstanceError`. Reading from the event schema instead
+avoids this entirely.
+
+### `process(task_context) -> TaskContext`
+
+1. Calls `_read_final_roadmap(task_context)` to get the authoritative `AutomationRoadmap`.
+2. Captures `artifact_id` and `company_name` from `task_context.event` before any commit.
+3. Calls `_build_embed_text(roadmap)` → `EmbeddingService().embed_text(embed_text)`.
+4. Constructs `BrainDocument(id=artifact_id, file_path=f"proposals/{artifact_id}/roadmap.json", doc_type="proposal", section="AutomationRoadmap", content=embed_text, embedding=embedding)`.
+5. Calls `self._persist(doc)`.
+6. Records `{"artifact_id", "file_path", "company_name", "embedded": True, "doc_type": "proposal"}` via `task_context.update_node()`.
+
+### `_read_final_roadmap(task_context) -> AutomationRoadmap`
+
+Returns the authoritative roadmap from whichever terminal writer ran. Checks
+`task_context.nodes.get("ReviseNode")` first — if the revise branch ran, its output
+is authoritative. Otherwise falls back to `task_context.get_node_output("ProposalWriterNode")`.
+If `roadmap_data` is already an `AutomationRoadmap` instance it is returned directly;
+otherwise `AutomationRoadmap.model_validate(roadmap_data)` is called to coerce from dict.
+
+### `_build_embed_text(roadmap) -> str`
+
+Constructs the string passed to `EmbeddingService.embed_text`. Format:
+`f"{roadmap.situation_summary}\n{'; '.join(c.name for c in roadmap.candidates)}"`.
+Encodes situation context and candidate names so future semantic search queries can
+retrieve past proposals by domain or problem type.
+
+### `_persist(doc) -> None`
+
+Single persistence seam. Opens the shared `db_session` context manager, creates a
+`GenericRepository(session=session, model=BrainDocument)`, and calls `.create(doc)`.
+Tests monkeypatch this method so no real database is touched.
 
 ---
 
