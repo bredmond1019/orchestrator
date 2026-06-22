@@ -33,12 +33,13 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 17. [WorkflowRegistry](#workflowregistry)
 18. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 19. [SummarizerNode](#summarizernode)
-20. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
-21. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
-22. [StorageNode](#storagenode)
-23. [digest_renderer](#digest_renderer)
-24. [createworkflow CLI](#createworkflow-cli)
-25. [API Layer](#api-layer)
+20. [ProposalWriterNode](#proposalwriternode)
+21. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
+22. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
+23. [StorageNode](#storagenode)
+24. [digest_renderer](#digest_renderer)
+25. [createworkflow CLI](#createworkflow-cli)
+26. [API Layer](#api-layer)
 
 ---
 
@@ -2052,6 +2053,75 @@ it with `model_dump_json()`, calls `run_agent_recorded()`, and stores the transl
 
 `app/prompts/translate_ptbr.j2` — professional EN→pt-BR translation rules: Brazil
 cultural adaptation, mixed technical terminology, Markdown/code/identifier preservation.
+
+---
+
+## ProposalWriterNode
+
+**Source:** `app/workflows/proposal_generator_workflow_nodes/proposal_writer_node.py`
+
+```python
+class ProposalWriterNode(AgentNode):
+```
+
+Concrete `AgentNode` that produces the client-facing `AutomationRoadmap` deliverable from
+scored opportunities. It is the fourth node in the proposal generator pipeline
+(`OpportunityIdentifierNode → ProposalWriterNode`).
+
+Reads the full opportunity output from `OpportunityIdentifierNode` (sorted candidates plus
+a recommended workflow) and asks the LLM to produce a four-section roadmap following The
+Diagnostic deliverable template. Language (PT or EN) is threaded through the user-prompt
+JSON from `event.language` (defaults to `"PT"` for Brazilian clients).
+
+### `OutputType`
+
+```python
+class OutputType(AgentNode.OutputType):
+    situation_summary: str
+    candidates: list[ScoredCandidate]
+    top_profiles: list[WorkflowProfile]
+    recommended_workflow: str
+    engagement_scope: str
+    price_range_brl: tuple[int, int]
+    body_pt: str | None = None
+    body_en: str | None = None
+```
+
+Fields mirror `AutomationRoadmap` directly so the agent produces a single validated
+object. `candidates` are expected pre-sorted composite-descending (guaranteed by
+`OpportunityIdentifierNode`); `top_profiles` is capped at 3 by the `AutomationRoadmap`
+validator.
+
+### `get_agent_config() -> AgentConfig`
+
+Returns an `AgentConfig` with:
+
+| Field | Value |
+|---|---|
+| `system_prompt` | `PromptManager().get_prompt("proposal_writer")` |
+| `output_type` | `ProposalWriterNode.OutputType` |
+| `deps_type` | `None` |
+| `model_provider` | `ModelProvider.CLAUDE_CODE_SDK` |
+| `model_name` | `"sonnet"` |
+
+### `process(task_context) -> TaskContext`
+
+Reads:
+- `OpportunityIdentifierNode` output via `task_context.get_node_output("OpportunityIdentifierNode")["result"]`
+- `event.language` (`"PT"` or `"EN"`; handles both dict events and Pydantic event objects)
+
+Serialises both into a JSON user prompt, calls `run_agent_recorded()`, validates the
+raw output into an `AutomationRoadmap`, and writes the result under `ProposalWriterNode`
+via `task_context.update_node()`.
+
+### System Prompt
+
+`app/prompts/proposal_writer.j2` — encodes all four required deliverable sections
+(Situation & Opportunity, Ranked Candidates, Top Workflow Profiles, Recommended First
+Engagement), the composite scoring rubric axis definitions and anchor descriptions
+(`frequency × 0.35 + time_cost × 0.40 + buildability × 0.25`), and PT/EN language
+dispatch instructions. No scoring computation occurs in Python — the formula is
+embedded in the prompt for model-version stability.
 
 ---
 
