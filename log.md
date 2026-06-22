@@ -10,6 +10,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (Docs housekeeping — OKF frontmatter + External SDK references)
+
+Added OKF frontmatter (type/title/description) to `docs/voyage_ai.md` and `docs/claude-agent-sdk.md` to align with project documentation standards. Updated `docs/index.md` to add a new "External SDK references" section with entries for both documents, improving the navigation index. Pure documentation changes; no schema or code changes. Project A remains fully complete; Project B (research agent) is next.
+
+```diff
+ docs/claude-agent-sdk.md | 6 ++++++
+ docs/index.md            | 7 +++++++
+ 2 files changed, 13 insertions(+)
+```
+
+---
+
 ## 2026-06-22 (Project A follow-ups — golden-corpus fixtures + PT-BR translation node)
 
 Closed all open Project A (content_pipeline) follow-ups. Item 1: vendored two real transcripts into `tests/fixtures/transcripts/` + added `load_transcript()` fixture in `conftest.py` + wrote two realistic fetch/summarize tests. Item 2: confirmed `SummaryOutput`'s lean schema (title + summary) is intentional vs the site template (no change). Item 3: Brandon decided PT-BR translation belongs to Project A as a dropped MVP item, then built it — ported claude-translator.ts into `app/prompts/translate_ptbr.j2` + `TranslatePtBrNode` (terminal node of the blog branch, ReviseNode → TranslatePtBrNode, inherits make_blog gate). Tests + docs (api-reference.md, app-architecture-overview.md) updated. 358 tests pass, ruff clean, pylint 10.00/10. Not a block status change — Project A was already Done; this is follow-up hardening. Next: Phase 1 Project B (Research agent).

@@ -17,6 +17,13 @@ Developer reference for the orchestration framework. Start here, then open the d
 | [configuration.md](configuration.md) | Every environment variable, connection-string assembly, and Docker service topology — configure the stack for local or Docker deployment without guessing. |
 | [app-architecture-overview.md](app-architecture-overview.md) | Codebase analysis of the FastAPI → Celery → Workflow DAG → TaskContext architecture. |
 
+## External SDK references
+
+| Doc | Contents |
+|---|---|
+| [claude-agent-sdk.md](claude-agent-sdk.md) | Complete Python API reference for the Claude Agent SDK — `query()`, `ClaudeSDKClient`, tool definitions, MCP servers, permissions, hooks, and all message/config types. |
+| [voyage_ai.md](voyage_ai.md) | Voyage AI Python client reference — API key setup, embedding models (`voyage-4-large`), rerankers, tokenization, async requests, and a quickstart RAG tutorial. |
+
 ## Architecture review — how each core abstraction works
 
 | Doc | Contents |
