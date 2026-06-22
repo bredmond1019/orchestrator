@@ -138,7 +138,7 @@ Mounted at `/` (`app/api/`):
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| `POST` | `/` | `{ "workflow_type": str, "data": object }` | `202 { "task_id": str, "message": str }` — **trigger** a run |
+| `POST` | `/events/` | `{ "workflow_type": str, "data": object }` | `202 { "task_id": str, "message": str }` — **trigger** a run |
 | `GET` | `/health` | — | `{ "status": str, "version": str }` |
 | `GET` | `/workflows` | — | `{ "workflows": [str, ...] }` — registered types |
 | `GET` | `/workflows/{type}/graph` | — | `{ "nodes": [str, ...], "edges": [[from, to], ...] }` |
