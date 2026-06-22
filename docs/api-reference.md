@@ -1853,9 +1853,10 @@ No prompt text is stored in Python; all prompt content lives in the `.j2` file.
 
 **Source:** `app/workflows/content_pipeline_workflow_nodes/`
 
-Four nodes implement the optional blog-generation branch for the content pipeline.
+Five nodes implement the optional blog-generation branch for the content pipeline.
 The branch is gated by `event.make_blog`: when false, the pipeline ends after storage;
-when true it runs `BlogWriterNode → SelfCriticNode → ReviseNode` (linear, no cycle).
+when true it runs `BlogWriterNode → SelfCriticNode → ReviseNode → TranslatePtBrNode`
+(linear, no cycle).
 
 ---
 
@@ -1968,9 +1969,9 @@ voice consistency, structure.
 class ReviseNode(AgentNode):
 ```
 
-Terminal node of the blog branch (no downstream connection). Applies the
-`SelfCriticNode` critique to the `BlogWriterNode` draft and produces the final revised
-post. Threads both draft and critique into one JSON user prompt.
+Applies the `SelfCriticNode` critique to the `BlogWriterNode` draft and produces the
+final revised English post, then connects to `TranslatePtBrNode`. Threads both draft
+and critique into one JSON user prompt.
 
 #### `OutputType`
 
@@ -1994,6 +1995,51 @@ calls `run_agent_recorded()`, and stores the revised `OutputType`.
 
 `app/prompts/blog_reviser.j2` — instructs the agent to apply critique changes while
 preserving Brandon's voice; frontmatter included for `PromptManager` rendering.
+
+---
+
+### `TranslatePtBrNode`
+
+**Source:** `app/workflows/content_pipeline_workflow_nodes/translate_ptbr_node.py`
+
+```python
+class TranslatePtBrNode(AgentNode):
+```
+
+Terminal node of the blog branch (no downstream connection). Translates the finished
+English post from `ReviseNode` into Brazilian Portuguese (pt-BR) so a published post
+serves the brand's PT+EN cadence. Ported from the site's `claude-translator.ts`
+(blog-post content type, Brazil cultural adaptation, mixed technical terminology,
+Markdown preserved).
+
+#### `OutputType`
+
+| Field | Type | Description |
+|---|---|---|
+| `translated_title` | `str` | Post title in pt-BR. |
+| `translated_body_markdown` | `str` | Full post body in pt-BR, Markdown preserved. |
+| `confidence` | `int` | Self-rated translation quality, 0–100 (default `80`). |
+| `cultural_notes` | `list[str]` | Notes on any cultural-adaptation choices (default `[]`). |
+| `technical_terms` | `list[TranslatedTerm]` | Non-obvious term decisions (default `[]`). |
+
+`TranslatedTerm` is a nested model with `original`, `translation`, and `reasoning` fields.
+
+#### `get_agent_config() -> AgentConfig`
+
+Loads `app/prompts/translate_ptbr.j2` via `PromptManager`; uses `ModelProvider.ANTHROPIC`
+with `claude-opus-4-8` (top-tier per the standing model strategy; a natural Project H
+downgrade candidate once local/open-weight swaps are measured).
+
+#### `process(task_context) -> TaskContext`
+
+Reads `ReviseNode`'s `result` via `get_node_output("ReviseNode")["result"]`, serialises
+it with `model_dump_json()`, calls `run_agent_recorded()`, and stores the translation
+`OutputType`.
+
+### System Prompt
+
+`app/prompts/translate_ptbr.j2` — professional EN→pt-BR translation rules: Brazil
+cultural adaptation, mixed technical terminology, Markdown/code/identifier preservation.
 
 ---
 

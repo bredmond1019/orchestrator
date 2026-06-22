@@ -10,6 +10,27 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (Project A follow-ups — golden-corpus fixtures + PT-BR translation node)
+
+Closed all open Project A (content_pipeline) follow-ups. Item 1: vendored two real transcripts into `tests/fixtures/transcripts/` + added `load_transcript()` fixture in `conftest.py` + wrote two realistic fetch/summarize tests. Item 2: confirmed `SummaryOutput`'s lean schema (title + summary) is intentional vs the site template (no change). Item 3: Brandon decided PT-BR translation belongs to Project A as a dropped MVP item, then built it — ported claude-translator.ts into `app/prompts/translate_ptbr.j2` + `TranslatePtBrNode` (terminal node of the blog branch, ReviseNode → TranslatePtBrNode, inherits make_blog gate). Tests + docs (api-reference.md, app-architecture-overview.md) updated. 358 tests pass, ruff clean, pylint 10.00/10. Not a block status change — Project A was already Done; this is follow-up hardening. Next: Phase 1 Project B (Research agent).
+
+```diff
+ app/workflows/content_pipeline_workflow.py         |  19 ++-
+ docs/api-reference.md                              |  56 ++++++++-
+ docs/app-architecture-overview.md                  |   1 +
+ planning/handoff.md                                | 136 +++++++-----------
+ planning/phase1-projectA/follow-ups.md             |  45 ++++---
+ tests/conftest.py                                  |  22 +++-
+ tests/workflows/content_pipeline/test_fetch_nodes.py |  19 +++
+ tests/workflows/content_pipeline/test_summarizer_node.py |  21 ++++
+ tests/workflows/test_content_pipeline_workflow.py  |  26 ++--
+ 9 files changed, 241 insertions(+), 104 deletions(-)
+```
+
+Untracked files added: `app/prompts/translate_ptbr.j2`, `app/workflows/content_pipeline_workflow_nodes/translate_ptbr_node.py`, `tests/fixtures/transcripts/` (fixture directory), `tests/workflows/content_pipeline/test_translate_ptbr_node.py`.
+
+---
+
 ## 2026-06-22 (session wrap-up — feature-claude-code-session-provider)
 
 Session wrap-up for feature-claude-code-session-provider: drove the spec to a full PASS via `/sdlc-block` (all 5 tasks merged, 353 tests, ruff clean, pylint 10/10). CLAUDE_CODE_SESSION provider + BastionSessionBackend reuse the SDK seam and shell out to bastion ask with pinned v0.1.0 flags. Both Claude Code provider modes (SDK + session) are now complete. Two infra fixes unblocked the run: (1) symlinked the built bastion v0.1.0 binary onto PATH (~/.local/bin/bastion), enabling bastion-side discovery at `worker/config.py` initialization; (2) gitignored `/scripts/` (task agents were regenerating machine-specific local dev helpers that tripped the pre-flight/merge guards — now marked non-tracked per infrastructure precedent). Confirmed bastion-side Block G (bastion ask) is DONE and contract-aligned verbatim: config-from-env (BASTION_BIN, CLAUDE_CODE_TMUX_SESSION, CLAUDE_CODE_WORKDIR, CLAUDE_CODE_IO_DIR, CLAUDE_CODE_SESSION_TIMEOUT_SECONDS), writes prompt + schema (if structured), calls `bastion ask` with pinned flags, parses answers (JSON or markdown), returns None for token/cost. Remaining: operator-run subscription-host e2e gates on both modes (need claude CLI logged into subscription for real billing verification). Wrote planning/handoff.md.
