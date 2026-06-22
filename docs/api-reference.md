@@ -452,13 +452,14 @@ class AgentConfig:
 
 ```python
 class ModelProvider(StrEnum):
-    OPENAI           = "openai"
-    AZURE_OPENAI     = "azure_openai"
-    ANTHROPIC        = "anthropic"
-    GEMINI           = "gemini"
-    OLLAMA           = "ollama"
-    BEDROCK          = "bedrock"
-    CLAUDE_CODE_SDK  = "claude_code_sdk"
+    OPENAI               = "openai"
+    AZURE_OPENAI         = "azure_openai"
+    ANTHROPIC            = "anthropic"
+    GEMINI               = "gemini"
+    OLLAMA               = "ollama"
+    BEDROCK              = "bedrock"
+    CLAUDE_CODE_SDK      = "claude_code_sdk"
+    CLAUDE_CODE_SESSION  = "claude_code_session"
 ```
 
 ### `get_agent_config() -> AgentConfig` — Abstract
@@ -1420,6 +1421,7 @@ Concrete implementations:
 | Class | Source | Description |
 |---|---|---|
 | `ClaudeAgentSdkBackend` | `app/services/claude_code/sdk_backend.py` | Drives the official `claude-agent-sdk`, forces subscription auth by blanking `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` in the spawned CLI env. |
+| `BastionSessionBackend` | `app/services/claude_code/bastion_backend.py` | Shells out to `bastion ask` to run the turn on a live Claude Code session managed in tmux by the `bastion` binary. Token/cost fields are `None` (session billing, not metered). |
 
 ### `run(prompt, *, system, model, schema) -> ClaudeResult`
 
@@ -1501,6 +1503,63 @@ See `docs/configuration.md` for the full table. Summary:
 
 ---
 
+## BastionSessionBackend
+
+**Source:** `app/services/claude_code/bastion_backend.py`
+
+```python
+class BastionSessionBackend:
+    async def run(
+        self,
+        prompt: str,
+        *,
+        system: str | None,
+        model: str,
+        schema: dict | None,
+    ) -> ClaudeResult: ...
+```
+
+Concrete implementation of the `ClaudeCodeBackend` protocol that drives a **live Claude Code
+session** managed in tmux by the `bastion` binary. Instead of spawning an ephemeral CLI subprocess,
+it writes a prompt file and shells out to `bastion ask`, routing the turn through the session named
+by `CLAUDE_CODE_TMUX_SESSION`. This makes each turn observable and attachable via `bastion sessions`.
+
+### Behaviour
+
+1. Resolves the bastion binary: `BASTION_BIN` env var → `shutil.which("bastion")` → falls back to
+   the configured value verbatim (supports absolute paths). Raises `RuntimeError` only when `bastion`
+   is bare and not found on `$PATH`.
+2. Writes a `prompt-<uuid>.md` file to `CLAUDE_CODE_IO_DIR` containing the system prompt (if any)
+   followed by the user prompt. When `schema` is not `None`, appends an instruction:
+   `"Write ONLY a JSON object conforming to this schema: ..."`.
+3. Runs `bastion ask --session <name> --prompt-file <path> --out <answer-path> --dir <workdir>
+   --timeout <sec>` off the event loop via `asyncio.get_event_loop().run_in_executor`, preventing
+   the async event loop from blocking. A 30-second subprocess timeout buffer is added so the
+   in-session `bastion ask` timeout fires first and surfaces its own diagnostics.
+4. Parses the answer file: `json.loads` for structured output, raw markdown string for free-text.
+5. Returns `ClaudeResult` with `input_tokens`, `output_tokens`, `cost_usd`, and `session_id` all
+   `None` (session billing — no per-call usage reporting available in v0.1.0).
+6. Raises `RuntimeError` with stderr context on: non-zero exit, missing answer file, timeout, or
+   invalid JSON in structured mode. Always removes both temp files in a `finally` block.
+
+### Limitations
+
+- Token usage fields (`input_tokens`, `output_tokens`, `cost_usd`) are always `None`. The
+  `model` field in `ClaudeResult` is recorded as passed but is advisory only — the session's model
+  is fixed at launch and is not switched per call in v0.1.0.
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BASTION_BIN` | `bastion` (on `$PATH`) | Path to the `bastion` binary |
+| `CLAUDE_CODE_TMUX_SESSION` | `orchestrator-claude` | tmux session name `bastion ask` targets |
+| `CLAUDE_CODE_WORKDIR` | — | Pre-trusted working directory for the Claude Code session |
+| `CLAUDE_CODE_IO_DIR` | `CLAUDE_CODE_WORKDIR` | Directory where prompt/answer temp files are written |
+| `CLAUDE_CODE_SESSION_TIMEOUT_SECONDS` | `180` | Per-call timeout in seconds |
+
+---
+
 ## ClaudeCodeModel
 
 **Source:** `app/services/claude_code/model.py`
@@ -1564,20 +1623,23 @@ no model-level instruction injection is performed.
 
 ### Package Export
 
-`ClaudeCodeModel`, `ClaudeAgentSdkBackend`, `ClaudeCodeBackend`, and `ClaudeResult` are all exported from `app/services/claude_code/__init__.py`:
+`ClaudeCodeModel`, `ClaudeAgentSdkBackend`, `BastionSessionBackend`, `ClaudeCodeBackend`, and `ClaudeResult` are all exported from `app/services/claude_code/__init__.py`:
 
 ```python
 from services.claude_code import ClaudeCodeModel
 from services.claude_code import ClaudeAgentSdkBackend
+from services.claude_code import BastionSessionBackend
 from services.claude_code import ClaudeCodeBackend, ClaudeResult
 ```
 
 ### Cross-repo coordination
 
-The `ClaudeCodeBackend` protocol and `ClaudeCodeModel` are deliberately backend-agnostic so the
-later `CLAUDE_CODE_SESSION` (bastion) mode can reuse them by adding a second backend plus enum
-value — no change to the protocol or the Model. The cross-repo design and the contract for that
-sibling mode live in the company-brain doc
+The `ClaudeCodeBackend` protocol and `ClaudeCodeModel` are deliberately backend-agnostic. The
+`CLAUDE_CODE_SESSION` (bastion) mode is now implemented as `BastionSessionBackend`
+(`app/services/claude_code/bastion_backend.py`) — a second backend that reuses the same protocol
+and `ClaudeCodeModel` without any change to either. Provider routing (wiring
+`ModelProvider.CLAUDE_CODE_SESSION` into `agent.py`) is completed in Task 3. The cross-repo design
+and the contract for the bastion mode live in the company-brain doc
 `agentic-portfolio/docs/integrations/claude-code-llm-provider.md`. See also
 `docs/configuration.md` for the `CLAUDE_CODE_*` environment variables and host prerequisites.
 
