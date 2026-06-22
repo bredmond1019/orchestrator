@@ -12,12 +12,15 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ## 2026-06-22
 
-Shipped Phase 1 Project B (research agent thin cut) via /sdlc-run in a single PASS attempt. Implemented `CompanyResearchNode` as a `ToolUseNode` subclass with a raw Anthropic tool loop exposing two tools: `web_search` (dispatches to `SearchService`/Tavily) and `submit_research_brief` (validates into `ResearchBriefOutput` with enforced non-empty `likely_time_sinks`). System prompt lives exclusively in `app/prompts/research_agent_brief.j2` loaded via `PromptManager`. `ResearchAgentWorkflow` wired as a single-node DAG; registered as `WorkflowRegistry.RESEARCH_AGENT`. Output schema shaped toward `DiagnosticIntakeOutput` per diagnostic-alignment notes, ready for the hardened version to extend. 19 new tests added (tool-result injection, web_search dispatch, structured-brief capture, end_turn termination, max_iterations guard, diagnostic-alignment output check); 417 tests pass total. No Celery, storage, or embedding work introduced — deferred to the hardened version when a real prospect demands it. Next: Phase 1 Project C (Proposal generator).
+Shipped Phase 1 Project B (research agent thin cut) via /sdlc-run in a single PASS attempt. Implemented `CompanyResearchNode` as a `ToolUseNode` subclass with a raw Anthropic tool loop exposing two tools: `web_search` (dispatches to `SearchService`/Tavily) and `submit_research_brief` (validates into `ResearchBriefOutput` with enforced non-empty `likely_time_sinks`). System prompt lives exclusively in `app/prompts/research_agent_brief.j2` loaded via `PromptManager`. `ResearchAgentWorkflow` wired as a single-node DAG; registered as `WorkflowRegistry.RESEARCH_AGENT`. Output schema shaped toward `DiagnosticIntakeOutput` per diagnostic-alignment notes, ready for the hardened version to extend. Initial 19 tests added (tool-result injection, web_search dispatch, structured-brief capture, end_turn termination, max_iterations guard, diagnostic-alignment output check); 417 tests passing. Post-merge coverage audit: fixed 2 bugs discovered (schema_registry missing `RESEARCH_AGENT` entry; `_handle_submit_brief` crashes on Pydantic ValidationError with no retry), added 10 new tests covering Pydantic event path, ValidationError retry loop, SearchService exception, unknown tool, and multi-tool responses. Final: 427 tests pass. No Celery, storage, or embedding work introduced — deferred to the hardened version when a real prospect demands it. Next: Phase 1 Project C (Proposal generator).
 
-```
-a62579b docs: update docs for phase1-projectB
-ac6c10e feat: implement phase1-projectB research agent (thin cut)
-9fd45f1 chore: add spec for phase1-projectB
+```diff
+ app/api/schema_registry.py                         |   2 +
+ app/workflows/company_research_node.py             |   8 +-
+ planning/handoff.md                                | 147 ++++++++-------
+ tests/workflows/test_company_research_node.py      | 207 ++++++++++++++++++++-
+ tests/workflows/test_research_agent_workflow.py    |   7 +
+ 5 files changed, 303 insertions(+), 68 deletions(-)
 ```
 
 ---
