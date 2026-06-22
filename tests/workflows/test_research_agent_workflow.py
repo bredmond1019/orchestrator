@@ -14,6 +14,7 @@ from uuid import UUID
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from api.schema_registry import SCHEMA_MAP
 from schemas.research_agent_schema import ResearchAgentEventSchema, ResearchBriefOutput
 from workflows.research_agent_workflow import ResearchAgentWorkflow
 from workflows.research_agent_workflow_nodes.company_research_node import (
@@ -35,6 +36,12 @@ _PM_PATCH = (
 def test_research_agent_registered() -> None:
     """RESEARCH_AGENT maps to ResearchAgentWorkflow in the registry."""
     assert WorkflowRegistry.RESEARCH_AGENT.value is ResearchAgentWorkflow
+
+
+def test_research_agent_in_schema_map() -> None:
+    """RESEARCH_AGENT must appear in SCHEMA_MAP so the API dispatcher accepts it."""
+    assert WorkflowRegistry.RESEARCH_AGENT.name in SCHEMA_MAP
+    assert SCHEMA_MAP[WorkflowRegistry.RESEARCH_AGENT.name] is ResearchAgentEventSchema
 
 
 def test_workflow_schema_wired_to_event_schema() -> None:
