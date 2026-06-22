@@ -267,6 +267,7 @@ class NodeRun(BaseModel):
     started_at: str | None = None
     completed_at: str | None = None
     error: str | None = None
+    input: Any | None = None
     usage: dict | None = None
 ```
 
@@ -279,6 +280,7 @@ node implementations never touch it directly.
 | `started_at` | `str \| None` | ISO-8601 timestamp set when the node begins executing. `None` until then. |
 | `completed_at` | `str \| None` | ISO-8601 timestamp set when the node finishes (success or failure). |
 | `error` | `str \| None` | Stringified exception message if the node raised; `None` on success. |
+| `input` | `Any \| None` | Prompt/messages sent by the node (populated by LLM base classes); JSON-serializable; `None` for non-LLM nodes. |
 | `usage` | `dict \| None` | Token-usage dict `{input_tokens, output_tokens, model}` for LLM nodes; `None` for non-LLM nodes. |
 
 ---
@@ -1816,14 +1818,15 @@ def get_agent_config(self) -> AgentConfig:
         system_prompt=PromptManager().get_prompt("content_summarizer"),
         output_type=SummaryOutput,
         deps_type=None,
-        model_provider=ModelProvider.ANTHROPIC,
-        model_name="claude-opus-4-8",
+        model_provider=ModelProvider.CLAUDE_CODE_SDK,
+        model_name="sonnet",
     )
 ```
 
 Loads the system prompt from `app/prompts/content_summarizer.j2` via `PromptManager`.
-Uses `ModelProvider.ANTHROPIC` with `claude-opus-4-8` (top-tier Anthropic model per
-the D19 model strategy). No prompt text is hardcoded in Python.
+Uses `ModelProvider.CLAUDE_CODE_SDK` with `"sonnet"` (subscription-billing default;
+revert to `ModelProvider.ANTHROPIC` / `"claude-opus-4-8"` per-node when metered API
+billing is needed). No prompt text is hardcoded in Python.
 
 ### `process(task_context) -> TaskContext`
 
@@ -1909,8 +1912,9 @@ First node of the blog branch. Converts the structured `SummaryOutput` produced 
 
 #### `get_agent_config() -> AgentConfig`
 
-Loads `app/prompts/blog_writer.j2` via `PromptManager`; uses `ModelProvider.ANTHROPIC`
-with `claude-opus-4-8`. No prompt text is hardcoded in Python.
+Loads `app/prompts/blog_writer.j2` via `PromptManager`; uses `ModelProvider.CLAUDE_CODE_SDK`
+with `"sonnet"` (subscription-billing default; revert to `ModelProvider.ANTHROPIC` /
+`"claude-opus-4-8"` per-node for metered API billing). No prompt text is hardcoded in Python.
 
 #### `process(task_context) -> TaskContext`
 
@@ -1948,7 +1952,8 @@ accuracy against the source summary, voice consistency, and structure.
 #### `get_agent_config() -> AgentConfig`
 
 Loads `app/prompts/blog_self_critic.j2` via `PromptManager`; uses
-`ModelProvider.ANTHROPIC` with `claude-opus-4-8`.
+`ModelProvider.CLAUDE_CODE_SDK` with `"sonnet"` (subscription-billing default; revert
+to `ModelProvider.ANTHROPIC` / `"claude-opus-4-8"` per-node for metered API billing).
 
 #### `process(task_context) -> TaskContext`
 
@@ -1984,7 +1989,8 @@ and critique into one JSON user prompt.
 #### `get_agent_config() -> AgentConfig`
 
 Loads `app/prompts/blog_reviser.j2` via `PromptManager`; uses
-`ModelProvider.ANTHROPIC` with `claude-opus-4-8`.
+`ModelProvider.CLAUDE_CODE_SDK` with `"sonnet"` (subscription-billing default; revert
+to `ModelProvider.ANTHROPIC` / `"claude-opus-4-8"` per-node for metered API billing).
 
 #### `process(task_context) -> TaskContext`
 
@@ -2027,9 +2033,10 @@ Markdown preserved).
 
 #### `get_agent_config() -> AgentConfig`
 
-Loads `app/prompts/translate_ptbr.j2` via `PromptManager`; uses `ModelProvider.ANTHROPIC`
-with `claude-opus-4-8` (top-tier per the standing model strategy; a natural Project H
-downgrade candidate once local/open-weight swaps are measured).
+Loads `app/prompts/translate_ptbr.j2` via `PromptManager`; uses `ModelProvider.CLAUDE_CODE_SDK`
+with `"sonnet"` (subscription-billing default; revert to `ModelProvider.ANTHROPIC` /
+`"claude-opus-4-8"` per-node for metered API billing; a natural Project H downgrade
+candidate once local/open-weight swaps are measured).
 
 #### `process(task_context) -> TaskContext`
 
