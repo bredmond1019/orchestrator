@@ -177,6 +177,34 @@ class TestResultMapping:
         assert result.structured == payload
         assert result.text is None
 
+    def test_input_tokens_sum_cache_fields(self, monkeypatch):
+        """Prompt tokens include cache reads/creation, not just input_tokens.
+
+        The Claude Code engine reports most prompt tokens under the cache fields,
+        so the backend sums all three for a meaningful prompt-token count.
+        """
+        captured: dict = {}
+        _install_fake_query(
+            monkeypatch,
+            result_message=_make_result(
+                usage={
+                    "input_tokens": 4,
+                    "cache_read_input_tokens": 9000,
+                    "cache_creation_input_tokens": 1000,
+                    "output_tokens": 25,
+                },
+            ),
+            captured=captured,
+        )
+        backend = ClaudeAgentSdkBackend()
+
+        result = asyncio.run(
+            backend.run("p", system=None, model="opus", schema=None)
+        )
+
+        assert result.input_tokens == 4 + 9000 + 1000
+        assert result.output_tokens == 25
+
     def test_missing_usage_yields_none_tokens(self, monkeypatch):
         captured: dict = {}
         _install_fake_query(
