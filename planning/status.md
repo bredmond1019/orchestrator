@@ -9,8 +9,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-22 — Phase 1 Project C (proposal generator) sdlc-block started; task 1 PASS but BLOCKED on merge conflict (uncommitted changes in main: planning/plans/price-scout-workflow.md). Tasks 2–8 skipped. Fix uncommitted changes and re-run /sdlc-block phase1-projectC.
-**Current focus:** Phase 1 Project C (Proposal generator) — task 1 (schemas + workflow scaffold + registration); resolve merge conflict to unblock
+**Last updated:** 2026-06-22 — phase1-projectC in progress (Tasks 1–2 complete; Tasks 3–8 next — OpportunityIdentifier scoring, ProposalWriter, ReviewRouter, StorageNode, DAG wiring, validation)
+**Current focus:** phase1-projectC — Task 3: OpportunityIdentifierNode — scoring against the rubric
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
@@ -40,7 +40,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 |---|---|---|---|
 | A | Content pipeline (YouTube/Article → personal digest + optional blog) | Done | DONE — full content_pipeline workflow shipped via /sdlc-block (8/8 tasks). DAG: SourceRouterNode → {FetchTranscript|FetchArticle} → SummarizerNode → StorageNode → BlogDecisionRouterNode → BlogWriter → SelfCritic → Revise. New LearningArtifact model + pgvector migration; embeddings at write time; static-HTML digest + category index; opt-in blog branch with linear self-critic→revise loop. 295 tests pass, ruff clean. FetchArticleNode (trafilatura/Firecrawl) is the reusable new node. |
 | B | Research agent (thin → hardened) | Done | Thin cut shipped: CompanyResearchNode (ToolUseNode subclass), ResearchAgentWorkflow, ResearchBriefOutput (non-empty likely_time_sinks, automation_hypothesis), research_agent_brief.j2 loaded via PromptManager. 29 new tests total (19 initial + 10 coverage audit); 427 pass. Coverage audit fixed 2 bugs: schema_registry missing RESEARCH_AGENT entry, _handle_submit_brief ValidationError crash. Hardened version (Planner→Research→Critic→Revise→Storage + BrainDocument write) deferred until a real prospect demands it. |
-| C | Proposal generator | In progress | PT + EN; run on warm leads as practice. Task 1 PASS, blocked on merge conflict (uncommitted changes in main). Re-run /sdlc-block phase1-projectC after resolving. |
+| C | Proposal generator | In progress | Tasks 1–2 complete (schemas/workflow scaffold/registry, CompanyResearchNode reuse). Tasks 3–8 in queue: OpportunityIdentifier, ProposalWriter, Review+Router+Revise, StorageNode, DAG wiring, validation. |
 | D | Document Q&A + session memory (RAG) | Not started | Reinforces proven Helpscout production pattern |
 
 *→ Competence checkpoint review after Project D.*

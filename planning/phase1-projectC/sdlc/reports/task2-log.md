@@ -11,7 +11,7 @@ description: Completion log for Task 2 (CompanyResearchNode reuse) of the Propos
 **Verdict:** PASS
 **Date:** 2026-06-22
 **Branch:** phase1-projectc-task2
-**Applied:** false
+**Applied:** true
 
 ---
 

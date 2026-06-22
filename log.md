@@ -10,6 +10,31 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (task 2 — CompanyResearchNode reuse for proposal pipeline)
+
+Task 2 implemented `ProposalCompanyResearchNode` as a subclass of Project B's `CompanyResearchNode`, reusing the base tool definitions, loop logic, and `ResearchBriefOutput` validation without modifying the parent file. The node overrides `_build_initial_messages` to consume all four `ProposalGeneratorEventSchema` fields (company_name, industry, description, intake_notes) and loads a dedicated `proposal_research_brief.j2` template via `PromptManager` — no hardcoded system prompts. Added 17 comprehensive unit tests covering subclass identity, prompt template selection, context field forwarding, loop termination, and evidence written to `TaskContext`. All 10 SDLC checks passed: standing rules clean (no f-strings in logging, no unencoded open(), no parameters named id), app/worker/db imports succeed, ruff reports zero new violations, pylint scores 10.00/10, test collection increased by 17 (478 total), full pytest suite passed (471 passed, 7 skipped). Review verdict: PASS. Documentation updated with new node entry in app-architecture-overview.md; no NEEDS_REVIEW flags. Next: Task 3 — OpportunityIdentifierNode scoring candidates against the diagnostic rubric (frequency/time_cost/buildability axes, composite formula, top-3 selection).
+
+```
+71a070e docs: update docs for phase1-projectC-task2
+1918449 feat(proposal-generator): ProposalCompanyResearchNode reuse (Task 2)
+3a732f9 chore: init worktree phase1-projectc-task2
+```
+
+---
+
+## 2026-06-22 (task 1 — schemas + scaffold + registration)
+
+Task 1 delivered the foundational schemas for the proposal_generator workflow: ProposalGeneratorEventSchema (company_name, industry, description, language, intake_notes, artifact_id, timestamp), ScoredCandidate with composite scoring formula validator, WorkflowProfile, and AutomationRoadmap with candidates-sort and top_profiles-cap validators. Workflow scaffold created with stub ProposalGeneratorWorkflow and initial_node placeholder. Registered in both workflow_registry.py and schema_registry.py (regression guard from Project B). 26 new tests cover field validation, composite math, sort invariants, registry presence, and standing rules. Fix pass 2 wrapped an overlong doc= string in brain_document.py to satisfy pylint C0301. All 454 tests pass with pylint at 10.00/10 (up from 427). Next: Task 2 — CompanyResearchNode reuse from Project B, adapting input schema and adding tool-use research loop to the proposal pipeline.
+
+```
+f8bdf92 docs: update docs for phase1-projectC-task1
+3848326 fix: fix pass 2 for phase1-projectC-task1
+48b417c feat(proposal-generator): schemas + scaffold + registry (Task 1)
+767cf28 chore: init worktree phase1-projectc-task1
+```
+
+---
+
 ## 2026-06-22
 
 Shipped Phase 1 Project B (research agent thin cut) via /sdlc-run in a single PASS attempt. Implemented `CompanyResearchNode` as a `ToolUseNode` subclass with a raw Anthropic tool loop exposing two tools: `web_search` (dispatches to `SearchService`/Tavily) and `submit_research_brief` (validates into `ResearchBriefOutput` with enforced non-empty `likely_time_sinks`). System prompt lives exclusively in `app/prompts/research_agent_brief.j2` loaded via `PromptManager`. `ResearchAgentWorkflow` wired as a single-node DAG; registered as `WorkflowRegistry.RESEARCH_AGENT`. Output schema shaped toward `DiagnosticIntakeOutput` per diagnostic-alignment notes, ready for the hardened version to extend. Initial 19 tests added (tool-result injection, web_search dispatch, structured-brief capture, end_turn termination, max_iterations guard, diagnostic-alignment output check); 417 tests passing. Post-merge coverage audit: fixed 2 bugs discovered (schema_registry missing `RESEARCH_AGENT` entry; `_handle_submit_brief` crashes on Pydantic ValidationError with no retry), added 10 new tests covering Pydantic event path, ValidationError retry loop, SearchService exception, unknown tool, and multi-tool responses. Final: 427 tests pass. No Celery, storage, or embedding work introduced — deferred to the hardened version when a real prospect demands it. Next: Phase 1 Project C (Proposal generator).

@@ -11,7 +11,7 @@ description: Wrap-up log for Task 1 (Schemas + scaffold + registration) of phase
 **Verdict:** PASS
 **Date:** 2026-06-22
 **Branch:** phase1-projectc-task1
-**Applied:** false
+**Applied:** true
 
 ---
 
