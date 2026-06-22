@@ -111,6 +111,11 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `CLAUDE_CODE_CWD` | string | repo root | Conditional | `ClaudeAgentSdkBackend` — working directory passed to the SDK subprocess; leave blank to use the process working directory |
 | `CLAUDE_CODE_PERMISSION_MODE` | string | `bypassPermissions` | Conditional | `ClaudeAgentSdkBackend` — SDK permission mode; `bypassPermissions` is required for non-interactive agent use |
 | `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` | integer | `180` | Conditional | `ClaudeAgentSdkBackend` — per-call timeout in seconds before the SDK subprocess is cancelled |
+| `BASTION_BIN` | string | `bastion` (on `$PATH`) | Conditional | `BastionSessionBackend` — path to the `bastion` binary; resolved via `shutil.which` then verbatim fallback |
+| `CLAUDE_CODE_TMUX_SESSION` | string | `orchestrator-claude` | Conditional | `BastionSessionBackend` — tmux session name that `bastion ask` targets |
+| `CLAUDE_CODE_WORKDIR` | string | — | Conditional | `BastionSessionBackend` — pre-trusted working directory used when the Claude Code session was created |
+| `CLAUDE_CODE_IO_DIR` | string | `CLAUDE_CODE_WORKDIR` | Conditional | `BastionSessionBackend` — directory where per-turn prompt/answer temp files are written; must be on the same host as the session |
+| `CLAUDE_CODE_SESSION_TIMEOUT_SECONDS` | integer | `180` | Conditional | `BastionSessionBackend` — per-call timeout in seconds |
 | `FIRECRAWL_API_KEY` | string | — | Optional | `ArticleExtractionService` Firecrawl fallback |
 | `TAVILY_API_KEY` | string | — | Conditional | `SearchService` — required when any workflow uses web search |
 | `CONTENT_DIGEST_DIR` | string | `./_digest` | Optional | `StorageNode` — root directory for static HTML digest pages; sub-folders per category are created automatically |
