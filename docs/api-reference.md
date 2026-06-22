@@ -34,10 +34,11 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 18. [Event SQLAlchemy Model](#event-sqlalchemy-model)
 19. [SummarizerNode](#summarizernode)
 20. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
-21. [StorageNode](#storagenode)
-22. [digest_renderer](#digest_renderer)
-23. [createworkflow CLI](#createworkflow-cli)
-24. [API Layer](#api-layer)
+21. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
+22. [StorageNode](#storagenode)
+23. [digest_renderer](#digest_renderer)
+24. [createworkflow CLI](#createworkflow-cli)
+25. [API Layer](#api-layer)
 
 ---
 
@@ -2088,6 +2089,85 @@ in Phase 1 Project A Task 2).
 `LearningArtifact` inherits from `Base = declarative_base()` defined in
 `app/database/session.py`. The model is imported in `app/alembic/env.py`
 (`from database.learning_artifact import *`) so Alembic autogenerate sees its metadata.
+
+---
+
+## BrainDocument SQLAlchemy Model
+
+**Source:** `app/database/brain_document.py`
+
+```python
+class BrainDocument(Base):
+    __tablename__ = "brain_documents"
+```
+
+Persistence record for a single section-level chunk of the company brain (agentic-portfolio)
+markdown corpus. Produced by `scripts/index_brain.py` (Layer 1 of the brain RAG pipeline).
+Each markdown file is split by H2/H3 section header; every section yields one row carrying
+the raw chunk text, its provenance, and a 1024-dim pgvector embedding for semantic retrieval.
+
+This model is the **write path** for the brain RAG layer. The read/query path (vector
+similarity search from `RetrieveChunksNode`) ships with Project D.
+
+**Module-level constant:** `EMBEDDING_DIM = 1024`
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key, UUID v4 generated at insert time. |
+| `file_path` | `String(512)` | No | — | Relative path from brain repo root (e.g. `'docs/career.md'`). |
+| `doc_type` | `String(50)` | No | — | Corpus category: `decision`, `project`, `career`, `brand`, `business`, `content`, `diagnostic`, or `memory`. |
+| `section` | `String(256)` | Yes | — | H2/H3 header the chunk falls under; empty string if the file has no headers. |
+| `content` | `Text` | No | — | Raw chunk text (section header + body, up to ~500 tokens). |
+| `embedding` | `Vector(1024)` | Yes | — | 1024-dim Voyage AI embedding (`voyage-2`) for semantic similarity search (pgvector). |
+| `indexed_at` | `DateTime` | Yes | `datetime.now` | Timestamp when this chunk was last indexed; used for incremental skip logic. |
+| `client_slug` | `String(128)` | Yes | `NULL` | Diagnostic client identifier (e.g. `'acme-sp-2026-07'`); `NULL` for non-diagnostic docs. |
+| `workflow_patterns` | `ARRAY(String)` | Yes | `NULL` | Workflow pattern tags from diagnostic docs (e.g. `['WhatsApp order tracking']`); `NULL` for other doc types. |
+
+### Migration
+
+The `brain_documents` table is created by migration `b3c4d5e6f7a8`
+(`app/alembic/versions/b3c4d5e6f7a8_create_brain_documents_table.py`).
+`down_revision` chains off the `a1b2c3d4e5f6` migration (learning_artifacts table).
+
+**SQLite note:** The `ARRAY(String)` column for `workflow_patterns` is a PostgreSQL-only
+type. The SQLite-backed test fixtures exclude `brain_documents` from `create_all`; round-trip
+tests that require a live table are skipped with a documented reason. Schema tests (which do not
+require table creation) pass on SQLite.
+
+### Session and Base
+
+`BrainDocument` inherits from `Base = declarative_base()` defined in `app/database/session.py`.
+The model is imported in `app/alembic/env.py` (`from database.brain_document import *`) so
+Alembic autogenerate sees its metadata.
+
+### Package Export
+
+`BrainDocument` is exported from `app/database/__init__.py` alongside `LearningArtifact`:
+
+```python
+from database import BrainDocument, LearningArtifact
+```
+
+### Indexer CLI
+
+The `brain_documents` table is populated by `scripts/index_brain.py`, a standalone CLI that
+walks the brain corpus, splits files by H2/H3 section, embeds each chunk via `EmbeddingService`,
+and upserts into `brain_documents`. Incremental runs skip chunks whose `indexed_at` is newer
+than the source file's `mtime`.
+
+```bash
+# From repo root
+uv run python scripts/index_brain.py --brain-path ../agentic-portfolio --dry-run
+uv run python scripts/index_brain.py --brain-path ../agentic-portfolio --rebuild
+```
+
+| Argument | Description |
+|---|---|
+| `--brain-path` | Root of the brain repo to walk (default: `../agentic-portfolio`). |
+| `--rebuild` | Force re-index all files regardless of `indexed_at` vs `mtime`. |
+| `--dry-run` | Print files that would be indexed; no DB writes or API calls. |
 
 ---
 
