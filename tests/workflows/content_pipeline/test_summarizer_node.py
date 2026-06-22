@@ -44,12 +44,12 @@ def _result_for(summary: SummaryOutput) -> MagicMock:
 
 
 class TestSummarizerNodeConfig:
-    def test_uses_top_tier_anthropic_model(self):
+    def test_uses_claude_code_sdk_sonnet(self):
         node = _make_node()
         config = node.get_agent_config()
         assert isinstance(config, AgentConfig)
-        assert config.model_provider is ModelProvider.ANTHROPIC
-        assert config.model_name == "claude-opus-4-8"
+        assert config.model_provider is ModelProvider.CLAUDE_CODE_SDK
+        assert config.model_name == "sonnet"
         assert config.output_type is SummaryOutput
         # System prompt is loaded from the .j2 file, not hardcoded in Python.
         assert "Brandon" in config.system_prompt

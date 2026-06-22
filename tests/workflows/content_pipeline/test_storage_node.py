@@ -102,6 +102,41 @@ def test_node_output_recorded(storage_setup):
     assert output["artifact_id"] == str(event.artifact_id)
 
 
+def test_artifact_id_sourced_from_event_not_orm_after_persist(monkeypatch, tmp_path):
+    """Regression: process() must not read the ORM artifact's attributes after persist.
+
+    The real ``_persist`` commits and closes its session; SQLAlchemy's default
+    ``expire_on_commit`` then expires the instance, so reading ``artifact.id``
+    afterward raised ``DetachedInstanceError`` in production. Here ``_persist``
+    clears ``art.id`` to emulate that "attribute is no longer reliable after the
+    persisting session closed" state. The node must still emit the event's
+    ``artifact_id`` and name the digest page by it. The original (buggy) code read
+    ``str(artifact.id)`` post-persist and would fail this test.
+    """
+    summary = _summary()
+    event = ContentPipelineEventSchema(url="https://youtu.be/abc", make_blog=False)
+    ctx = TaskContext(event=event)
+    ctx.update_node("SummarizerNode", result=summary)
+    ctx.update_node("FetchTranscriptNode", text="...", fetch_status="ok")
+
+    monkeypatch.setenv("CONTENT_DIGEST_DIR", str(tmp_path))
+    monkeypatch.setattr(EmbeddingService, "__init__", lambda self: None)
+    monkeypatch.setattr(EmbeddingService, "embed_text", lambda self, text: [0.1] * 1024)
+
+    def _persist_then_detach(self, art):
+        # Emulate expire_on_commit + closed session: the ORM id is now unreliable.
+        art.id = None
+
+    monkeypatch.setattr(StorageNode, "_persist", _persist_then_detach)
+
+    StorageNode().process(ctx)
+
+    expected_id = str(event.artifact_id)
+    assert ctx.nodes["StorageNode"]["output"]["artifact_id"] == expected_id
+    page = tmp_path / summary.category / f"{expected_id}.html"
+    assert page.exists()
+
+
 def test_source_type_youtube_when_transcript_fetched(monkeypatch, tmp_path):
     """A transcript fetch implies a YouTube source type on the artifact."""
     summary = _summary()
