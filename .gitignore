@@ -100,6 +100,7 @@ app/alembic/versions/*
 # Foundational migrations that must be version-controlled
 !app/alembic/versions/*_enable_pgvector_extension.py
 !app/alembic/versions/*_create_learning_artifacts_table.py
+!app/alembic/versions/*_create_brain_documents_table.py
 
 # Playground
 playground/*.png
@@ -108,5 +109,6 @@ playground/*.png
 trees/
 
 # Local dev helper scripts (machine-specific: Homebrew paths, local DB creds;
-# regenerated on demand by tooling, never committed)
-/scripts/
+# regenerated on demand by tooling, never committed — except committed CLI tools)
+/scripts/*
+!/scripts/index_brain.py

@@ -33,7 +33,13 @@ def endpoint_context():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine)
+    # Exclude tables that use PostgreSQL-specific types (ARRAY, pgvector) which
+    # SQLite cannot compile. brain_documents is covered by its own PG-backed tests.
+    _POSTGRES_ONLY_TABLES = {"brain_documents"}
+    sqlite_tables = [
+        t for t in Base.metadata.sorted_tables if t.name not in _POSTGRES_ONLY_TABLES
+    ]
+    Base.metadata.create_all(engine, tables=sqlite_tables)
     session = sessionmaker(bind=engine)()
 
     def override_db_session():
