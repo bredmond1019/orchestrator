@@ -10,6 +10,30 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (task 8 — validation pass for proposal_generator workflow)
+
+Task 8 is a pure validation task—no new source files were created or modified. All acceptance criteria for the complete proposal_generator workflow (tasks 1–7) were verified passing: the workflow runs end-to-end through both pass and revise routes, producing a valid `AutomationRoadmap` with candidates sorted by composite score descending and `top_profiles` capped at 3. The composite scoring formula `(frequency × 0.35) + (time_cost × 0.40) + (buildability × 0.25)` was confirmed embedded in the opportunity identifier prompt template (`app/prompts/proposal_opportunity_identifier.j2`), not hardcoded in Python. Dual-language support (PT and EN) was exercised in both the writer and review nodes. Registry entries confirmed present in both `workflow_registry.py` and `app/api/schema_registry.py`. The `CompanyResearchNode` reused from Project B without modifications to Project B's source. A sparse checkout issue in the worktree (tests/ directory excluded) was fixed, enabling the full test suite to run: all 549 tests pass, 7 skipped, pylint rated 10.00/10, ruff found zero violations. All 7 gating checks passed (standing-rules, db-session-import, db-repository-import, net-new-lint, pylint, pytest-count, pytest). The review verdict is PASS—phase1-projectC is complete and ready to merge. Next: phase1-projectD (Document Q&A + RAG) begins.
+
+```
+9606efa docs: update docs for phase1-projectC-task8
+0bd72fb chore: validate phase1-projectC-task8 — all checks pass
+ac02088 chore: init worktree phase1-projectc-task8
+```
+
+---
+
+## 2026-06-22 (task 7 — wire proposal_generator workflow DAG + integration test)
+
+Wired the full seven-node proposal_generator workflow DAG (CompanyResearch → OpportunityIdentifier → ProposalWriter → ProposalReview → ProposalReviewRouter → {Storage | Revise→Storage}), marked the router with `is_router=True`, and deleted the initial_node scaffold. Fixed key contract mismatches discovered during integration: OpportunityIdentifierNode now writes output under `"result"` (matching framework convention), ProposalReviewNode and ReviseNode serialize their outputs consistently, and StorageNode reconstructs the final roadmap correctly from both pass and revise paths. Created comprehensive integration test covering both routes end-to-end with mocked agents and diagnostic constraint validation (candidates sorted composite-desc, top_profiles ≤ 3, PT/EN bodies populated). All six acceptance criteria met. Review verdict: PASS (1 of 1 attempt). Test suite: 549 passed, 7 skipped (556 total, +87 from task 6). Ruff and pylint clean. Docs updated: corrected task 3 and task 6 key references, added task 7 full DAG description. Next: Task 8 — Validate (final command suite gate).
+
+```
+1abd662 docs: update docs for phase1-projectC-task7
+47c5cda feat(phase1-projectC): wire proposal_generator workflow DAG + integration test (task 7)
+965e2b9 chore: init worktree phase1-projectc-task7
+```
+
+---
+
 ## 2026-06-22 (task 2 — CompanyResearchNode reuse for proposal pipeline)
 
 Task 2 implemented `ProposalCompanyResearchNode` as a subclass of Project B's `CompanyResearchNode`, reusing the base tool definitions, loop logic, and `ResearchBriefOutput` validation without modifying the parent file. The node overrides `_build_initial_messages` to consume all four `ProposalGeneratorEventSchema` fields (company_name, industry, description, intake_notes) and loads a dedicated `proposal_research_brief.j2` template via `PromptManager` — no hardcoded system prompts. Added 17 comprehensive unit tests covering subclass identity, prompt template selection, context field forwarding, loop termination, and evidence written to `TaskContext`. All 10 SDLC checks passed: standing rules clean (no f-strings in logging, no unencoded open(), no parameters named id), app/worker/db imports succeed, ruff reports zero new violations, pylint scores 10.00/10, test collection increased by 17 (478 total), full pytest suite passed (471 passed, 7 skipped). Review verdict: PASS. Documentation updated with new node entry in app-architecture-overview.md; no NEEDS_REVIEW flags. Next: Task 3 — OpportunityIdentifierNode scoring candidates against the diagnostic rubric (frequency/time_cost/buildability axes, composite formula, top-3 selection).
