@@ -9,7 +9,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-22 — Docs housekeeping (OKF frontmatter for Voyage AI + Claude Agent SDK refs, added External SDK references section to docs/index.md); Project A fully complete; Project B next
+**Last updated:** 2026-06-22 — First live end-to-end run of content_pipeline through the Claude Code SDK (real Sonnet call on a YouTube URL); fixed a StorageNode DetachedInstanceError the run surfaced; SDK now the content_pipeline default. Project A fully complete; Project B next
 **Current focus:** Phase 1 Project B (Research agent) — thin cut first (~50 lines, raw tool loop)
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
@@ -90,6 +90,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 ## Decisions & Deviations Log
 
 *Record anything where reality diverged from the plan, or a notable choice was made. Keeps the plans clean and stable.*
+
+- **2026-06-22 — First live end-to-end run of content_pipeline through the Claude Code SDK.** Drove the full workflow (digest-only, `make_blog=false`) on a real YouTube URL against a real Sonnet model via the new `CLAUDE_CODE_SDK` provider, using the per-node observability work to watch every step. Trace + verdict captured in `planning/test-runs/phase1-projectA-test-run1.md`. Outcomes: (1) **switched the 5 content_pipeline LLM nodes to `CLAUDE_CODE_SDK` / `sonnet` as the new default** (was `ANTHROPIC` / `claude-opus-4-8`) per Brandon — revert per-node when metered-API billing is wanted; (2) **fixed a real `StorageNode` `DetachedInstanceError`** the run surfaced — `_persist()` commits+closes its session (`expire_on_commit`), then `process()` read `artifact.id` afterward; fix captures the id from the event before persisting (the existing StorageNode tests monkeypatch `_persist`, so this real-session path had no coverage); (3) **made SDK token usage meaningful** — `ClaudeAgentSdkBackend` now sums `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens` (the SDK reports most prompt tokens as cache, so `NodeRun.usage.input_tokens` had shown a misleading `4`); (4) added a StorageNode post-persist regression test + cache-token test, aligned 3 stale node-config tests, ignored `_digest/`. Final: 360 tests pass, ruff clean, pylint 10.00/10. No block status change — Project A was already Done; this is follow-up hardening + the first real SDK validation. Next: Phase 1 Project B (Research agent).
 
 - **2026-06-22 — Docs housekeeping: OKF frontmatter + External SDK references.** Added OKF frontmatter (type/title/description) to `docs/voyage_ai.md` (Voyage AI SDK reference) and `docs/claude-agent-sdk.md` (Claude Agent SDK reference); updated `docs/index.md` to create new "External SDK references" section with entries for both. Documentation-only changes; no block status changed. Project A remains Done, Project B is next.
 
