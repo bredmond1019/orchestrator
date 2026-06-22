@@ -10,6 +10,53 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (session wrap-up — feature-claude-code-session-provider)
+
+Session wrap-up for feature-claude-code-session-provider: drove the spec to a full PASS via `/sdlc-block` (all 5 tasks merged, 353 tests, ruff clean, pylint 10/10). CLAUDE_CODE_SESSION provider + BastionSessionBackend reuse the SDK seam and shell out to bastion ask with pinned v0.1.0 flags. Both Claude Code provider modes (SDK + session) are now complete. Two infra fixes unblocked the run: (1) symlinked the built bastion v0.1.0 binary onto PATH (~/.local/bin/bastion), enabling bastion-side discovery at `worker/config.py` initialization; (2) gitignored `/scripts/` (task agents were regenerating machine-specific local dev helpers that tripped the pre-flight/merge guards — now marked non-tracked per infrastructure precedent). Confirmed bastion-side Block G (bastion ask) is DONE and contract-aligned verbatim: config-from-env (BASTION_BIN, CLAUDE_CODE_TMUX_SESSION, CLAUDE_CODE_WORKDIR, CLAUDE_CODE_IO_DIR, CLAUDE_CODE_SESSION_TIMEOUT_SECONDS), writes prompt + schema (if structured), calls `bastion ask` with pinned flags, parses answers (JSON or markdown), returns None for token/cost. Remaining: operator-run subscription-host e2e gates on both modes (need claude CLI logged into subscription for real billing verification). Wrote planning/handoff.md.
+
+```diff
+ app/core/nodes/agent.py                            |  14 +-
+ app/services/claude_code/__init__.py               |   2 +
+ app/services/claude_code/bastion_backend.py        | 192 ++++++++++++++
+ docs/api-reference.md                              | 108 +++++++-
+ docs/configuration.md                              |   5 +
+ log.md                                             |  65 +++++
+ .../sdlc/reports/block-workflow.md                 |  36 +--
+ .../sdlc/reports/task1-log.md                      |   2 +-
+ .../sdlc/reports/task2-document.md                 |  29 +++
+ .../sdlc/reports/task2-implement.md                |  64 ++++++
+ .../sdlc/reports/task2-log.md                      |  40 +++
+ .../sdlc/reports/task2-review.md                   |  46 ++++
+ .../sdlc/reports/task2-test.md                     | 181 +++++++++++++
+ .../sdlc/reports/task2-workflow.md                 |  95 +++++++
+ .../sdlc/reports/task3-document.md                 |  27 ++
+ .../sdlc/reports/task3-implement.md                |  51 ++++
+ .../sdlc/reports/task3-log.md                      |  33 +++
+ .../sdlc/reports/task3-review.md                   |  45 ++++
+ .../sdlc/reports/task3-test.md                     | 160 ++++++++++
+ .../sdlc/reports/task3-workflow.md                 |  71 +++++
+ .../sdlc/reports/task4-document.md                 |  16 ++
+ .../sdlc/reports/task4-implement.md                |  50 ++++
+ .../sdlc/reports/task4-log.md                      |  33 +++
+ .../sdlc/reports/task4-net-new-lint-baseline.json  |   1 +
+ .../sdlc/reports/task4-review.md                   |  59 +++++
+ .../sdlc/reports/task4-test.md                     | 138 ++++++++++
+ .../sdlc/reports/task4-workflow.md                 |  66 +++++
+ .../sdlc/reports/task5-document.md                 |  29 +++
+ .../sdlc/reports/task5-implement.md                |  87 +++++++
+ .../sdlc/reports/task5-log.md                      |  36 +++
+ .../sdlc/reports/task5-net-new-lint-baseline.json  |   1 +
+ .../sdlc/reports/task5-review.md                   |  63 +++++
+ .../sdlc/reports/task5-test.md                     | 155 +++++++++++
+ .../sdlc/reports/task5-workflow.md                 | 104 ++++++++
+ planning/status.md                                 |   7 +-
+ tests/core/test_claude_code_provider_routing.py    |  74 +++++-
+ tests/services/test_claude_code_bastion_backend.py | 286 +++++++++++++++++++++
+ 37 files changed, 2431 insertions(+), 40 deletions(-)
+```
+
+---
+
 ## 2026-06-22 (task 5 — validation gate)
 
 Task 5 validated the complete feature-claude-code-session-provider spec. Tasks 1–4 (config surface, BastionSessionBackend implementation, CLAUDE_CODE_SESSION provider routing, docs) were already merged into this worktree; Task 5 corrected the sparse-checkout to include `tests/` and ran the full validation suite. All acceptance criteria verified: a node with `model_provider=ModelProvider.CLAUDE_CODE_SESSION` successfully routes to `BastionSessionBackend`, which shells out to `bastion ask` with the exact pinned v0.1.0 flags (--session, --prompt-file, --out, --dir, --timeout), handles structured (JSON-schema) output by parsing the `.json` answer file into `ClaudeResult.structured`, handles free-text output by returning the markdown answer as `text`, returns None for all token/cost fields with `model` recorded, cleans temp files in all paths (success and error), and raises descriptive errors carrying bastion's stderr on non-zero exit, missing answer, or timeout. Review verdict: PASS — all 6 acceptance criteria met, all 7 gating checks pass (ruff clean, pylint 10.00/10, 353 tests pass including 22 session-mode tests, no net-new lint violations, no standing-rule violations, no test count regression). The spec is complete and ready for merge.
