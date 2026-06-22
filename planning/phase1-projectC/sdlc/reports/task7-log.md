@@ -11,7 +11,7 @@ description: Wired proposal_generator workflow DAG and integration test; all acc
 **Verdict:** PASS
 **Date:** 2026-06-22
 **Branch:** phase1-projectc-task7
-**Applied:** false
+**Applied:** true
 
 ---
 
