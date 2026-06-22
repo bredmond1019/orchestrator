@@ -100,7 +100,9 @@ app/alembic/versions/*
 # Foundational migrations that must be version-controlled
 !app/alembic/versions/*_enable_pgvector_extension.py
 !app/alembic/versions/*_create_learning_artifacts_table.py
+!app/alembic/versions/*_create_events_table.py
 !app/alembic/versions/*_create_brain_documents_table.py
+!app/alembic/versions/*_merge_brain_documents_and_events_heads.py
 
 # Playground
 playground/*.png
