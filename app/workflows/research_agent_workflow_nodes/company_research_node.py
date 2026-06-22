@@ -2,6 +2,8 @@
 
 import logging
 
+from pydantic import ValidationError
+
 from core.nodes.tool_use import ToolUseNode
 from core.task import TaskContext
 from schemas.research_agent_schema import ResearchBriefOutput
@@ -137,7 +139,11 @@ class CompanyResearchNode(ToolUseNode):
         self, tool_input: dict, task_context: TaskContext
     ) -> str:
         """Validate the tool input into ResearchBriefOutput and store it."""
-        brief = ResearchBriefOutput(**tool_input)
+        try:
+            brief = ResearchBriefOutput(**tool_input)
+        except ValidationError as exc:
+            log.warning("CompanyResearchNode: invalid brief submission: %s", exc)
+            return f"Brief validation failed — please fix and resubmit: {exc}"
         # Store under the 'brief' key so the parent process's text-extraction
         # write (which uses 'output') does not overwrite the structured result.
         task_context.update_node(
