@@ -110,7 +110,7 @@ class TestProposalReviewNode:
         node.agent.run_sync.return_value = _result_for(review_output)
 
         ctx = TaskContext(event=_make_event())
-        ctx.nodes["ProposalWriterNode"] = _make_roadmap_dict()
+        ctx.nodes["ProposalWriterNode"] = {"result": _make_roadmap_dict()}
         _seed_run(ctx, node)
 
         node.process(ctx)
@@ -152,7 +152,7 @@ class TestProposalReviewNode:
         node.agent.run_sync.return_value = _result_for(review_output)
 
         ctx = TaskContext(event=_make_event())
-        ctx.nodes["ProposalWriterNode"] = _make_roadmap_dict()
+        ctx.nodes["ProposalWriterNode"] = {"result": _make_roadmap_dict()}
         _seed_run(ctx, node)
 
         node.process(ctx)
@@ -207,7 +207,7 @@ class TestProposalReviewNode:
         node.agent.run_sync.return_value = _result_for(output)
 
         ctx = TaskContext(event=_make_event())
-        ctx.nodes["ProposalWriterNode"] = _make_roadmap_dict()
+        ctx.nodes["ProposalWriterNode"] = {"result": _make_roadmap_dict()}
         _seed_run(ctx, node)
 
         node.process(ctx)
@@ -333,7 +333,7 @@ class TestProposalReviseNode:
         node.agent.run_sync.return_value = _result_for(output)
 
         ctx = TaskContext(event=_make_event())
-        ctx.nodes["ProposalWriterNode"] = _make_roadmap_dict()
+        ctx.nodes["ProposalWriterNode"] = {"result": _make_roadmap_dict()}
         ctx.nodes["ProposalReviewNode"] = {
             "result": {
                 "verdict": "revise",
@@ -354,6 +354,8 @@ class TestProposalReviseNode:
         assert "original_roadmap" in payload
         assert "review_result" in payload
         assert "event" in payload
+        # The original_roadmap must carry the "result" wrapper, not the raw dict.
+        assert "result" in payload["original_roadmap"]
 
     def test_revise_produces_corrected_roadmap(self):
         node = _make(ProposalReviseNode)
@@ -361,7 +363,7 @@ class TestProposalReviseNode:
         node.agent.run_sync.return_value = _result_for(output)
 
         ctx = TaskContext(event=_make_event())
-        ctx.nodes["ProposalWriterNode"] = _make_roadmap_dict()
+        ctx.nodes["ProposalWriterNode"] = {"result": _make_roadmap_dict()}
         ctx.nodes["ProposalReviewNode"] = {
             "result": {"verdict": "revise", "summary": "Fix client name"}
         }
@@ -383,7 +385,7 @@ class TestProposalReviseNode:
 
         event = _make_event(company_name="TechBrasil", language="PT")
         ctx = TaskContext(event=event)
-        ctx.nodes["ProposalWriterNode"] = _make_roadmap_dict()
+        ctx.nodes["ProposalWriterNode"] = {"result": _make_roadmap_dict()}
         ctx.nodes["ProposalReviewNode"] = {
             "result": {"verdict": "revise", "summary": "Issues"}
         }
