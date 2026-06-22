@@ -12,6 +12,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ## 2026-06-22
 
+Shipped Phase 1 Project B (research agent thin cut) via /sdlc-run in a single PASS attempt. Implemented `CompanyResearchNode` as a `ToolUseNode` subclass with a raw Anthropic tool loop exposing two tools: `web_search` (dispatches to `SearchService`/Tavily) and `submit_research_brief` (validates into `ResearchBriefOutput` with enforced non-empty `likely_time_sinks`). System prompt lives exclusively in `app/prompts/research_agent_brief.j2` loaded via `PromptManager`. `ResearchAgentWorkflow` wired as a single-node DAG; registered as `WorkflowRegistry.RESEARCH_AGENT`. Output schema shaped toward `DiagnosticIntakeOutput` per diagnostic-alignment notes, ready for the hardened version to extend. 19 new tests added (tool-result injection, web_search dispatch, structured-brief capture, end_turn termination, max_iterations guard, diagnostic-alignment output check); 417 tests pass total. No Celery, storage, or embedding work introduced — deferred to the hardened version when a real prospect demands it. Next: Phase 1 Project C (Proposal generator).
+
+```
+a62579b docs: update docs for phase1-projectB
+ac6c10e feat: implement phase1-projectB research agent (thin cut)
+9fd45f1 chore: add spec for phase1-projectB
+```
+
+---
+
+## 2026-06-22
+
 Shipped brain-rag Layer 1 via /sdlc-run: BrainDocument model + Alembic migration + index_brain.py CLI indexer (chunk/embed/upsert); 38 new tests, 398 passing. Fixed Alembic dual-head conflict (brain_documents + events both branched from learning_artifacts) by generating a merge migration and updating the .gitignore whitelist. Added D31 (SQLite ARRAY exclusion) and D32 (lazy-import CLI scripts) to planning/decisions/. Brain corpus is now semantically queryable at write-time; Layer 2 (RetrieveChunksNode corpus param) and Layer 3 (MCP endpoint) are scoped for Project D and Project F respectively. Next: Phase 1 Project B (Research agent).
 
 ```diff
