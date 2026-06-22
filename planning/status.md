@@ -9,8 +9,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-21 — feature-claude-code-sdk-provider DONE — all 7 tasks merged via /sdlc-block; ModelProvider.CLAUDE_CODE_SDK (subscription billing mode) fully shipped with backend protocol, SDK backend, pydantic-ai 0.1.5 model, provider routing, and 33 new tests (335 total); next: feature-claude-code-session-provider
-**Current focus:** feature-claude-code-session-provider — Task 1: Bastion session backend + routing
+**Last updated:** 2026-06-21 — feature-claude-code-session-provider BLOCKED — /sdlc-block ran; Task 1 PASSED pipeline but escalated on merge conflict (uncommitted scripts/ dir in main worktree); Tasks 2–5 skipped; fix: commit or stash scripts/ then re-run /sdlc-block feature-claude-code-session-provider
+**Current focus:** feature-claude-code-session-provider — Task 1: Bastion session backend + routing (escalated, needs manual merge unblock)
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
