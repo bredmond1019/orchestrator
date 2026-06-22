@@ -1,0 +1,187 @@
+{
+  "blockId": "phase1-projectC",
+  "additiveFiles": [],
+  "tasks": {
+    "1": {
+      "num": 1,
+      "title": "Schemas + workflow scaffold + registration (foundational)",
+      "dependsOn": [],
+      "evidence": "Marked '(foundational)'; all other tasks reference symbols it creates.",
+      "filesCreated": [
+        "app/schemas/proposal_generator_schema.py",
+        "app/workflows/proposal_generator_workflow.py",
+        "app/workflows/proposal_generator_workflow_nodes/__init__.py",
+        "tests/schemas/test_proposal_generator_schema.py"
+      ],
+      "filesModified": [
+        "app/workflows/workflow_registry.py",
+        "app/api/schema_registry.py"
+      ],
+      "recommendBreakdown": true,
+      "breakdownReason": "Bundles separable concerns (multiple Pydantic schema models + workflow scaffold + dual-registry registration) across heterogeneous files with independently testable units."
+    },
+    "2": {
+      "num": 2,
+      "title": "CompanyResearchNode reuse",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "'Adapt input to read ProposalGeneratorEventSchema (company_name + industry + description/intake_notes)' — consumes the event schema created in Task 1; '(depends on 1)'.",
+      "filesCreated": [
+        "app/workflows/proposal_generator_workflow_nodes/company_research_node.py",
+        "tests/workflows/test_proposal_company_research_node.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "3": {
+      "num": 3,
+      "title": "OpportunityIdentifierNode — scoring against the rubric",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "'(depends on 1)'; emits ScoredCandidate/composite and sorts candidates — types defined in Task 1's schema.",
+      "filesCreated": [
+        "app/workflows/proposal_generator_workflow_nodes/opportunity_identifier_node.py",
+        "app/prompts/proposal_opportunity_identifier.j2",
+        "tests/workflows/test_opportunity_identifier_node.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "4": {
+      "num": 4,
+      "title": "ProposalWriterNode — PT + EN roadmap",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "'(depends on 1)'; produces the AutomationRoadmap deliverable — schema defined in Task 1.",
+      "filesCreated": [
+        "app/workflows/proposal_generator_workflow_nodes/proposal_writer_node.py",
+        "app/prompts/proposal_writer.j2",
+        "tests/workflows/test_proposal_writer_node.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "5": {
+      "num": 5,
+      "title": "Review + router + revise branch",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "'(depends on 1)'; validates the roadmap (AutomationRoadmap from Task 1) and routes to StorageNode/ReviseNode.",
+      "filesCreated": [
+        "app/workflows/proposal_generator_workflow_nodes/proposal_review_node.py",
+        "app/workflows/proposal_generator_workflow_nodes/proposal_review_router_node.py",
+        "app/workflows/proposal_generator_workflow_nodes/proposal_revise_node.py",
+        "app/prompts/proposal_review.j2",
+        "app/prompts/proposal_revise.j2",
+        "tests/workflows/test_proposal_review_router.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": true,
+      "breakdownReason": "Bundles three separable node concerns (review AgentNode, router RouterNode, revise AgentNode) plus two prompts across heterogeneous files with independent test units."
+    },
+    "6": {
+      "num": 6,
+      "title": "StorageNode — BrainDocument + embedding",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "'(depends on 1)'; persists the final roadmap (AutomationRoadmap from Task 1).",
+      "filesCreated": [
+        "app/workflows/proposal_generator_workflow_nodes/storage_node.py",
+        "tests/workflows/test_proposal_storage_node.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "7": {
+      "num": 7,
+      "title": "Wire the workflow DAG + integration test",
+      "dependsOn": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "evidence": "'(depends on 2,3,4,5,6)'; connections wire CompanyResearchNode → OpportunityIdentifierNode → ProposalWriterNode → ProposalReviewNode → ProposalReviewRouterNode → {StorageNode | ReviseNode} — all nodes from Tasks 2-6. Also fills the Task-1 stub: 'serialized after Task 1 via the dependency chain'.",
+      "filesCreated": [
+        "tests/workflows/test_proposal_generator_workflow.py"
+      ],
+      "filesModified": [
+        "app/workflows/proposal_generator_workflow.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "8": {
+      "num": 8,
+      "title": "Validate",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "evidence": "'Run the Validation Commands listed below and confirm all pass' — exercises the full assembled workflow, so depends on every prior task.",
+      "filesCreated": [],
+      "filesModified": [],
+      "recommendBreakdown": false
+    }
+  },
+  "waves": [
+    {
+      "label": "Wave 1",
+      "parallel": false,
+      "tasks": [
+        1
+      ],
+      "mergeOrder": [
+        1
+      ]
+    },
+    {
+      "label": "Wave 2",
+      "parallel": true,
+      "tasks": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "mergeOrder": [
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "label": "Wave 3",
+      "parallel": false,
+      "tasks": [
+        7
+      ],
+      "mergeOrder": [
+        7
+      ]
+    },
+    {
+      "label": "Wave 4",
+      "parallel": false,
+      "tasks": [
+        8
+      ],
+      "mergeOrder": [
+        8
+      ]
+    }
+  ]
+}
