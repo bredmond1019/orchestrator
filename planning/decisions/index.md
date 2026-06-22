@@ -13,8 +13,8 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided �
 
 | # | Decision | File |
 |---|---|---|
-| D1 | Expertise first; business/job follows | [D1-expertise-first.md](D1-expertise-first.md) |
-| D2 | Sequence, not calendar | [D2-sequence-not-calendar.md](D2-sequence-not-calendar.md) |
+| D1 | Expertise first; business/job follows *(moved to brain D22)* | — |
+| D2 | Sequence, not calendar *(duplicate of brain D2)* | — |
 | D3 | Drop the Socratic Tutor as the organizing goal | [D3-drop-socratic-tutor.md](D3-drop-socratic-tutor.md) |
 | D4 | Project G (agent memory) is the centerpiece, retained at full weight | [D4-project-g-centerpiece.md](D4-project-g-centerpiece.md) |
 | D5 | Testing scope: Option A (core only) | [D5-testing-scope-option-a.md](D5-testing-scope-option-a.md) |
@@ -22,7 +22,7 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided �
 | D7 | Rust's home: the CLI now, an inference runtime only later | [D7-rust-home-cli.md](D7-rust-home-cli.md) |
 | D8 | Project H (model eval) is offline evaluation, NOT a runtime router | [D8-project-h-offline-eval.md](D8-project-h-offline-eval.md) |
 | D9 | Existing production work is foregrounded as case studies | [D9-existing-work-as-case-studies.md](D9-existing-work-as-case-studies.md) |
-| D10 | Public narrative: subject-is-always-you; never name the company | [D10-public-narrative.md](D10-public-narrative.md) |
+| D10 | Public narrative: subject-is-always-you *(duplicate of brain D10)* | — |
 | D11 | Documentation: separate orientation from state; minimum-context by default | [D11-docs-orientation-vs-state.md](D11-docs-orientation-vs-state.md) |
 | D12 | Repo strategy: one Python monorepo; separate repos only for different languages | [D12-repo-strategy-monorepo.md](D12-repo-strategy-monorepo.md) |
 | D13 | Per-repo agent context and daily log; just-in-time task specs | [D13-per-repo-context-jit-specs.md](D13-per-repo-context-jit-specs.md) |
@@ -35,22 +35,26 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided �
 | D20 | Self-improvement boundary: gates are never self-approved | [D20-self-improvement-boundary.md](D20-self-improvement-boundary.md) |
 | D21 | Project A is a personal knowledge feed first, blog engine second | [D21-project-a-knowledge-feed.md](D21-project-a-knowledge-feed.md) |
 | D22 | Project A MVP boundary: ingestion + store + dumb display now | [D22-project-a-mvp-boundary.md](D22-project-a-mvp-boundary.md) |
-| D23 | Mac Mini two-face architecture: Caddy+Cloudflare public, Tailscale private | [D23-mac-mini-two-face.md](D23-mac-mini-two-face.md) |
+| D23 | Mac Mini two-face architecture *(duplicate of brain D11)* | — |
 | D24 | Firecrawl role: trafilatura-first, Firecrawl-fallback, CrawlSiteNode | [D24-firecrawl-role.md](D24-firecrawl-role.md) |
 | D25 | Honcho as Project G reference architecture; build your own G for production | [D25-honcho-reference.md](D25-honcho-reference.md) |
-| D26 | Goal revised: solo contracting practice, not a studio or product company | [D26-goal-solo-contracting.md](D26-goal-solo-contracting.md) |
+| D26 | Goal revised: solo contracting practice *(moved to brain D1; stub retained for D14–D19 references)* | [D26-goal-solo-contracting.md](D26-goal-solo-contracting.md) |
 | D27 | Adopt OKF Phase 2 conventions (lowercase names, concept-folder planning, index.md); retire scaffold-project | [D27-adopt-okf-phase-2-conventions.md](D27-adopt-okf-phase-2-conventions.md) |
 | D28 | Persist node-level execution state incrementally (injected callback; brain stays agnostic) | [D28-node-level-execution-state.md](D28-node-level-execution-state.md) |
 | D29 | Execute OKF Phase 2; adopt base-template's richer-check + token-telemetry engines; harness.json | [D29-execute-okf-and-adopt-richer-check-engines.md](D29-execute-okf-and-adopt-richer-check-engines.md) |
 | D30 | Orchestrator owns the versioned data contract; capture per-node input + serializable output | [D30-data-contract-ownership.md](D30-data-contract-ownership.md) |
 | D31 | Exclude ARRAY and Vector models from SQLite test fixtures; test against real PostgreSQL only | [D31-sqlite-array-exclusion.md](D31-sqlite-array-exclusion.md) |
 | D32 | Lazy imports inside main() for standalone CLI scripts — keeps --dry-run and --help offline-safe | [D32-lazy-import-cli-scripts.md](D32-lazy-import-cli-scripts.md) |
+| D33 | No deployment logic inside nodes — workflow logic only; deployment concerns injected at harness layer | [D33-deployment-agnostic-nodes.md](D33-deployment-agnostic-nodes.md) |
+| D34 | No hardcoded prompts — all prompts in .j2 files via PromptManager | [D34-jinja2-prompts.md](D34-jinja2-prompts.md) |
+| D35 | Top-tier models first, then introduce local/open-weight via Project H | [D35-top-tier-models.md](D35-top-tier-models.md) |
 
 ---
 
 **How to read this set:**
-- **D1–D13** — foundational sequencing and architecture decisions.
-- **D14–D25** — Company Brain product architecture (retained as technical reference; superseded as primary goal by D26).
-- **D26** — goal revised to a solo contracting practice.
+- **D3–D13** — foundational sequencing and architecture decisions. (D1/D2/D10/D23 were duplicates of brain decisions and have been removed; D1 moved to brain D22.)
+- **D14–D25** — Company Brain product architecture (retained as technical reference; superseded as primary goal by D26/brain D1).
+- **D26** — goal revised to a solo contracting practice (stub; canonical record in brain D1).
+- **D27–D35** — OKF adoption, execution state, data contract, and orchestrator implementation conventions.
 
 *To add a decision: create the next `D{N}-<kebab>.md` with `type: Decision` frontmatter and the what / why / rejected body, then append a row above. To reverse one: add a new decision superseding it by number; leave the original intact.*
