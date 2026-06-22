@@ -1,6 +1,6 @@
 """StorageNode — persist and embed the final AutomationRoadmap.
 
-Reads the finished roadmap from either ``ReviseNode`` (revise branch) or
+Reads the finished roadmap from either ``ProposalReviseNode`` (revise branch) or
 ``ProposalWriterNode`` (pass branch), embeds a summary string via
 ``EmbeddingService``, and stores a ``BrainDocument`` row through
 ``GenericRepository`` using the ``db_session`` factory seam.
@@ -10,8 +10,16 @@ the session commits, avoiding the ``DetachedInstanceError`` that ``expire_on_com
 would cause if the id were read from the ORM object after the session closes.
 No deployment logic lives here — connection strings and deployment choices
 stay in config and the shell (CLAUDE.md rule 7).
+
+Key reading contract:
+  - ``ProposalWriterNode`` stores: ``{"result": AutomationRoadmap}``
+  - ``ProposalReviseNode`` stores: ``{"result": ProposalReviseNode.OutputType}``
+Both use the ``"result"`` key (standard framework agent-node convention).
+The revise OutputType carries the corrected roadmap fields; ``_read_final_roadmap``
+reconstructs an ``AutomationRoadmap`` from it.
 """
 
+import json
 from contextlib import contextmanager
 
 from core.nodes.base import Node
@@ -19,7 +27,7 @@ from core.task import TaskContext
 from database.brain_document import BrainDocument
 from database.repository import GenericRepository
 from database.session import db_session
-from schemas.proposal_generator_schema import AutomationRoadmap
+from schemas.proposal_generator_schema import AutomationRoadmap, ScoredCandidate, WorkflowProfile
 from services.embedding_service import EmbeddingService
 
 
@@ -45,18 +53,63 @@ class StorageNode(Node):
         with contextmanager(db_session)() as session:
             GenericRepository(session=session, model=BrainDocument).create(doc)
 
+    def _roadmap_from_revise_output(self, revise_result) -> AutomationRoadmap:
+        """Reconstruct an ``AutomationRoadmap`` from a ``ProposalReviseNode.OutputType``.
+
+        The revise node exposes the corrected roadmap via JSON-encoded fields
+        (``candidates_json``, ``top_profiles_json``) plus scalar fields.
+        This method reassembles them into a validated ``AutomationRoadmap``.
+        """
+        if isinstance(revise_result, dict):
+            candidates_raw = json.loads(revise_result.get("candidates_json", "[]"))
+            profiles_raw = json.loads(revise_result.get("top_profiles_json", "[]"))
+            return AutomationRoadmap(
+                situation_summary=revise_result.get("situation_summary", ""),
+                candidates=[ScoredCandidate(**c) for c in candidates_raw],
+                top_profiles=[WorkflowProfile(**p) for p in profiles_raw],
+                recommended_workflow=revise_result.get("recommended_workflow", ""),
+                engagement_scope=revise_result.get("engagement_scope", ""),
+                price_range_brl=(
+                    revise_result.get("price_range_brl_min", 0),
+                    revise_result.get("price_range_brl_max", 0),
+                ),
+                body_pt=revise_result.get("body_pt"),
+                body_en=revise_result.get("body_en"),
+            )
+        # Pydantic model (ProposalReviseNode.OutputType)
+        candidates_raw = json.loads(revise_result.candidates_json)
+        profiles_raw = json.loads(revise_result.top_profiles_json)
+        return AutomationRoadmap(
+            situation_summary=revise_result.situation_summary,
+            candidates=[ScoredCandidate(**c) for c in candidates_raw],
+            top_profiles=[WorkflowProfile(**p) for p in profiles_raw],
+            recommended_workflow=revise_result.recommended_workflow,
+            engagement_scope=revise_result.engagement_scope,
+            price_range_brl=(revise_result.price_range_brl_min, revise_result.price_range_brl_max),
+            body_pt=revise_result.body_pt,
+            body_en=revise_result.body_en,
+        )
+
     def _read_final_roadmap(self, task_context: TaskContext) -> AutomationRoadmap:
         """Return the final roadmap from whichever terminal writer ran.
 
-        If the revise branch ran, ``ReviseNode`` output is authoritative.
+        If the revise branch ran, ``ProposalReviseNode`` output is authoritative.
         Otherwise the ``ProposalWriterNode`` output is used.
+
+        Both nodes store their output under the ``"result"`` key via
+        ``update_node(node_name=..., result=...)``, consistent with the
+        framework convention for agent nodes. The revise result is a
+        ``ProposalReviseNode.OutputType``; we reconstruct an ``AutomationRoadmap``
+        from its JSON-encoded fields.
         """
-        revise_output = task_context.nodes.get("ReviseNode")
-        if revise_output is not None:
-            roadmap_data = revise_output.get("roadmap")
-        else:
-            writer_output = task_context.get_node_output("ProposalWriterNode")
-            roadmap_data = writer_output.get("roadmap")
+        revise_node_output = task_context.nodes.get("ProposalReviseNode")
+        if revise_node_output is not None:
+            revise_result = revise_node_output.get("result")
+            if revise_result is not None:
+                return self._roadmap_from_revise_output(revise_result)
+
+        writer_output = task_context.get_node_output("ProposalWriterNode")
+        roadmap_data = writer_output.get("result")
 
         if isinstance(roadmap_data, AutomationRoadmap):
             return roadmap_data

@@ -7,22 +7,29 @@ Covers:
   string combining the situation summary and candidate names.
 - Post-commit id regression guard: artifact_id is read from the event before
   the session commits, not from the ORM object, preventing DetachedInstanceError.
-- Revise-branch precedence: when ReviseNode output is present, it takes priority
-  over ProposalWriterNode output.
-- Pass-branch fallback: when ReviseNode output is absent, ProposalWriterNode
+- Revise-branch precedence: when ProposalReviseNode output is present, it takes
+  priority over ProposalWriterNode output.
+- Pass-branch fallback: when ProposalReviseNode output is absent, ProposalWriterNode
   output is used.
+
+Key contract (Task 7 integration):
+  - ProposalWriterNode stores {"result": AutomationRoadmap} under "ProposalWriterNode"
+  - ProposalReviseNode stores {"result": ProposalReviseNode.OutputType} under "ProposalReviseNode"
+    (OutputType has candidates_json / top_profiles_json JSON strings)
 """
 
+import json
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
-
-import pytest
 
 from core.task import TaskContext
 from schemas.proposal_generator_schema import (
     AutomationRoadmap,
     ScoredCandidate,
     WorkflowProfile,
+)
+from workflows.proposal_generator_workflow_nodes.proposal_revise_node import (
+    ProposalReviseNode,
 )
 from workflows.proposal_generator_workflow_nodes.storage_node import StorageNode
 
@@ -77,6 +84,27 @@ def _make_roadmap(candidate_names: list[str] | None = None) -> AutomationRoadmap
     )
 
 
+def _make_revise_output_type(
+    candidate_names: list[str] | None = None,
+) -> "ProposalReviseNode.OutputType":
+    """Build a ProposalReviseNode.OutputType mirroring a corrected roadmap."""
+    if candidate_names is None:
+        candidate_names = ["Revise candidate X", "Revise candidate Y", "Revise candidate Z"]
+    roadmap = _make_roadmap(candidate_names)
+    return ProposalReviseNode.OutputType(
+        situation_summary=roadmap.situation_summary,
+        candidates_json=json.dumps([c.model_dump() for c in roadmap.candidates]),
+        top_profiles_json=json.dumps([p.model_dump() for p in roadmap.top_profiles]),
+        recommended_workflow=roadmap.recommended_workflow,
+        engagement_scope=roadmap.engagement_scope,
+        price_range_brl_min=roadmap.price_range_brl[0],
+        price_range_brl_max=roadmap.price_range_brl[1],
+        body_pt=None,
+        body_en=None,
+        revision_notes="Added company name mentions.",
+    )
+
+
 def _make_event(artifact_id: UUID | None = None) -> MagicMock:
     event = MagicMock()
     event.artifact_id = artifact_id or uuid4()
@@ -86,15 +114,21 @@ def _make_event(artifact_id: UUID | None = None) -> MagicMock:
 
 def _make_task_context(
     writer_roadmap: AutomationRoadmap | None = None,
-    revise_roadmap: AutomationRoadmap | None = None,
+    revise_output: "ProposalReviseNode.OutputType | None" = None,
     artifact_id: UUID | None = None,
 ) -> TaskContext:
+    """Build a TaskContext pre-populated with the given node outputs.
+
+    Uses the framework key contract:
+      - ProposalWriterNode stores {"result": roadmap}
+      - ProposalReviseNode stores {"result": OutputType}
+    """
     event = _make_event(artifact_id)
     nodes = {}
     if writer_roadmap is not None:
-        nodes["ProposalWriterNode"] = {"roadmap": writer_roadmap}
-    if revise_roadmap is not None:
-        nodes["ReviseNode"] = {"roadmap": revise_roadmap}
+        nodes["ProposalWriterNode"] = {"result": writer_roadmap}
+    if revise_output is not None:
+        nodes["ProposalReviseNode"] = {"result": revise_output}
     return TaskContext(event=event, nodes=nodes)
 
 
@@ -103,7 +137,7 @@ def _make_task_context(
 # ---------------------------------------------------------------------------
 
 class TestStorageNodePassBranch:
-    """StorageNode reads from ProposalWriterNode when ReviseNode did not run."""
+    """StorageNode reads from ProposalWriterNode when ProposalReviseNode did not run."""
 
     def test_persist_called_once_with_brain_document(self):
         """_persist is called exactly once with a BrainDocument."""
@@ -212,15 +246,17 @@ class TestStorageNodePassBranch:
 
 
 class TestStorageNodeReviseBranch:
-    """StorageNode reads from ReviseNode when both writer and revise ran."""
+    """StorageNode reads from ProposalReviseNode when both writer and revise ran."""
 
     def test_revise_output_takes_priority_over_writer(self):
-        """When ReviseNode ran, its roadmap is used, not ProposalWriterNode's."""
-        writer_roadmap = _make_roadmap(["Writer candidate A", "Writer candidate B", "Writer candidate C"])
-        revise_roadmap = _make_roadmap(["Revise candidate X", "Revise candidate Y", "Revise candidate Z"])
+        """When ProposalReviseNode ran, its roadmap is used, not ProposalWriterNode's."""
+        writer_roadmap = _make_roadmap(["Writer A", "Writer B", "Writer C"])
+        revise_output = _make_revise_output_type(
+            ["Revise candidate X", "Revise candidate Y", "Revise candidate Z"]
+        )
         ctx = _make_task_context(
             writer_roadmap=writer_roadmap,
-            revise_roadmap=revise_roadmap,
+            revise_output=revise_output,
         )
 
         node = StorageNode()
@@ -236,12 +272,12 @@ class TestStorageNodeReviseBranch:
 
         embed_text = MockEmbeddingService.return_value.embed_text.call_args[0][0]
         assert "Revise candidate X" in embed_text
-        assert "Writer candidate A" not in embed_text
+        assert "Writer A" not in embed_text
 
     def test_revise_only_context(self):
-        """StorageNode works when only ReviseNode output is present (no writer node)."""
-        revise_roadmap = _make_roadmap()
-        ctx = _make_task_context(revise_roadmap=revise_roadmap)
+        """StorageNode works when only ProposalReviseNode output is present."""
+        revise_output = _make_revise_output_type()
+        ctx = _make_task_context(revise_output=revise_output)
 
         node = StorageNode()
 
@@ -256,6 +292,29 @@ class TestStorageNodeReviseBranch:
 
         output = ctx.nodes["StorageNode"]["output"]
         assert output["embedded"] is True
+
+    def test_revise_reconstructs_valid_roadmap(self):
+        """StorageNode correctly reconstructs AutomationRoadmap from revise OutputType."""
+        candidate_names = ["Revise A", "Revise B", "Revise C"]
+        revise_output = _make_revise_output_type(candidate_names)
+        ctx = _make_task_context(revise_output=revise_output)
+
+        node = StorageNode()
+
+        with (
+            patch.object(node, "_persist"),
+            patch(
+                "workflows.proposal_generator_workflow_nodes.storage_node.EmbeddingService"
+            ) as MockEmbeddingService,
+        ):
+            MockEmbeddingService.return_value.embed_text.return_value = [0.0] * 1024
+            # Should not raise — roadmap is valid
+            node.process(ctx)
+
+        # All candidate names appear in the embedded text
+        embed_text = MockEmbeddingService.return_value.embed_text.call_args[0][0]
+        for name in candidate_names:
+            assert name in embed_text
 
 
 class TestStorageNodeDocumentStructure:
@@ -287,12 +346,28 @@ class TestStorageNodeDocumentStructure:
         assert doc.file_path == f"proposals/{artifact_id}/roadmap.json"
         assert len(doc.content) > 0
 
+    def test_roadmap_as_pydantic_model_accepted_directly(self):
+        """StorageNode accepts AutomationRoadmap Pydantic model stored as result."""
+        roadmap = _make_roadmap()
+        ctx = _make_task_context(writer_roadmap=roadmap)
+
+        node = StorageNode()
+
+        with (
+            patch.object(node, "_persist"),
+            patch(
+                "workflows.proposal_generator_workflow_nodes.storage_node.EmbeddingService"
+            ) as MockEmbeddingService,
+        ):
+            MockEmbeddingService.return_value.embed_text.return_value = [0.0] * 1024
+            # Should not raise — AutomationRoadmap is handled directly
+            node.process(ctx)
+
     def test_roadmap_as_dict_is_validated(self):
         """StorageNode accepts a roadmap stored as a plain dict in node output."""
         roadmap = _make_roadmap()
-        # Store roadmap as dict (as it would appear after TaskContext serialization)
         ctx = _make_task_context()
-        ctx.nodes["ProposalWriterNode"] = {"roadmap": roadmap.model_dump()}
+        ctx.nodes["ProposalWriterNode"] = {"result": roadmap.model_dump()}
 
         node = StorageNode()
 

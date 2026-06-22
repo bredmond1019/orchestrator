@@ -4,7 +4,7 @@ Covers:
 - Mocked agent run; structured-output validation
 - Composite formula math (binding constraint)
 - One recommendation (not three)
-- Context read/write: research brief consumed, candidates + recommended stored
+- Context read/write: research brief consumed, candidates + recommended stored under result
 - Prompt sourced from .j2 (no hardcoded text in Python)
 - Model provider is CLAUDE_CODE_SDK / sonnet (framework convention)
 """
@@ -90,7 +90,8 @@ def _make_ctx(with_research: bool = True) -> TaskContext:
     )
     ctx = TaskContext(event=event)
     if with_research:
-        ctx.nodes["CompanyResearchNode"] = {
+        # Key must match ProposalCompanyResearchNode.node_name (class name)
+        ctx.nodes["ProposalCompanyResearchNode"] = {
             "brief": {
                 "company_name": "Acme Corp",
                 "what_they_do": "Makes widgets for industrial use",
@@ -110,13 +111,13 @@ def _seed_run(ctx: TaskContext, node: OpportunityIdentifierNode) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Structured output is stored in context
+# Structured output is stored in context under "result"
 # ---------------------------------------------------------------------------
 
 
 class TestCandidatesStoredInContext:
     def test_candidates_stored_after_process(self):
-        """process() writes 'candidates' to context under the node's name."""
+        """process() writes 'candidates' to context under node_name['result']."""
         node = _make_node()
         output = _make_output_with_three_candidates()
         node.agent.run_sync.return_value = _result_for(output)
@@ -126,12 +127,12 @@ class TestCandidatesStoredInContext:
 
         node.process(ctx)
 
-        stored = ctx.nodes[node.node_name]
+        stored = ctx.nodes[node.node_name]["result"]
         assert "candidates" in stored
         assert len(stored["candidates"]) == 3
 
     def test_recommended_stored_after_process(self):
-        """process() writes 'recommended' (a single string) to context."""
+        """process() writes 'recommended' (a single string) inside result."""
         node = _make_node()
         output = _make_output_with_three_candidates()
         node.agent.run_sync.return_value = _result_for(output)
@@ -141,7 +142,7 @@ class TestCandidatesStoredInContext:
 
         node.process(ctx)
 
-        stored = ctx.nodes[node.node_name]
+        stored = ctx.nodes[node.node_name]["result"]
         assert stored["recommended"] == "Candidate A"
 
     def test_process_returns_task_context(self):
@@ -199,7 +200,7 @@ class TestCompositeMath:
         _seed_run(ctx, node)
         node.process(ctx)
 
-        stored = ctx.nodes[node.node_name]["candidates"]
+        stored = ctx.nodes[node.node_name]["result"]["candidates"]
         for c_dict in stored:
             expected = (
                 (c_dict["frequency"] * 0.35)
@@ -228,7 +229,7 @@ class TestRecommendation:
         _seed_run(ctx, node)
         node.process(ctx)
 
-        stored = ctx.nodes[node.node_name]
+        stored = ctx.nodes[node.node_name]["result"]
         assert isinstance(stored["recommended"], str)
 
     def test_recommended_matches_top_candidate(self):
@@ -241,13 +242,12 @@ class TestRecommendation:
         _seed_run(ctx, node)
         node.process(ctx)
 
-        stored = ctx.nodes[node.node_name]
+        stored = ctx.nodes[node.node_name]["result"]
         top_name = stored["candidates"][0]["name"]
         assert stored["recommended"] == top_name
 
     def test_output_type_recommended_is_string_field(self):
         """OutputType.recommended is typed as str (not list)."""
-        import inspect
         hints = OpportunityIdentifierNode.OutputType.model_fields
         assert "recommended" in hints
         field = hints["recommended"]
@@ -293,14 +293,14 @@ class TestResearchBriefConsumed:
         assert payload["company_name"] == "Acme Corp"
         assert payload["industry"] == "Manufacturing"
 
-    def test_missing_company_research_node_raises(self):
-        """If CompanyResearchNode has not run, get_node_output raises KeyError."""
+    def test_missing_proposal_company_research_node_raises(self):
+        """If ProposalCompanyResearchNode has not run, get_node_output raises KeyError."""
         node = _make_node()
 
         ctx = _make_ctx(with_research=False)
         _seed_run(ctx, node)
 
-        with pytest.raises(KeyError, match="CompanyResearchNode"):
+        with pytest.raises(KeyError, match="ProposalCompanyResearchNode"):
             node.process(ctx)
 
     def test_intake_notes_included_when_present(self):
@@ -382,7 +382,7 @@ class TestDictEventFallback:
 
         ctx = TaskContext(event={"company_name": "Dict Corp", "industry": "Retail",
                                  "description": "A retailer"})
-        ctx.nodes["CompanyResearchNode"] = {
+        ctx.nodes["ProposalCompanyResearchNode"] = {
             "brief": {
                 "company_name": "Dict Corp",
                 "what_they_do": "Retail",
@@ -406,7 +406,7 @@ class TestDictEventFallback:
 
         ctx = TaskContext(event={"company_name": "Dict Corp", "industry": "Retail",
                                  "description": "A retailer"})
-        ctx.nodes["CompanyResearchNode"] = {
+        ctx.nodes["ProposalCompanyResearchNode"] = {
             "brief": {
                 "company_name": "Dict Corp",
                 "what_they_do": "Retail",
