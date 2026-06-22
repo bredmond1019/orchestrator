@@ -12,13 +12,16 @@ Graph::
                 -> StorageNode
                     -> BlogDecisionRouterNode (router)
                         -> BlogWriterNode -> SelfCriticNode -> ReviseNode
+                            -> TranslatePtBrNode
 
 The two routers are marked ``is_router=True``. ``BlogDecisionRouterNode`` routes
 to the blog branch only when ``event.make_blog`` is true; otherwise the run ends
 after ``StorageNode`` (digest-only). The whole graph is a DAG — the blog branch
-is strictly linear (writer -> self-critic -> revise), no loop-back — so
-``WorkflowValidator`` passes. Persistence stays injected inside ``StorageNode``;
-the workflow makes no deployment decisions.
+is strictly linear (writer -> self-critic -> revise -> translate), no loop-back
+— so ``WorkflowValidator`` passes. ``TranslatePtBrNode`` produces the pt-BR
+translation of the finished post for the brand's PT+EN cadence. Persistence
+stays injected inside ``StorageNode``; the workflow makes no deployment
+decisions.
 """
 
 from core.schema import NodeConfig, WorkflowSchema
@@ -42,6 +45,9 @@ from workflows.content_pipeline_workflow_nodes.source_router_node import (
 )
 from workflows.content_pipeline_workflow_nodes.storage_node import StorageNode
 from workflows.content_pipeline_workflow_nodes.summarizer_node import SummarizerNode
+from workflows.content_pipeline_workflow_nodes.translate_ptbr_node import (
+    TranslatePtBrNode,
+)
 
 
 class ContentPipelineWorkflow(Workflow):
@@ -97,8 +103,13 @@ class ContentPipelineWorkflow(Workflow):
             ),
             NodeConfig(
                 node=ReviseNode,
+                connections=[TranslatePtBrNode],
+                description="Apply the critique and produce the revised English post.",
+            ),
+            NodeConfig(
+                node=TranslatePtBrNode,
                 connections=[],
-                description="Apply the critique and produce the revised post (terminal).",
+                description="Translate the finished post into pt-BR (terminal).",
             ),
         ],
     )
