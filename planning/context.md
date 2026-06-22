@@ -34,8 +34,7 @@ see `agentic-portfolio/docs/career.md` and `agentic-portfolio/docs/brand.md`.
 |---|---|---|
 | `context.md` (this file) | Orientation + architecture | First, every session |
 | `status.md` | Current state — what's done, what's next | Every session after context |
-| `master-plan.md` | Phase sequence, Diagnostic relationship, links to brain | When choosing what to work on |
-| `Test_Plan.md` | Testing scope and standards (Option A) | Before writing or reviewing tests |
+| `master-plan.md` | Phase sequence, full project library (A–H), Diagnostic relationship, links to brain | When choosing what to work on |
 | `decisions/index.md` | Settled choices — D1 through current | Before relitigating any settled choice |
 | `plans/` | Technical implementation plans for specific features | When executing a specific feature |
 
@@ -61,11 +60,11 @@ Full phase/project detail in `master-plan.md`. Full technical spec per project i
 
 ## Standing Rules
 
-1. **Every workflow ships with tests.** See `Test_Plan.md` for scope. *(D6)*
-2. **No hardcoded system prompts.** All prompts are `.j2` files in `app/prompts/` loaded via `PromptManager`. *(D8)*
-3. **No deployment logic inside nodes.** Model choice and persistence are injected via config. *(D7, D16)*
+1. **Every workflow ships with tests.** Per-project test requirements are in `master-plan.md` Project Library.
+2. **No hardcoded system prompts.** All prompts are `.j2` files in `app/prompts/` loaded via `PromptManager`. *(D34)*
+3. **No deployment logic inside nodes.** Model choice and persistence are injected via config. *(D33)*
 4. **`customer_care` is reference-only.** Do not extend it or add tests for it. New workflows go alongside it. *(CLAUDE.md)*
-5. **Top-tier models first; measure before switching to local.** Project H owns that measurement. *(D9)*
+5. **Top-tier models first; measure before switching to local.** Project H owns that measurement. *(D35)*
 6. **Python stays Python.** Rust has a defined home (bastion). Never rewrite orchestration core in Rust. *(CLAUDE.md)*
 
 ---
@@ -81,5 +80,79 @@ Full phase/project detail in `master-plan.md`. Full technical spec per project i
 
 ---
 
-*For state: open `status.md`. For the full project sequence and Diagnostic alignment: open `master-plan.md`. For why a choice was made: open `decisions/index.md`.*
+## Reference
+
+### Component Reuse Map
+
+| Component | Built In | Reused In |
+|---|---|---|
+| `EmbeddingService` | Phase 0 | A, D, F, G |
+| `TranscriptService` | Phase 0 | A |
+| `ArticleExtractionService` / `FetchArticleNode` | Phase 0 / A | A, any workflow ingesting web content |
+| `SearchService` (Tavily) | Phase 0 | B, C |
+| `ChunkingService` | Phase 0 | A, D |
+| `ToolUseNode` | Phase 0 / B | B, C |
+| `SelfCriticNode / ReviseNode` pattern | A | C, E |
+| `LearningArtifact` model | A | F |
+| `RetrieveChunksNode` | D | F (verbatim) |
+| `ContentChunk` / `ChatSession` models | D | F |
+| `ParallelNode` (merge fixed) | E | G and beyond |
+| `MemoryLoaderNode` / `IngestTimeExtractionNode` / `ConsolidationWorkflow` | G | any client/product work (verbatim) |
+| `Peer` / `AgentEpisode` / `SemanticMemory` models (multi-peer) | G | client memory patterns |
+| Eval harness + per-node routing config | H | every node's `model_provider` |
+| Clean documented HTTP API | Phase 0 / D | every shell + agent client |
+| Rust appliance shell | bastion (parallel track) | see `agentic-portfolio/docs/projects/bastion.md` |
+
+### Tech Stack
+
+| Concern | Tool | Notes |
+|---|---|---|
+| Language (brain) | Python 3.12+ | Primary; deployment-agnostic |
+| Language (SMB shell) | Rust | Single binary in bastion; clap, optionally ratatui |
+| Framework | This orchestration system | Workflow, Node, TaskContext, AgentNode |
+| AI (agents) | Claude via pydantic-ai | `ModelProvider.ANTHROPIC` |
+| AI (tool loop) | `anthropic` SDK directly | Project B only — learn the loop by hand |
+| AI (cheap/narrow + local) | `claude-haiku-4-5-20251001` or local Ollama | Critics, classification, episode-write; routing decided by Project H |
+| AI (frontier-only) | Claude | Project G consolidation — never local *(D35)* |
+| Embeddings | Voyage AI `voyage-2` (default); local options evaluated in H | See model reference in `master-plan.md` |
+| Search | Tavily | Built for agents |
+| Database | PostgreSQL + pgvector | Local or managed — same queries |
+| Async | Celery + Redis | Configured |
+| Env mgmt | `uv` | In use |
+| Prompts | `.j2` via PromptManager | Always — never hardcode *(D34)* |
+| Testing | pytest + fixtures | Core locked in Phase 0; per-project after |
+| Harness | Mac Mini + Caddy + async Claude Code | Remote-triggered dev |
+| Networking — public | Caddy + Cloudflare DNS (port 80/443) | `learn-agentic-ai.com` and public blog |
+| Networking — private | Tailscale (free Personal plan) | All private tooling — no open ports |
+| Web extraction — default | trafilatura | Free, local, fast |
+| Web extraction — fallback | Firecrawl (free tier 500 credits/month) | JS-heavy pages; full-site `/crawl` for bulk ingestion |
+| Deployment injection | config only, never code | model routing + persistence *(D33)* |
+
+### Rust Reference Implementations
+
+Three completed portfolio Rust projects serve as implementation references. Python brain stays Python; Rust shell stays Rust.
+
+| Project | What it demonstrates | Most relevant to |
+|---|---|---|
+| `rag-engine-rs` | Two-stage hybrid retrieval (semantic + keyword re-rank), bounded-concurrency embedding pipeline, Ollama local inference, pgvector via Diesel. 19 tests, CI clean. | **Project D** `RetrieveChunksNode` two-stage pattern; `EmbeddingService` concurrency model |
+| `claude-sdk-rs` | Typed async Rust SDK: `Config` → CLI flag mapping, `QueryBuilder`, streaming via `futures::Stream`, session continuity (`--resume`), structured error codes. v2.0.0 on crates.io, 149 tests. | **Rust appliance shell** CLI interaction model |
+| `workflow-engine-rs` | Compile-time-validated workflow graphs, multi-transport MCP client (HTTP/WS/stdio), real tiktoken token counting, Handlebars prompt templating. 717 tests, zero clippy warnings. | **Future MCP integration**; **Rust appliance shell** workspace structure |
+
+### Red Flags
+
+- Hardcoding a system prompt in Python (use `.j2`). *(D34)*
+- Not storing embeddings at write time (you'll regret it at Project F).
+- Skipping the self-critic loop in Project A (it's the point).
+- Using `AgentNode` in Project B (use raw SDK — earn the abstraction).
+- Building the hardened Project B before a real prospect makes you want more.
+- Shipping a workflow without its tests.
+- Treating "one more project" as the thing standing between you and ready.
+- Building Project H as a runtime router instead of an offline eval tool. *(D33 / D8 orchestrator)*
+- Reaching for Rust where Python is sufficient. *(CLAUDE.md)*
+- Writing `if running_locally:` inside a brain node. *(D33)*
+- Letting the privacy pitch drift into absolutism ("nothing ever leaves") — consolidation stays on Claude. *(D35)*
+
+---
+
+*For state: open `status.md`. For the full project sequence and project specs: open `master-plan.md`. For why a choice was made: open `decisions/index.md`.*
 *Last updated: June 2026.*
