@@ -74,5 +74,8 @@ class BrainDocument(Base):
     workflow_patterns = Column(
         ARRAY(String),
         nullable=True,
-        doc="Workflow pattern tags extracted from diagnostic docs (e.g. ['WhatsApp order tracking'])",
+        doc=(
+            "Workflow pattern tags extracted from diagnostic docs"
+            " (e.g. ['WhatsApp order tracking'])"
+        ),
     )
