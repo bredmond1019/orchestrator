@@ -9,6 +9,7 @@ from database.database_utils import DatabaseUtils
 from database.session import Base
 
 # This import is required for autogenerate support
+from database.brain_document import *
 from database.event import *
 from database.learning_artifact import *
 
