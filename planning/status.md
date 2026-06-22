@@ -9,7 +9,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-22 — Phase 1 Project B (research agent thin cut) shipped; CompanyResearchNode + ResearchAgentWorkflow + ResearchBriefOutput + diagnostic-alignment tests; 417 tests pass. Project C (proposal generator) next.
+**Last updated:** 2026-06-22 — Phase 1 Project B (research agent thin cut) shipped; CompanyResearchNode + ResearchAgentWorkflow + ResearchBriefOutput + diagnostic-alignment tests; coverage audit found and fixed 2 bugs (schema_registry, ValidationError retry); 427 tests pass. Project C (proposal generator) next.
 **Current focus:** Phase 1 Project C (Proposal generator) — PT + EN; run on warm leads as practice
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
@@ -39,7 +39,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 | Project | What | Status | Notes |
 |---|---|---|---|
 | A | Content pipeline (YouTube/Article → personal digest + optional blog) | Done | DONE — full content_pipeline workflow shipped via /sdlc-block (8/8 tasks). DAG: SourceRouterNode → {FetchTranscript|FetchArticle} → SummarizerNode → StorageNode → BlogDecisionRouterNode → BlogWriter → SelfCritic → Revise. New LearningArtifact model + pgvector migration; embeddings at write time; static-HTML digest + category index; opt-in blog branch with linear self-critic→revise loop. 295 tests pass, ruff clean. FetchArticleNode (trafilatura/Firecrawl) is the reusable new node. |
-| B | Research agent (thin → hardened) | Done | Thin cut shipped: CompanyResearchNode (ToolUseNode subclass), ResearchAgentWorkflow, ResearchBriefOutput (non-empty likely_time_sinks, automation_hypothesis), research_agent_brief.j2 loaded via PromptManager. 19 new tests; 417 pass. Hardened version (Planner→Research→Critic→Revise→Storage + BrainDocument write) deferred until a real prospect demands it. |
+| B | Research agent (thin → hardened) | Done | Thin cut shipped: CompanyResearchNode (ToolUseNode subclass), ResearchAgentWorkflow, ResearchBriefOutput (non-empty likely_time_sinks, automation_hypothesis), research_agent_brief.j2 loaded via PromptManager. 29 new tests total (19 initial + 10 coverage audit); 427 pass. Coverage audit fixed 2 bugs: schema_registry missing RESEARCH_AGENT entry, _handle_submit_brief ValidationError crash. Hardened version (Planner→Research→Critic→Revise→Storage + BrainDocument write) deferred until a real prospect demands it. |
 | C | Proposal generator | Not started | PT + EN; run on warm leads as practice |
 | D | Document Q&A + session memory (RAG) | Not started | Reinforces proven Helpscout production pattern |
 
