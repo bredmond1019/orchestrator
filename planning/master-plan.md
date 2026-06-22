@@ -54,6 +54,14 @@ Project D (document Q&A + RAG) gates the competence checkpoint independently of 
 
 ---
 
+## Shared Services
+
+- **Brain corpus indexer** (`scripts/index_brain.py`) — crawls the company brain repo,
+  chunks by section, embeds via Voyage AI, stores in `brain_documents` table. Run manually
+  to refresh: `python scripts/index_brain.py [--brain-path ../agentic-portfolio]`.
+
+---
+
 ## Technical Standing Rules
 
 - **D6 — Every workflow ships with tests.** No exceptions. See `Test_Plan.md` for scope.
