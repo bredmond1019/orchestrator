@@ -65,8 +65,8 @@ class SummarizerNode(AgentNode):
             system_prompt=PromptManager().get_prompt("content_summarizer"),
             output_type=SummaryOutput,
             deps_type=None,
-            model_provider=ModelProvider.ANTHROPIC,
-            model_name="claude-opus-4-8",
+            model_provider=ModelProvider.CLAUDE_CODE_SDK,
+            model_name="sonnet",
         )
 
     def _read_source_text(self, task_context: TaskContext) -> str:
