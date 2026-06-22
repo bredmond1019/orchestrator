@@ -9,7 +9,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-22 — Project A follow-ups closed (golden-corpus fixtures + PT-BR translation node built); Project A fully complete; Project B next
+**Last updated:** 2026-06-22 — Docs housekeeping (OKF frontmatter for Voyage AI + Claude Agent SDK refs, added External SDK references section to docs/index.md); Project A fully complete; Project B next
 **Current focus:** Phase 1 Project B (Research agent) — thin cut first (~50 lines, raw tool loop)
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
@@ -90,6 +90,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 ## Decisions & Deviations Log
 
 *Record anything where reality diverged from the plan, or a notable choice was made. Keeps the plans clean and stable.*
+
+- **2026-06-22 — Docs housekeeping: OKF frontmatter + External SDK references.** Added OKF frontmatter (type/title/description) to `docs/voyage_ai.md` (Voyage AI SDK reference) and `docs/claude-agent-sdk.md` (Claude Agent SDK reference); updated `docs/index.md` to create new "External SDK references" section with entries for both. Documentation-only changes; no block status changed. Project A remains Done, Project B is next.
 
 - **2026-06-22 — Project A follow-ups closed (non-blocking hardening).** Golden-corpus fixtures: vendored two realistic transcripts into `tests/fixtures/transcripts/` + added `load_transcript()` fixture in `conftest.py` + wrote two realistic `test_fetch_nodes.py` and `test_summarizer_node.py` unit tests for the fetch/summarize branch. Schema confirmation: verified `SummaryOutput`'s lean schema (title + summary) is intentional vs the site template (no change needed). PT-BR translation: Brandon decided PT-BR translation belongs to Project A as a dropped MVP item and built it — ported claude-translator.ts into `app/prompts/translate_ptbr.j2` + `TranslatePtBrNode` (terminal node of the blog branch, positioned ReviseNode → TranslatePtBrNode, inherits make_blog gate) + comprehensive unit tests. Tests + docs updated (`api-reference.md`, `app-architecture-overview.md`). Final: 358 tests pass, ruff clean, pylint 10.00/10. Not a block status change — Project A was already Done; this is follow-up hardening. Next: Phase 1 Project B (Research agent).
 
