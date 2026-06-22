@@ -1646,6 +1646,23 @@ and `ClaudeCodeModel` without any change to either. Provider routing is wired in
 company-brain doc `agentic-portfolio/docs/integrations/claude-code-llm-provider.md`. See also
 `docs/configuration.md` for the `CLAUDE_CODE_*` environment variables and host prerequisites.
 
+**External dependency:** `CLAUDE_CODE_SESSION` is the only provider in this repo that shells out
+to a binary built in another repo. `BastionSessionBackend.run` invokes the `bastion ask` command
+(pinned at **v0.1.0** in §2 of the company-brain doc above) with the exact flag surface
+`--session / --prompt-file / --out / --dir / --timeout`. The `bastion` binary must be built and on
+the host `$PATH` (or pointed at via `BASTION_BIN`), and its tmux host must be logged into the Claude
+Code subscription with the workdir pre-trusted. A mismatch in the `bastion ask` flag contract is a
+breaking change for this provider.
+
+**Relationship to the SDK-mode feature:** `CLAUDE_CODE_SESSION` is a sibling of the
+`CLAUDE_CODE_SDK` provider added by the `feature-claude-code-sdk-provider` feature
+(see [ClaudeAgentSdkBackend](#claudeagentsdkbackend)). Both ride the same `ClaudeCodeModel` +
+`ClaudeCodeBackend` protocol; they differ only in how the turn is executed. SDK mode spawns an
+**ephemeral** `claude` CLI subprocess (metered usage available); session mode routes the turn
+through a **live, observable** tmux session via `bastion ask` (usage fields are `None` — session
+billing). Choose SDK mode for fire-and-forget turns and session mode when the run must be visible
+and attachable in `bastion sessions`.
+
 ---
 
 ## WorkflowRegistry
