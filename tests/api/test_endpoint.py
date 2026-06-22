@@ -106,3 +106,27 @@ class TestHealthCheck:
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
+
+
+class TestSchemaRegistryCompleteness:
+    """Every WorkflowRegistry member must have a SCHEMA_MAP entry.
+
+    This test is the automated guard for the step-3 rule documented in
+    docs/api-reference.md (WorkflowRegistry > Adding a New Entry). Without it,
+    a new workflow added to WorkflowRegistry but forgotten in SCHEMA_MAP will
+    cause the API dispatcher to 422 all requests for that workflow type.
+    """
+
+    def test_every_workflow_has_schema_map_entry(self):
+        from api.schema_registry import SCHEMA_MAP
+        from workflows.workflow_registry import WorkflowRegistry
+
+        missing = [
+            member.name
+            for member in WorkflowRegistry
+            if member.name not in SCHEMA_MAP
+        ]
+        assert not missing, (
+            f"WorkflowRegistry members missing from SCHEMA_MAP: {missing}. "
+            "Add them to app/api/schema_registry.py (see api-reference.md step 3)."
+        )
