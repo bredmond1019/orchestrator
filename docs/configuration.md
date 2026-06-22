@@ -134,6 +134,7 @@ credentials to use. Each `ModelProvider` enum value and its required variables:
 | `ModelProvider.OLLAMA` | `"ollama"` | `OLLAMA_BASE_URL` |
 | `ModelProvider.BEDROCK` | `"bedrock"` | `BEDROCK_AWS_ACCESS_KEY_ID`, `BEDROCK_AWS_SECRET_ACCESS_KEY`, `BEDROCK_AWS_REGION` |
 | `ModelProvider.CLAUDE_CODE_SDK` | `"claude_code_sdk"` | `CLAUDE_CODE_BIN`, `CLAUDE_CODE_CWD`, `CLAUDE_CODE_PERMISSION_MODE`, `CLAUDE_CODE_SDK_TIMEOUT_SECONDS` (all optional — see below) |
+| `ModelProvider.CLAUDE_CODE_SESSION` | `"claude_code_session"` | `BASTION_BIN`, `CLAUDE_CODE_TMUX_SESSION`, `CLAUDE_CODE_WORKDIR`, `CLAUDE_CODE_IO_DIR`, `CLAUDE_CODE_SESSION_TIMEOUT_SECONDS` (all optional — see below) |
 
 `ModelProvider` is defined in `app/core/nodes/agent.py` as a `StrEnum`:
 
@@ -146,6 +147,7 @@ class ModelProvider(StrEnum):
     OLLAMA          = "ollama"
     BEDROCK         = "bedrock"
     CLAUDE_CODE_SDK = "claude_code_sdk"
+    CLAUDE_CODE_SESSION = "claude_code_session"
 ```
 
 If `model_provider` does not match any case in the `match` block, the node falls back to
@@ -188,6 +190,38 @@ All four env vars are optional with sensible defaults: `CLAUDE_CODE_BIN` (defaul
 
 The cross-repo design and the contract for the sibling `CLAUDE_CODE_SESSION` (bastion) mode are
 tracked in the company-brain doc `agentic-portfolio/docs/integrations/claude-code-llm-provider.md`.
+
+**Claude Code session (bastion)**: `ModelProvider.CLAUDE_CODE_SESSION` routes through
+`BastionSessionBackend` (in `app/services/claude_code/bastion_backend.py`). Like SDK mode it is
+subscription-billed and does **not** use an API key, but instead of an ephemeral CLI subprocess it
+runs the turn on the **live interactive Claude Code session** that `bastion` manages in tmux, by
+shelling out to `bastion ask`. The turn is therefore observable and attachable in `bastion sessions`.
+
+*Prerequisites (host running the API/worker):*
+
+- The `bastion` binary must be built and on the host `$PATH` (resolved via `BASTION_BIN`, falling
+  back to `shutil.which("bastion")`). It must expose the `bastion ask` command (Block G, v0.1.0).
+- The tmux host must be logged into the Claude Code subscription (`claude login`), and the session
+  named by `CLAUDE_CODE_TMUX_SESSION` (default `orchestrator-claude`) must be reachable by `bastion`.
+- `CLAUDE_CODE_WORKDIR` must be a directory the Claude Code session **already trusts** (pre-trusted
+  scratch dir used to create the session). `CLAUDE_CODE_IO_DIR` (where the per-turn prompt/answer
+  files are written; defaults to `CLAUDE_CODE_WORKDIR`) must be on the **same host** as the session.
+
+*Subscription billing:* no `ANTHROPIC_API_KEY` is used — the turn runs on the host's logged-in
+subscription session, so the Anthropic API console shows no key-billed spend for these calls.
+
+*Limitations:*
+
+- Session mode does **not** surface token usage. `ClaudeResult` returns `input_tokens`,
+  `output_tokens`, and `cost_usd` as `None`, so `NodeRun.usage` token fields are `None` (the
+  `model` field is still recorded).
+- The per-turn `model` is **advisory only** in v0.1.0: the session's model is fixed at launch and is
+  not switched per call.
+
+All five env vars are optional with sensible defaults: `BASTION_BIN` (default: `bastion` on `$PATH`),
+`CLAUDE_CODE_TMUX_SESSION` (default: `orchestrator-claude`), `CLAUDE_CODE_WORKDIR` (the trusted
+scratch dir used to create the session), `CLAUDE_CODE_IO_DIR` (default: `CLAUDE_CODE_WORKDIR`), and
+`CLAUDE_CODE_SESSION_TIMEOUT_SECONDS` (default: `180`).
 
 **VoyageAI embeddings**: `VOYAGE_API_KEY` is read via `os.environ["VOYAGE_API_KEY"]` inside
 `EmbeddingService.__init__()`. Unlike the `AgentNode` provider keys it is not gated on a
