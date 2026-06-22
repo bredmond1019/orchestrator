@@ -9,7 +9,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-22 — First live end-to-end run of content_pipeline through the Claude Code SDK (real Sonnet call on a YouTube URL); fixed a StorageNode DetachedInstanceError the run surfaced; SDK now the content_pipeline default. Project A fully complete; Project B next
+**Last updated:** 2026-06-22 — brain-rag Layer 1 shipped (BrainDocument model + migration + index_brain.py CLI); brain corpus semantically queryable write-path complete. Project B (research agent) next.
 **Current focus:** Phase 1 Project B (Research agent) — thin cut first (~50 lines, raw tool loop)
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
@@ -57,6 +57,11 @@ description: Current state and progress tracker for the python-orchestration-sys
 | Project | What | Status | Notes |
 |---|---|---|---|
 | G | Agent memory system — two-stage pipeline, multi-peer model | Not started | Read Honcho source first (D25). Two-stage: ingest-time fast extraction + dream-time consolidation. Multi-peer schema. NL query interface. The centerpiece. |
+
+### Supporting Infrastructure
+| Block | What | Status | Notes |
+|---|---|---|---|
+| brain-rag | BrainDocument model + Alembic migration + `scripts/index_brain.py` brain corpus indexer | Done | Layer 1 shipped: BrainDocument model, migration, index_brain.py CLI (dry-run, rebuild, incremental skip), 38 brain tests. Layer 2 (RetrieveChunksNode corpus param) → Project D; Layer 3 (MCP endpoint) → Project F. |
 
 ### Parallel Track
 | Track | What | Status | Notes |
