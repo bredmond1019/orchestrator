@@ -79,6 +79,27 @@ class TestSummarizerNodeProcess:
         assert stored.title == "Agentic Harnesses 101"
         assert stored.category == "ai_engineering"
 
+    def test_reads_full_corpus_transcript_as_source(self, load_transcript):
+        """The agent runs against the full real transcript text, untruncated.
+
+        Exercises ``_read_source_text`` with a real corpus fixture rather than a
+        short inline string, so the upstream-read path is tested realistically.
+        """
+        transcript = load_transcript("the-new-code-sean-grove-openai.txt")
+        node = _make_node()
+        node.agent.run_sync.return_value = _result_for(_summary())
+
+        ctx = TaskContext(event={"url": "https://youtu.be/xyz"})
+        ctx.nodes["FetchTranscriptNode"] = {
+            "text": transcript,
+            "fetch_status": "ok",
+        }
+
+        node.process(ctx)
+
+        node.agent.run_sync.assert_called_once_with(user_prompt=transcript)
+        assert len(transcript) > 1000
+
     def test_reads_article_text_when_no_transcript(self):
         node = _make_node()
         node.agent.run_sync.return_value = _result_for(_summary())
