@@ -2,10 +2,9 @@
 
 import logging
 
-from pydantic import ValidationError
-
 from core.nodes.tool_use import ToolUseNode
 from core.task import TaskContext
+from pydantic import ValidationError
 from schemas.research_agent_schema import ResearchBriefOutput
 from services.prompt_loader import PromptManager
 from services.search_service import SearchService
