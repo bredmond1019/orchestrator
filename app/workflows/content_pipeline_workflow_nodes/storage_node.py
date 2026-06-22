@@ -72,8 +72,15 @@ class StorageNode(Node):
         )
         embedding = EmbeddingService().embed_text(embed_text)  # at write time
 
+        # Capture the id before persisting. ``_persist`` commits and closes its
+        # session; SQLAlchemy's default ``expire_on_commit`` then expires the
+        # instance, so reading ``artifact.id`` afterward would refresh a detached
+        # instance and raise ``DetachedInstanceError``. The id is the event's
+        # ``artifact_id`` (the row's PK), so read it from the event, not the ORM
+        # object, for the digest render and node output below.
+        artifact_id = task_context.event.artifact_id
         artifact = LearningArtifact(
-            id=task_context.event.artifact_id,
+            id=artifact_id,
             source_url=task_context.event.url,
             source_type=source_type,
             title=summary.title,
@@ -90,7 +97,7 @@ class StorageNode(Node):
         page = render_artifact_page(
             {
                 **summary.model_dump(),
-                "artifact_id": str(artifact.id),
+                "artifact_id": str(artifact_id),
                 "source_url": task_context.event.url,
             },
             output_dir,
@@ -101,7 +108,7 @@ class StorageNode(Node):
         task_context.update_node(
             self.node_name,
             output={
-                "artifact_id": str(artifact.id),
+                "artifact_id": str(artifact_id),
                 "page": str(page),
                 "category": summary.category,
                 "embedded": True,
