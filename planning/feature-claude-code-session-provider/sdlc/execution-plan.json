@@ -1,0 +1,134 @@
+{
+  "blockId": "feature-claude-code-session-provider",
+  "additiveFiles": [
+    "app/services/claude_code/__init__.py",
+    "app/.env.example",
+    "docs/configuration.md",
+    "docs/api-reference.md",
+    "app/core/nodes/agent.py"
+  ],
+  "tasks": {
+    "1": {
+      "num": 1,
+      "title": "Config surface for session mode",
+      "dependsOn": [],
+      "evidence": "No upstream task references; first task. Owns app/.env.example (append) and docs/configuration.md (append).",
+      "filesCreated": [],
+      "filesModified": [
+        "app/.env.example",
+        "docs/configuration.md"
+      ],
+      "recommendBreakdown": false
+    },
+    "2": {
+      "num": 2,
+      "title": "BastionSessionBackend",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "Task 2 lists '**dependsOn:** Task 1' and 'Resolve config from env (Task 1)'.",
+      "filesCreated": [
+        "app/services/claude_code/bastion_backend.py",
+        "tests/services/test_claude_code_bastion_backend.py"
+      ],
+      "filesModified": [
+        "app/services/claude_code/__init__.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "3": {
+      "num": 3,
+      "title": "Wire CLAUDE_CODE_SESSION into the provider factory",
+      "dependsOn": [
+        2
+      ],
+      "evidence": "Task 3 lists '**dependsOn:** Task 2' and returns 'ClaudeCodeModel(backend=BastionSessionBackend(), ...)' created in Task 2.",
+      "filesCreated": [],
+      "filesModified": [
+        "app/core/nodes/agent.py",
+        "tests/core/test_claude_code_provider_routing.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "4": {
+      "num": 4,
+      "title": "Docs",
+      "dependsOn": [
+        2,
+        3
+      ],
+      "evidence": "Task 4: 'Add ModelProvider.CLAUDE_CODE_SESSION (Task 3) + BastionSessionBackend (Task 2) to the reference'.",
+      "filesCreated": [],
+      "filesModified": [
+        "docs/api-reference.md"
+      ],
+      "recommendBreakdown": false
+    },
+    "5": {
+      "num": 5,
+      "title": "Validate",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "evidence": "Task 5: 'Run the Validation Commands below and confirm all pass' — gates the whole feature including manual e2e of the CLAUDE_CODE_SESSION node built across Tasks 1-4.",
+      "filesCreated": [],
+      "filesModified": [],
+      "recommendBreakdown": false
+    }
+  },
+  "waves": [
+    {
+      "label": "Wave 1",
+      "parallel": false,
+      "tasks": [
+        1
+      ],
+      "mergeOrder": [
+        1
+      ]
+    },
+    {
+      "label": "Wave 2",
+      "parallel": false,
+      "tasks": [
+        2
+      ],
+      "mergeOrder": [
+        2
+      ]
+    },
+    {
+      "label": "Wave 3",
+      "parallel": false,
+      "tasks": [
+        3
+      ],
+      "mergeOrder": [
+        3
+      ]
+    },
+    {
+      "label": "Wave 4",
+      "parallel": false,
+      "tasks": [
+        4
+      ],
+      "mergeOrder": [
+        4
+      ]
+    },
+    {
+      "label": "Wave 5",
+      "parallel": false,
+      "tasks": [
+        5
+      ],
+      "mergeOrder": [
+        5
+      ]
+    }
+  ]
+}
