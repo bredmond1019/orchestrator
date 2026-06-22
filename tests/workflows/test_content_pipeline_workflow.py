@@ -9,17 +9,16 @@ Two layers:
   mocked (no API key, no network, no DB, no real Voyage call): a
   ``make_blog=False`` request runs fetch -> summarize -> store and the blog
   nodes do **not** run; a ``make_blog=True`` request additionally runs the
-  linear blog branch (writer -> self-critic -> revise).
+  linear blog branch (writer -> self-critic -> revise -> translate).
 """
 
 from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 import pytest
-from pydantic import BaseModel, ValidationError
-
 from core.nodes.agent import AgentNode
 from core.task import NodeStatus
+from pydantic import BaseModel, ValidationError
 from schemas.content_pipeline_schema import ContentPipelineEventSchema
 from workflows.content_pipeline_workflow import ContentPipelineWorkflow
 from workflows.content_pipeline_workflow_nodes import storage_node
@@ -43,8 +42,10 @@ from workflows.content_pipeline_workflow_nodes.summarizer_node import (
     SummarizerNode,
     SummaryOutput,
 )
+from workflows.content_pipeline_workflow_nodes.translate_ptbr_node import (
+    TranslatePtBrNode,
+)
 from workflows.workflow_registry import WorkflowRegistry
-
 
 # ---------------------------------------------------------------------------
 # Structure
@@ -89,6 +90,7 @@ def test_workflow_validates_and_builds_node_map() -> None:
         BlogWriterNode,
         SelfCriticNode,
         ReviseNode,
+        TranslatePtBrNode,
     ):
         assert node_cls in workflow.nodes
 
@@ -115,6 +117,7 @@ def test_both_routers_marked_is_router() -> None:
         BlogWriterNode,
         SelfCriticNode,
         ReviseNode,
+        TranslatePtBrNode,
     ):
         assert configs[node_cls].is_router is False
 
@@ -133,7 +136,8 @@ def test_connection_map_matches_spec() -> None:
     assert configs[BlogDecisionRouterNode].connections == [BlogWriterNode]
     assert configs[BlogWriterNode].connections == [SelfCriticNode]
     assert configs[SelfCriticNode].connections == [ReviseNode]
-    assert configs[ReviseNode].connections == []
+    assert configs[ReviseNode].connections == [TranslatePtBrNode]
+    assert configs[TranslatePtBrNode].connections == []
 
 
 def test_graph_is_acyclic_linear_blog_branch() -> None:
@@ -175,6 +179,11 @@ def _agent_output_for(node: AgentNode):
         )
     if name == "ReviseNode":
         return ReviseNode.OutputType(title="Final", body_markdown="# Final\n\nbody")
+    if name == "TranslatePtBrNode":
+        return TranslatePtBrNode.OutputType(
+            translated_title="Final (pt-BR)",
+            translated_body_markdown="# Final\n\ncorpo",
+        )
     raise AssertionError(f"unexpected agent node: {name}")
 
 
@@ -220,7 +229,7 @@ def _run_pipeline(url: str, make_blog: bool, tmp_path):
     return ctx
 
 
-_BLOG_NODES = ("BlogWriterNode", "SelfCriticNode", "ReviseNode")
+_BLOG_NODES = ("BlogWriterNode", "SelfCriticNode", "ReviseNode", "TranslatePtBrNode")
 _DIGEST_NODES = ("SourceRouterNode", "SummarizerNode", "StorageNode")
 
 
@@ -261,9 +270,12 @@ def test_integration_make_blog_runs_linear_blog_branch(tmp_path) -> None:
     for name in _BLOG_NODES:
         assert ctx.node_runs[name].status is NodeStatus.SUCCESS
 
-    # The revised post is the terminal blog output threaded from the draft.
+    # The revised post is threaded from the draft, then translated to pt-BR by
+    # the terminal node.
     revised = ctx.get_node_output("ReviseNode")["result"]
     assert revised.body_markdown == "# Final\n\nbody"
+    translated = ctx.get_node_output("TranslatePtBrNode")["result"]
+    assert translated.translated_body_markdown == "# Final\n\ncorpo"
 
     # The persisted artifact recorded the blog flag.
     assert ctx.metadata["persisted"][0].make_blog is True

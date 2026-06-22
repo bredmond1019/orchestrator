@@ -113,6 +113,25 @@ def test_fetch_transcript_success(mocker):
     service.return_value.fetch_transcript.assert_called_once_with(ctx.event.url)
 
 
+def test_fetch_transcript_propagates_full_corpus_text(mocker, load_transcript):
+    """The node stores a real, large transcript verbatim (no truncation/mangling).
+
+    Uses a real corpus fixture rather than a short inline string so the
+    fetch-and-store path is exercised against realistic input.
+    """
+    transcript = load_transcript("software-is-evolving-backwards.txt")
+    service = mocker.patch(TRANSCRIPT_PATH)
+    service.return_value.fetch_transcript.return_value = transcript
+
+    ctx = _context("https://youtu.be/dQw4w9WgXcQ")
+    FetchTranscriptNode().process(ctx)
+
+    output = ctx.nodes["FetchTranscriptNode"]
+    assert output["text"] == transcript
+    assert len(output["text"]) > 1000
+    assert output["fetch_status"] == "ok"
+
+
 @pytest.mark.parametrize("exc", [ValueError("bad url"), RuntimeError("no transcript")])
 def test_fetch_transcript_failure_does_not_raise(mocker, exc):
     service = mocker.patch(TRANSCRIPT_PATH)
