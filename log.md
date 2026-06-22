@@ -10,6 +10,58 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (task 5 — validation gate)
+
+Task 5 validated the complete feature-claude-code-session-provider spec. Tasks 1–4 (config surface, BastionSessionBackend implementation, CLAUDE_CODE_SESSION provider routing, docs) were already merged into this worktree; Task 5 corrected the sparse-checkout to include `tests/` and ran the full validation suite. All acceptance criteria verified: a node with `model_provider=ModelProvider.CLAUDE_CODE_SESSION` successfully routes to `BastionSessionBackend`, which shells out to `bastion ask` with the exact pinned v0.1.0 flags (--session, --prompt-file, --out, --dir, --timeout), handles structured (JSON-schema) output by parsing the `.json` answer file into `ClaudeResult.structured`, handles free-text output by returning the markdown answer as `text`, returns None for all token/cost fields with `model` recorded, cleans temp files in all paths (success and error), and raises descriptive errors carrying bastion's stderr on non-zero exit, missing answer, or timeout. Review verdict: PASS — all 6 acceptance criteria met, all 7 gating checks pass (ruff clean, pylint 10.00/10, 353 tests pass including 22 session-mode tests, no net-new lint violations, no standing-rule violations, no test count regression). The spec is complete and ready for merge.
+
+```
+0b8837e docs: update docs for feature-claude-code-session-provider-task5
+4becde5 feat: implement feature-claude-code-session-provider-task5
+078560f chore: init worktree feature-claude-code-session-provider-task5
+```
+
+## 2026-06-22 (task 4 — docs: api-reference.md coverage for CLAUDE_CODE_SESSION)
+
+Task 4 completed the documentation coverage for `ModelProvider.CLAUDE_CODE_SESSION` and `BastionSessionBackend` in `docs/api-reference.md`. The implementation stage added an external-dependency note pinning `bastion ask` to v0.1.0 with exact flag surface and a cross-link to the SDK-mode feature. All seven gating checks passed: standing rules clean, ruff and pylint both clean (10.00/10), 353 tests pass with no regression, and no emoji in modified markdown. Review verdict: PASS. All acceptance criteria for Task 4 are met, confirming the documentation is complete and accurate. Next: Task 5 — Validate (run final gating checks and manual e2e test with bastion).
+
+```
+adfe096 docs: update docs for feature-claude-code-session-provider-task4
+3d1e346 feat: implement feature-claude-code-session-provider-task4
+78f66cd chore: init worktree feature-claude-code-session-provider-task4
+```
+
+### 2026-06-22 (task 3 — wire CLAUDE_CODE_SESSION into provider factory)
+
+Completed Task 3: wired `ModelProvider.CLAUDE_CODE_SESSION` into the `AgentNode` provider factory in `app/core/nodes/agent.py` additively alongside the existing `CLAUDE_CODE_SDK` routing. Added the enum value, `case` arm in `__get_model_instance`, and a new `__get_claude_code_session_model` method that returns `ClaudeCodeModel(backend=BastionSessionBackend(), ...)`. Extended `tests/core/test_claude_code_provider_routing.py` with three new routing tests covering the enum value, model construction over the faked backend, and verification that `usage.model` is recorded while token fields remain `None` (session-mode limitation). All gating checks passed (ruff clean, pylint 10.00/10, 353 pytest pass with +3 new tests); document phase updated `docs/api-reference.md` with provider routing details. Review verdict: PASS — all six acceptance criteria met. Next: Task 4 — Docs (add `ModelProvider.CLAUDE_CODE_SESSION` + `BastionSessionBackend` to the api-reference.md reference section).
+
+```
+429bfe4 docs: update docs for feature-claude-code-session-provider-task3
+dd63b45 feat: implement feature-claude-code-session-provider-task3
+017fb4c chore: init worktree feature-claude-code-session-provider-task3
+```
+
+## 2026-06-22 (task 2 — BastionSessionBackend implementation and testing)
+
+Task 2 implemented the `BastionSessionBackend` class as a second implementation of the `ClaudeCodeBackend` protocol, enabling LLM calls to execute on the live interactive Claude Code session via the `bastion ask` command. The backend resolves config from environment (`BASTION_BIN`, `CLAUDE_CODE_TMUX_SESSION`, `CLAUDE_CODE_WORKDIR`, `CLAUDE_CODE_IO_DIR`, `CLAUDE_CODE_SESSION_TIMEOUT_SECONDS`), writes a prompt file containing the system + user prompt plus a JSON-schema instruction when structured output is requested, invokes `bastion ask` with the pinned v0.1.0 flags off the event loop via `run_in_executor` to avoid blocking, parses the answer file (JSON for structured requests, raw markdown for free text), and returns a `ClaudeResult` with token/cost fields set to `None` as documented. Errors (non-zero exit, missing answer file, timeout) raise descriptive `RuntimeError` exceptions carrying `bastion ask`'s stderr for debugging. All temp files are cleaned up in a `finally` block. Comprehensive unit tests (15 tests) verify binary resolution, prompt-file writing with schema instructions, answer-file parsing, error paths, and cleanup. Review passed all 7 gating checks; 350 tests passing total (from 0 baseline), ruff and pylint clean, all standing rules met. Next: Task 3 — Wire CLAUDE_CODE_SESSION into the provider factory in agent.py and extend routing tests.
+
+```
+f26c6ec docs: update docs for feature-claude-code-session-provider-task2
+86c82f5 feat: implement feature-claude-code-session-provider-task2
+83f09bc chore: init worktree feature-claude-code-session-provider-task2
+```
+
+## 2026-06-21 (task 1 — config surface for session mode)
+
+Task 1 implemented the configuration surface for Claude Code session mode: added a `# Claude Code — session mode (bastion)` block to `app/.env.example` with all five env vars and defaults, and documented the new session mode in `docs/configuration.md` with a dedicated section covering prerequisites (bastion binary on PATH, tmux session logged into Claude Code subscription, pre-trusted workdir, IO dir on same host) and the documented limitations (no token usage surfaced → `usage` tokens are `None`; per-turn model is advisory only since the session's model is fixed at launch in v0.1.0). Review verdict is PASS: all files correctly updated, all gating checks passed (ruff, pylint, db imports, no test count decrease). Next: Task 2 — BastionSessionBackend.
+
+```
+4acb61d docs: update docs for feature-claude-code-session-provider-task1
+e0ac042 feat: implement feature-claude-code-session-provider-task1
+c27e342 chore: init worktree feature-claude-code-session-provider-task1
+```
+
+---
+
 ## 2026-06-22
 
 Added local dev scripts: `scripts/dev-setup.sh` (one-time Homebrew Postgres/Redis install, local DB creation, pgvector extension, .env generation, Alembic migrations) and `scripts/dev.sh` (two-pane tmux launcher — FastAPI on top, Celery worker on bottom). Also generated missing Alembic migration `app/alembic/versions/cc3ad971094e_create_events_table.py` for the events table schema that existed only in Docker previously. Both scripts and the migration are local development helpers (not tracked in git, ignored by `.gitignore`). Updated `.gitignore` to explicitly ignore `/scripts/` with a comment explaining they are machine-specific and regenerated on demand by tooling. Infrastructure/tooling work only — no schema changes, no product code affected. Prerequisite for unblocking feature-claude-code-session-provider after bastion Block G ships.
