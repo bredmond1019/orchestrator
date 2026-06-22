@@ -56,7 +56,19 @@ class ProposalReviewNode(AgentNode):
 
     def process(self, task_context: TaskContext) -> TaskContext:
         """Review the roadmap from ProposalWriterNode and record verdict."""
-        roadmap = task_context.get_node_output("ProposalWriterNode")
-        result = self.run_agent_recorded(task_context, json.dumps(roadmap))
+        writer_output = task_context.get_node_output("ProposalWriterNode")
+        # The writer stores the roadmap as a Pydantic model under the "result" key.
+        # Serialize it to JSON for the agent prompt, handling Pydantic models and
+        # other non-serializable types via model_dump() / str fallback.
+        if isinstance(writer_output, dict):
+            roadmap_obj = writer_output.get("result")
+        else:
+            roadmap_obj = writer_output
+        if hasattr(roadmap_obj, "model_dump"):
+            roadmap_serializable = roadmap_obj.model_dump()
+        else:
+            roadmap_serializable = roadmap_obj
+        prompt = json.dumps(roadmap_serializable, default=str)
+        result = self.run_agent_recorded(task_context, prompt)
         task_context.update_node(node_name=self.node_name, result=result.output)
         return task_context

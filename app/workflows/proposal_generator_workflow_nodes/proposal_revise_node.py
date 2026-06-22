@@ -64,10 +64,18 @@ class ProposalReviseNode(AgentNode):
         original_roadmap = task_context.get_node_output("ProposalWriterNode")
         review_result = task_context.get_node_output("ProposalReviewNode")
 
+        def _serialize(obj):
+            """Recursively serialize dicts, handling nested Pydantic models."""
+            if hasattr(obj, "model_dump"):
+                return obj.model_dump()
+            if isinstance(obj, dict):
+                return {k: _serialize(v) for k, v in obj.items()}
+            return str(obj)
+
         user_prompt = json.dumps(
             {
-                "original_roadmap": original_roadmap,
-                "review_result": review_result,
+                "original_roadmap": _serialize(original_roadmap),
+                "review_result": _serialize(review_result),
                 "event": {
                     "company_name": task_context.event.company_name,
                     "industry": task_context.event.industry,
