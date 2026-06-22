@@ -103,3 +103,7 @@ playground/*.png
 
 # Git worktrees (SDLC isolation)
 trees/
+
+# Local dev helper scripts (machine-specific: Homebrew paths, local DB creds;
+# regenerated on demand by tooling, never committed)
+/scripts/
