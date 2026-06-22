@@ -31,8 +31,8 @@ class ReviseNode(AgentNode):
             system_prompt=PromptManager().get_prompt("blog_reviser"),
             output_type=self.OutputType,
             deps_type=None,
-            model_provider=ModelProvider.ANTHROPIC,
-            model_name="claude-opus-4-8",
+            model_provider=ModelProvider.CLAUDE_CODE_SDK,
+            model_name="sonnet",
         )
 
     def process(self, task_context: TaskContext) -> TaskContext:
