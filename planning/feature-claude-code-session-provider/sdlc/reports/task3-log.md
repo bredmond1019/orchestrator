@@ -5,7 +5,7 @@
 **Verdict:** PASS
 **Date:** 2026-06-22
 **Branch:** feature-claude-code-session-provider-task3
-**Applied:** false
+**Applied:** true
 
 ---
 
