@@ -49,12 +49,12 @@ def _result_for(output) -> MagicMock:
 
 
 class TestTranslatePtBrNodeConfig:
-    def test_uses_top_tier_anthropic_model_and_j2_prompt(self):
+    def test_uses_claude_code_sdk_sonnet_and_j2_prompt(self):
         node = _make_node()
         config = node.get_agent_config()
         assert isinstance(config, AgentConfig)
-        assert config.model_provider is ModelProvider.ANTHROPIC
-        assert config.model_name == "claude-opus-4-8"
+        assert config.model_provider is ModelProvider.CLAUDE_CODE_SDK
+        assert config.model_name == "sonnet"
         assert config.output_type is TranslatePtBrNode.OutputType
         # System prompt is loaded from the .j2 file, not hardcoded in Python.
         assert "pt-BR" in config.system_prompt

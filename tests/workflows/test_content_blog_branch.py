@@ -113,11 +113,11 @@ class TestBlogWriterNode:
         stored = ctx.nodes[node.node_name]["result"]
         assert stored.body_markdown == "# Draft\n\nbody"
 
-    def test_blog_writer_uses_top_tier_anthropic_model(self):
+    def test_blog_writer_uses_claude_code_sdk_sonnet(self):
         node = _make(BlogWriterNode)
         config = node.get_agent_config()
-        assert config.model_provider.value == "anthropic"
-        assert config.model_name == "claude-opus-4-8"
+        assert config.model_provider.value == "claude_code_sdk"
+        assert config.model_name == "sonnet"
         assert config.output_type is BlogWriterNode.OutputType
         # Prompt is loaded from the .j2 file, not hardcoded in Python.
         assert "Brandon" in config.system_prompt
