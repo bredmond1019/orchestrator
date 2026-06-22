@@ -10,6 +10,47 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22
+
+Shipped brain-rag Layer 1 via /sdlc-run: BrainDocument model + Alembic migration + index_brain.py CLI indexer (chunk/embed/upsert); 38 new tests, 398 passing. Fixed Alembic dual-head conflict (brain_documents + events both branched from learning_artifacts) by generating a merge migration and updating the .gitignore whitelist. Added D31 (SQLite ARRAY exclusion) and D32 (lazy-import CLI scripts) to planning/decisions/. Brain corpus is now semantically queryable at write-time; Layer 2 (RetrieveChunksNode corpus param) and Layer 3 (MCP endpoint) are scoped for Project D and Project F respectively. Next: Phase 1 Project B (Research agent).
+
+```diff
+ .gitignore                                         |   8 +-
+ app/alembic/env.py                                 |   1 +
+ ...f89e2_merge_brain_documents_and_events_heads.py |  26 ++
+ .../b3c4d5e6f7a8_create_brain_documents_table.py   |  39 +++
+ app/database/__init__.py                           |   6 +
+ app/database/brain_document.py                     |  78 +++++
+ docs/api-reference.md                              |  88 ++++-
+ docs/app-architecture-overview.md                  |   3 +-
+ log.md                                             |  11 +
+ planning/brain-rag/sdlc/reports/document.md        |  31 ++
+ planning/brain-rag/sdlc/reports/implement.md       | 103 ++++++
+ planning/brain-rag/sdlc/reports/review.md          |  95 ++++++
+ planning/brain-rag/sdlc/reports/test.md            |  96 ++++++
+ planning/brain-rag/sdlc/reports/workflow.md        |  70 ++++
+ planning/brain-rag/tasks.md                        | 223 +++++++++++++
+ planning/decisions/D31-sqlite-array-exclusion.md   |  30 ++
+ planning/decisions/D32-lazy-import-cli-scripts.md  |  33 ++
+ planning/decisions/index.md                        |   2 +
+ planning/diagnostic-alignment/notes.md             | 129 ++++++++
+ planning/index.md                                  |   1 +
+ planning/master-plan.md                            |   8 +
+ planning/phase1-projectD/notes.md                  |  23 ++
+ planning/status.md                                 |   7 +-
+ scripts/index_brain.py                             | 313 ++++++++++++++++++
+ tests/api/test_endpoint.py                         |   8 +-
+ tests/conftest.py                                  |  13 +-
+ tests/database/test_brain_document.py              | 158 +++++++++
+ tests/fixtures/brain_docs/brand.md                 |  11 +
+ tests/fixtures/brain_docs/career.md                |  21 ++
+ tests/fixtures/brain_docs/no_headers.md            |   3 +
+ tests/test_index_brain.py                          | 362 +++++++++++++++++++++
+ 31 files changed, 1989 insertions(+), 11 deletions(-)
+```
+
+---
+
 ## 2026-06-22 (brain-rag Layer 1 — BrainDocument model + brain corpus indexer)
 
 Shipped the brain-rag workstream (Layer 1) through the full SDLC pipeline (implement → test → review → document) in a single attempt, PASS verdict. Implemented `BrainDocument` SQLAlchemy model (`app/database/brain_document.py`) with UUID PK, file_path, doc_type, section, content, Vector(1024) embedding, indexed_at, nullable client_slug and workflow_patterns ARRAY; exported it from `app/database/__init__.py`; generated a hand-crafted Alembic migration (`b3c4d5e6f7a8_create_brain_documents_table.py`). Created `scripts/index_brain.py` — a standalone CLI with `--brain-path`, `--rebuild`, and `--dry-run` args that walks a 60-file brain corpus (decisions, projects, career, brand, business, content, diagnostic, memory), chunks by H2/H3 section, embeds via Voyage AI in batches, and upserts into brain_documents with incremental mtime-based skip. 38 brain-specific tests (25 indexer unit tests + 13 model schema tests); 7 round-trip tests marked skip with clear reason (SQLite ARRAY incompatibility). Full suite: 398 passed, 7 skipped. Ruff clean, pylint 9.99/10 (one advisory C0301 line-length). Docs updated: new BrainDocument section in `docs/api-reference.md` (full column reference + indexer CLI args); `docs/app-architecture-overview.md` updated to list BrainDocument as shipped. Layer 2 (RetrieveChunksNode corpus parameter) is scoped for Project D via `planning/phase1-projectD/notes.md`; Layer 3 (MCP server / `/brain/search`) is scoped for Project F. Next: Phase 1 Project B (Research agent).
