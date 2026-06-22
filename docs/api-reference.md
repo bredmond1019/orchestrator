@@ -1677,11 +1677,13 @@ from enum import Enum
 from workflows.content_pipeline_workflow import ContentPipelineWorkflow
 from workflows.customer_care_workflow import CustomerCareWorkflow
 from workflows.research_agent_workflow import ResearchAgentWorkflow
+from workflows.proposal_generator_workflow import ProposalGeneratorWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE    = CustomerCareWorkflow
-    CONTENT_PIPELINE = ContentPipelineWorkflow
-    RESEARCH_AGENT   = ResearchAgentWorkflow
+    CUSTOMER_CARE       = CustomerCareWorkflow
+    CONTENT_PIPELINE    = ContentPipelineWorkflow
+    RESEARCH_AGENT      = ResearchAgentWorkflow
+    PROPOSAL_GENERATOR  = ProposalGeneratorWorkflow
 ```
 
 A plain `Enum` mapping string workflow type identifiers to workflow classes. The
@@ -2499,8 +2501,10 @@ member.
 
 ```python
 SCHEMA_MAP: dict[str, type[BaseModel]] = {
-    WorkflowRegistry.CUSTOMER_CARE.name:    CustomerCareEventSchema,
-    WorkflowRegistry.CONTENT_PIPELINE.name: ContentPipelineEventSchema,
+    WorkflowRegistry.CUSTOMER_CARE.name:       CustomerCareEventSchema,
+    WorkflowRegistry.CONTENT_PIPELINE.name:    ContentPipelineEventSchema,
+    WorkflowRegistry.RESEARCH_AGENT.name:      ResearchAgentEventSchema,
+    WorkflowRegistry.PROPOSAL_GENERATOR.name:  ProposalGeneratorEventSchema,
 }
 ```
 
