@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from core.task import TaskContext
-from schemas.research_agent_schema import ResearchBriefOutput
+from schemas.research_agent_schema import ResearchAgentEventSchema, ResearchBriefOutput
 from workflows.research_agent_workflow_nodes.company_research_node import (
     CompanyResearchNode,
 )
@@ -286,3 +286,208 @@ class TestMaxIterationsGuard:
             result = node.process(ctx)
 
         assert result is ctx
+
+
+# ---------------------------------------------------------------------------
+# Pydantic event path in _build_initial_messages
+# ---------------------------------------------------------------------------
+
+
+class TestBuildInitialMessagesWithPydanticEvent:
+    def test_company_name_extracted_from_pydantic_event(
+        self, node, mock_anthropic_client
+    ):
+        """The else-branch (Pydantic model event) is the production path after
+        Workflow.run() parses the inbound dict into ResearchAgentEventSchema."""
+        event = ResearchAgentEventSchema(company_name="Pydantic Corp")
+        ctx = TaskContext(event=event)
+
+        with patch(_PM_PATCH) as mock_pm:
+            mock_pm.return_value = "mocked prompt"
+            mock_anthropic_client.messages.create.return_value = _end_turn_response()
+            node.process(ctx)
+
+        mock_pm.assert_called_once_with(
+            "research_agent_brief", company_name="Pydantic Corp"
+        )
+
+
+# ---------------------------------------------------------------------------
+# submit_research_brief — validation error handling
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitResearchBriefValidationError:
+    def test_empty_time_sinks_returns_error_string(self, node):
+        """ValidationError from likely_time_sinks=[] returns a string, not an exception."""
+        bad_input = {
+            "company_name": "Acme",
+            "what_they_do": "Widgets",
+            "likely_time_sinks": [],  # violates min_length=1
+            "automation_hypothesis": "Automate something",
+        }
+        result = node._handle_submit_brief(bad_input, _make_ctx())
+        assert isinstance(result, str)
+        assert "validation failed" in result.lower()
+
+    def test_missing_required_field_returns_error_string(self, node):
+        """A brief missing automation_hypothesis returns an error string."""
+        bad_input = {
+            "company_name": "Acme",
+            "what_they_do": "Widgets",
+            "likely_time_sinks": ["Too much manual work"],
+            # automation_hypothesis missing
+        }
+        result = node._handle_submit_brief(bad_input, _make_ctx())
+        assert isinstance(result, str)
+        assert "validation failed" in result.lower()
+
+    def test_validation_error_does_not_store_brief(self, node):
+        """A failed submit_research_brief call must not write a partial brief to context."""
+        bad_input = {
+            "company_name": "Acme",
+            "what_they_do": "Widgets",
+            "likely_time_sinks": [],
+            "automation_hypothesis": "Automate",
+        }
+        ctx = _make_ctx()
+        node._handle_submit_brief(bad_input, ctx)
+        assert ctx.nodes.get("CompanyResearchNode") is None
+
+    def test_validation_error_allows_model_to_retry(
+        self, node, mock_anthropic_client
+    ):
+        """After a bad submit_research_brief, the loop continues so the model can retry."""
+        bad_brief = {
+            "company_name": "Acme",
+            "what_they_do": "Widgets",
+            "likely_time_sinks": [],
+            "automation_hypothesis": "Automate",
+        }
+        good_brief = _sample_brief_input()
+        mock_anthropic_client.messages.create.side_effect = [
+            _tool_use_response("id1", "submit_research_brief", bad_brief),
+            _tool_use_response("id2", "submit_research_brief", good_brief),
+            _end_turn_response(),
+        ]
+        ctx = _make_ctx()
+        with patch(_PM_PATCH, return_value="prompt"):
+            node.process(ctx)
+
+        stored = ctx.get_node_output("CompanyResearchNode")
+        assert stored is not None
+        assert "brief" in stored
+        assert ResearchBriefOutput(**stored["brief"]).company_name == "Acme Corp"
+
+
+# ---------------------------------------------------------------------------
+# SearchService exception propagation
+# ---------------------------------------------------------------------------
+
+
+class TestSearchServiceExceptionPropagation:
+    def test_search_service_exception_propagates(
+        self, node, mock_anthropic_client
+    ):
+        """If SearchService.search raises, the exception propagates out of process()."""
+        mock_anthropic_client.messages.create.side_effect = [
+            _tool_use_response("id1", "web_search", {"query": "Acme"}),
+            _end_turn_response(),
+        ]
+        ctx = _make_ctx()
+
+        with patch(_PM_PATCH, return_value="prompt"), patch(_SEARCH_PATCH) as mock_svc_cls:
+            mock_svc = MagicMock()
+            mock_svc.search.side_effect = RuntimeError("Tavily timeout")
+            mock_svc_cls.return_value = mock_svc
+
+            with pytest.raises(RuntimeError, match="Tavily timeout"):
+                node.process(ctx)
+
+
+# ---------------------------------------------------------------------------
+# Unknown tool name
+# ---------------------------------------------------------------------------
+
+
+class TestUnknownToolName:
+    def test_unknown_tool_returns_error_string(self, node):
+        """handle_tool_call with an unknown tool name returns a descriptive string."""
+        result = node.handle_tool_call("nonexistent_tool", {}, _make_ctx())
+        assert isinstance(result, str)
+        assert "nonexistent_tool" in result
+
+    def test_unknown_tool_in_loop_does_not_crash(
+        self, node, mock_anthropic_client
+    ):
+        """An unknown tool_use block is handled gracefully; the loop continues."""
+        mock_anthropic_client.messages.create.side_effect = [
+            _tool_use_response("id1", "nonexistent_tool", {}),
+            _end_turn_response(),
+        ]
+        ctx = _make_ctx()
+        with patch(_PM_PATCH, return_value="prompt"):
+            result = node.process(ctx)
+        assert result is ctx
+
+
+# ---------------------------------------------------------------------------
+# Multiple tool-use blocks in a single response
+# ---------------------------------------------------------------------------
+
+
+class TestMultipleToolCallsInOneResponse:
+    def test_two_tool_calls_in_one_response_both_dispatched(
+        self, node, mock_anthropic_client
+    ):
+        """When a response contains web_search + submit_research_brief in one turn,
+        both are dispatched before the next API call."""
+
+        def _two_block_response():
+            search_block = MagicMock()
+            search_block.type = "tool_use"
+            search_block.id = "id1"
+            search_block.name = "web_search"
+            search_block.input = {"query": "Acme Corp"}
+
+            brief_block = MagicMock()
+            brief_block.type = "tool_use"
+            brief_block.id = "id2"
+            brief_block.name = "submit_research_brief"
+            brief_block.input = _sample_brief_input()
+
+            r = MagicMock()
+            r.stop_reason = "tool_use"
+            r.content = [search_block, brief_block]
+            r.usage = MagicMock(input_tokens=10, output_tokens=20)
+            return r
+
+        mock_anthropic_client.messages.create.side_effect = [
+            _two_block_response(),
+            _end_turn_response(),
+        ]
+        ctx = _make_ctx()
+
+        with patch(_PM_PATCH, return_value="prompt"), patch(_SEARCH_PATCH) as mock_svc_cls:
+            mock_svc = MagicMock()
+            mock_svc.search.return_value = []
+            mock_svc_cls.return_value = mock_svc
+            node.process(ctx)
+
+        # web_search was dispatched
+        mock_svc.search.assert_called_once_with("Acme Corp")
+        # submit_research_brief was dispatched — brief stored
+        stored = ctx.get_node_output("CompanyResearchNode")
+        assert stored is not None
+        assert "brief" in stored
+
+        # Both tool results injected into the next API call
+        second_call = mock_anthropic_client.messages.create.call_args_list[1]
+        messages = second_call.kwargs.get("messages") or second_call[1]["messages"]
+        user_msgs = [m for m in messages if m["role"] == "user"]
+        last_user_content = user_msgs[-1]["content"]
+        tool_results = [
+            r for r in last_user_content
+            if isinstance(r, dict) and r.get("type") == "tool_result"
+        ]
+        assert len(tool_results) == 2
