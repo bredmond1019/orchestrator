@@ -10,6 +10,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (phase1-projectC post-merge coverage audit + CLAUDE.md rule 9)
+
+Phase 1 Project C shipped all 8 tasks successfully; the post-merge cleanup resolved a common orchestration challenge. Four parallel tasks (3–6) each modified the shared `docs/app-architecture-overview.md` file, each appending a row to the "What shipped" table at row 232. The SDLC orchestrator correctly refused to union-merge duplicate rows and escalated; all four conflicts were hand-resolved with ~30-second manual merges (keep both rows). Coverage audit of the complete proposal_generator workflow found 6 test fixtures in `test_proposal_review_router.py` that seeded upstream nodes with raw dicts instead of the `{"result": ...}` wrapper that actual `AgentNode.update_node()` produces—tests passed silently against mocked agents but proved the wrong key contract. All 6 were fixed, surfacing the pattern as a common post-merge hardening task. Added CLAUDE.md Standing Rule 9 to document the pattern: `AgentNode` stores output via `update_node(node_name=..., result=output)`, which produces `{"result": output}` in `task_context.nodes`; tests that seed an upstream node must mirror this structure. Final: all 8 tasks merged, 549 tests pass, ruff clean, pylint 10.00/10.
+
+```diff
+ CLAUDE.md                                      |  1 +
+ tests/workflows/test_proposal_review_router.py | 14 ++++++++------
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+```
+
+---
+
 ## 2026-06-22 (task 8 — validation pass for proposal_generator workflow)
 
 Task 8 is a pure validation task—no new source files were created or modified. All acceptance criteria for the complete proposal_generator workflow (tasks 1–7) were verified passing: the workflow runs end-to-end through both pass and revise routes, producing a valid `AutomationRoadmap` with candidates sorted by composite score descending and `top_profiles` capped at 3. The composite scoring formula `(frequency × 0.35) + (time_cost × 0.40) + (buildability × 0.25)` was confirmed embedded in the opportunity identifier prompt template (`app/prompts/proposal_opportunity_identifier.j2`), not hardcoded in Python. Dual-language support (PT and EN) was exercised in both the writer and review nodes. Registry entries confirmed present in both `workflow_registry.py` and `app/api/schema_registry.py`. The `CompanyResearchNode` reused from Project B without modifications to Project B's source. A sparse checkout issue in the worktree (tests/ directory excluded) was fixed, enabling the full test suite to run: all 549 tests pass, 7 skipped, pylint rated 10.00/10, ruff found zero violations. All 7 gating checks passed (standing-rules, db-session-import, db-repository-import, net-new-lint, pylint, pytest-count, pytest). The review verdict is PASS—phase1-projectC is complete and ready to merge. Next: phase1-projectD (Document Q&A + RAG) begins.
