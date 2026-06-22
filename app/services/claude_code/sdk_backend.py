@@ -21,6 +21,26 @@ from services.claude_code.backend import ClaudeResult
 _DEFAULT_TIMEOUT_SECONDS = 180.0
 _DEFAULT_PERMISSION_MODE = "bypassPermissions"
 
+# Prompt-token fields in the SDK's usage dict. The Claude Code engine reports the
+# bulk of prompt tokens under the cache fields rather than `input_tokens`, so a
+# meaningful prompt-token count is the sum of all three.
+_INPUT_TOKEN_FIELDS = (
+    "input_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
+
+def _total_input_tokens(usage: dict) -> int | None:
+    """Sum the prompt-token fields (incl. cache) from the SDK usage dict.
+
+    Returns ``None`` when none of the fields are present so a missing-usage run
+    still reports ``None`` rather than a misleading ``0``.
+    """
+    present = [usage.get(k) for k in _INPUT_TOKEN_FIELDS]
+    present = [v for v in present if isinstance(v, int)]
+    return sum(present) if present else None
+
 
 class ClaudeAgentSdkBackend:
     """Run one Claude Code LLM turn via `claude_agent_sdk.query()`.
@@ -105,7 +125,7 @@ class ClaudeAgentSdkBackend:
             model=model,
             text=result_message.result,
             structured=result_message.structured_output,
-            input_tokens=usage.get("input_tokens"),
+            input_tokens=_total_input_tokens(usage),
             output_tokens=usage.get("output_tokens"),
             cost_usd=result_message.total_cost_usd,
             session_id=result_message.session_id,
