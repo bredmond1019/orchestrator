@@ -10,6 +10,28 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+## 2026-06-22 (Project A live run on the Claude Code SDK + bug fix)
+
+Ran Project A (`content_pipeline`) end-to-end for the first time against a real LLM through the newly-landed `CLAUDE_CODE_SDK` provider, feeding it `https://www.youtube.com/watch?v=DzbqeO_diOQ` digest-only (`make_blog=false`), and used the recent per-node observability work to watch every step. The full trace and verdict are captured in a new run log, `planning/test-runs/phase1-projectA-test-run1.md`. The run validated the SDK path (real Sonnet structured `SummaryOutput`, Voyage embedding persisted, digest HTML written — ~79s for the Summarizer) and surfaced one real production bug. Outcomes: (1) per Brandon's call, switched all five content_pipeline LLM nodes (`summarizer`, `blog_writer`, `self_critic`, `revise`, `translate_ptbr`) from `ModelProvider.ANTHROPIC` / `claude-opus-4-8` to `CLAUDE_CODE_SDK` / `sonnet` as the new default (revert per-node when metered-API billing is wanted). (2) Fixed a `StorageNode` `DetachedInstanceError` the run exposed: `_persist()` commits and closes its session (SQLAlchemy `expire_on_commit`), then `process()` read `artifact.id` afterward — fixed by capturing the id from the event before persisting. The existing StorageNode tests monkeypatch `_persist`, so this real-session path had zero coverage; added a regression test that guards it. (3) Made SDK token accounting meaningful — `ClaudeAgentSdkBackend` now sums `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`, since the SDK reports most prompt tokens as cache (the run showed a misleading `input_tokens=4` for a full transcript). Also aligned three stale node-config tests to the SDK/sonnet default, added a cache-token test, and gitignored the `_digest/` runtime output. Final validation: 360 tests pass, ruff clean, pylint 10.00/10. Note for local runs: the real `VOYAGE_API_KEY`/`ANTHROPIC_API_KEY` live in the root `.env.local`, which nothing auto-loads — export it (`set -a; source ../.env.local; set +a`) before launching the worker from `app/`. Next: Phase 1 Project B (Research agent).
+
+```diff
+ .gitignore                                         |   3 +
+ app/services/claude_code/sdk_backend.py            |  22 +++-
+ app/workflows/content_pipeline_workflow_nodes/blog_writer_node.py    |   4 +-
+ app/workflows/content_pipeline_workflow_nodes/revise_node.py         |   4 +-
+ app/workflows/content_pipeline_workflow_nodes/self_critic_node.py    |   4 +-
+ app/workflows/content_pipeline_workflow_nodes/storage_node.py        |  13 +-
+ app/workflows/content_pipeline_workflow_nodes/summarizer_node.py     |   4 +-
+ app/workflows/content_pipeline_workflow_nodes/translate_ptbr_node.py |   4 +-
+ planning/test-runs/phase1-projectA-test-run1.md    | 133 +++++++++++++++++++++
+ tests/services/test_claude_code_sdk_backend.py     |  28 +++++
+ tests/workflows/content_pipeline/test_storage_node.py                |  35 ++++++
+ tests/workflows/content_pipeline/test_summarizer_node.py             |   6 +-
+ tests/workflows/content_pipeline/test_translate_ptbr_node.py         |   6 +-
+ tests/workflows/test_content_blog_branch.py        |   6 +-
+ 14 files changed, 249 insertions(+), 23 deletions(-)
+```
+
 ## 2026-06-22 (Docs housekeeping — OKF frontmatter + External SDK references)
 
 Added OKF frontmatter (type/title/description) to `docs/voyage_ai.md` and `docs/claude-agent-sdk.md` to align with project documentation standards. Updated `docs/index.md` to add a new "External SDK references" section with entries for both documents, improving the navigation index. Pure documentation changes; no schema or code changes. Project A remains fully complete; Project B (research agent) is next.
