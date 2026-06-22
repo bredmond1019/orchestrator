@@ -15,7 +15,7 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 
 ## Standing rules
 
-1. **Every new workflow ships with tests.** No exceptions. See `planning/Test_Plan.md` for scope (Option A).
+1. **Every new workflow ships with tests.** No exceptions. Per-project test requirements are in `planning/master-plan.md` Project Library.
 2. **Never hardcode a system prompt in Python.** All prompts are `.j2` files in `app/prompts/`, loaded via `PromptManager`.
 3. **`customer_care` is reference-only.** Do not extend it, add tests for it, or treat it as a pattern to modify. New workflows go alongside it.
 4. **New projects = new workflow directories.** Add `app/workflows/<name>_workflow.py` + `app/workflows/<name>_workflow_nodes/` + `app/schemas/<name>_schema.py`. Use `createworkflow` (see below).
