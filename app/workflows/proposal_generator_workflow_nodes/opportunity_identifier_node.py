@@ -68,7 +68,7 @@ class OpportunityIdentifierNode(AgentNode):
             description = getattr(event, "description", "")
             intake_notes = getattr(event, "intake_notes", None)
 
-        research_output = task_context.get_node_output("CompanyResearchNode")
+        research_output = task_context.get_node_output("ProposalCompanyResearchNode")
         research_brief = research_output.get("brief", {})
 
         payload = {
@@ -91,7 +91,9 @@ class OpportunityIdentifierNode(AgentNode):
 
         task_context.update_node(
             self.node_name,
-            candidates=[c.model_dump() for c in output.candidates],
-            recommended=output.recommended,
+            result={
+                "candidates": [c.model_dump() for c in output.candidates],
+                "recommended": output.recommended,
+            },
         )
         return task_context
