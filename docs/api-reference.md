@@ -2326,10 +2326,20 @@ avoids this entirely.
 ### `_read_final_roadmap(task_context) -> AutomationRoadmap`
 
 Returns the authoritative roadmap from whichever terminal writer ran. Checks
-`task_context.nodes.get("ReviseNode")` first — if the revise branch ran, its output
-is authoritative. Otherwise falls back to `task_context.get_node_output("ProposalWriterNode")`.
+`task_context.nodes.get("ProposalReviseNode")` first — if the revise branch ran, its output
+is authoritative and is reconstructed via `_roadmap_from_revise_output`. Otherwise falls
+back to `task_context.get_node_output("ProposalWriterNode")["result"]`.
 If `roadmap_data` is already an `AutomationRoadmap` instance it is returned directly;
 otherwise `AutomationRoadmap.model_validate(roadmap_data)` is called to coerce from dict.
+
+### `_roadmap_from_revise_output(revise_result) -> AutomationRoadmap`
+
+Reconstructs an `AutomationRoadmap` from a `ProposalReviseNode.OutputType` payload.
+`ProposalReviseNode` stores candidates and top_profiles as JSON-encoded strings
+(`candidates_json`, `top_profiles_json`) because pydantic-ai does not support nested
+Pydantic models in structured output. This helper decodes those strings and validates
+the full roadmap, combining revise fields with the original writer output fields
+(`situation_summary`, `recommended_workflow`, `engagement_scope`, `price_range_brl`).
 
 ### `_build_embed_text(roadmap) -> str`
 
