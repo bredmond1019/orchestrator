@@ -10,6 +10,24 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-23 (phase1-projectD post-merge hardening)
+
+Post-merge quality audit of phase1-projectD uncovered 4 test coverage gaps, the most critical a live functional bug in `RetrieveChunksNode._keyword_search()` where punctuation like "?" was not stripped from query terms before ILIKE matching, causing keyword boost to silently never fire for question-form queries. Fixed with `re.sub(r"\W+", "", t)` to strip all non-word characters from each term. Also added: (1) Pydantic output path test for `UpdateSessionMemoryNode` (when node constructs a new `ChatSession` and returns via `model_dump()`), (2) `TestAnswerNodeTelemetry` (3 tests covering success + error telemetry recording), (3) two end-to-end smoke test files (`test_document_ingest_e2e.py` with 14 tests for parse→chunk→embed→store pipeline, `test_document_qa_e2e.py` with 18 tests for embed→retrieve→assemble→answer pipeline) covering cross-node key contracts in isolation. Surgical update-docs pass on `api-reference.md`: updated `_keyword_search` description to document the punctuation fix, updated `RetrieveChunksNode` test count from 22→23, added "Test coverage" sections to both workflow docs. Validation: ruff clean, pylint 10.00/10, 689 tests pass (7 skipped). Final test count +15 over task 7 (674→689). Competence checkpoint: ingest an SMB's documents, answer questions over them, maintain conversation history — confirmed ready for phase1-projectE (Specialization refactor).
+
+```
+ .../digest_renderer.py                             |  49 +++++++-
+ .../retrieve_chunks_node.py                        |   4 +-
+ docs/api-reference.md                              |  18 ++-
+ planning/handoff.md                                | 135 +++++++++++----------
+ tests/workflows/test_document_qa_nodes.py          | 112 +++++++++++++++++
+ tests/workflows/test_retrieve_chunks_node.py       |  45 +++++++
+ 6 files changed, 289 insertions(+), 74 deletions(-)
+```
+
+*Plus 2 untracked e2e test files: test_document_ingest_e2e.py (14 tests, 6 KB) + test_document_qa_e2e.py (18 tests, 8 KB).*
+
+---
+
 ### 2026-06-22 (task 7 — validate phase1-projectD)
 
 Task 7 was a validation-only gate: all implementation work (tasks 1–6) was already complete. Enabled the tests directory in sparse checkout, ran all eight validation commands, and confirmed clean results: 674 tests collected (667 passed, 7 skipped, 0 failed), pylint 10.00/10, ruff clean, all gating checks pass. Both workflows (DOCUMENT_INGEST and DOCUMENT_QA) are registered in both workflow_registry.py and schema_registry.py, and TestSchemaRegistryCompleteness passes. The two-stage hybrid retrieval, section-title weighting, NaN-safe sorting, corpus switching, RAG + session-memory assembly, and prompt-via-PromptManager requirements were all verified in source and test coverage. The test count of 674 exceeds the 549 baseline by 125. Competence checkpoint: ingest an SMB's documents, answer questions over them, maintain conversation history — confirmed. Next: phase1-projectE — Specialization refactor.
