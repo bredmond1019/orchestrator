@@ -1,7 +1,7 @@
 ---
 type: ImplementationReport
 title: Implementation Report — expose-api-and-telegram-bot Task 1
-description: API key auth + CORSMiddleware added to FastAPI app; security dependency gates POST /events/.
+description: API key auth + CORSMiddleware added to FastAPI app; security dependency gates POST /events/; test_endpoint.py updated to bypass auth in dispatch tests.
 ---
 
 # Implementation Report — expose-api-and-telegram-bot-task1
@@ -12,42 +12,41 @@ description: API key auth + CORSMiddleware added to FastAPI app; security depend
 
 ## What Was Built or Changed
 
-- `app/api/security.py` (new): `require_api_key` FastAPI dependency. Reads `ORCHESTRATION_API_KEY`
-  from env at request time; returns 503 if unset (fail-closed), 401 if header missing or mismatched.
-  Uses `hmac.compare_digest` to prevent timing-based side-channel attacks. Header declared
-  `str | None = Header(None)` so missing header yields 401 (not FastAPI's default 422).
-- `app/main.py` (edit): Added `CORSMiddleware` with origins from `ALLOWED_ORIGINS` env
-  (comma-split; default `https://learn-agentic-ai.com`). Docstring updated to document which
-  routes are open vs. protected.
-- `app/api/endpoint.py` (edit): `POST /events/` router now carries
-  `dependencies=[Depends(require_api_key)]`. The flush-before-send_task ghost-row guard is
-  preserved unchanged.
-- `tests/api/test_security.py` (new): 7 unit tests covering all auth scenarios and schema
-  registry completeness.
-- `tests/__init__.py` (new): empty init to make `tests/` a package.
-- `tests/api/__init__.py` (new): empty init to make `tests/api/` a package.
+- `app/api/security.py` (already present from prior merge): `require_api_key` FastAPI dependency.
+  Reads `ORCHESTRATION_API_KEY` from env at request time; returns 503 if unset (fail-closed), 401
+  if header is missing or mismatched. Uses `hmac.compare_digest` for timing safety.
+- `app/main.py` (already present from prior merge): `CORSMiddleware` with origins from
+  `ALLOWED_ORIGINS` env (comma-split; default `https://learn-agentic-ai.com`). Open vs. protected
+  routes documented in module docstring.
+- `app/api/endpoint.py` (already present from prior merge): `POST /events/` router carries
+  `dependencies=[Depends(require_api_key)]`. Flush-before-send_task ghost-row guard preserved.
+- `tests/api/test_security.py` (already present from prior merge): 7 unit tests covering all auth
+  scenarios (503/401/202) and schema registry completeness.
+- `tests/api/test_endpoint.py` (modified in this worktree): Added `require_api_key` dependency
+  override to the `endpoint_context` fixture so existing dispatch/DB/Celery tests bypass auth.
+  Auth-specific coverage lives in `test_security.py`. Also added the import.
+
+Note: the worktree was initialized as a sparse checkout that excluded `tests/`. Running
+`git sparse-checkout add tests` restored the directory before any changes were made.
 
 ## Files Created or Modified
 
 | File | Action |
 |---|---|
-| `app/api/security.py` | created |
-| `app/main.py` | modified |
-| `app/api/endpoint.py` | modified |
-| `tests/api/test_security.py` | created |
-| `tests/__init__.py` | created |
-| `tests/api/__init__.py` | created |
+| `app/api/security.py` | present (from prior merge into base branch) |
+| `app/main.py` | present (from prior merge into base branch) |
+| `app/api/endpoint.py` | present (from prior merge into base branch) |
+| `tests/api/test_security.py` | present (from prior merge into base branch) |
+| `tests/api/test_endpoint.py` | modified — auth bypass in fixture |
+| `planning/expose-api-and-telegram-bot/sdlc/reports/task1-implement.md` | updated |
 
 ## Validation Output
 
 **Commands run:**
 ```
 uv run python -m ruff check app/
-uv run python -m pylint app/
 cd app && uv run python -c 'import main'
-cd app && uv run python -c 'import worker.config'
-cd app && uv run python -c 'import database.session'
-cd app && uv run python -c 'import database.repository'
+uv run python -m pylint app/
 uv run python -m pytest --collect-only -q
 uv run python -m pytest
 ```
@@ -56,16 +55,17 @@ uv run python -m pytest
 
 ## Decisions and Trade-offs
 
-- **`str | None = Header(None)` vs `str = Header(...)`**: FastAPI returns 422 when a required
-  header is absent. Declaring the header optional and checking for `None` in the dependency body
-  produces the semantically correct 401 response for a missing auth header.
-- **503 for unset env var**: Distinguishes operator misconfiguration from an invalid key;
-  fail-closed prevents the app from accidentally serving unauthenticated requests if the env
-  was not injected. This mirrors the pattern in `app/services/embedding_service.py`.
-- **Routes left open**: `GET /health` and `GET /workflows*` carry no auth dependency so they
-  remain reachable for monitoring probes without credentials. Documented in the module docstring.
-- **CORS at app level**: `CORSMiddleware` is added in `main.py` (not per-router) so it applies
-  to all routes including health and workflow graph endpoints, which is the correct behavior.
+- **Auth bypass via dependency override**: `test_endpoint.py` dispatch tests focus on payload
+  validation, DB commit, and Celery enqueue — not auth. Using FastAPI's dependency override to
+  bypass `require_api_key` in those tests cleanly separates concerns. Auth tests belong in
+  `test_security.py` and remain intact.
+- **`str | None = Header(None)`**: Declaring the header optional at the FastAPI level so missing
+  header produces 401 (not FastAPI's default 422 for required headers). The None check in the
+  dependency body produces the correct response code.
+- **503 for unset env var**: Distinguishes operator misconfiguration from a bad key; fail-closed
+  prevents accidental unauthenticated access if env var wasn't injected.
+- **Routes left open**: `GET /health` and `GET /workflows*` have no auth dependency so monitoring
+  probes work without credentials. Documented in the module docstring.
 
 ## Follow-up Work
 
@@ -76,7 +76,6 @@ uv run python -m pytest
 ## git diff --stat
 
 ```
- app/api/endpoint.py |  3 ++-
- app/main.py         | 34 +++++++++++++++++++++++++++++++++-
- 2 files changed, 35 insertions(+), 2 deletions(-)
+ tests/api/test_endpoint.py | 5 +++++
+ 1 file changed, 5 insertions(+)
 ```
