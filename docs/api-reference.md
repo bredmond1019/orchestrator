@@ -58,6 +58,13 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 42. [EmbedChunksNode](#embedchunksnode)
 43. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
 44. [DocumentIngestWorkflow](#documentingestworkflow)
+45. [RetrieveChunksNode](#retrievechunksnode)
+46. [DocumentQAEventSchema](#documentqaeventschemae)
+47. [EmbedQuestionNode](#embedquestionnode)
+48. [AssembleContextNode](#assemblecontextnode)
+49. [AnswerNode](#answernode)
+50. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+51. [DocumentQAWorkflow](#documentqaworkflow)
 
 ---
 
@@ -3044,3 +3051,275 @@ dispatcher.
 | `start` | `ParseDocumentNode` |
 | `nodes` | `[ParseDocumentNode, ChunkDocumentNode, EmbedChunksNode, StoreChunksNode]` |
 | Connections | Linear: each node connects to the next; `StoreChunksNode.connections = []` |
+
+---
+
+## DocumentQAEventSchema
+
+**Source:** `app/schemas/document_qa_schema.py`
+
+```python
+class DocumentQAEventSchema(BaseModel):
+```
+
+Event payload for `POST /events/` with `workflow_type="DOCUMENT_QA"`. Validates the
+inbound Q&A request; `session_id` defaults to a fresh UUID so callers can start a new
+session without generating an id client-side.
+
+### Fields
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `doc_id` | `UUID` | Yes | — | The ingested document to answer over (must exist in `content_chunks`). |
+| `question` | `str` | Yes | — | The user question text. |
+| `session_id` | `UUID` | No | `uuid4()` | Q&A session identifier; a new UUID is generated if absent (new session). |
+| `corpus` | `str` | No | `"content"` | Corpus to retrieve from: `"content"` (content_chunks) or `"brain"` (brain_documents). |
+
+### Validation
+
+All four fields accept their Python-native types; Pydantic coerces UUID strings automatically.
+A missing `doc_id` or `question` raises a `ValidationError`. `corpus` is not constrained by the
+schema — the `RetrieveChunksNode` corpus dispatch handles unknown values.
+
+---
+
+## EmbedQuestionNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/embed_question_node.py`
+
+```python
+class EmbedQuestionNode(Node):
+```
+
+First node in the `DocumentQAWorkflow` linear DAG. Embeds the question text via
+`EmbeddingService` and stores both the question string and its embedding vector in
+`TaskContext` so downstream nodes can reference the question without re-reading the event.
+
+`RetrieveChunksNode` re-embeds the question internally for its two-stage retrieval call —
+that overlap is intentional so the retrieval node remains self-contained and reusable across
+workflows. `EmbedQuestionNode` exists to name the step explicitly in the DAG and to expose
+the embedding if a future consumer needs it.
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+1. Reads `task_context.event.question`.
+2. Calls `EmbeddingService().embed_text(question)` — one network round-trip to the Voyage AI
+   embedding endpoint.
+3. Writes `{"question": <str>, "embedding": <list[float]>}` under `EmbedQuestionNode` via
+   `task_context.update_node(...)`.
+
+### Output contract
+
+```python
+task_context.nodes["EmbedQuestionNode"] = {
+    "result": {
+        "question": "<question text>",
+        "embedding": [0.0, ...],   # float vector
+    }
+}
+```
+
+---
+
+## AssembleContextNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/assemble_context_node.py`
+
+```python
+class AssembleContextNode(Node):
+```
+
+Third node in the `DocumentQAWorkflow` DAG (after `EmbedQuestionNode` → `RetrieveChunksNode`).
+Combines two inputs into a structured context block for `AnswerNode`:
+
+1. **RAG context** — retrieved chunks from `RetrieveChunksNode`, each formatted as
+   `Section: <title> (relevance: X.XX)\n<content>` (porting the `build_rag_prompt` format
+   from `chat_server.rs` in the rag-engine-rs).
+2. **Session history** — prior `{role, content}` turns from the existing `ChatSession`, if
+   one exists for the current `session_id`.
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+**Reads:**
+- `RetrieveChunksNode` output: `chunks` list of dicts with `content`, `section_title`, `score`.
+- `task_context.event.session_id` — used to load prior turns.
+- `task_context.event.question` — passed through for `AnswerNode`.
+
+**Writes** `{"context": <str>, "history": <list[dict]>, "question": <str>}` under
+`AssembleContextNode` via `task_context.update_node(...)`.
+
+Chunks with a `None` `section_title` are rendered as `"General"`. The context block joins
+all formatted chunks with `"\n\n"` separators.
+
+### Output contract
+
+```python
+task_context.nodes["AssembleContextNode"] = {
+    "result": {
+        "context": "Section: Intro (relevance: 0.92)\n...\n\nSection: ...",
+        "history": [{"role": "user", "content": "..."}, ...],
+        "question": "<question text>",
+    }
+}
+```
+
+### `_load_session(session_id) -> ChatSession | None`
+
+Mockable DB seam. Loads the `ChatSession` by `session_id` via `GenericRepository` inside a
+`db_session` context manager. Tests monkeypatch this method to inject a fixture session or
+`None` without any real database connection.
+
+---
+
+## AnswerNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/answer_node.py`
+
+```python
+class AnswerNode(AgentNode):
+```
+
+Fourth node in the `DocumentQAWorkflow` DAG. `AgentNode` subclass that generates a grounded
+answer from the assembled RAG context and prior session memory produced by `AssembleContextNode`.
+
+The system prompt is loaded from `app/prompts/document_qa_answer.j2` via `PromptManager` — no
+prompt is hardcoded in Python (CLAUDE.md rule 2). `run_agent_recorded` is used (not
+`self.agent.run_sync`) so per-node telemetry (input tokens, output tokens, model) is captured
+and surfaced in the data contract read by Bastion (D30).
+
+### `OutputType`
+
+```python
+class OutputType(AgentNode.OutputType):
+    answer: str
+    cited_sections: list[str]
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `answer` | `str` | The grounded answer to the user question. |
+| `cited_sections` | `list[str]` | Section titles cited in the answer (may be empty). |
+
+### `get_agent_config() -> AgentConfig`
+
+Returns an `AgentConfig` with:
+
+| Key | Value |
+|---|---|
+| `system_prompt` | `PromptManager().get_prompt("document_qa_answer")` (from `.j2`) |
+| `output_type` | `AnswerNode.OutputType` |
+| `deps_type` | `None` |
+| `model_provider` | `ModelProvider.CLAUDE_CODE_SDK` |
+| `model_name` | `"sonnet"` |
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+**Reads:**
+- `AssembleContextNode` output: `context`, `history`, `question`.
+
+**User prompt shape** — a JSON object passed to the agent:
+```json
+{
+  "prior_conversation": [...],
+  "document_context": "...",
+  "question": "..."
+}
+```
+
+**Writes** the serialized `OutputType` under `AnswerNode` via `task_context.update_node(...)`.
+
+### Output contract
+
+```python
+task_context.nodes["AnswerNode"] = {
+    "result": {
+        "answer": "<grounded answer>",
+        "cited_sections": ["Intro", ...],
+    }
+}
+```
+
+---
+
+## UpdateSessionMemoryNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/update_session_memory_node.py`
+
+```python
+class UpdateSessionMemoryNode(Node):
+```
+
+Terminal node of the `DocumentQAWorkflow` DAG. Loads or creates the `ChatSession` for the
+current `session_id`, appends the user question and assistant answer as a new turn pair,
+extends `topics_covered` with any cited sections (deduplicated), and persists the session via
+`GenericRepository` (CLAUDE.md rule 7 — no deployment logic inside the node).
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+**Reads:**
+- `AssembleContextNode` output: `question`.
+- `AnswerNode` output: `answer` and `cited_sections` (handles both Pydantic model instance and
+  dict forms, since `run_agent_recorded` may store either depending on the `node_run` path).
+- `task_context.event`: `session_id`, `doc_id`.
+
+**Logic:**
+1. Loads the existing `ChatSession` via `_load_session(session_id)`.
+2. If none exists, creates a new `ChatSession(id=session_id, doc_id=doc_id, turns=[], topics_covered=[])`.
+3. Appends `{"role": "user", "content": question}` and `{"role": "assistant", "content": answer}`.
+4. Extends `topics_covered` with `cited_sections`, skipping duplicates.
+5. Calls `_persist(chat_session)` — `create` for new sessions, `update` (merge) for existing.
+6. Writes `{"session_id": <str>, "turns": <int>}` under `UpdateSessionMemoryNode`.
+
+### Output contract
+
+```python
+task_context.nodes["UpdateSessionMemoryNode"] = {
+    "result": {
+        "session_id": "<uuid-str>",
+        "turns": 2,   # total turns after append (always even: user+assistant pairs)
+    }
+}
+```
+
+### `_load_session(session_id) -> ChatSession | None`
+
+Mockable DB seam. Loads `ChatSession` by id via `GenericRepository` inside `db_session`.
+
+### `_persist(chat_session: ChatSession) -> None`
+
+Mockable DB seam. Uses `GenericRepository.exists(id=...)` to decide `create` vs `update`.
+Tests monkeypatch both seams to avoid any real database connection.
+
+---
+
+## DocumentQAWorkflow
+
+**Source:** `app/workflows/document_qa_workflow.py`
+
+```python
+class DocumentQAWorkflow(Workflow):
+```
+
+Grounded Q&A workflow over ingested documents (Phase 1 Project D). Embeds the user question,
+retrieves the most relevant chunks via two-stage hybrid retrieval, assembles the RAG context
+alongside prior session turns, generates a grounded answer, and persists the new turn to the
+`ChatSession`.
+
+**Graph (linear DAG — no router):**
+
+```
+EmbedQuestionNode
+    -> RetrieveChunksNode
+        -> AssembleContextNode
+            -> AnswerNode
+                -> UpdateSessionMemoryNode
+```
+
+### `workflow_schema`
+
+| Property | Value |
+|---|---|
+| `event_schema` | `DocumentQAEventSchema` |
+| `start` | `EmbedQuestionNode` |
+| `nodes` | `[EmbedQuestionNode, RetrieveChunksNode, AssembleContextNode, AnswerNode, UpdateSessionMemoryNode]` |
+| Connections | Linear: each node connects to the next; `UpdateSessionMemoryNode.connections = []` |
