@@ -2206,7 +2206,8 @@ Each markdown file is split by H2/H3 section header; every section yields one ro
 the raw chunk text, its provenance, and a 1024-dim pgvector embedding for semantic retrieval.
 
 This model is the **write path** for the brain RAG layer. The read/query path (vector
-similarity search from `RetrieveChunksNode`) ships with Project D.
+similarity search from `RetrieveChunksNode` corpus `"brain"`) is available as of Project D Task 3
+— see [RetrieveChunksNode](#retrievechunksnode) below.
 
 **Module-level constant:** `EMBEDDING_DIM = 1024`
 
@@ -2366,6 +2367,94 @@ The `chat_sessions` table is created by the same migration as `content_chunks`: 
 ```python
 from database import ChatSession, ContentChunk
 ```
+
+---
+
+## RetrieveChunksNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`
+
+```python
+class RetrieveChunksNode(Node):
+```
+
+Two-stage hybrid retrieval node for the `DOCUMENT_QA` workflow (Phase 1 Project D Task 3).
+Implements the semantic-then-keyword re-rank pattern ported from the rag-engine-rs
+`two_stage_retrieval.rs` and `query.rs` modules.
+
+**Retrieval pipeline:**
+
+1. **Stage 1 — semantic candidate set:** pgvector cosine-distance query returns the top-20 closest
+   chunks from the target corpus table.
+2. **Stage 2 — keyword re-rank:** ILIKE keyword match scoped to the Stage-1 candidate IDs.
+   Each whitespace-separated query term is matched case-insensitively against the content field.
+3. **Additive score fusion:** `score = (1.0 − distance) × title_weight + keyword_boost`, where
+   `title_weight = 2.0` for `is_section_title=True` chunks (section-title 2x weight) and
+   `keyword_boost = 1.0` for keyword-matched candidates. NaN distances are filtered out before
+   sorting (mirrors the Rust `total_cmp` guard).
+
+**Corpus dispatch** — controlled by the `corpus` field on the incoming event:
+
+| `corpus` value | Table queried | Model |
+|---|---|---|
+| `"content"` (default) | `content_chunks` | `ContentChunk` |
+| `"brain"` | `brain_documents` | `BrainDocument` |
+
+Adding a third corpus requires one entry in the module-level `_CORPUS_CONFIG` dict.
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+Reads `event.question` and `event.corpus` (defaults to `"content"`) from the task context,
+calls `retrieve()` with `k=5`, and writes the result:
+
+```python
+task_context.update_node(node_name=self.node_name, result={"chunks": chunks})
+```
+
+Downstream nodes read via:
+
+```python
+output = task_context.get_node_output("RetrieveChunksNode")
+chunks = output["result"]["chunks"]
+```
+
+### `retrieve(query, corpus="content", k=5, threshold=0.0) -> list[dict]`
+
+Public retrieval method. Embeds `query` via `EmbeddingService`, runs the two-stage pipeline,
+and returns up to `k` normalized chunk dicts sorted by fused score descending.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `query` | `str` | — | User question text to search. |
+| `corpus` | `str` | `"content"` | Target corpus: `"content"` or `"brain"`. |
+| `k` | `int` | `5` | Maximum number of chunks to return. |
+| `threshold` | `float` | `0.0` | Minimum fused score; chunks below are excluded. |
+
+**Return schema** — each element of the returned list contains:
+
+| Key | Type | Description |
+|---|---|---|
+| `content` | `str` | Chunk text. |
+| `section_title` | `str \| None` | Markdown section header the chunk falls under. |
+| `score` | `float` | Fused retrieval score (higher = more relevant). |
+| `source` | `str` | Display label: `section_title` or `"General"` if none. |
+
+### Internal methods (mockable test seams)
+
+| Method | Description |
+|---|---|
+| `_semantic_search(vector, corpus, limit)` | Stage 1: pgvector cosine-distance query. Isolated for unit-test patching without a live DB. |
+| `_keyword_search(query, candidate_ids, corpus)` | Stage 2: ILIKE match scoped to candidate IDs. Returns a `set` of matching IDs. Isolated for unit-test patching. |
+| `_fuse_and_rank(candidates, keyword_ids, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. No DB calls. |
+
+### Test coverage
+
+`tests/workflows/test_retrieve_chunks_node.py` — 22 tests covering: score ordering,
+keyword boost, section-title 2x weight, threshold filtering, top-k, NaN safety,
+corpus `"brain"` threading, TaskContext output contract (`{"result": {"chunks": [...]}}` shape),
+and exact score formula verification.
 
 ---
 
