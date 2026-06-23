@@ -1,0 +1,125 @@
+{
+  "blockId": "expose-api-and-telegram-bot",
+  "additiveFiles": [],
+  "tasks": {
+    "1": {
+      "num": 1,
+      "title": "API key auth + CORS (API hardening)",
+      "dependsOn": [],
+      "filesCreated": [
+        "app/api/security.py",
+        "tests/api/test_security.py"
+      ],
+      "filesModified": [
+        "app/main.py",
+        "app/api/endpoint.py"
+      ],
+      "evidence": "Spec: 'Tasks 1, 2, 3 own non-overlapping files and run in parallel (wave 1)'",
+      "recommendBreakdown": false
+    },
+    "2": {
+      "num": 2,
+      "title": "Telegram bot package (integrations/telegram/, long-poll, fire-and-forget)",
+      "dependsOn": [],
+      "filesCreated": [
+        "integrations/telegram/__init__.py",
+        "integrations/telegram/config.py",
+        "integrations/telegram/client.py",
+        "integrations/telegram/bot.py",
+        "integrations/telegram/README.md",
+        "tests/integrations/__init__.py",
+        "tests/integrations/telegram/__init__.py",
+        "tests/integrations/telegram/test_client.py",
+        "tests/integrations/telegram/test_bot.py"
+      ],
+      "filesModified": [
+        "pyproject.toml",
+        "pytest.ini"
+      ],
+      "evidence": "Spec: 'Tasks 1, 2, 3 own non-overlapping files and run in parallel (wave 1)'",
+      "recommendBreakdown": true,
+      "breakdownReason": "Bundles separable concerns — config, httpx client, and long-poll bot handlers — across 9 new files plus pyproject/pytest edits, multiple independently-testable units."
+    },
+    "3": {
+      "num": 3,
+      "title": "Configuration & deployment (env + docker service)",
+      "dependsOn": [],
+      "filesCreated": [],
+      "filesModified": [
+        "app/.env.example",
+        "docker/.env.example",
+        "docker/docker-compose.ai-event-system.yml"
+      ],
+      "evidence": "Spec: 'Tasks 1, 2, 3 own non-overlapping files and run in parallel (wave 1)'",
+      "recommendBreakdown": false
+    },
+    "4": {
+      "num": 4,
+      "title": "Docs + status deviation",
+      "dependsOn": [
+        1,
+        2,
+        3
+      ],
+      "filesCreated": [],
+      "filesModified": [
+        "docs/configuration.md",
+        "docs/api-reference.md",
+        "docs/data-contract.md",
+        "planning/status.md"
+      ],
+      "evidence": "Task 4 text: '**Depends on tasks 1, 2, 3** (documents what they built).' and 'Task 4 (docs) depends on 1-3 (wave 2)'",
+      "recommendBreakdown": false
+    },
+    "5": {
+      "num": 5,
+      "title": "Validate",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "filesCreated": [],
+      "filesModified": [],
+      "evidence": "Task 5 text: 'Run the Validation Commands below and confirm all pass.' and 'Task 5 validates (wave 3)' — runs the full suite over all prior tasks' output",
+      "recommendBreakdown": false
+    }
+  },
+  "waves": [
+    {
+      "label": "Wave 1",
+      "parallel": true,
+      "tasks": [
+        1,
+        2,
+        3
+      ],
+      "mergeOrder": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "label": "Wave 2",
+      "parallel": false,
+      "tasks": [
+        4
+      ],
+      "mergeOrder": [
+        4
+      ]
+    },
+    {
+      "label": "Wave 3",
+      "parallel": false,
+      "tasks": [
+        5
+      ],
+      "mergeOrder": [
+        5
+      ]
+    }
+  ]
+}
