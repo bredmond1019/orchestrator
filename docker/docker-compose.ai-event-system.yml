@@ -29,6 +29,9 @@ services:
       - BEDROCK_AWS_ACCESS_KEY_ID=${BEDROCK_AWS_ACCESS_KEY_ID}
       - BEDROCK_AWS_SECRET_ACCESS_KEY=${BEDROCK_AWS_SECRET_ACCESS_KEY}
       - BEDROCK_AWS_REGION=${BEDROCK_AWS_REGION}
+      # API security
+      - ORCHESTRATION_API_KEY=${ORCHESTRATION_API_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://learn-agentic-ai.com}
 
   celery_worker:
     build:
@@ -57,6 +60,40 @@ services:
       - BEDROCK_AWS_ACCESS_KEY_ID=${BEDROCK_AWS_ACCESS_KEY_ID}
       - BEDROCK_AWS_SECRET_ACCESS_KEY=${BEDROCK_AWS_SECRET_ACCESS_KEY}
       - BEDROCK_AWS_REGION=${BEDROCK_AWS_REGION}
+
+  # Long-poll Telegram bot — fires CONTENT_PIPELINE runs from a sent link and
+  # acks "Queued" to the sender.  Calls the API over the internal Compose network
+  # (http://api:8080) with X-API-Key auth; never goes through the public hostname,
+  # so CF Access headers are not needed here.
+  #
+  # Alternative (non-Docker, Mac Mini): a launchd service mirroring
+  # com.brandon.learn-ai — set ORCHESTRATION_API_BASE_URL=http://localhost:8080
+  # and run:  python integrations/telegram/bot.py
+  #
+  # TODO(scale): migrate to webhook transport once the public API is stable.
+  #   Steps: switch Application.run_polling() -> run_webhook() in bot.py, add
+  #   an ingress rule for the webhook path in cloudflared, and remove this loop.
+  telegram_bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.telegram
+    container_name: "${PROJECT_NAME}_telegram_bot"
+    depends_on:
+      - api
+    restart: unless-stopped
+    volumes:
+      - ./../integrations:/integrations
+    environment:
+      # Required
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ORCHESTRATION_API_KEY=${ORCHESTRATION_API_KEY}
+      # Calls the API over the internal Compose network; never touches the public hostname
+      - ORCHESTRATION_API_BASE_URL=${ORCHESTRATION_API_BASE_URL:-http://api:8080}
+      # Optional — comma-separated Telegram chat ID allowlist
+      - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      # Cloudflare Access service token — leave empty for internal network use
+      - CF_ACCESS_CLIENT_ID=${CF_ACCESS_CLIENT_ID:-}
+      - CF_ACCESS_CLIENT_SECRET=${CF_ACCESS_CLIENT_SECRET:-}
 
   #  caddy:
   #    container_name: "${PROJECT_NAME}_caddy"
