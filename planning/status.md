@@ -9,7 +9,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-23 — expose-api-and-telegram-bot shipped (tasks 1–4: API key auth + CORS, Telegram bot, docker service, docs); phase1-projectE is the standing focus
+**Last updated:** 2026-06-23 — expose-api-and-telegram-bot spec fully wrapped (PASS, 1 review attempt); all tasks merged: API key auth + CORS, Telegram bot, docker service, docs + data-contract patch; workflow report written; phase1-projectE is the standing focus
 **Current focus:** phase1-projectE — Specialization refactor (next project: ParallelNode merge + specialized nodes)
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
