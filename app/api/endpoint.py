@@ -23,11 +23,12 @@ from worker.config import celery_app
 
 from api.models import EventPayload, TaskAcceptedResponse
 from api.schema_registry import SCHEMA_MAP
+from api.security import require_api_key
 
 router = APIRouter()
 
 
-@router.post("/", status_code=HTTPStatus.ACCEPTED)
+@router.post("/", status_code=HTTPStatus.ACCEPTED, dependencies=[Depends(require_api_key)])
 def handle_event(
     payload: EventPayload,
     session: Session = Depends(db_session),
