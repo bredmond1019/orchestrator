@@ -70,11 +70,17 @@ tests as it lands. See `planning/Test_Plan.md` for scope (Option A).
 
 ## Sending a test event
 
+`POST /events/` requires an `X-API-Key` header (set `ORCHESTRATION_API_KEY` in `app/.env`).
+
 ```bash
-python requests/send_event.py
-# or post one of the sample payloads:
-# curl -X POST http://localhost:8080/ -H 'Content-Type: application/json' -d @requests/events/refund.json
+# Content pipeline — summarize a YouTube video
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: <your ORCHESTRATION_API_KEY>' \
+  -d '{"workflow_type": "CONTENT_PIPELINE", "data": {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "make_blog": false}}'
 ```
+
+See `docs/workflows.md` for all workflow types and example payloads.
 
 ## Directory map
 
@@ -97,7 +103,7 @@ orchestration/
 │   ├── worker/               Celery config + task
 │   └── workflows/            Workflow implementations + node packages
 ├── docker/                   Dockerfiles, compose files, start/stop scripts
-├── docs/                     app-architecture-overview.md
+├── docs/                     Developer reference (see Documentation table below)
 ├── planning/                 Strategy, status, decisions, test plan
 ├── playground/               Notebooks and visualisation helpers
 ├── integrations/             Standalone integrations (Telegram bot)
@@ -109,5 +115,13 @@ orchestration/
 
 | File | Contents |
 |---|---|
-| [docs/api-reference.md](docs/api-reference.md) | Precise class-level reference for every public abstraction in app/core/, app/database/, app/services/, and app/workflows/ that a developer must understand and subclass when writing a new workflow. |
-| [docs/configuration.md](docs/configuration.md) | Complete reference for every environment variable, connection string assembly, and Docker service topology so a developer can configure the stack for local development or a Docker deployment without guessing. |
+| [docs/getting-started.md](docs/getting-started.md) | Local dev setup (Homebrew scripts) and Docker/OrbStack path — the fast path to a running stack. |
+| [docs/workflows.md](docs/workflows.md) | What each workflow does, its node DAG, event payload, and ready-to-paste curl examples. |
+| [docs/scripts.md](docs/scripts.md) | Developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py`. |
+| [docs/brain-rag.md](docs/brain-rag.md) | Brain corpus indexing and semantic retrieval via `BrainDocument` + `index_brain.py`. |
+| [docs/api-reference.md](docs/api-reference.md) | Class-level reference for every public abstraction in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/` — the primary reference when writing a new workflow. |
+| [docs/configuration.md](docs/configuration.md) | Every environment variable, connection string, and Docker service topology. |
+| [docs/app-architecture-overview.md](docs/app-architecture-overview.md) | FastAPI → Celery → Workflow DAG → TaskContext architecture deep-dive. |
+| [docs/data-contract.md](docs/data-contract.md) | Versioned contract for how external consumers (e.g. `bastion` CLI) read execution state. |
+| [integrations/telegram/README.md](integrations/telegram/README.md) | Telegram bot setup, Docker Compose deployment, Mac Mini launchd, network topology. |
+| [docs/index.md](docs/index.md) | Full documentation index. |
