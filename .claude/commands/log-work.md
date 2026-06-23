@@ -74,18 +74,22 @@ Return the subagent's result to the user.
 6. Never edit the master plan file (`master-plan.md`).
 
 7. **Sync the company brain.** After status.md and log.md are confirmed:
-   - Read `../docs/projects/{{SLUG}}.md` in the company brain.
+   - Read `../docs/projects/python-orchestration.md` in the company brain.
    - Update the **Current Status** date and focus line to match the new status.md state.
-   - Update the Status column in the 13-spec table for any rows that changed.
-   - Open `../README.md` and update the Quick Status section for learn-ai: the Current
-     focus line and any changed status rows.
+   - Update the Status column in this project's progress table for any rows that changed.
+   - Open `../README.md` and find the Quick Status subsection for THIS project (the `###`
+     heading matching this repo — the same project as the `docs/projects/*.md` you just
+     read). Update its Current focus line and any changed status rows.
+   - **Verify the section is THIS project's** before writing. If you cannot find a Quick
+     Status subsection that clearly belongs to this project, STOP and report it — never edit
+     another project's section, and never silently skip the sync.
    - Surgical updates only — do not rewrite sections that didn't change.
-   - If the brain docs are already in sync with status.md, skip this step silently.
+   - If the brain docs are genuinely already in sync, say so in your report (do not skip silently).
 
 ## Context / Files to Read
 
 - `planning/status.md`
 - The current `planning/<name>/tasks.md`
 - `log.md`
-- `../docs/projects/{{SLUG}}.md` (brain sync target)
+- `../docs/projects/python-orchestration.md` (brain sync target)
 - `../README.md` (brain sync target)
