@@ -1,0 +1,191 @@
+{
+  "blockId": "phase1-projectD",
+  "additiveFiles": [
+    "app/workflows/document_qa_workflow_nodes/__init__.py",
+    "app/database/__init__.py",
+    "docs/api-reference.md",
+    "docs/app-architecture-overview.md"
+  ],
+  "tasks": {
+    "1": {
+      "num": 1,
+      "title": "Data models + migration (ContentChunk + ChatSession)",
+      "dependsOn": [],
+      "evidence": "No dependsOn — foundational; tasks 2-4 import these models.",
+      "filesCreated": [
+        "app/database/content_chunk.py",
+        "app/database/chat_session.py",
+        "app/alembic/versions/<rev>_create_content_chunks_and_chat_sessions.py",
+        "tests/database/test_content_chunk.py",
+        "tests/database/test_chat_session.py"
+      ],
+      "filesModified": [
+        "app/database/__init__.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "2": {
+      "num": 2,
+      "title": "Document ingestion workflow (Parse -> Chunk -> Embed -> Store)",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "dependsOn: Task 1; StoreChunksNode persists ContentChunk rows via GenericRepository.",
+      "filesCreated": [
+        "app/workflows/document_ingest_workflow.py",
+        "app/workflows/document_ingest_workflow_nodes/__init__.py",
+        "app/workflows/document_ingest_workflow_nodes/parse_document_node.py",
+        "app/workflows/document_ingest_workflow_nodes/chunk_document_node.py",
+        "app/workflows/document_ingest_workflow_nodes/embed_chunks_node.py",
+        "app/workflows/document_ingest_workflow_nodes/store_chunks_node.py",
+        "app/schemas/document_ingest_schema.py",
+        "tests/workflows/test_document_ingest_workflow.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": true,
+      "breakdownReason": "Bundles four separable nodes (parse/chunk/embed/store) plus workflow wiring and schema across multiple concerns; flagged for node-by-node decomposition in breakdown.md."
+    },
+    "3": {
+      "num": 3,
+      "title": "RetrieveChunksNode — two-stage hybrid retrieval",
+      "dependsOn": [
+        1
+      ],
+      "evidence": "dependsOn: Task 1. (Owns files under document_qa_workflow_nodes/ disjoint from Task 4's files in the same dir.) Queries content_chunks / brain_documents.",
+      "filesCreated": [
+        "app/workflows/document_qa_workflow_nodes/__init__.py",
+        "app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py",
+        "tests/workflows/test_retrieve_chunks_node.py"
+      ],
+      "filesModified": [],
+      "recommendBreakdown": false
+    },
+    "4": {
+      "num": 4,
+      "title": "Document Q&A query workflow (Embed -> Retrieve -> AssembleContext -> Answer -> UpdateSessionMemory)",
+      "dependsOn": [
+        1,
+        3
+      ],
+      "evidence": "dependsOn: Task 1, Task 3. 'RetrieveChunksNode is consumed here (imported from Task 3) as the retrieval step'; loads ChatSession.turns (Task 1 model).",
+      "filesCreated": [
+        "app/workflows/document_qa_workflow.py",
+        "app/workflows/document_qa_workflow_nodes/embed_question_node.py",
+        "app/workflows/document_qa_workflow_nodes/assemble_context_node.py",
+        "app/workflows/document_qa_workflow_nodes/answer_node.py",
+        "app/workflows/document_qa_workflow_nodes/update_session_memory_node.py",
+        "app/schemas/document_qa_schema.py",
+        "app/prompts/document_qa_answer.j2",
+        "tests/workflows/test_document_qa_workflow.py"
+      ],
+      "filesModified": [
+        "app/workflows/document_qa_workflow_nodes/__init__.py"
+      ],
+      "recommendBreakdown": true,
+      "breakdownReason": "Bundles four separable nodes plus workflow wiring, schema, and prompt spanning retrieval/assembly/agent/memory concerns; flagged for node-by-node decomposition in breakdown.md."
+    },
+    "5": {
+      "num": 5,
+      "title": "Register both workflows + integration",
+      "dependsOn": [
+        2,
+        4
+      ],
+      "evidence": "dependsOn: Task 2, Task 4 (both workflow classes must exist to import). Add DOCUMENT_INGEST and DOCUMENT_QA enum members.",
+      "filesCreated": [],
+      "filesModified": [
+        "app/workflows/workflow_registry.py",
+        "app/api/schema_registry.py"
+      ],
+      "recommendBreakdown": false
+    },
+    "6": {
+      "num": 6,
+      "title": "Documentation",
+      "dependsOn": [
+        2,
+        3,
+        4
+      ],
+      "evidence": "dependsOn: Task 2, Task 3, Task 4. Declare these files additive in the execution plan. Documents the new nodes + two workflows.",
+      "filesCreated": [],
+      "filesModified": [
+        "docs/api-reference.md",
+        "docs/app-architecture-overview.md"
+      ],
+      "recommendBreakdown": false
+    },
+    "7": {
+      "num": 7,
+      "title": "Validate",
+      "dependsOn": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "evidence": "Run the Validation Commands and confirm all pass; test count must be >= 549 — requires all prior tasks merged.",
+      "filesCreated": [],
+      "filesModified": [],
+      "recommendBreakdown": false
+    }
+  },
+  "waves": [
+    {
+      "label": "Wave 1",
+      "parallel": false,
+      "tasks": [
+        1
+      ],
+      "mergeOrder": [
+        1
+      ]
+    },
+    {
+      "label": "Wave 2",
+      "parallel": true,
+      "tasks": [
+        2,
+        3
+      ],
+      "mergeOrder": [
+        2,
+        3
+      ]
+    },
+    {
+      "label": "Wave 3",
+      "parallel": false,
+      "tasks": [
+        4
+      ],
+      "mergeOrder": [
+        4
+      ]
+    },
+    {
+      "label": "Wave 4",
+      "parallel": true,
+      "tasks": [
+        5,
+        6
+      ],
+      "mergeOrder": [
+        5,
+        6
+      ]
+    },
+    {
+      "label": "Wave 5",
+      "parallel": false,
+      "tasks": [
+        7
+      ],
+      "mergeOrder": [
+        7
+      ]
+    }
+  ]
+}
