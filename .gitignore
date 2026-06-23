@@ -103,6 +103,7 @@ app/alembic/versions/*
 !app/alembic/versions/*_create_events_table.py
 !app/alembic/versions/*_create_brain_documents_table.py
 !app/alembic/versions/*_merge_brain_documents_and_events_heads.py
+!app/alembic/versions/*_create_content_chunks_and_chat_sessions.py
 
 # Playground
 playground/*.png
