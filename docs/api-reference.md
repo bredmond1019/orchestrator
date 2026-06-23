@@ -51,20 +51,21 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 35. [ProposalGenerator StorageNode](#proposalgenerator-storagenode)
 36. [digest_renderer](#digest_renderer)
 37. [createworkflow CLI](#createworkflow-cli)
-38. [API Layer](#api-layer)
-39. [DocumentIngestEventSchema](#documentingesteventschemae)
-40. [ParseDocumentNode](#parsedocumentnode)
-41. [ChunkDocumentNode](#chunkdocumentnode)
-42. [EmbedChunksNode](#embedchunksnode)
-43. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
-44. [DocumentIngestWorkflow](#documentingestworkflow)
-45. [RetrieveChunksNode](#retrievechunksnode)
-46. [DocumentQAEventSchema](#documentqaeventschemae)
-47. [EmbedQuestionNode](#embedquestionnode)
-48. [AssembleContextNode](#assemblecontextnode)
-49. [AnswerNode](#answernode)
-50. [UpdateSessionMemoryNode](#updatesessionmemorynode)
-51. [DocumentQAWorkflow](#documentqaworkflow)
+38. [API Security and CORS](#api-security-and-cors)
+39. [API Layer](#api-layer)
+40. [DocumentIngestEventSchema](#documentingesteventschemae)
+41. [ParseDocumentNode](#parsedocumentnode)
+42. [ChunkDocumentNode](#chunkdocumentnode)
+43. [EmbedChunksNode](#embedchunksnode)
+44. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
+45. [DocumentIngestWorkflow](#documentingestworkflow)
+46. [RetrieveChunksNode](#retrievechunksnode)
+47. [DocumentQAEventSchema](#documentqaeventschemae)
+48. [EmbedQuestionNode](#embedquestionnode)
+49. [AssembleContextNode](#assemblecontextnode)
+50. [AnswerNode](#answernode)
+51. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+52. [DocumentQAWorkflow](#documentqaworkflow)
 
 ---
 
@@ -2708,6 +2709,69 @@ workflow is functional:
 
 ---
 
+## API Security and CORS
+
+**Sources:** `app/api/security.py`, `app/main.py`
+
+### `require_api_key`
+
+**Source:** `app/api/security.py`
+
+```python
+def require_api_key(x_api_key: str | None = Header(None)) -> None:
+```
+
+FastAPI dependency that enforces `X-API-Key` authentication on protected routes. The
+expected key is read from the `ORCHESTRATION_API_KEY` environment variable **at request
+time**; it is never cached at startup, so the key can be rotated without a restart.
+
+**Applied to:** `POST /events/` (via `dependencies=[Depends(require_api_key)]`).
+
+**Not applied to:** `GET /health` and `GET /workflows*` — these remain publicly
+accessible so that readiness probes and workflow graph inspection do not require auth.
+The choice is intentional: the graph and health endpoints expose no sensitive data and
+their openness simplifies downstream tooling.
+
+**Behaviour:**
+
+| Condition | HTTP status | Meaning |
+|---|---|---|
+| `ORCHESTRATION_API_KEY` env var is unset | `503 Service Unavailable` | Operator misconfiguration — fail-closed so a missing var cannot silently open access. |
+| `X-API-Key` header absent or value mismatch | `401 Unauthorized` | Bad or missing credential. |
+| `X-API-Key` matches `ORCHESTRATION_API_KEY` | passes | Request proceeds to the endpoint handler. |
+
+Key comparison uses `hmac.compare_digest` to guard against timing-based side-channel
+attacks. Declaring the header as `Header(None)` (optional at the FastAPI level) ensures
+a missing header returns `401` rather than FastAPI's default `422 Unprocessable Entity`.
+
+### `CORSMiddleware`
+
+**Source:** `app/main.py`
+
+Mounted at application startup via:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_get_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+`_get_allowed_origins()` reads the `ALLOWED_ORIGINS` environment variable (comma-separated
+list of origin strings) and returns a parsed `list[str]`. If the variable is unset, the
+default `["https://learn-agentic-ai.com"]` is used.
+
+To permit additional origins in development (e.g. `http://localhost:3000`), set:
+
+```
+ALLOWED_ORIGINS=https://learn-agentic-ai.com,http://localhost:3000
+```
+
+---
+
 ## API Layer
 
 **Sources:** `app/api/models.py`, `app/api/health.py`, `app/api/schema_registry.py`, `app/api/endpoint.py`, `app/api/graph.py`
@@ -2803,6 +2867,23 @@ Typed 200 response body for `GET /health`.
 |---|---|---|
 | `status` | `str` | Always `"ok"` when the service is running. |
 | `version` | `str` | Application version string (e.g. `"0.1.0"`). |
+
+### `POST /events/`
+
+**Source:** `app/api/endpoint.py`
+
+```
+POST /events/  X-API-Key: <key>  {"workflow_type": "CONTENT_PIPELINE", "data": {...}}
+  → 202 TaskAcceptedResponse(task_id="...", message="...")
+  → 401 if X-API-Key is absent or wrong
+  → 503 if ORCHESTRATION_API_KEY is unset (operator misconfiguration)
+  → 422 if workflow_type is unknown or data fails schema validation
+```
+
+Dispatches a workflow run. Requires the `X-API-Key` request header (see
+[`require_api_key`](#require_api_key)). On success, the event row is flushed (not
+committed) before `send_task` — the transaction rolls back if Celery dispatch fails,
+preventing ghost rows (see CLAUDE.md core hardening table).
 
 ### `GET /health`
 

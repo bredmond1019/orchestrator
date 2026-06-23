@@ -6,7 +6,7 @@ description: The versioned, canonical contract for how external consumers (e.g. 
 
 # Data Contract — Orchestrator Execution State
 
-**Contract Version: 1.0.0**
+**Contract Version: 1.0.1**
 
 This is the **single source of truth** for the shape any external consumer reads to observe a
 workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
@@ -146,7 +146,14 @@ Mounted at `/` (`app/api/`):
 `GET /workflows/{type}/graph` returns `404` for an unknown type. Node names in `nodes`/`edges` are
 class names (§1).
 
+**`POST /events/` authentication:** as of v1.0.1 this endpoint requires an `X-API-Key`
+header matching the `ORCHESTRATION_API_KEY` environment variable. The request/response
+shape is unchanged. Consumers that previously called this endpoint without auth (e.g.
+from a private-network shell script) must add the header. `bastion` is a **read-only
+Postgres observer** — it never POSTs to this endpoint — so no re-pin is required.
+
 **Reserved (not implemented in v1.x):** `GET /events/{id}`, `GET /events?status=running`.
+`event_id` / result-fetch polling remain deferred; this contract version does not add them.
 
 ---
 
@@ -167,3 +174,4 @@ checklist step prompting this.
 | Version | Date | Change |
 |---|---|---|
 | 1.0.0 | 2026-06-20 | Initial contract: `events` table, `task_context`/`node_runs` (status, timing, error, **input**, usage), serializable-output rule, HTTP surface, Hybrid read path, reserved read API. |
+| 1.0.1 | 2026-06-23 | Patch clarification: `POST /events/` now requires `X-API-Key` auth (shape unchanged). `event_id`/`GET /events/{id}` remain deferred. `bastion` (read-only Postgres observer, never POSTs) needs no re-pin. |
