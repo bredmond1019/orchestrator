@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from api.security import require_api_key
 from database.event import Event
 from database.session import Base, db_session
 from main import app
@@ -50,7 +51,11 @@ def endpoint_context():
             session.rollback()
             raise
 
+    def override_require_api_key() -> None:
+        """Bypass auth so dispatch tests focus on payload/DB/Celery logic."""
+
     app.dependency_overrides[db_session] = override_db_session
+    app.dependency_overrides[require_api_key] = override_require_api_key
     client = TestClient(app, raise_server_exceptions=False)
 
     yield client, session
