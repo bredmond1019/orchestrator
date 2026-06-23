@@ -1,0 +1,17 @@
+FROM python:3.12.8-slim-bookworm
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /workspace
+
+# Install core deps + telegram optional group
+ADD pyproject.toml .
+RUN uv pip install --system -r pyproject.toml
+RUN uv pip install --system "python-telegram-bot>=21"
+
+# Mount integrations/ at runtime via a volume (see docker-compose)
+# so the source is live-reloadable without rebuilding the image.
+
+CMD ["python", "/integrations/telegram/bot.py"]
