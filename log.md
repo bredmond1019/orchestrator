@@ -10,6 +10,20 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-23 (expose-api-and-telegram-bot — full spec shipped, PASS)
+
+Completed the expose-api-and-telegram-bot workstream via a full SDLC pipeline run (implement → test → review → document). Implemented all four spec tasks across parallel worktrees (wave 1: tasks 1/2/3; wave 2: task 4 docs; wave 3: task 5 validate): `app/api/security.py` gates `POST /events/` with `require_api_key` (fail-closed 503 when unset, 401 on mismatch, `hmac.compare_digest` for timing-attack safety); `CORSMiddleware` with env-driven `ALLOWED_ORIGINS` mounted in `app/main.py`; full `integrations/telegram/` package (config, client, bot — long-poll, fire-and-forget `/digest <url>` command, chat-id allowlist enforcement, "Queued ✅" reply); `python-telegram-bot` as optional extra with `importorskip`-gated handler tests; `telegram_bot` Docker Compose service with `Dockerfile.telegram`; env vars documented in both `.env.example` files and `docs/configuration.md`; `docs/data-contract.md` patched to v1.0.1 (clarification only — no shape change, bastion needs no re-pin). Test(#1) flagged emoji-prohibition on the spec-required "Queued ✅" reply string, which is not a harness.json gate and was correctly overridden by review(#1); review PASS confirmed all 8 acceptance criteria met and all 7 gating checks pass (pylint 10.00/10, 705 tests passed, 8 skipped, ruff clean). UI-test skipped (uiTest disabled). Document pass confirmed all three affected docs current; `docs/app-architecture-overview.md` flagged NEEDS_REVIEW for `api/security.py` and `integrations/telegram/` coverage (non-blocking). Cross-repo manual steps still required: `cloudflared` ingress rule, DNS record, Cloudflare Access app + service token, `@BotFather` token — tracked in brain repo `docs/infrastructure.md`. Next: phase1-projectE — Specialization refactor.
+
+```
+a0785b6 docs: update docs for expose-api-and-telegram-bot
+15995e8 chore: consolidated implement report for expose-api-and-telegram-bot
+82e17cd feat: implement expose-api-and-telegram-bot-task5
+a5ced4d feat: implement expose-api-and-telegram-bot-task4
+cbe76c4 Merge branch 'expose-api-and-telegram-bot-task3' into expose-api-telegram-bot
+```
+
+---
+
 ### 2026-06-23 (public API exposure + Telegram bot plan)
 
 Planning-only session: wrote the implementation plan for exposing the orchestration API publicly at `api.learn-agentic-ai.com` (via the existing Cloudflare Tunnel, gated by Cloudflare Access + an in-app X-API-Key) and adding a long-poll, fire-and-forget Telegram bot in `integrations/telegram/` as the first client. The bot design: send link in Telegram → bot hits `POST /telegram/submit` → fires `CONTENT_PIPELINE` workflow → acks 'Queued' in chat. Defense-in-depth auth: Cloudflare Access at the perimeter (zero-trust on all origins) + in-app `X-API-Key` header validation per request (lightweight, cacheable, revokable without redeploying infrastructure). Architecture settled: no data-contract bump (existing TaskContext + Events table suffice), long-poll now (fire-and-forget webhook support deferred to Phase 2), no new shared service (bot is a thin integrations module). Plan saved to `planning/plans/expose-api-and-telegram-bot.md` with design decisions, scope, and edge cases documented. No code written; next step is a fresh agent running `/generate-tasks` against the plan to produce a task spec and kick off implementation. This is a **separate workstream** from phase1-projectE (which remains the standing focus); both proceed in parallel once tasks are generated.
