@@ -10,6 +10,90 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-22 (task 7 — validate phase1-projectD)
+
+Task 7 was a validation-only gate: all implementation work (tasks 1–6) was already complete. Enabled the tests directory in sparse checkout, ran all eight validation commands, and confirmed clean results: 674 tests collected (667 passed, 7 skipped, 0 failed), pylint 10.00/10, ruff clean, all gating checks pass. Both workflows (DOCUMENT_INGEST and DOCUMENT_QA) are registered in both workflow_registry.py and schema_registry.py, and TestSchemaRegistryCompleteness passes. The two-stage hybrid retrieval, section-title weighting, NaN-safe sorting, corpus switching, RAG + session-memory assembly, and prompt-via-PromptManager requirements were all verified in source and test coverage. The test count of 674 exceeds the 549 baseline by 125. Competence checkpoint: ingest an SMB's documents, answer questions over them, maintain conversation history — confirmed. Next: phase1-projectE — Specialization refactor.
+
+```
+285a823 docs: update docs for phase1-projectD-task7
+3d4538e feat: validate phase1-projectD-task7
+457137c chore: init worktree phase1-projectd-task7
+```
+
+---
+
+### 2026-06-22 (task 6 — documentation)
+
+Updated `docs/app-architecture-overview.md` with "What shipped" rows for Project D Tasks 3 (RetrieveChunksNode) and 4 (DocumentQAWorkflow); confirmed `docs/api-reference.md` already contains all 13 new TOC entries (39–51) and complete `##` sections added by prior document agents. All 7 harness gating checks pass (standing-rules, imports, ruff, pylint, pytest-count, pytest). Test count is 674 (well above 549 baseline); 667 passed, 7 skipped. Review verdict: PASS. The test agent flagged pre-existing emojis in app-architecture-overview.md, but emoji-gate is not a harness-defined gating check, so it does not block completion. Next: Task 7 — Validate (run the Validation Commands from the spec and confirm all pass with test count ≥ 549).
+
+```
+828863e docs: update docs for phase1-projectD-task6
+9e7ddbe docs: update app-architecture-overview for phase1-projectD-task6
+cf78bc1 chore: init worktree phase1-projectd-task6
+```
+
+---
+
+### 2026-06-22 (task 5 — Register both workflows + integration)
+
+Registered `DOCUMENT_INGEST` and `DOCUMENT_QA` workflows in both `app/workflows/workflow_registry.py` (enum members) and `app/api/schema_registry.py` (schema map entries), completing CLAUDE.md rule 6. All import smoke checks passed cleanly, `TestSchemaRegistryCompleteness` enforced the dual-registry requirement automatically, pylint scored 10.00/10, ruff was clean, and the full test suite reported 674 collected with no regressions. Documentation updated to reflect the new registry entries. Verdict: PASS. Next: Task 6 — Documentation.
+
+```
+92e449e docs: update docs for phase1-projectD-task5
+937ebeb feat(registry): register DocumentIngest and DocumentQA workflows
+98fcd59 chore: init worktree phase1-projectd-task5
+```
+
+---
+
+### 2026-06-22 (task 4 — Document Q&A query workflow)
+
+Implemented the full 5-node Document Q&A workflow (Embed → Retrieve → AssembleContext → Answer → UpdateSessionMemory) with comprehensive test coverage. EmbedQuestionNode embeds the query; AssembleContextNode combines retrieved chunks (with section titles and relevance scores) with prior ChatSession turns into a unified context; AnswerNode answers grounded in that context using the `document_qa_answer.j2` system prompt via PromptManager; UpdateSessionMemoryNode persists new conversation turns to the session. All 5 acceptance criteria for the Task 4 scope were MET on first review: DocumentQAEventSchema validates properly, the linear 5-node DAG wires correctly per WorkflowValidator, both RAG context and session memory appear in the assembled prompt, new turns persist, and all code-style / CLAUDE.md rules are met. Test suite grew from 610 to 674 tests (64 new); all gating checks pass. Next: Task 5 — Register both workflows + integration.
+
+```
+9a77738 docs: update docs for phase1-projectD-task4
+58a920a feat(rag): implement Document Q&A workflow (Task 4)
+8ca08d2 chore: init worktree phase1-projectd-task4
+```
+
+---
+
+### 2026-06-22 (task 3 — RetrieveChunksNode with two-stage hybrid retrieval)
+
+Task 3 ships `RetrieveChunksNode`, a carefully-built retrieval component reused verbatim in downstream projects (F, and beyond). Implements the proven two-stage hybrid pattern from the Rust RAG engine: semantic pgvector cosine-distance (Stage 1, top-20 candidates) filtered to valid embeddings, ILIKE keyword re-rank scoped only to those candidate IDs (Stage 2), and additive score fusion with section-title 2× weight. Supports corpus dispatch (`"content"` → `content_chunks`, `"brain"` → `brain_documents`) for multi-source retrieval. NaN-safe sorting prevents crashes on invalid distances. 22 tests cover ordering, keyword fusion weighting, section-title boost, threshold/k enforcement, corpus switching, and TaskContext contract (seeded with real `{"result": ...}` structure per CLAUDE.md rule 9). All gating checks pass: ruff clean, pylint 10.00/10, 603 tests passed (7 skipped), test count up to 610 (from baseline 549). Review verdict: PASS. Next: Task 4 — Document Q&A query workflow.
+
+```
+8278c5a docs: update docs for phase1-projectD-task3
+e46619c feat(rag): add RetrieveChunksNode with two-stage hybrid retrieval
+06e4e30 chore: init worktree phase1-projectd-task3
+```
+
+---
+
+### 2026-06-22 (task 2 — Document ingestion workflow: Parse → Chunk → Embed → Store)
+
+Task 2 shipped the complete document ingestion workflow: `ParseDocumentNode` normalizes event content (plain text or base64-decoded text/PDF via `fitz`); `ChunkDocumentNode` splits text into 500-token chunks with 50-token overlap and detects markdown headers (`#`/`##`/`###`), emitting standalone `is_section_title=True` chunks for each heading and tagging body chunks with their parent `section_title` for later weighting; `EmbedChunksNode` batches all chunks into a single Voyage `embed_batch` call and zips vectors back onto chunk objects; `StoreChunksNode` persists `ContentChunk` ORM objects via `GenericRepository` with embeddings written at storage time. The workflow is wired linearly (Parse → Chunk → Embed → Store, no router). Tests include 22 node-level and 12 workflow-level tests covering chunking boundaries, section tagging, position ordering, batched embedding, and ORM persistence. Review verdict PASS: all task 2 acceptance criteria met, all 10 gating checks passed (618 tests collected, +30 over task 1; 611 passed, 7 skipped; ruff and pylint clean; no violations introduced). Documentation patched: 6 new sections in `api-reference.md` (schema, 4 nodes, workflow) + 1 row in architecture overview; no NEEDS_REVIEW flags. Next: Task 3 — RetrieveChunksNode (two-stage hybrid retrieval).
+
+```
+bd740c7 docs: update docs for phase1-projectD-task2
+9ba1468 feat(ingest): implement document ingestion workflow (Task 2)
+bb644c3 chore: init worktree phase1-projectd-task2
+```
+
+---
+
+### 2026-06-22 (task 1 — ContentChunk + ChatSession data models)
+
+Shipped foundational data models for the document Q&A workflow: `ContentChunk` SQLAlchemy model with pgvector `Vector(1024)` embedding column, indexed `doc_id`, section awareness (`section_title`, `is_section_title`), and `ChatSession` model with JSON `turns` and `topics_covered` for multi-turn conversation memory. Alembic migration `c4d5e6f7a8b9` creates both tables with correct down_revision (`020c9f7f89e2`). All 18 ContentChunk + 14 ChatSession model tests pass (schema shape + round-trip); collection count 588 tests (well above 549 baseline). Review: PASS — all 27 in-scope acceptance criteria MET. Ruff, pylint (10.00/10), and full pytest suite clean. One minor deviation noted for future work: D31 directs that Vector-column tests be marked `skip` under SQLite; the tests pass in practice but lack the marker. Next: Task 2 — Document ingestion workflow.
+
+```
+091d651 docs: update docs for phase1-projectD-task1
+6aa0788 feat(database): add ContentChunk and ChatSession models + migration
+e570a17 chore: init worktree phase1-projectd-task1
+```
+
+---
+
 ## 2026-06-22 (phase1-projectC post-merge coverage audit + CLAUDE.md rule 9)
 
 Phase 1 Project C shipped all 8 tasks successfully; the post-merge cleanup resolved a common orchestration challenge. Four parallel tasks (3–6) each modified the shared `docs/app-architecture-overview.md` file, each appending a row to the "What shipped" table at row 232. The SDLC orchestrator correctly refused to union-merge duplicate rows and escalated; all four conflicts were hand-resolved with ~30-second manual merges (keep both rows). Coverage audit of the complete proposal_generator workflow found 6 test fixtures in `test_proposal_review_router.py` that seeded upstream nodes with raw dicts instead of the `{"result": ...}` wrapper that actual `AgentNode.update_node()` produces—tests passed silently against mocked agents but proved the wrong key contract. All 6 were fixed, surfacing the pattern as a common post-merge hardening task. Added CLAUDE.md Standing Rule 9 to document the pattern: `AgentNode` stores output via `update_node(node_name=..., result=output)`, which produces `{"result": output}` in `task_context.nodes`; tests that seed an upstream node must mirror this structure. Final: all 8 tasks merged, 549 tests pass, ruff clean, pylint 10.00/10.
