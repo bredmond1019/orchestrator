@@ -3,42 +3,43 @@ type: Handoff
 created: 2026-06-23
 ---
 
-# Handoff — expose-api-telegram-bot done; ready for projectE or harness fixes
+# Handoff — expose-api done; projectE and harness P0 fix next
 
 > **For the next agent:** Read this immediately after `/prime`. Delete this file once consumed.
 
 ## What we're doing and why
 
-The `expose-api-and-telegram-bot` spec is fully shipped (PASS, 705 tests). This session also ran a D23/D24 harness validation analysis and wrote a bug report at `planning/expose-api-and-telegram-bot/harness-update-review.md`. The branch `expose-api-telegram-bot` is ahead of `main` and needs to be merged. Two things are in front of the next agent: (1) merge this branch to main and start `phase1-projectE` (the standing next step per status.md), or (2) address the harness bugs surfaced in the review — especially the P0 baseline-file commit fix which caused a full restart this session. The harness fixes are in `.claude/workflows/sdlc-block.js` (the D23/D24 lean engine).
+The `expose-api-and-telegram-bot` workstream is fully shipped and merged to `main`. This session completed the post-merge work: D23/D24 harness validation analysis (bug report at `planning/expose-api-and-telegram-bot/harness-update-review.md`), `/update-docs --patch` sweep (README test count, architecture overview, Telegram README expanded with full Mac Mini deployment guide), and a merge of `expose-api-telegram-bot` → `main`. Everything is committed and the working tree is clean. Two things are in front of the next agent: (1) fix the P0 harness bug in `.claude/workflows/sdlc-block.js` before the next `/sdlc-block` run to avoid another restart — Brandon is already working on this, so check first; (2) start `phase1-projectE` — the Specialization refactor — which is the next standing item on the roadmap.
 
 ## Completed this session
 
-- **Ran `/sdlc-block expose-api-and-telegram-bot`** — first run hit PARTIAL because `baseline-snapshot` wrote `planning/expose-api-and-telegram-bot/sdlc/reports/net-new-lint-baseline.json` to the working tree without committing it, blocking worktree merges for tasks 2 and 3.
-- **Manual recovery** — committed the untracked baseline file (`604a677`), re-ran `/sdlc-block`. Second run merged all 5 tasks and the back-half passed on first review attempt.
-- **Full spec shipped:** `app/api/security.py` (`require_api_key`, timing-safe, fail-closed 503), `CORSMiddleware` with env-driven origins, `integrations/telegram/` package (long-poll bot, chat-id allowlist, fire-and-forget `/digest <url>`, "Queued ✅" reply), `telegram` optional extra, `telegram_bot` Docker Compose service, env vars in both `.env.example` files, `docs/data-contract.md` v1.0.1 patch clarification. 705 tests pass, pylint 10.00/10, ruff clean.
-- **Wrap-up already committed** by the back-half (`cd13596 chore: wrap up expose-api-and-telegram-bot`).
-- **Harness validation report written** — `planning/expose-api-and-telegram-bot/harness-update-review.md` (untracked, not yet committed). Three bugs found in D23/D24; recommendations at P0/P1/P2 priority.
+- **Ran `/sdlc-block expose-api-and-telegram-bot`** — first run PARTIAL (untracked baseline file blocked merges), committed fix, second run PASS. All 5 tasks merged, 705 tests pass, pylint 10.00/10.
+- **Merged `expose-api-telegram-bot` → `main`** (`207ccdf`) — 53 files, 3508 insertions. Includes `app/api/security.py`, `integrations/telegram/`, `docker/Dockerfile.telegram`, `tests/api/test_security.py`, `tests/integrations/telegram/`.
+- **Harness validation report** — `planning/expose-api-and-telegram-bot/harness-update-review.md` — 3 bugs documented (P0: baseline not committed; P1: emoji false gate; P2: no cross-invocation resume). Committed `f5ee424`.
+- **`/update-docs --patch`** — patched `README.md` (test count 549→712, `integrations/` in dir map, five workflows listed) and `docs/app-architecture-overview.md` (added `api/security.py` to Generic API row, new Telegram bot row). Committed `13c9992`.
+- **Expanded `integrations/telegram/README.md`** — added: topology primer (long-poll means no inbound port, phone→Telegram→bot→localhost), Docker Compose deployment, launchd plist template, @BotFather/chat-ID first-time setup, and network topology section covering Cloudflare Tunnel (public), Tailscale private access (with the `127.0.0.1` → `0.0.0.0` binding change required), and same-machine scenario. Committed `1626b70`.
+- **SDLC commands updated** by Brandon in a separate commit (`1a51561 Updated SDLC Slash Commands and Workflows`) — harness tooling changes, likely including P0 fix or related updates.
 
 ## Remaining work
 
-- **Commit the harness review file** (untracked: `planning/expose-api-and-telegram-bot/harness-update-review.md`).
-- **Merge `expose-api-telegram-bot` into `main`** (clean fast-forward or merge commit; 10 commits ahead).
-- **Optional but recommended before next `/sdlc-block` run: fix the P0 harness bug** in `.claude/workflows/sdlc-block.js` — add a `git add + git commit` for the baseline JSON immediately after `baseline-snapshot` writes it. Without this fix, any future block that restarts will lose ~530k tokens to duplicate setup + analyze.
-- **Start `phase1-projectE`** — Specialization refactor (fix `ParallelNode` merge gap + build `specialized_content` workflow). Task spec at `planning/phase1-projectE/tasks.md`. Status: Not started.
+- **Verify P0 fix status** — Brandon said he was fixing P0 (`baseline-snapshot` writing untracked file) separately. Check `1a51561` diff before touching `.claude/workflows/sdlc-block.js`. If it's already fixed, skip.
+- **Start `phase1-projectE`** — Specialization refactor. Task spec ready at `planning/phase1-projectE/tasks.md`. 5 tasks: (1) fix `ParallelNode` merge gap in `app/core/nodes/parallel.py`, (2) `ConceptExtractorNode`, (3) `StructureAnalystNode`, (4) `BlogDraftNode` + `VoiceMatchNode`, (5) register + validate. The `ParallelNode` fix is the prerequisite for all others.
+- **Cross-repo manual ops** (Mac Mini, not in this repo): `cloudflared` ingress rule for `api.learn-agentic-ai.com`, DNS record, Cloudflare Access app + service token, @BotFather bot creation. Tracked in brain repo `docs/infrastructure.md`.
+- **`docs/app-architecture-overview.md` ASCII diagram** — security/CORS layer and `integrations/` block not represented. Left as NEEDS_REVIEW (editorial judgment call, not a doc-sync task).
 
 ## Open questions / choices
 
-- **Do harness fixes come before projectE or after?** The P0 baseline-commit fix is low-effort (one shell command in `sdlc-block.js`) and prevents the exact restart that happened this session. Worth doing first. The P1 emoji false-gate fix is also low-effort (prompt edit). P2 (block-state persistence) is medium effort and lower urgency.
-- **`docs/app-architecture-overview.md` NEEDS_REVIEW flag** — the document agent flagged that `api/security.py` and `integrations/telegram/` are not represented in the architecture overview. Non-blocking but worth deciding: extend the Generic API row, add a new row, or defer.
+- **Is P0 already fixed?** Check `git show 1a51561 -- .claude/workflows/sdlc-block.js` to see if the baseline-commit fix landed. If yes, the next `/sdlc-block` run should be clean.
+- **`docs/README.md` curl example** — the "Sending a test event" curl in `README.md` sends no `X-API-Key` header and will now 401. Flagged NEEDS_REVIEW during the doc sweep — a one-liner fix but may warrant a broader quick-start update.
 
 ## Context the next agent needs
 
-- **Current branch:** `expose-api-telegram-bot` (not yet merged to `main`). All 10 commits from the spec are on this branch.
-- **Harness bug (P0):** In `.claude/workflows/sdlc-block.js`, the `baseline-snapshot` stage writes a file to the tracked working tree but doesn't commit it. The merge step then sees uncommitted changes and blocks. Fix location: look for the `baseline-snapshot` agent call and add `git add ... && git commit -m "chore: sdlc baseline"` after it writes the file. See `planning/expose-api-and-telegram-bot/harness-update-review.md` for full analysis.
-- **Emoji false gate (P1):** The test agent invented an `emoji-prohibition` universal gate not in `harness.json`. Fix: in the test-agent prompt (in `sdlc-run.js` or `sdlc-block.js`), add an explicit rule: "Only run checks that appear in harness.json. Do not invent universal gates."
-- **cross-repo manual ops still pending** (not in this repo): `cloudflared` ingress rule for `api.learn-agentic-ai.com`, DNS record, Cloudflare Access app + service token, `@BotFather` token — tracked in brain repo `docs/infrastructure.md`.
-- **phase1-projectE task spec is generated and ready** — `planning/phase1-projectE/tasks.md` has the full 5-task breakdown. The key implementation challenge is the `ParallelNode` merge gap in `app/core/nodes/parallel.py` (task 1), which is the prerequisite for all other tasks.
+- **Current branch:** `main`. Working tree clean, up to date with origin.
+- **Test count:** 712 collected, 705 pass, 8 skip. Baseline for projectE is 705 passing.
+- **API binding:** `app/api/endpoint.py` gates `POST /events/` via `require_api_key` (`app/api/security.py:37`). `GET /health` and `GET /workflows*` are intentionally open. The API Docker port is `127.0.0.1:8080:8080` — Tailscale direct access requires changing this to `0.0.0.0:8080:8080` (documented in `integrations/telegram/README.md`).
+- **ParallelNode gap (`app/core/nodes/parallel.py`):** `execute_nodes_in_parallel()` submits sub-nodes against a shared `TaskContext` from worker threads (race on `task_context.nodes`) and collected results are never merged back. `NodeConfig.parallel_nodes` (`app/core/schema.py:42`) already carries the parallel set. Existing tests in `tests/core/test_nodes_parallel.py`. This is task 1 of projectE and must land before tasks 2–4.
+- **Telegram bot is a thin integration** (`integrations/telegram/`), not a workflow. It lives outside `app/` deliberately (D33: no deployment logic in nodes). The bot's `ORCHESTRATION_API_BASE_URL` defaults to `http://localhost:8080`; in Docker Compose it's `http://api:8080` over the internal network.
 
 ## First command after `/prime`
 
-`git commit -m "chore: add D23/D24 harness validation review" planning/expose-api-and-telegram-bot/harness-update-review.md`
+`git show 1a51561 --stat`
