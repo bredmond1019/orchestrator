@@ -1,88 +1,95 @@
 ---
 type: Handoff
-created: 2026-06-22
+created: 2026-06-23
 ---
 
-# Handoff — phase1-projectC complete; projectD is next
+# Handoff — phase1-projectD hardened; projectE is next
 
 > **For the next agent:** Read this immediately after `/prime`. Delete this file once consumed.
 
 ## What we're doing and why
 
-We are building the Python orchestration framework's Phase 1 workflow portfolio — a sequence of
-production-quality AI pipelines (A through H) that demonstrate sellable agentic competence. This
-session completed **phase1-projectC** (the Proposal Generator workflow) and did a post-merge test
-coverage audit. The next block to start is **phase1-projectD** — Document Q&A + session memory
-(RAG), which reinforces a proven Helpscout production pattern and moves us toward the Phase 1
-competence checkpoint.
+We are building the Python orchestration framework's Phase 1 workflow portfolio. This session
+completed the **phase1-projectD post-merge hardening** pass (the SDLC block ran and merged all
+7 tasks in the same session, then a careful code review found 4 test coverage gaps — one a live
+functional bug — and all four were fixed). The next project to start is **phase1-projectE**
+(Specialization refactor: ParallelNode merge gap + specialized nodes), as listed in
+`planning/status.md`.
 
 ## Completed this session
 
-- **phase1-projectC fully merged** — all 8 tasks shipped via `/sdlc-block`. DAG:
-  `CompanyResearchNode → OpportunityIdentifierNode → ProposalWriterNode → ProposalReviewNode →
-  ProposalReviewRouterNode → {StorageNode | ReviseNode → StorageNode}`. Composite scoring formula
-  in prompt (not Python), dual-language PT/EN, review criteria with pass/revise routing, full
-  registry wiring. 549 tests pass, pylint 10.00/10.
-- **Manual conflict resolution** — tasks 3–6 all modified the same row in
-  `docs/app-architecture-overview.md` (parallel tasks replacing instead of appending); resolved
-  additively in sequence. Task 6 also had `storage_node.py` (add/add) and `docs/api-reference.md`
-  (TOC renumbering) conflicts — all resolved by hand.
-- **Post-merge test coverage audit** — agent review found two real bugs in
-  `tests/workflows/test_proposal_review_router.py`:
-  - Six test fixtures seeded `ProposalWriterNode` output as a raw dict instead of
-    `{"result": raw_dict}` — the framework's actual `update_node` storage format. Tests passed
-    silently because agents are mocked, but proved the wrong key contract.
-  - Fixed all six, plus added an assertion in `test_revise_reads_writer_and_review_outputs`
-    confirming the `"result"` wrapper is present.
-- **CLAUDE.md rule 9 added** — documents the `{"result": ...}` wrapper pattern so future agents
-  don't repeat this class of mistake (`CLAUDE.md` line 26, rule 9).
-- **Uncommitted changes committed** — `CLAUDE.md` and `tests/workflows/test_proposal_review_router.py`
-  are staged and ready to commit (not yet committed as of this handoff — do it first thing).
+- **`/sdlc-block phase1-projectD` ran and passed** — all 7 tasks merged (commits fd5ea4f →
+  dde5de5). Two workflows shipped: `DOCUMENT_INGEST` and `DOCUMENT_QA`. 674 tests at merge time.
+
+- **Post-merge coverage audit — 4 gaps found and fixed:**
+
+  1. **Functional bug: `_keyword_search` punctuation contamination**
+     (`retrieve_chunks_node.py:171–172`) — Terms like `"RAG?"` were passed raw to `%RAG?%` ILIKE
+     patterns; keyword boost never fired for question-form queries. Fixed with
+     `re.sub(r"\W+", "", t)` on each split term before building ILIKE filters.
+
+  2. **`UpdateSessionMemoryNode` Pydantic output path untested** — at runtime `AnswerNode` stores
+     an `OutputType` Pydantic model instance under `nodes["AnswerNode"]["result"]`; all prior tests
+     seeded it as a plain dict. Added `test_pydantic_answer_output_path` in
+     `tests/workflows/test_document_qa_nodes.py`.
+
+  3. **`AnswerNode` telemetry block had zero coverage** — the `if run is not None` block inside
+     `run_agent_recorded` only fires when `node_runs` is populated (always true in real workflow
+     execution). Added `TestAnswerNodeTelemetry` (3 tests).
+
+  4. **No end-to-end smoke tests** — added two new files:
+     - `tests/workflows/test_document_ingest_e2e.py` — 8 tests, full 4-node ingest chain
+     - `tests/workflows/test_document_qa_e2e.py` — 9 tests, full 5-node QA chain; explicitly
+       asserts `AnswerNode` stores a Pydantic model (not a dict) end-to-end.
+
+- **`/update-docs` — 3 surgical patches to `docs/api-reference.md`:**
+  - `_keyword_search` description updated to mention punctuation stripping
+  - `RetrieveChunksNode` test count corrected: 22 → 23
+  - Added `### Test coverage` sections to `DocumentIngestWorkflow` and `DocumentQAWorkflow`
+
+- **Final test count: 689 passed, 7 skipped** (up from 549 at Project C, 674 at Project D merge)
 
 ## Remaining work
 
-- **Commit the two open files** — `CLAUDE.md` and `tests/workflows/test_proposal_review_router.py`
-  are modified but not committed. Run `/commit` before anything else.
-- **Start phase1-projectD** — Document Q&A + session memory (RAG). Spec is in
-  `planning/master-plan.md` (Project D section). Run `/sdlc-block phase1-projectD` once the
-  spec exists, or `/generate-tasks phase1-projectD` to scaffold it first.
-- **Go-public checklist** (`planning/status.md` near the bottom) — still three open items:
-  fix `customer_ticket_response.j2` Healthie references, exclude `planning/` from public history,
-  update `README.md` test count. Non-blocking for projectD but worth a quick pass before any
-  public demo.
+- **Commit this session's changes** — 5 modified files + 2 new untracked e2e test files are
+  unstaged. Run `/commit` before anything else.
+- **Start phase1-projectE** — Specialization refactor. `planning/status.md` notes: "Fix
+  ParallelNode merge gap here — next after Project D." Check `planning/master-plan.md` (Project E
+  section) for the full spec, or run `/generate-tasks phase1-projectE` to scaffold the task file.
+- **Go-public checklist** (`planning/status.md`) — still 3 open items:
+  - Fix `customer_ticket_response.j2` Healthie references
+  - Exclude `planning/` from public history
+  - Update `README.md` test count (currently says "No tests exist yet"; now 689)
 
 ## Open questions / choices
 
-- **Medium findings from the coverage audit** — not fixed yet, low urgency:
-  - `ProposalReviseNode` and `StorageNode` access `event.company_name` etc. via attribute access
-    with no `isinstance(dict)` guard (unlike other nodes). Won't break at runtime given the current
-    workflow runner, but the pattern is inconsistent (`proposal_revise_node.py:80–84`,
-    `storage_node.py:126–127`).
-  - `StorageNode` unit tests use `MagicMock` event rather than real `ProposalGeneratorEventSchema`.
-  - No test for the case where `OpportunityIdentifierNode` exists but has no `"brief"` key (the
-    `end_turn`-without-tool-submit path — the node handles it gracefully with `.get("brief", {})`
-    but there's no test for it).
-  These are logged here for awareness; address them before the first live run if desired.
-- **api-reference.md missing sections for four Project C nodes** — `OpportunityIdentifierNode`,
-  `ProposalReviewNode`, `ProposalReviseNode`, `ProposalReviewRouterNode` have no `##` section in
-  `docs/api-reference.md`. `ProposalWriterNode` and `ProposalGenerator StorageNode` do (added in
-  tasks 4 and 6). The gap is flagged but intentionally left — these nodes are documented in the
-  architecture overview table and the api-reference write is non-trivial. Address before the
-  repo goes public or before Project C is used as a reference pattern for Project D.
+None — clear to proceed. The functional bug is fixed, coverage gaps are closed, docs patched.
+Project E is the natural next step per the plan.
 
 ## Context the next agent needs
 
-- **The `{"result": ...}` key contract (CLAUDE.md rule 9):** every `AgentNode` stores its output
-  via `update_node(node_name=..., result=output)` → `task_context.nodes["NodeName"] = {"result": output}`.
-  Tests that seed upstream nodes must mirror this. The pattern bit us twice (content pipeline, now
-  proposal generator). Rule 9 is the standing reminder.
-- **Parallel-task doc conflicts are expected** when multiple tasks update the same table in
-  `docs/app-architecture-overview.md`. Each task replaces the predecessor's row rather than
-  appending. The fix is a 30-second additive hand-resolution (keep both rows). Not a bug — just a
-  known coordination cost of parallel task execution. No need to change the workflow engine for this.
-- **Test suite baseline:** 549 passed, 7 skipped. Any projectD work should land at ≥ 549 tests.
-- **status.md is current** — phase1-projectC is marked Done; Current focus is phase1-projectD.
+- **`digest_renderer.py` is in the unstaged diff** — shows +49/-10 lines under
+  `app/workflows/content_pipeline_workflow_nodes/digest_renderer.py`. This is a Project A file,
+  not Project D. Verify this change is intentional before committing (it may have come in via
+  a worktree merge from the sdlc-block run).
+
+- **CLAUDE.md rule 9 is load-bearing.** `AgentNode` stores output as
+  `ctx.nodes["NodeName"] = {"result": output}`. Test seeds must mirror this. The new e2e tests
+  now guard the contract end-to-end.
+
+- **`AnswerNode` stores a Pydantic `OutputType` at `nodes["AnswerNode"]["result"]` in production.**
+  `UpdateSessionMemoryNode` handles this via `hasattr(answer_output, "answer")` dual-dispatch.
+  `test_pydantic_answer_output_path` and `test_document_qa_e2e.py::test_answer_node_output_is_pydantic_model`
+  guard this going forward.
+
+- **Alembic head is `c4d5e6f7a8b9`** (content_chunks + chat_sessions migration). Any new
+  Project E migration must set `down_revision = "c4d5e6f7a8b9"`.
+
+- **Test baseline: 689 passed, 7 skipped.** Project E work must land at ≥ 689.
 
 ## First command after `/prime`
 
-`/commit` — commit the two open files (CLAUDE.md + test_proposal_review_router.py), then start projectD.
+`/commit` — stage and commit all pending changes (coverage fixes + e2e test files +
+api-reference.md doc patches + handoff.md), then check `digest_renderer.py` before pushing.
+After committing, run `/sdlc-block phase1-projectE` (or `/generate-tasks phase1-projectE` if
+the task file doesn't exist yet).
