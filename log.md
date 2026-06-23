@@ -46,6 +46,19 @@ cbe76c4 Merge branch 'expose-api-and-telegram-bot-task3' into expose-api-telegra
 
 ---
 
+## 2026-06-23
+
+Documentation sweep for human readability. Wrote four new docs: `docs/getting-started.md` (local dev via Homebrew scripts + OrbStack/Docker path, first event, API key explainer), `docs/workflows.md` (all 5 workflows with DAG diagrams, payload fields, and curl examples), `docs/scripts.md` (all 4 developer scripts), and `docs/brain-rag.md` (BrainDocument model, index_brain.py, querying via DOCUMENT_QA). Patched `README.md` (fixed broken curl — was hitting `/` instead of `/events/`, added X-API-Key, expanded docs table from 2 to 10 entries). Fixed `docs/index.md` (removed 3 dead links to deleted agentic-workflows docs, added new docs and Integrations section). Updated `requests/send_event.py` to read API key from app/.env automatically. Added `requests/send_workflow.py` — an interactive CLI for triggering any of the 5 workflows by name without hand-crafting JSON. Added shared-secret explanation paragraph to getting-started.md. Archived 340 old planning/task report files (pre-OKF era) to `archive/` for a clean planning/ tree. All merged; phase1-projectE is the standing focus.
+
+```diff
+README.md                                          |   26 +-
+docs/index.md                                      |   15 +-
+requests/send_event.py                             |   89 +-
+340 files changed, 87 insertions(+), 26330 deletions(-)
+```
+
+---
+
 ### 2026-06-23 (public API exposure + Telegram bot plan)
 
 Planning-only session: wrote the implementation plan for exposing the orchestration API publicly at `api.learn-agentic-ai.com` (via the existing Cloudflare Tunnel, gated by Cloudflare Access + an in-app X-API-Key) and adding a long-poll, fire-and-forget Telegram bot in `integrations/telegram/` as the first client. The bot design: send link in Telegram → bot hits `POST /telegram/submit` → fires `CONTENT_PIPELINE` workflow → acks 'Queued' in chat. Defense-in-depth auth: Cloudflare Access at the perimeter (zero-trust on all origins) + in-app `X-API-Key` header validation per request (lightweight, cacheable, revokable without redeploying infrastructure). Architecture settled: no data-contract bump (existing TaskContext + Events table suffice), long-poll now (fire-and-forget webhook support deferred to Phase 2), no new shared service (bot is a thin integrations module). Plan saved to `planning/plans/expose-api-and-telegram-bot.md` with design decisions, scope, and edge cases documented. No code written; next step is a fresh agent running `/generate-tasks` against the plan to produce a task spec and kick off implementation. This is a **separate workstream** from phase1-projectE (which remains the standing focus); both proceed in parallel once tasks are generated.
