@@ -63,6 +63,12 @@ competence checkpoint.
     `end_turn`-without-tool-submit path — the node handles it gracefully with `.get("brief", {})`
     but there's no test for it).
   These are logged here for awareness; address them before the first live run if desired.
+- **api-reference.md missing sections for four Project C nodes** — `OpportunityIdentifierNode`,
+  `ProposalReviewNode`, `ProposalReviseNode`, `ProposalReviewRouterNode` have no `##` section in
+  `docs/api-reference.md`. `ProposalWriterNode` and `ProposalGenerator StorageNode` do (added in
+  tasks 4 and 6). The gap is flagged but intentionally left — these nodes are documented in the
+  architecture overview table and the api-reference write is non-trivial. Address before the
+  repo goes public or before Project C is used as a reference pattern for Project D.
 
 ## Context the next agent needs
 
