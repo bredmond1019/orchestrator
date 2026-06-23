@@ -52,6 +52,12 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 36. [digest_renderer](#digest_renderer)
 37. [createworkflow CLI](#createworkflow-cli)
 38. [API Layer](#api-layer)
+39. [DocumentIngestEventSchema](#documentingesteventschemae)
+40. [ParseDocumentNode](#parsedocumentnode)
+41. [ChunkDocumentNode](#chunkdocumentnode)
+42. [EmbedChunksNode](#embedchunksnode)
+43. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
+44. [DocumentIngestWorkflow](#documentingestworkflow)
 
 ---
 
@@ -2758,3 +2764,194 @@ by looking up `payload.workflow_type` in this dict.
 that `workflow_type` return `422 Unprocessable Entity` with a descriptive error
 message. See [WorkflowRegistry — Adding a New Entry](#adding-a-new-entry) for the
 complete checklist.
+
+---
+
+## DocumentIngestEventSchema
+
+**Source:** `app/schemas/document_ingest_schema.py`
+
+```python
+class DocumentIngestEventSchema(BaseModel):
+```
+
+Inbound event schema for the `DOCUMENT_INGEST` workflow. Accepts either raw text or
+base64-encoded binary content. A `model_validator` enforces that at least one content
+field is present.
+
+### Fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `doc_id` | `UUID` | `uuid4()` | Stable identity for all `ContentChunk` rows produced by this ingest run. Auto-generated if not supplied by the caller. |
+| `title` | `str` | required | Human-readable document title. |
+| `content` | `str \| None` | `None` | Raw document text (text path). |
+| `content_b64` | `str \| None` | `None` | Base64-encoded document bytes (binary path, e.g. PDF). |
+| `mime_type` | `str` | `"text/plain"` | MIME type for the binary path. Supported: `text/plain`, `application/pdf`. |
+| `chunk_size` | `int` | `500` | Maximum token count per chunk (passed to `ChunkingService`). |
+| `overlap` | `int` | `50` | Token overlap between adjacent chunks. |
+
+### Validation
+
+`_require_content_or_b64` (mode `"after"`): raises `ValueError` if both `content`
+and `content_b64` are `None`.
+
+---
+
+## ParseDocumentNode
+
+**Source:** `app/workflows/document_ingest_workflow_nodes/parse_document_node.py`
+
+```python
+class ParseDocumentNode(Node):
+```
+
+First node in the `DocumentIngestWorkflow` linear DAG. Normalises the ingest event into
+a plain-text string, handling two input paths:
+
+- **Text path** — `event.content` is not `None`: the value is used directly.
+- **Binary path** — `event.content_b64` is not `None`: base64-decoded, then decoded
+  as UTF-8 (`text/plain`) or extracted page-by-page via `fitz.open`
+  (`application/pdf`). Unsupported MIME types raise `ValueError`.
+
+`fitz` is imported at module level so that tests can patch
+`workflows.document_ingest_workflow_nodes.parse_document_node.fitz.open`.
+
+### `process(task_context) -> TaskContext`
+
+Output written via `task_context.update_node(node_name=..., result={"text": <str>})`.
+
+---
+
+## ChunkDocumentNode
+
+**Source:** `app/workflows/document_ingest_workflow_nodes/chunk_document_node.py`
+
+```python
+class ChunkDocumentNode(Node):
+```
+
+Second node in the `DocumentIngestWorkflow` DAG. Reads the plain-text output of
+`ParseDocumentNode` and splits it into section-aware, overlapping token chunks.
+
+### Section-aware chunking algorithm
+
+1. `_split_into_sections(text)` scans for markdown headers (`#`, `##`, `###`) using
+   `re.MULTILINE` so that `^` matches any line start. Returns a list of
+   `(header_text | None, body_text)` pairs.
+2. For each section with a non-`None` header, a standalone
+   `is_section_title=True` chunk is emitted first (content = header text,
+   `section_title` = header text). This mirrors the rag-engine-rs title-weighting hook
+   that `RetrieveChunksNode` will use for a 2× boost.
+3. The section body is passed to `ChunkingService.chunk_text(body, chunk_size,
+   overlap)`. Each resulting chunk is emitted with `is_section_title=False` and
+   `section_title` set to the current header (or `None` for pre-header content).
+4. A global `position` counter increments monotonically across all emitted chunks so
+   reading order is recoverable at retrieval time.
+
+### `process(task_context) -> TaskContext`
+
+Reads `task_context.get_node_output("ParseDocumentNode")["result"]["text"]`.
+Chunk size and overlap come from `task_context.event.chunk_size` and
+`task_context.event.overlap` (defaults: 500 / 50).
+
+Output: `result = {"chunks": [{"position", "section_title", "is_section_title", "content"}, ...]}`.
+
+---
+
+## EmbedChunksNode
+
+**Source:** `app/workflows/document_ingest_workflow_nodes/embed_chunks_node.py`
+
+```python
+class EmbedChunksNode(Node):
+```
+
+Third node in the `DocumentIngestWorkflow` DAG. Reads the chunk list produced by
+`ChunkDocumentNode` and embeds all chunk texts in a single batched Voyage API call.
+
+`EmbeddingService` is instantiated inside `process()` (not at import time or in
+`__init__`) so tests can patch
+`workflows.document_ingest_workflow_nodes.embed_chunks_node.EmbeddingService` without
+requiring a real Voyage API key.
+
+### `process(task_context) -> TaskContext`
+
+1. Reads `task_context.get_node_output("ChunkDocumentNode")["result"]["chunks"]`.
+2. Extracts all `content` strings into a list.
+3. Calls `EmbeddingService().embed_batch(texts)` — one network round-trip for the
+   whole document.
+4. Zips vectors back onto chunk dicts (`zip(..., strict=True)` — `embed_batch` must
+   return one vector per input).
+
+Output: `result = {"chunks": [<chunk_dict_with_embedding>, ...]}`.
+
+---
+
+## DocumentIngest StoreChunksNode
+
+**Source:** `app/workflows/document_ingest_workflow_nodes/store_chunks_node.py`
+
+```python
+class StoreChunksNode(Node):
+```
+
+Terminal node of the `DocumentIngestWorkflow` DAG. Builds `ContentChunk` ORM objects
+from the embedded chunk dicts and persists them via `GenericRepository` using the shared
+`db_session` factory (no deployment logic in the node — rule 7).
+
+`doc_id` is read from `task_context.event` **before** the persist call. The ORM's
+default `expire_on_commit` would clear attributes on the detached instance after the
+session closes; reading from the event schema avoids `DetachedInstanceError`.
+
+### `process(task_context) -> TaskContext`
+
+1. Reads `task_context.get_node_output("EmbedChunksNode")["result"]["chunks"]`.
+2. Captures `doc_id = task_context.event.doc_id`.
+3. Constructs a `ContentChunk` ORM object per chunk (columns: `doc_id`, `position`,
+   `section_title`, `is_section_title`, `content`, `embedding`).
+4. Calls `self._persist(orm_chunks)`.
+
+Output: `result = {"doc_id": <str>, "chunks_stored": <int>, "embedded": True}`.
+
+### `_persist(chunks) -> None`
+
+Single persistence seam. Opens `db_session`, creates
+`GenericRepository(session=session, model=ContentChunk)`, and calls `.create(chunk)`
+for each chunk. Tests monkeypatch this method so no real database is touched.
+
+---
+
+## DocumentIngestWorkflow
+
+**Source:** `app/workflows/document_ingest_workflow.py`
+
+```python
+class DocumentIngestWorkflow(Workflow):
+```
+
+Linear DAG workflow for the `DOCUMENT_INGEST` event type (Phase 1 Project D Task 2).
+Ingests a document (plain text or PDF), splits it into section-aware chunks, embeds all
+chunks in a single Voyage batch call, and persists one `ContentChunk` row per chunk.
+
+```
+ParseDocumentNode
+    -> ChunkDocumentNode
+        -> EmbedChunksNode
+            -> StoreChunksNode
+```
+
+No router nodes. `StoreChunksNode` is the terminal node.
+
+**Note (Task 5 scope):** Registration in `workflow_registry.py` and `schema_registry.py`
+is deferred to Task 5. The workflow is importable but not yet wired into the API
+dispatcher.
+
+### `workflow_schema`
+
+| Property | Value |
+|---|---|
+| `event_schema` | `DocumentIngestEventSchema` |
+| `start` | `ParseDocumentNode` |
+| `nodes` | `[ParseDocumentNode, ChunkDocumentNode, EmbedChunksNode, StoreChunksNode]` |
+| Connections | Linear: each node connects to the next; `StoreChunksNode.connections = []` |
