@@ -1702,14 +1702,18 @@ and attachable in `bastion sessions`.
 from enum import Enum
 from workflows.content_pipeline_workflow import ContentPipelineWorkflow
 from workflows.customer_care_workflow import CustomerCareWorkflow
-from workflows.research_agent_workflow import ResearchAgentWorkflow
+from workflows.document_ingest_workflow import DocumentIngestWorkflow
+from workflows.document_qa_workflow import DocumentQAWorkflow
 from workflows.proposal_generator_workflow import ProposalGeneratorWorkflow
+from workflows.research_agent_workflow import ResearchAgentWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE       = CustomerCareWorkflow
-    CONTENT_PIPELINE    = ContentPipelineWorkflow
-    RESEARCH_AGENT      = ResearchAgentWorkflow
-    PROPOSAL_GENERATOR  = ProposalGeneratorWorkflow
+    CUSTOMER_CARE    = CustomerCareWorkflow
+    CONTENT_PIPELINE = ContentPipelineWorkflow
+    RESEARCH_AGENT   = ResearchAgentWorkflow
+    PROPOSAL_GENERATOR = ProposalGeneratorWorkflow
+    DOCUMENT_INGEST  = DocumentIngestWorkflow
+    DOCUMENT_QA      = DocumentQAWorkflow
 ```
 
 A plain `Enum` mapping string workflow type identifiers to workflow classes. The
@@ -2845,10 +2849,12 @@ member.
 
 ```python
 SCHEMA_MAP: dict[str, type[BaseModel]] = {
-    WorkflowRegistry.CUSTOMER_CARE.name:       CustomerCareEventSchema,
-    WorkflowRegistry.CONTENT_PIPELINE.name:    ContentPipelineEventSchema,
-    WorkflowRegistry.RESEARCH_AGENT.name:      ResearchAgentEventSchema,
-    WorkflowRegistry.PROPOSAL_GENERATOR.name:  ProposalGeneratorEventSchema,
+    WorkflowRegistry.CUSTOMER_CARE.name:      CustomerCareEventSchema,
+    WorkflowRegistry.CONTENT_PIPELINE.name:   ContentPipelineEventSchema,
+    WorkflowRegistry.RESEARCH_AGENT.name:     ResearchAgentEventSchema,
+    WorkflowRegistry.PROPOSAL_GENERATOR.name: ProposalGeneratorEventSchema,
+    WorkflowRegistry.DOCUMENT_INGEST.name:    DocumentIngestEventSchema,
+    WorkflowRegistry.DOCUMENT_QA.name:        DocumentQAEventSchema,
 }
 ```
 
@@ -3038,10 +3044,6 @@ ParseDocumentNode
 ```
 
 No router nodes. `StoreChunksNode` is the terminal node.
-
-**Note (Task 5 scope):** Registration in `workflow_registry.py` and `schema_registry.py`
-is deferred to Task 5. The workflow is importable but not yet wired into the API
-dispatcher.
 
 ### `workflow_schema`
 
