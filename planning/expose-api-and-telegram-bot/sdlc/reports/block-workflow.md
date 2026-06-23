@@ -1,9 +1,9 @@
 # Spec Orchestration Report — expose-api-and-telegram-bot
 
 **Date:** 2026-06-23
-**Overall verdict:** PARTIAL
+**Overall verdict:** PASS
 **Verify depth:** consolidated
-**Tasks landed:** 1  |  **Escalated:** 2  |  **Skipped:** 2  |  **Back-half:** NOT_RUN
+**Tasks landed:** 5  |  **Escalated:** 0  |  **Skipped:** 0  |  **Back-half:** PASS
 
 ## Outcome by Task
 (Result "in-place" = implemented directly on the integration branch; "merged" = implemented in a
@@ -11,24 +11,20 @@ worktree for a parallel wave, then merged. Per-task Verdict is IMPLEMENTED, or t
 review verdict under consolidated+review — NON-gating; the back-half verdict is authoritative.)
 | Task | Result | Verdict | Path | Commit | Notes |
 |---|---|---|---|---|---|
-| 1 | merged | IMPLEMENTED | auto | 3fdc0ff | — |
-| 2 | escalate | IMPLEMENTED | — | — | merge conflict: MERGE BLOCKED: main working tree has uncommitted changes. Untrac |
-| 3 | escalate | IMPLEMENTED | — | — | merge conflict: MERGE BLOCKED: main working tree has uncommitted changes. Untrac |
-| 4 | skipped | — | — | — | blocked by upstream escalation |
-| 5 | skipped | — | — | — | blocked by upstream escalation |
+| 1 | merged | IMPLEMENTED | auto | 6826788 | — |
+| 2 | merged | IMPLEMENTED | auto | 3126827 | — |
+| 3 | merged | IMPLEMENTED | auto | cbe76c4 | — |
+| 4 | in-place | IMPLEMENTED | in-place | a5ced4d | — |
+| 5 | in-place | IMPLEMENTED | in-place | 82e17cd | — |
 
 ## Consolidated Back-half (D24)
-_Not run — 2 escalated / 2 skipped task(s) block completion. Resolve them and re-run `/sdlc-block expose-api-and-telegram-bot`; the back-half runs once everything lands._
+**Verdict:** PASS · **review attempts:** 1 · **depth:** consolidated
+Per-stage detail (test / review / fix / document / wrap-up over the integrated tree) is in the spec's
+own workflow report: `planning/expose-api-and-telegram-bot/sdlc/reports/workflow.md`. Its wrap-up updated
+status.md, log.md, and the spec Amendment Log (D18).
 
 ## Escalations (need your attention)
-- **Task 2** — verdict IMPLEMENTED. 
-    - Review: `planning/expose-api-and-telegram-bot/sdlc/reports/task2-review.md`
-    - Worktree (preserved): `/Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/expose-api-and-telegram-bot-task2` (branch `expose-api-and-telegram-bot-task2`)
-    - Reasons: merge conflict: MERGE BLOCKED: main working tree has uncommitted changes. Untracked file: planning/expose-api-and-telegram-bot/sdlc/reports/net-new-lint-baseline.json. Commit or stash them, then re-run /sdlc-block to resume.
-- **Task 3** — verdict IMPLEMENTED. 
-    - Review: `planning/expose-api-and-telegram-bot/sdlc/reports/task3-review.md`
-    - Worktree (preserved): `/Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/expose-api-and-telegram-bot-task3` (branch `expose-api-and-telegram-bot-task3`)
-    - Reasons: merge conflict: MERGE BLOCKED: main working tree has uncommitted changes. Untracked file: planning/expose-api-and-telegram-bot/sdlc/reports/net-new-lint-baseline.json. Commit or stash it, then re-run /sdlc-block to resume.
+_None._
 
 ## Resume
 After fixing any blocker (or editing planning/expose-api-and-telegram-bot/sdlc/execution-plan.json), re-run:  /sdlc-block expose-api-and-telegram-bot
@@ -51,15 +47,23 @@ promptTok = injected input estimate; outTok = output-token delta ("—" when no 
 set). NOTE: per-task outTok for tasks that ran in a PARALLEL (width-≥2) wave is shared-pool-contaminated
 and reported as a misleading number — width-1 in-place tasks run sequentially, so theirs is clean (D12).
 
-**Total orchestrator outTok:** 13904
+**Total orchestrator outTok:** 46078
 
 | Stage | Model | promptTok | outTok |
 |---|---|---|---|
-| pre-flight | sonnet | 1501 | 1250 |
-| harness-config | sonnet | 298 | 1318 |
-| baseline-snapshot | haiku | 263 | 1446 |
-| analyze | opus | 2395 | 3721 |
-| write-plan | haiku | 999 | 2280 |
-| merge-1 | sonnet | 988 | 1860 |
-| merge-2 | sonnet | 988 | 868 |
-| merge-3 | sonnet | 988 | 1161 |
+| pre-flight | sonnet | 1501 | 1258 |
+| harness-config | sonnet | 298 | 991 |
+| baseline-snapshot | haiku | 263 | 1367 |
+| analyze | opus | 2395 | 3531 |
+| triage-3-1 | sonnet | 251 | 6278 |
+| teardown-expose-api-and-telegram-bot-task3 | haiku | 112 | 1354 |
+| triage-2-1 | sonnet | 251 | 5848 |
+| teardown-expose-api-and-telegram-bot-task2 | haiku | 112 | 1171 |
+| merge-1 | sonnet | 988 | 920 |
+| merge-2 | sonnet | 988 | 977 |
+| merge-3 | sonnet | 988 | 956 |
+| snap-4 | haiku | 61 | 475 |
+| implement-4 | sonnet | 1124 | 13841 |
+| snap-5 | haiku | 61 | 480 |
+| implement-5 | sonnet | 1124 | 3601 |
+| seed-implement | haiku | 327 | 3030 |
