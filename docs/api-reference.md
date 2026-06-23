@@ -2457,15 +2457,15 @@ and returns up to `k` normalized chunk dicts sorted by fused score descending.
 | Method | Description |
 |---|---|
 | `_semantic_search(vector, corpus, limit)` | Stage 1: pgvector cosine-distance query. Isolated for unit-test patching without a live DB. |
-| `_keyword_search(query, candidate_ids, corpus)` | Stage 2: ILIKE match scoped to candidate IDs. Returns a `set` of matching IDs. Isolated for unit-test patching. |
+| `_keyword_search(query, candidate_ids, corpus)` | Stage 2: ILIKE match scoped to candidate IDs. Query terms are stripped of non-word characters before ILIKE matching (e.g. `"RAG?"` → `"RAG"`). Returns a `set` of matching IDs. Isolated for unit-test patching. |
 | `_fuse_and_rank(candidates, keyword_ids, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. No DB calls. |
 
 ### Test coverage
 
-`tests/workflows/test_retrieve_chunks_node.py` — 22 tests covering: score ordering,
+`tests/workflows/test_retrieve_chunks_node.py` — 23 tests covering: score ordering,
 keyword boost, section-title 2x weight, threshold filtering, top-k, NaN safety,
 corpus `"brain"` threading, TaskContext output contract (`{"result": {"chunks": [...]}}` shape),
-and exact score formula verification.
+exact score formula verification, and punctuation stripping in keyword terms.
 
 ---
 
@@ -3054,6 +3054,12 @@ No router nodes. `StoreChunksNode` is the terminal node.
 | `nodes` | `[ParseDocumentNode, ChunkDocumentNode, EmbedChunksNode, StoreChunksNode]` |
 | Connections | Linear: each node connects to the next; `StoreChunksNode.connections = []` |
 
+### Test coverage
+
+- `tests/workflows/test_document_ingest_nodes.py` — 18 node-level unit tests (ParseDocumentNode, ChunkDocumentNode, EmbedChunksNode, StoreChunksNode) plus schema validation.
+- `tests/workflows/test_document_ingest_workflow.py` — workflow wiring, DAG structure, `WorkflowValidator` acceptance.
+- `tests/workflows/test_document_ingest_e2e.py` — 8 end-to-end tests running all four nodes in sequence on the same `TaskContext` (external services mocked). Verifies cross-node key contracts: each node reads what the previous node actually wrote.
+
 ---
 
 ## DocumentQAEventSchema
@@ -3325,3 +3331,9 @@ EmbedQuestionNode
 | `start` | `EmbedQuestionNode` |
 | `nodes` | `[EmbedQuestionNode, RetrieveChunksNode, AssembleContextNode, AnswerNode, UpdateSessionMemoryNode]` |
 | Connections | Linear: each node connects to the next; `UpdateSessionMemoryNode.connections = []` |
+
+### Test coverage
+
+- `tests/workflows/test_document_qa_nodes.py` — 24 node-level unit tests covering all five nodes, including the `AnswerNode` telemetry recording path (`run_agent_recorded` with `node_runs` populated) and the `UpdateSessionMemoryNode` Pydantic-model output path.
+- `tests/workflows/test_document_qa_workflow.py` — workflow wiring, DAG structure, `WorkflowValidator` acceptance.
+- `tests/workflows/test_document_qa_e2e.py` — 9 end-to-end tests running all five nodes in sequence (external services and DB calls mocked). Explicitly asserts that `AnswerNode` stores a Pydantic `OutputType` instance (not a dict) and that `UpdateSessionMemoryNode` handles it correctly end-to-end.
