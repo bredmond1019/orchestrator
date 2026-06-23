@@ -45,11 +45,13 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 29. [ProposalWriterNode](#proposalwriternode)
 30. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
 31. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
-32. [StorageNode](#storagenode)
-33. [ProposalGenerator StorageNode](#proposalgenerator-storagenode)
-34. [digest_renderer](#digest_renderer)
-35. [createworkflow CLI](#createworkflow-cli)
-36. [API Layer](#api-layer)
+32. [ContentChunk SQLAlchemy Model](#contentchunk-sqlalchemy-model)
+33. [ChatSession SQLAlchemy Model](#chatsession-sqlalchemy-model)
+34. [StorageNode](#storagenode)
+35. [ProposalGenerator StorageNode](#proposalgenerator-storagenode)
+36. [digest_renderer](#digest_renderer)
+37. [createworkflow CLI](#createworkflow-cli)
+38. [API Layer](#api-layer)
 
 ---
 
@@ -2235,10 +2237,10 @@ Alembic autogenerate sees its metadata.
 
 ### Package Export
 
-`BrainDocument` is exported from `app/database/__init__.py` alongside `LearningArtifact`:
+`BrainDocument` is exported from `app/database/__init__.py` alongside `LearningArtifact`, `ContentChunk`, and `ChatSession`:
 
 ```python
-from database import BrainDocument, LearningArtifact
+from database import BrainDocument, ChatSession, ContentChunk, LearningArtifact
 ```
 
 ### Indexer CLI
@@ -2259,6 +2261,105 @@ uv run python scripts/index_brain.py --brain-path ../agentic-portfolio --rebuild
 | `--brain-path` | Root of the brain repo to walk (default: `../agentic-portfolio`). |
 | `--rebuild` | Force re-index all files regardless of `indexed_at` vs `mtime`. |
 | `--dry-run` | Print files that would be indexed; no DB writes or API calls. |
+
+---
+
+## ContentChunk SQLAlchemy Model
+
+**Source:** `app/database/content_chunk.py`
+
+```python
+class ContentChunk(Base):
+    __tablename__ = "content_chunks"
+```
+
+Persistence record for a single text chunk produced by the document ingestion pipeline (Project D
+`DOCUMENT_INGEST` workflow). Each ingested document yields one or more rows. The `is_section_title`
+flag identifies standalone heading chunks; `RetrieveChunksNode` applies a 2x weight boost to these
+rows during hybrid re-ranking (ported from the rag-engine-rs two-stage retrieval pattern).
+
+**Module-level constant:** `EMBEDDING_DIM = 1024`
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key, UUID v4 generated at insert time. |
+| `doc_id` | `UUID(as_uuid=True)` | No | — | Groups all chunks of one ingested document. Indexed (`ix_content_chunks_doc_id`). |
+| `position` | `Integer` | No | — | 0-based chunk order within the document. |
+| `section_title` | `String(256)` | Yes | — | Markdown header this chunk falls under; `None` for top-of-file content. |
+| `is_section_title` | `Boolean` | No | `False` | `True` for standalone heading chunks; drives the 2x retrieval weight boost. |
+| `content` | `Text` | No | — | The chunk text content. |
+| `embedding` | `Vector(1024)` | Yes | — | 1024-dim Voyage AI embedding written at storage time (pgvector). |
+| `created_at` | `DateTime` | Yes | `datetime.now` | Timestamp when the chunk was created. |
+
+### Migration
+
+The `content_chunks` table is created by migration `c4d5e6f7a8b9`
+(`app/alembic/versions/c4d5e6f7a8b9_create_content_chunks_and_chat_sessions.py`).
+`down_revision` chains off `b3c4d5e6f7a8` (brain_documents table). The migration also
+creates the `ix_content_chunks_doc_id` index. Downgrade drops the index and both tables.
+
+**SQLite note:** The `Vector(1024)` column is a pgvector type. SQLite silently accepts it in
+tests (no PostgreSQL extension required), but per decision D31, tests that exercise the embedding
+column in round-trips should be marked `pytest.mark.skip` under SQLite. See the note in the
+review report for Task 1 regarding a deferred D31 skip marker.
+
+### Session and Base
+
+`ContentChunk` inherits from `Base = declarative_base()` defined in `app/database/session.py`.
+
+### Package Export
+
+`ContentChunk` is exported from `app/database/__init__.py`:
+
+```python
+from database import ChatSession, ContentChunk
+```
+
+---
+
+## ChatSession SQLAlchemy Model
+
+**Source:** `app/database/chat_session.py`
+
+```python
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+```
+
+Persistence record for a per-document Q&A conversation session (Project D `DOCUMENT_QA`
+workflow). Each session is scoped to one ingested document (`doc_id`) and holds an ordered list
+of conversation turns as JSON. `UpdateSessionMemoryNode` appends a new turn after each Q&A cycle,
+enabling grounded multi-turn conversations over ingested documents.
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key, UUID v4 generated at insert time. |
+| `doc_id` | `UUID(as_uuid=True)` | No | — | The ingested document this session is scoped to. |
+| `turns` | `JSON` | Yes | `list` | Ordered list of `{role, content}` conversation turns. |
+| `topics_covered` | `JSON` | Yes | `list` | Topics surfaced across the conversation. |
+| `created_at` | `DateTime` | Yes | `datetime.now` | Timestamp when the session was created. |
+| `updated_at` | `DateTime` | Yes | `datetime.now` | Last-updated timestamp; `onupdate=datetime.now` is honored by the SQLAlchemy ORM. |
+
+### Migration
+
+The `chat_sessions` table is created by the same migration as `content_chunks`: `c4d5e6f7a8b9`
+(`app/alembic/versions/c4d5e6f7a8b9_create_content_chunks_and_chat_sessions.py`).
+
+### Session and Base
+
+`ChatSession` inherits from `Base = declarative_base()` defined in `app/database/session.py`.
+
+### Package Export
+
+`ChatSession` is exported from `app/database/__init__.py`:
+
+```python
+from database import ChatSession, ContentChunk
+```
 
 ---
 

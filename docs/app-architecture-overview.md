@@ -159,7 +159,9 @@ DFS cycle detection + BFS reachability check. Runs on every `Workflow.__init__()
 - `EmbeddingService` (Voyage AI) — **built** (`app/services/embedding_service.py`).
 - `LearningArtifact` — **built** (`app/database/learning_artifact.py`, Phase 1 Project A Task 2); `Vector(1024)` embedding column backed by pgvector. Migration `a1b2c3d4e5f6` chains off the pgvector extension revision.
 - `BrainDocument` — **built** (`app/database/brain_document.py`, brain-rag Layer 1); `Vector(1024)` embedding + `ARRAY(String)` workflow_patterns; populated by `scripts/index_brain.py`. Migration `b3c4d5e6f7a8` chains off `a1b2c3d4e5f6`. Query path (RetrieveChunksNode corpus parameter) ships with Project D.
-- Still to add: `ContentChunk` (Project D) and `AgentEpisode` / `SemanticMemory` (Project G) — built with the project that stores them.
+- `ContentChunk` — **built** (`app/database/content_chunk.py`, Phase 1 Project D Task 1); `Vector(1024)` embedding column + `is_section_title` flag (drives 2x retrieval weight boost); `doc_id` indexed. Migration `c4d5e6f7a8b9` chains off `b3c4d5e6f7a8`.
+- `ChatSession` — **built** (`app/database/chat_session.py`, Phase 1 Project D Task 1); `turns` + `topics_covered` JSON columns; `updated_at` with `onupdate`. Migration `c4d5e6f7a8b9` (same migration as `ContentChunk`).
+- Still to add: `AgentEpisode` / `SemanticMemory` (Project G) — built with the project that stores them.
 
 ---
 
@@ -243,8 +245,7 @@ The `WorkflowRegistry` enum scaling concern is resolved in practice: each projec
 
 Deliberately **not** built yet — these arrive with the project that needs them, not before:
 
-- **Remaining vector-column models.** `LearningArtifact` (Phase 1 Project A) and `BrainDocument` (brain-rag Layer 1) now exist. Still to add:
-  `ContentChunk(doc_id, position, content, embedding vector(1024))` with Project D;
+- **Remaining vector-column models.** `LearningArtifact` (Phase 1 Project A), `BrainDocument` (brain-rag Layer 1), `ContentChunk` + `ChatSession` (Phase 1 Project D Task 1) now exist. Still to add:
   `AgentEpisode` / `SemanticMemory` (multi-peer) with Project G.
 - **`ParallelNode` result-merge.** Still the known gap (see ParallelNode above) — fix it in Project E,
   where parallel passes first need their outputs merged back via uniquely-keyed slots.
