@@ -8,6 +8,15 @@ description: Index of the developer reference documentation for the python-orche
 
 Developer reference for the orchestration framework. Start here, then open the doc that matches your task.
 
+## Start here
+
+| Doc | Contents |
+|---|---|
+| [getting-started.md](getting-started.md) | Set up and run the stack — local dev (Homebrew scripts) and Docker/OrbStack path. Start here if you're new. |
+| [workflows.md](workflows.md) | What each workflow does, its node DAG, event payload shape, and ready-to-paste curl examples. |
+| [scripts.md](scripts.md) | All developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py`. |
+| [brain-rag.md](brain-rag.md) | Brain corpus indexing and semantic retrieval — `BrainDocument` model, `index_brain.py`, querying via `DOCUMENT_QA`. |
+
 ## Core reference
 
 | Doc | Contents |
@@ -37,10 +46,8 @@ Developer reference for the orchestration framework. Start here, then open the d
 | [architecture_review/router_node.md](architecture_review/router_node.md) | `RouterNode` & `BaseRouter` — conditional branching. |
 | [architecture_review/prompt_manager.md](architecture_review/prompt_manager.md) | `PromptManager` — loading `.j2` system prompts from `app/prompts/`. |
 
-## Agentic workflows (SDLC pipeline)
+## Integrations
 
 | Doc | Contents |
 |---|---|
-| [agentic-workflows/sdlc-workflow.md](agentic-workflows/sdlc-workflow.md) | The end-to-end SDLC workflow pipeline and its stages. |
-| [agentic-workflows/sdlc-orchestration.md](agentic-workflows/sdlc-orchestration.md) | `/sdlc-block` — orchestrating a block through dependency-ordered waves of parallel task pipelines. |
-| [agentic-workflows/sdlc-dynamic-workflows.md](agentic-workflows/sdlc-dynamic-workflows.md) | The dynamic SDLC workflow scripts and how they compose pipeline stages at runtime. |
+| [../integrations/telegram/README.md](../integrations/telegram/README.md) | Telegram bot — setup, Docker Compose deployment, launchd (Mac Mini), network topology (Cloudflare/Tailscale/localhost). |
