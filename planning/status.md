@@ -9,8 +9,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-22 — phase1-projectC Done (All 8 tasks complete; next: phase1-projectD — Document Q&A + RAG)
-**Current focus:** phase1-projectD — Document Q&A + session memory (RAG)
+**Last updated:** 2026-06-22 — phase1-projectD Done (All 7 tasks complete; next: phase1-projectE — Specialization refactor)
+**Current focus:** phase1-projectE — Specialization refactor (next project: ParallelNode merge + specialized nodes)
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
@@ -41,14 +41,14 @@ description: Current state and progress tracker for the python-orchestration-sys
 | A | Content pipeline (YouTube/Article → personal digest + optional blog) | Done | DONE — full content_pipeline workflow shipped via /sdlc-block (8/8 tasks). DAG: SourceRouterNode → {FetchTranscript|FetchArticle} → SummarizerNode → StorageNode → BlogDecisionRouterNode → BlogWriter → SelfCritic → Revise. New LearningArtifact model + pgvector migration; embeddings at write time; static-HTML digest + category index; opt-in blog branch with linear self-critic→revise loop. 295 tests pass, ruff clean. FetchArticleNode (trafilatura/Firecrawl) is the reusable new node. |
 | B | Research agent (thin → hardened) | Done | Thin cut shipped: CompanyResearchNode (ToolUseNode subclass), ResearchAgentWorkflow, ResearchBriefOutput (non-empty likely_time_sinks, automation_hypothesis), research_agent_brief.j2 loaded via PromptManager. 29 new tests total (19 initial + 10 coverage audit); 427 pass. Coverage audit fixed 2 bugs: schema_registry missing RESEARCH_AGENT entry, _handle_submit_brief ValidationError crash. Hardened version (Planner→Research→Critic→Revise→Storage + BrainDocument write) deferred until a real prospect demands it. |
 | C | Proposal generator | Done | DONE — full proposal_generator workflow shipped (8/8 tasks). DAG: CompanyResearchNode → OpportunityIdentifierNode → ProposalWriterNode → ProposalReviewNode → ProposalReviewRouterNode → {StorageNode | ReviseNode → StorageNode}. Composite scoring formula embedded in prompt; dual-language (PT/EN) support; review criteria with pass/revise routing; registry entries in both workflow_registry.py and schema_registry.py; CompanyResearchNode reused from Project B. 549 tests pass, ruff clean, pylint 10.00/10. |
-| D | Document Q&A + session memory (RAG) | Not started | Reinforces proven Helpscout production pattern |
+| D | Document Q&A + session memory (RAG) | Done | Tasks 1–7 complete. Two workflows (DOCUMENT_INGEST, DOCUMENT_QA), hybrid two-stage retrieval in RetrieveChunksNode, section-title weighting, session memory, and 674 passing tests (667 passed, 7 skipped). Competence checkpoint passed. |
 
 *→ Competence checkpoint review after Project D.*
 
 ### Phase 2 — Depth + First Paid Work
 | Item | What | Status | Notes |
 |---|---|---|---|
-| E | Specialization refactor | Not started | Fix ParallelNode merge gap here |
+| E | Specialization refactor | Not started | Fix ParallelNode merge gap here — next after Project D |
 | F | Semantic search over corpus | Not started | Mostly D's components |
 | H | Model eval & routing harness | Not started | Flexible placement; needs real nodes (after D) |
 | — | First paid diagnostic | Not started | Waits for competence checkpoint, not a date |

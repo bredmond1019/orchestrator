@@ -11,7 +11,7 @@ description: Completion log for RetrieveChunksNode (two-stage hybrid retrieval).
 **Verdict:** PASS
 **Date:** 2026-06-22
 **Branch:** phase1-projectd-task3
-**Applied:** false
+**Applied:** true
 
 ---
 
