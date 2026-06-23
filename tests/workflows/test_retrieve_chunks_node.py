@@ -273,6 +273,51 @@ class TestRetrieve:
         result = self._run_retrieve(candidates, threshold=0.5)
         assert result == []
 
+    def test_punctuation_stripped_from_query_terms(self):
+        """Terms like 'RAG?' are cleaned to 'RAG' before the ILIKE filter.
+
+        Without stripping, the pattern '%RAG?%' never matches content that
+        just says 'RAG', so the keyword boost silently never fires for
+        question-form queries.
+
+        We capture the SQLAlchemy ILIKE expressions assembled inside
+        ``_keyword_search`` to verify no term contains punctuation.
+        """
+        cid = uuid.uuid4()
+        candidate_ids = [cid]
+
+        fake_row = MagicMock()
+        fake_row.id = cid
+
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.all.return_value = [fake_row]
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        # db_session is a plain generator function; the node wraps it with
+        # contextmanager() at call time, so we must patch it as a generator.
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._keyword_search(
+                "What is RAG?", candidate_ids, "content"
+            )
+
+        # The call succeeded and returned the candidate id (keyword match)
+        assert cid in result
+
+        # Verify the ILIKE args passed to filter() contain no trailing '?'
+        # filter() is called twice: once for id.in_(), once for or_(*ilike_filters)
+        all_call_args = [str(c) for c in fake_query.filter.call_args_list]
+        combined = " ".join(all_call_args)
+        assert "RAG?" not in combined
+
 
 # ---------------------------------------------------------------------------
 # process() — TaskContext integration

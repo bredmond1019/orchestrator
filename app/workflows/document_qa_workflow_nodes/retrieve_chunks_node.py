@@ -26,6 +26,7 @@ addition. DB calls are isolated in ``_semantic_search`` and ``_keyword_search``
 """
 
 import math
+import re
 from contextlib import contextmanager
 
 from core.nodes.base import Node
@@ -167,7 +168,8 @@ class RetrieveChunksNode(Node):
         content_field = config["content_field"]
         content_col = getattr(model, content_field)
 
-        terms = [t.strip() for t in query.split() if t.strip()]
+        terms = [re.sub(r"\W+", "", t) for t in query.split()]
+        terms = [t for t in terms if t]
         if not terms:
             return set()
 

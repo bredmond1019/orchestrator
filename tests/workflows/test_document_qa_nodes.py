@@ -496,3 +496,115 @@ class TestUpdateSessionMemoryNode:
         topics = persisted[0].topics_covered
         assert topics.count("Introduction") == 1
         assert "New Section" in topics
+
+    def test_pydantic_answer_output_path(self, monkeypatch):
+        """UpdateSessionMemoryNode correctly reads a Pydantic AnswerOutput instance.
+
+        At runtime AnswerNode stores ``result.output`` (an OutputType Pydantic
+        model) in the context — not a plain dict.  This exercises the
+        ``hasattr(answer_output, "answer")`` branch that the other tests skip.
+        """
+        s_id = uuid.uuid4()
+        d_id = uuid.uuid4()
+        event = _make_event(
+            question="What is RAG?",
+            session_id=s_id,
+            doc_id=d_id,
+        )
+        ctx = _make_ctx(event)
+        ctx.nodes["AssembleContextNode"] = {
+            "result": {
+                "context": "Some context.",
+                "history": [],
+                "question": "What is RAG?",
+            }
+        }
+        # Seed as a real AnswerOutput Pydantic model — the runtime path
+        pydantic_output = AnswerNode.OutputType(
+            answer="RAG is Retrieval-Augmented Generation.",
+            cited_sections=["Overview"],
+        )
+        ctx.nodes["AnswerNode"] = {"result": pydantic_output}
+
+        node = UpdateSessionMemoryNode()
+        persisted: list[ChatSession] = []
+        monkeypatch.setattr(node, "_load_session", lambda sid: None)
+        monkeypatch.setattr(node, "_persist", lambda s: persisted.append(s))
+
+        node.process(ctx)
+
+        session = persisted[0]
+        assert len(session.turns) == 2
+        assert session.turns[1]["content"] == "RAG is Retrieval-Augmented Generation."
+        assert "Overview" in session.topics_covered
+
+
+# ---------------------------------------------------------------------------
+# AnswerNode — telemetry recording path
+# ---------------------------------------------------------------------------
+
+
+class TestAnswerNodeTelemetry:
+    """Verifies the run_agent_recorded telemetry block when node_runs is set.
+
+    The base tests in TestAnswerNode leave node_runs empty so the ``if run is
+    not None`` block in run_agent_recorded is always skipped.  These tests
+    populate node_runs to exercise that path, which is what happens in every
+    real workflow execution.
+    """
+
+    def _ctx_with_run(self) -> "TaskContext":
+        from core.task import NodeRun, TaskContext
+
+        ctx = TaskContext(event=_make_event())
+        ctx.nodes["AssembleContextNode"] = {
+            "result": {
+                "context": "Section: Intro (relevance: 0.90)\nSome content.",
+                "history": [],
+                "question": "What is RAG?",
+            }
+        }
+        ctx.node_runs["AnswerNode"] = NodeRun()
+        return ctx
+
+    def test_telemetry_usage_recorded(self):
+        """run_agent_recorded stamps usage onto the NodeRun when run is set."""
+        node = _make_answer_node()
+        fake_result = _answer_result()
+        node.agent.run_sync.return_value = fake_result
+
+        ctx = self._ctx_with_run()
+        node.process(ctx)
+
+        run = ctx.node_runs["AnswerNode"]
+        assert run.usage is not None
+        assert run.usage["input_tokens"] == 5
+        assert run.usage["output_tokens"] == 10
+
+    def test_telemetry_records_jsonable_output(self):
+        """run_agent_recorded writes a JSON-serializable copy to the 'output' key."""
+        node = _make_answer_node()
+        fake_result = _answer_result(answer="Grounded answer.")
+        node.agent.run_sync.return_value = fake_result
+
+        ctx = self._ctx_with_run()
+        node.process(ctx)
+
+        # The 'output' key (set by run_agent_recorded) must be a plain dict
+        stored_output = ctx.nodes["AnswerNode"].get("output")
+        assert isinstance(stored_output, dict), (
+            "'output' key must be a plain dict (to_jsonable applied)"
+        )
+        assert stored_output["answer"] == "Grounded answer."
+
+    def test_telemetry_input_prompt_recorded(self):
+        """run_agent_recorded stamps the user_prompt string onto NodeRun.input."""
+        node = _make_answer_node()
+        node.agent.run_sync.return_value = _answer_result()
+
+        ctx = self._ctx_with_run()
+        node.process(ctx)
+
+        run = ctx.node_runs["AnswerNode"]
+        assert run.input is not None
+        assert "What is RAG?" in run.input

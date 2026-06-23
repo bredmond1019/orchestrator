@@ -9,6 +9,32 @@ supplied by the caller (config/env), never hardcoded to a deployment path
 
 from pathlib import Path
 
+# Shared, dependency-free stylesheet inlined into every generated page. Its job
+# is readability: cap the content column so prose does not run edge-to-edge on
+# wide screens, and set comfortable line-height/spacing. Every page flows
+# through this one renderer, so styling here fixes the format for all output.
+_STYLE = """\
+<style>
+:root { color-scheme: light dark; }
+body {
+  max-width: 70ch;
+  margin: 2rem auto;
+  padding: 0 1.25rem;
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+h1 { line-height: 1.25; font-size: 1.7rem; }
+h2 { margin-top: 2rem; font-size: 1.25rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+li { margin-bottom: 0.5rem; }
+a { color: #0b5fff; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e6e6e6; background: #1a1a1a; }
+  h2 { border-color: #444; }
+  a { color: #6ea8ff; }
+}
+</style>"""
+
 
 def _esc(text: str) -> str:
     """Minimal HTML escape for interpolated values."""
@@ -22,11 +48,15 @@ def _esc(text: str) -> str:
 
 
 def _render_list(items: list[str]) -> str:
-    """Render a list of strings as an HTML ``<ul>`` (or a dash when empty)."""
+    """Render a list of strings as an HTML ``<ul>`` (or a dash when empty).
+
+    Each ``<li>`` is emitted on its own line so the generated source stays
+    readable in an editor instead of collapsing into one giant horizontal line.
+    """
     if not items:
         return "<p>-</p>"
-    rows = "".join(f"<li>{_esc(item)}</li>" for item in items)
-    return f"<ul>{rows}</ul>"
+    rows = "\n".join(f"  <li>{_esc(item)}</li>" for item in items)
+    return f"<ul>\n{rows}\n</ul>"
 
 
 def render_artifact_page(artifact: dict, output_dir: Path, category: str) -> Path:
@@ -46,7 +76,9 @@ def render_artifact_page(artifact: dict, output_dir: Path, category: str) -> Pat
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
+{_STYLE}
 </head>
 <body>
 <article>
@@ -87,18 +119,23 @@ def regenerate_category_index(output_dir: Path, category: str) -> Path:
     pages = sorted(
         path for path in page_dir.glob("*.html") if path.name != "index.html"
     )
-    links = "".join(
-        f'<li><a href="{_esc(path.name)}">{_esc(path.stem)}</a></li>' for path in pages
+    links = "\n".join(
+        f'  <li><a href="{_esc(path.name)}">{_esc(path.stem)}</a></li>'
+        for path in pages
     )
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_esc(category)} digest</title>
+{_STYLE}
 </head>
 <body>
 <h1>{_esc(category)}</h1>
-<ul>{links}</ul>
+<ul>
+{links}
+</ul>
 </body>
 </html>
 """
