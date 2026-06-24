@@ -10,6 +10,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-24 (harness pull from base-template — b8ebbf7)
+
+Pulled the current `base-template` harness (commit `b8ebbf71c20445de65195037aa24bfe00bbf080b`) into
+`.claude/`. Added the **`/sdlc-flow`** engine (D30–D33; shared-worktree sequential flow, one end
+review, PR wrap-up) and **`/generate-master-plan`** plus the **block-definition planning seam** (D34):
+`/generate-tasks --from <path>`, `/plan` as a standalone block definition, and the hardened block
+skeleton. Also the **plan-quality floor** (D35) — planning commands clarify-or-abort rather than
+fabricate. `harness.schema.json` refreshed. Project-specific `health-check.js` engine **preserved**.
+All five engines `node --check` clean; shared command/engine files byte-identical to base.
+`planning/harness.json` untouched. Added `planning/.template-version` (provenance was previously
+unstamped).
+
 ### 2026-06-23 (post-merge cleanup — docs and Telegram deployment guide)
 
 Merged expose-api-telegram-bot branch to main (commit 207ccdf, 53 files across 5 commits) consolidating the public API exposure + Telegram bot workstream. Ran `/update-docs --patch` to refresh documentation baselines and capture the full scope of the work: README test count increased 549→712 (163 new tests from the full spec: 5 API security tests, 92 Telegram integration tests, 24 cross-test import/schema-registry checks, 42 E2E and misc), integrations/ directory added to directory map in docs/index.md, two new rows added to app-architecture-overview.md ("What shipped" table) covering api/security.py (auth and CORS infrastructure) and integrations/telegram/ (long-poll bot, config, client layer). Expanded integrations/telegram/README.md with a comprehensive Mac Mini deployment guide covering three sections: (1) long-poll topology primer explaining the phone→Telegram→bot→localhost architecture, no-inbound-port design, when to switch to webhook; (2) Docker Compose deployment instructions with `telegram_bot` service config, restart:unless-stopped policy, and env var reference; (3) launchd plist template for running the bot outside Docker on macOS (auto-launch on login, log redirection, clean shutdown); (4) first-time BotFather setup steps and chat-ID allowlist configuration; (5) three network topology scenarios (Cloudflare Tunnel for public API access, Tailscale private ingress with the 127.0.0.1→0.0.0.0 binding note, same-machine default localhost:8080 for development). Handoff written for projectE. Validation: 712 tests pass, ruff clean, pylint 10.00/10.
