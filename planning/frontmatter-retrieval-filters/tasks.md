@@ -7,7 +7,7 @@ status: draft
 
 # Task Spec — Phase 1, Block C (Frontmatter Retrieval Filters)
 
-**Status:** Not started · **Last run:** never
+**Status:** Done · **Last run:** 2026-06-25
 
 ## Goal
 Extend the `"brain"` corpus retrieval so the keyword re-rank also matches the `keywords` column (recall boost) and an optional `filters` arg scopes Stage 1 by `layer`/`project`/`status` — turning Block B's stored columns into actual retrieval power, while the `"content"` corpus path stays byte-for-byte unchanged.
@@ -60,4 +60,4 @@ cd app && uv run python -c 'import database.repository'
 
 ## Amendment Log
 <!-- Append-only. Pipeline stages append one dated line here when they deviate from the spec. -->
-_No amendments yet._
+2026-06-25 [implement] `pyproject.toml` raised `max-args = 6` in `[tool.pylint.design]` — the spec addressed pylint R0917 (too-many-positional-arguments) via the keyword-only `*` guard but did not address C0801 (too-many-arguments, total count); raising the project-level limit was required to keep pylint 10.00/10 with the new 6-argument `retrieve()` signature. No functional change.

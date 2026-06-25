@@ -9,7 +9,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-25 — frontmatter-indexer-enrich (Block B frontmatter parse/strip/enrich) shipped: 6 OKF columns on BrainDocument, Alembic migration, parse_document/normalize_metadata/build_context_prefix in index_brain.py, 32 new tests (746 pass + 8 skipped → 753 collected), pylint 10.00/10, review PASS in 1 attempt.
+**Last updated:** 2026-06-25 — frontmatter-retrieval-filters (Block C keyword-boost + metadata filters) shipped: `_CORPUS_CONFIG["brain"]` extended with `keyword_extra_fields`/`filter_fields`, `_apply_metadata_filters` helper added, `retrieve`/`_semantic_search`/`_keyword_search` updated, `filters: dict | None` added to `DocumentQAEventSchema`, 9 new tests (755 pass + 8 skipped), pylint 10.00/10, review PASS in 1 attempt.
 **Current focus (demand-first, per the brain wave table):** Wave 0 — (1) finish the private Tailscale face, then (2) **Block B** (run `index_brain.py` to populate the Brain's vector store with the enriched frontmatter; confirm `"brain"`-corpus Q&A) and **Block O** (widen the index corpus to all sub-repo docs). **Project E (specialization / ParallelNode merge) is repositioned to Wave 4 ✲** — pull forward only when a workflow's parallelism is genuinely needed.
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
@@ -78,6 +78,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 |---|---|---|---|
 | brain-rag | BrainDocument model + Alembic migration + `scripts/index_brain.py` brain corpus indexer | Done | Layer 1 shipped: BrainDocument model, migration, index_brain.py CLI (dry-run, rebuild, incremental skip), 38 brain tests. Layer 2 (RetrieveChunksNode corpus param) → Project D; Layer 3 (MCP endpoint) → Project F. |
 | frontmatter-indexer-enrich | Parse/strip/enrich OKF frontmatter + 6 BrainDocument columns + Alembic migration | Done | All 3 tasks shipped: `doc_id`/`layer`/`project`/`status`/`keywords`/`related` columns + GIN/btree indexes; `parse_document`, `normalize_metadata`, `build_context_prefix` in `index_brain.py`; 32 new tests; 746 pass + 8 skipped; pylint 10.00/10; review PASS 1 attempt. |
+| frontmatter-retrieval-filters | Keyword-boost on `keywords` column + optional metadata filters for brain corpus retrieval | Done | All tasks shipped: `_CORPUS_CONFIG["brain"]` extended, `_apply_metadata_filters` helper added, `filters: dict \| None` in `DocumentQAEventSchema`; 9 new tests; 755 pass + 8 skipped; pylint 10.00/10; review PASS 1 attempt. |
 
 ### Parallel Track
 | Track | What | Status | Notes |

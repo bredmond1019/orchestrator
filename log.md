@@ -10,6 +10,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-25 (frontmatter-retrieval-filters — Block C keyword-boost + metadata filters)
+
+Shipped the full `frontmatter-retrieval-filters` spec (2 tasks) in one pipeline pass: PASS on first review attempt. Extended `_CORPUS_CONFIG["brain"]` in `retrieve_chunks_node.py` with `"keyword_extra_fields": ["keywords"]` and `"filter_fields": {"layer": "array", "project": "scalar", "status": "scalar"}` — the `"content"` corpus entry is untouched. Added module-level `_apply_metadata_filters(query, model, filters, filter_fields)` helper that translates `{field: value}` pairs to WHERE clauses (scalar `==`, ARRAY `.overlap([value])`). Updated `_keyword_search` to OR-in `func.array_to_string(extra_col, " ").ilike(...)` per extra field per term; updated `_semantic_search` to accept and apply optional `filters: dict | None = None`; threaded `filters` from `process()` (via `getattr(event, "filters", None)`) through `retrieve()`. Added `filters: dict | None = Field(default=None)` to `DocumentQAEventSchema` so the filter surface is reachable end-to-end through the API. The `filters` parameter on `retrieve()` is keyword-only (via `*`) to satisfy pylint R0917; `max-args = 6` raised in `pyproject.toml`. Added 9 new tests across `TestProcess`, `TestKeywordExtraFields`, and `TestSemanticSearchFilters`; final count 755 passed + 8 skipped. Ruff clean, pylint 10.00/10. Docs patched: `docs/api-reference.md` (filters field, process()/retrieve()/_semantic_search()/_keyword_search()/_apply_metadata_filters descriptions, test count 23→32); `docs/app-architecture-overview.md` flagged NEEDS_REVIEW for the dense architecture timeline rows. Review: all 7 acceptance criteria MET, fresh gating checks all pass. Next: run `index_brain.py` against the actual brain corpus to populate the vector store (Block B population step), then Block O (corpus widening).
+
+```
+7d4996a docs: update docs for frontmatter-retrieval-filters
+e8678a1 feat: implement frontmatter-retrieval-filters
+d6314b0 chore: add spec for frontmatter-retrieval-filters (frontmatter Block C)
+```
+
+---
+
 ### 2026-06-25 (frontmatter-indexer-enrich — Block B frontmatter parse/strip/enrich)
 
 Shipped the full `frontmatter-indexer-enrich` spec (3 tasks) in one pipeline pass: PASS on first review attempt. Added six nullable OKF frontmatter columns (`doc_id`, `layer`, `project`, `status`, `keywords`, `related`) to `BrainDocument` with GIN indexes on the ARRAY columns and btree indexes on `doc_id`/`project`/`status`, plus a new Alembic migration (`d1e2f3a4b5c6`) chaining to the confirmed `c4d5e6f7a8b9` head. `index_brain.py` gained three module-level functions: `parse_document` (strips YAML frontmatter using `python-frontmatter`), `normalize_metadata` (coerces bare-string `layer` to list, derives `doc_id` from filename stem when absent, warns on out-of-vocabulary values without raising), and `build_context_prefix` (builds a semantic prefix from `type`/`title`/`description`/`layer`/`project`/`keywords`, excluding `status`/`doc_id`/`related`). The indexer loop now chunks the clean body only (no YAML in stored `content`) while passing `prefix + chunk` to `embed_batch`. Docs patched: `docs/brain-rag.md` (column table updated) and `docs/scripts.md` (frontmatter handling subsection added). Test suite grew by 32 new tests across `TestParseDocument`, `TestNormalizeMetadata`, `TestBuildContextPrefix`, and `TestFrontmatterIntegration`; final count 746 passed + 8 skipped (753 collected). Ruff clean, pylint 10.00/10. Next: run `index_brain.py` against the actual brain corpus to populate the vector store with enriched frontmatter (Block B population step), then Block O (corpus widening).
