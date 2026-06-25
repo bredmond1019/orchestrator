@@ -5,6 +5,10 @@ Tests cover:
 - doc_type assignment via CORPUS mapping
 - incremental skip logic (mocked DB)
 - dry-run mode (no DB writes)
+- parse_document: frontmatter parsing and stripping
+- normalize_metadata: field normalization and vocabulary validation
+- build_context_prefix: semantic prefix construction
+- integration: embed-text prefix vs stored content separation
 """
 
 import sys
@@ -23,8 +27,11 @@ from index_brain import (  # noqa: E402
     CORPUS,
     _collect_files,
     _get_doc_type_for_path,
+    build_context_prefix,
     chunk_by_section,
     main,
+    normalize_metadata,
+    parse_document,
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "brain_docs"
@@ -360,3 +367,344 @@ class TestCollectFiles:
         paths = [r[0] for r in result]
         for p in paths:
             assert "career.md" not in str(p)
+
+
+# ---------------------------------------------------------------------------
+# parse_document tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseDocument:
+    """parse_document strips YAML frontmatter and returns (metadata, body)."""
+
+    def test_no_frontmatter_returns_empty_meta_and_full_text(self):
+        text = "Just plain text with no frontmatter."
+        meta, body = parse_document(text)
+        assert meta == {}
+        assert "Just plain text" in body
+
+    def test_parses_frontmatter_fields(self):
+        text = "---\ntitle: Test Doc\ntype: Strategy\n---\n\n## Section\nContent."
+        meta, body = parse_document(text)
+        assert meta.get("title") == "Test Doc"
+        assert meta.get("type") == "Strategy"
+
+    def test_body_has_no_yaml_delimiters(self):
+        text = "---\ntitle: My Doc\n---\n\n## Body\nContent here."
+        meta, body = parse_document(text)
+        assert "---" not in body
+        assert "title: My Doc" not in body
+
+    def test_body_contains_markdown_content(self):
+        text = "---\ntitle: Doc\n---\n\n## Section\nActual content."
+        _, body = parse_document(text)
+        assert "## Section" in body
+        assert "Actual content" in body
+
+    def test_rich_frontmatter_fixture(self):
+        content = (FIXTURES_DIR / "rich_frontmatter.md").read_text(encoding="utf-8")
+        meta, body = parse_document(content)
+        assert meta.get("type") == "ProjectContext"
+        assert meta.get("title") == "Rich Frontmatter Example"
+        assert isinstance(meta.get("layer"), list)
+        assert "engine" in meta["layer"]
+        assert "---" not in body
+        assert "keywords:" not in body
+
+    def test_no_headers_fixture_no_frontmatter(self):
+        content = (FIXTURES_DIR / "no_headers.md").read_text(encoding="utf-8")
+        meta, body = parse_document(content)
+        assert meta == {}
+        assert len(body) > 0
+
+
+# ---------------------------------------------------------------------------
+# normalize_metadata tests
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeMetadata:
+    """normalize_metadata produces the six typed OKF filterable fields."""
+
+    def setup_method(self):
+        self.brain_path = Path("/fake/brain")
+        self.file_path = Path("/fake/brain/docs/test-doc.md")
+
+    def test_empty_meta_derives_doc_id_from_filename(self):
+        result = normalize_metadata({}, self.file_path, self.brain_path)
+        assert result["doc_id"] == "test-doc"
+
+    def test_explicit_doc_id_is_preserved(self):
+        result = normalize_metadata(
+            {"doc_id": "my-custom-id"}, self.file_path, self.brain_path
+        )
+        assert result["doc_id"] == "my-custom-id"
+
+    def test_bare_string_layer_is_coerced_to_list(self):
+        result = normalize_metadata(
+            {"layer": "brain"}, self.file_path, self.brain_path
+        )
+        assert result["layer"] == ["brain"]
+
+    def test_list_layer_is_preserved(self):
+        result = normalize_metadata(
+            {"layer": ["brain", "engine"]}, self.file_path, self.brain_path
+        )
+        assert result["layer"] == ["brain", "engine"]
+
+    def test_out_of_vocab_layer_warns_but_does_not_raise(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = normalize_metadata(
+                {"layer": "unknown-layer"}, self.file_path, self.brain_path
+            )
+        assert result["layer"] == ["unknown-layer"]
+        assert "Out-of-vocabulary" in caplog.text or "layer" in caplog.text.lower()
+
+    def test_out_of_vocab_project_warns_but_does_not_raise(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = normalize_metadata(
+                {"project": "nonexistent-project"}, self.file_path, self.brain_path
+            )
+        assert result["project"] == "nonexistent-project"
+        assert "Out-of-vocabulary" in caplog.text
+
+    def test_out_of_vocab_status_warns_but_does_not_raise(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = normalize_metadata(
+                {"status": "pending"}, self.file_path, self.brain_path
+            )
+        assert result["status"] == "pending"
+        assert "Out-of-vocabulary" in caplog.text
+
+    def test_keywords_as_list_is_preserved(self):
+        result = normalize_metadata(
+            {"keywords": ["foo", "bar"]}, self.file_path, self.brain_path
+        )
+        assert result["keywords"] == ["foo", "bar"]
+
+    def test_related_as_list_is_preserved(self):
+        result = normalize_metadata(
+            {"related": ["docs/a.md", "docs/b.md"]}, self.file_path, self.brain_path
+        )
+        assert result["related"] == ["docs/a.md", "docs/b.md"]
+
+    def test_missing_optional_fields_are_none(self):
+        result = normalize_metadata({}, self.file_path, self.brain_path)
+        assert result["layer"] is None
+        assert result["project"] is None
+        assert result["status"] is None
+        assert result["keywords"] is None
+        assert result["related"] is None
+
+    def test_bare_string_layer_fixture(self):
+        content = (FIXTURES_DIR / "bare_string_layer.md").read_text(encoding="utf-8")
+        meta, _ = parse_document(content)
+        result = normalize_metadata(meta, self.file_path, self.brain_path)
+        assert isinstance(result["layer"], list)
+        assert result["layer"] == ["brain"]
+
+
+# ---------------------------------------------------------------------------
+# build_context_prefix tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildContextPrefix:
+    """build_context_prefix produces a semantic-only embed prefix."""
+
+    def test_empty_meta_returns_empty_string(self):
+        assert build_context_prefix({}) == ""
+
+    def test_includes_type(self):
+        prefix = build_context_prefix({"type": "Strategy"})
+        assert "type: Strategy" in prefix
+
+    def test_includes_title(self):
+        prefix = build_context_prefix({"title": "My Doc"})
+        assert "title: My Doc" in prefix
+
+    def test_includes_description(self):
+        prefix = build_context_prefix({"description": "A short summary."})
+        assert "description: A short summary." in prefix
+
+    def test_includes_layer(self):
+        prefix = build_context_prefix({"layer": ["brain", "engine"]})
+        assert "layer:" in prefix
+        assert "brain" in prefix
+        assert "engine" in prefix
+
+    def test_includes_project(self):
+        prefix = build_context_prefix({"project": "bastion"})
+        assert "project: bastion" in prefix
+
+    def test_includes_keywords(self):
+        prefix = build_context_prefix({"keywords": ["foo", "bar"]})
+        assert "keywords:" in prefix
+        assert "foo" in prefix
+
+    def test_excludes_status(self):
+        prefix = build_context_prefix({"title": "X", "status": "active"})
+        assert "status" not in prefix
+
+    def test_excludes_doc_id(self):
+        prefix = build_context_prefix({"title": "X", "doc_id": "my-id"})
+        assert "doc_id" not in prefix
+        assert "my-id" not in prefix
+
+    def test_excludes_related(self):
+        prefix = build_context_prefix({"title": "X", "related": ["docs/a.md"]})
+        assert "related" not in prefix
+        assert "docs/a.md" not in prefix
+
+    def test_prefix_ends_with_double_newline(self):
+        prefix = build_context_prefix({"title": "X"})
+        assert prefix.endswith("\n\n")
+
+    def test_bare_string_layer_in_prefix(self):
+        prefix = build_context_prefix({"layer": "brain"})
+        assert "layer:" in prefix
+        assert "brain" in prefix
+
+
+# ---------------------------------------------------------------------------
+# Integration: embed-text prefix vs stored content separation
+# ---------------------------------------------------------------------------
+
+
+class TestFrontmatterIntegration:
+    """Integration tests: no frontmatter leaks into stored content; embed text gets prefix."""
+
+    def _make_mock_session(self, mock_doc: MagicMock = None) -> MagicMock:
+        """Build a MagicMock SQLAlchemy session that works as a context manager."""
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.filter_by.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.first.return_value = mock_doc
+        mock_query.delete.return_value = 0
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session
+
+    def test_rich_frontmatter_no_yaml_in_stored_content(self, tmp_path):
+        """Stored content must contain no YAML fence or frontmatter field lines.
+
+        Places the rich-frontmatter fixture at docs/brand.md so it matches the
+        CORPUS "docs/brand.md" entry.
+        """
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        fixture_src = FIXTURES_DIR / "rich_frontmatter.md"
+        # Use docs/brand.md — a CORPUS-matched path
+        (docs / "brand.md").write_text(
+            fixture_src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        captured_contents: list[str] = []
+
+        def fake_db_session():
+            mock_session = self._make_mock_session(mock_doc=None)
+            # Capture BrainDocument content when session.add() is called
+            real_add = mock_session.add
+
+            def capturing_add(obj):
+                if hasattr(obj, "content"):
+                    captured_contents.append(obj.content)
+                return real_add(obj)
+
+            mock_session.add = capturing_add
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024, [0.2] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            main(["--brain-path", str(tmp_path)])
+
+        assert len(captured_contents) > 0
+        for content in captured_contents:
+            assert "---" not in content
+            assert "keywords:" not in content
+            assert "doc_id:" not in content
+
+    def test_embed_text_starts_with_prefix(self, tmp_path):
+        """The text handed to embed_batch must start with the context prefix.
+
+        Places the rich-frontmatter fixture at docs/brand.md so it matches the
+        CORPUS "docs/brand.md" entry and the embed texts include the semantic prefix.
+        """
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        fixture_src = FIXTURES_DIR / "rich_frontmatter.md"
+        # Use docs/brand.md — a CORPUS-matched path
+        (docs / "brand.md").write_text(
+            fixture_src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        def fake_db_session():
+            yield self._make_mock_session(mock_doc=None)
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024, [0.2] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            main(["--brain-path", str(tmp_path)])
+
+        assert mock_embed.embed_batch.called
+        # Collect all embed texts across all embed_batch calls
+        all_embed_texts: list[str] = []
+        for call in mock_embed.embed_batch.call_args_list:
+            all_embed_texts.extend(call[0][0])
+        # At least one embed text must start with the semantic prefix from the
+        # rich frontmatter fixture (MEMORY.md has no frontmatter so no prefix)
+        prefixed = [
+            t for t in all_embed_texts
+            if t.startswith("type:") or t.startswith("title:")
+        ]
+        assert len(prefixed) > 0, (
+            f"Expected at least one embed text with semantic prefix, "
+            f"got: {all_embed_texts[:3]}"
+        )
+
+    def test_no_frontmatter_doc_still_indexes(self, tmp_path):
+        """A doc without frontmatter fields still indexes with defaults.
+
+        Uses docs/career.md — a CORPUS-matched single-file entry.
+        """
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        fixture_src = FIXTURES_DIR / "no_headers.md"
+        (docs / "career.md").write_text(
+            fixture_src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+
+        def fake_db_session():
+            yield self._make_mock_session(mock_doc=None)
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            main(["--brain-path", str(tmp_path)])
+
+        assert mock_embed.embed_batch.called

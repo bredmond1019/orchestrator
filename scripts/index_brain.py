@@ -23,6 +23,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import frontmatter
+
 # ---------------------------------------------------------------------------
 # Corpus definition: (relative-path-in-brain-repo, doc_type)
 # ---------------------------------------------------------------------------
@@ -47,7 +49,176 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# OKF controlled vocabularies (from docs/okf-frontmatter.md + D27)
+# ---------------------------------------------------------------------------
+_VALID_LAYERS: frozenset[str] = frozenset(
+    ["brain", "engine", "factory", "console", "surfaces"]
+)
+_VALID_PROJECTS: frozenset[str] = frozenset(
+    [
+        "python-orchestration",
+        "rag-engine-rs",
+        "claude-sdk-rs",
+        "workflow-engine-rs",
+        "bastion",
+        "markdown-engine-validator",
+        "price-scout",
+        "learn-ai",
+        "base-template",
+    ]
+)
+_VALID_STATUSES: frozenset[str] = frozenset(["active", "draft", "archived", "deprecated"])
+
 _HEADER_RE = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
+
+
+def parse_document(text: str) -> tuple[dict, str]:
+    """Parse YAML frontmatter from a markdown document.
+
+    Uses ``python-frontmatter`` to split the document into its metadata
+    dictionary and the body text with the YAML block stripped.  A document
+    with no frontmatter delimiter returns an empty metadata dict and the
+    original text unchanged.
+
+    Args:
+        text: Raw file contents, possibly starting with a YAML frontmatter block.
+
+    Returns:
+        A ``(metadata, body)`` tuple where ``body`` contains no YAML delimiters
+        or frontmatter fields.
+    """
+    post = frontmatter.loads(text)
+    return dict(post.metadata), post.content
+
+
+def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
+    """Normalise raw frontmatter metadata to the six OKF filterable fields.
+
+    Applies typed defaults, coerces bare strings to lists where the schema
+    expects lists, derives ``doc_id`` from the filename stem when absent, and
+    logs (never raises) out-of-vocabulary values.
+
+    Args:
+        meta:       Raw metadata dict returned by ``parse_document``.
+        file_path:  Absolute path to the source markdown file.
+        brain_path: Absolute path to the brain repo root (used for rel-path
+                    derivation only).
+
+    Returns:
+        A dict with keys: ``doc_id``, ``layer``, ``project``, ``status``,
+        ``keywords``, ``related``.  Values are ``None`` when absent, keeping
+        the DB columns nullable.
+    """
+    # doc_id: derive from filename stem when absent
+    doc_id: str | None = meta.get("doc_id") or meta.get("id") or None
+    if not doc_id:
+        doc_id = file_path.stem
+
+    # layer: coerce bare string → single-element list
+    raw_layer = meta.get("layer")
+    layer: list[str] | None = None
+    if raw_layer is not None:
+        if isinstance(raw_layer, str):
+            raw_layer = [raw_layer]
+        layer = [str(v) for v in raw_layer]
+        invalid = [v for v in layer if v not in _VALID_LAYERS]
+        if invalid:
+            logger.warning(
+                "Out-of-vocabulary layer value(s) in %s: %s",
+                file_path.relative_to(brain_path) if brain_path else file_path,
+                invalid,
+            )
+
+    # project: scalar string
+    project: str | None = meta.get("project") or None
+    if project and project not in _VALID_PROJECTS:
+        logger.warning(
+            "Out-of-vocabulary project value in %s: %s",
+            file_path.relative_to(brain_path) if brain_path else file_path,
+            project,
+        )
+
+    # status: scalar string
+    status: str | None = meta.get("status") or None
+    if status and status not in _VALID_STATUSES:
+        logger.warning(
+            "Out-of-vocabulary status value in %s: %s",
+            file_path.relative_to(brain_path) if brain_path else file_path,
+            status,
+        )
+
+    # keywords: list of strings
+    raw_keywords = meta.get("keywords")
+    keywords: list[str] | None = None
+    if raw_keywords is not None:
+        if isinstance(raw_keywords, str):
+            raw_keywords = [raw_keywords]
+        keywords = [str(v) for v in raw_keywords] or None
+
+    # related: list of strings (paths)
+    raw_related = meta.get("related")
+    related: list[str] | None = None
+    if raw_related is not None:
+        if isinstance(raw_related, str):
+            raw_related = [raw_related]
+        related = [str(v) for v in raw_related] or None
+
+    return {
+        "doc_id": doc_id,
+        "layer": layer,
+        "project": project,
+        "status": status,
+        "keywords": keywords,
+        "related": related,
+    }
+
+
+def build_context_prefix(meta: dict) -> str:
+    """Build a compact semantic context prefix to prepend to embed-text.
+
+    Includes only the semantic fields: ``type``, ``title``, ``description``,
+    ``layer``, ``project``, ``keywords``.  Excludes ``status``, ``doc_id``,
+    and ``related`` (non-semantic / relational metadata).  Returns an empty
+    string when no semantic fields are present.
+
+    The prefix is used *only* during embedding — it is never stored in the
+    ``content`` column.
+
+    Args:
+        meta: Raw metadata dict returned by ``parse_document``.
+
+    Returns:
+        A newline-terminated prefix string, or ``""`` if no semantic fields
+        are present.
+    """
+    parts: list[str] = []
+
+    if meta.get("type"):
+        parts.append(f"type: {meta['type']}")
+    if meta.get("title"):
+        parts.append(f"title: {meta['title']}")
+    if meta.get("description"):
+        parts.append(f"description: {meta['description']}")
+
+    layer = meta.get("layer")
+    if layer:
+        if isinstance(layer, str):
+            layer = [layer]
+        parts.append(f"layer: {', '.join(str(v) for v in layer)}")
+
+    if meta.get("project"):
+        parts.append(f"project: {meta['project']}")
+
+    keywords = meta.get("keywords")
+    if keywords:
+        if isinstance(keywords, str):
+            keywords = [keywords]
+        parts.append(f"keywords: {', '.join(str(v) for v in keywords)}")
+
+    if not parts:
+        return ""
+    return "\n".join(parts) + "\n\n"
 
 
 def _resolve_brain_path(raw: str) -> Path:
@@ -234,9 +405,12 @@ def main(argv: list[str] | None = None) -> None:
                             skipped_files += 1
                             continue
 
-            # Read and chunk
+            # Read, parse frontmatter, and chunk the body only (no YAML)
             raw_content = file_path.read_text(encoding="utf-8")
-            section_chunks = chunk_by_section(raw_content)
+            meta, body = parse_document(raw_content)
+            norm = normalize_metadata(meta, file_path, brain_path)
+            context_prefix = build_context_prefix(meta)
+            section_chunks = chunk_by_section(body)
 
             # Further split oversized chunks
             final_chunks: list[tuple[str, str]] = []
@@ -251,11 +425,14 @@ def main(argv: list[str] | None = None) -> None:
             if not final_chunks:
                 continue
 
+            # Stored content: clean chunk text (no YAML, no prefix)
             chunk_texts = [c[1] for c in final_chunks]
+            # Embed text: prefix + chunk (prefix is semantic context; not stored)
+            embed_texts = [context_prefix + c[1] for c in final_chunks]
 
             # Batch embed
             try:
-                embeddings = embedding_svc.embed_batch(chunk_texts)
+                embeddings = embedding_svc.embed_batch(embed_texts)
                 total_embeddings += len(embeddings)
             except Exception as embed_err:  # pylint: disable=broad-except
                 logger.error("Embedding failed for %s: %s", rel_str, embed_err)
@@ -281,6 +458,12 @@ def main(argv: list[str] | None = None) -> None:
                             content=chunk_text,
                             embedding=embedding,
                             indexed_at=datetime.now(),
+                            doc_id=norm["doc_id"],
+                            layer=norm["layer"],
+                            project=norm["project"],
+                            status=norm["status"],
+                            keywords=norm["keywords"],
+                            related=norm["related"],
                         )
                         session.add(doc)
                     session.commit()
