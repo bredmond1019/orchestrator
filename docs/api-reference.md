@@ -2416,8 +2416,9 @@ Adding a third corpus requires one entry in the module-level `_CORPUS_CONFIG` di
 
 ### `process(task_context: TaskContext) -> TaskContext`
 
-Reads `event.question` and `event.corpus` (defaults to `"content"`) from the task context,
-calls `retrieve()` with `k=5`, and writes the result:
+Reads `event.question`, `event.corpus` (defaults to `"content"`), and `event.filters`
+(via `getattr` defensive read, defaults to `None`) from the task context, calls `retrieve()`
+with `k=5` and `filters`, and writes the result:
 
 ```python
 task_context.update_node(node_name=self.node_name, result={"chunks": chunks})
@@ -2430,7 +2431,7 @@ output = task_context.get_node_output("RetrieveChunksNode")
 chunks = output["result"]["chunks"]
 ```
 
-### `retrieve(query, corpus="content", k=5, threshold=0.0) -> list[dict]`
+### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None) -> list[dict]`
 
 Public retrieval method. Embeds `query` via `EmbeddingService`, runs the two-stage pipeline,
 and returns up to `k` normalized chunk dicts sorted by fused score descending.
@@ -2443,6 +2444,7 @@ and returns up to `k` normalized chunk dicts sorted by fused score descending.
 | `corpus` | `str` | `"content"` | Target corpus: `"content"` or `"brain"`. |
 | `k` | `int` | `5` | Maximum number of chunks to return. |
 | `threshold` | `float` | `0.0` | Minimum fused score; chunks below are excluded. |
+| `filters` | `dict \| None` | `None` | Optional metadata filters (keyword-only). Applied only when the corpus declares `filter_fields`. See `DocumentQAEventSchema` for accepted keys. |
 
 **Return schema** — each element of the returned list contains:
 
@@ -2457,16 +2459,21 @@ and returns up to `k` normalized chunk dicts sorted by fused score descending.
 
 | Method | Description |
 |---|---|
-| `_semantic_search(vector, corpus, limit)` | Stage 1: pgvector cosine-distance query. Isolated for unit-test patching without a live DB. |
-| `_keyword_search(query, candidate_ids, corpus)` | Stage 2: ILIKE match scoped to candidate IDs. Query terms are stripped of non-word characters before ILIKE matching (e.g. `"RAG?"` → `"RAG"`). Returns a `set` of matching IDs. Isolated for unit-test patching. |
+| `_semantic_search(vector, corpus, limit, filters=None)` | Stage 1: pgvector cosine-distance query. Accepts optional `filters` dict; when present and the corpus declares `filter_fields`, delegates to `_apply_metadata_filters` before executing. Isolated for unit-test patching without a live DB. |
+| `_keyword_search(query, candidate_ids, corpus)` | Stage 2: ILIKE match scoped to candidate IDs. Query terms are stripped of non-word characters before ILIKE matching (e.g. `"RAG?"` → `"RAG"`). For the `"brain"` corpus, also ORs in `func.array_to_string(keywords, " ").ilike(f"%{term}%")` per `keyword_extra_fields` config — a query term present only in the `keywords` column still earns the keyword boost. Returns a `set` of matching IDs. Isolated for unit-test patching. |
+| `_apply_metadata_filters(query, model, filters, filter_fields)` | Module-level helper. Translates `{field: value}` pairs to SQLAlchemy WHERE clauses: scalar fields use `col == value`; array fields (e.g. `layer`) use `.overlap([value])`. Applied inside `_semantic_search`; extracted to keep `_semantic_search` under the pylint locals limit and to make filter logic independently testable. |
 | `_fuse_and_rank(candidates, keyword_ids, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. No DB calls. |
 
 ### Test coverage
 
-`tests/workflows/test_retrieve_chunks_node.py` — 23 tests covering: score ordering,
+`tests/workflows/test_retrieve_chunks_node.py` — 32 tests covering: score ordering,
 keyword boost, section-title 2x weight, threshold filtering, top-k, NaN safety,
 corpus `"brain"` threading, TaskContext output contract (`{"result": {"chunks": [...]}}` shape),
-exact score formula verification, and punctuation stripping in keyword terms.
+exact score formula verification, punctuation stripping in keyword terms, `filters` forwarding
+from event through `process()` → `retrieve()` → `_semantic_search()`, defensive `getattr`
+fallback when event has no `filters` attribute, brain corpus ORing the `keywords` column in
+keyword search, content corpus query unchanged by new config, and scalar-filter exclusion of
+non-matching rows.
 
 ---
 
@@ -3163,12 +3170,14 @@ session without generating an id client-side.
 | `question` | `str` | Yes | — | The user question text. |
 | `session_id` | `UUID` | No | `uuid4()` | Q&A session identifier; a new UUID is generated if absent (new session). |
 | `corpus` | `str` | No | `"content"` | Corpus to retrieve from: `"content"` (content_chunks) or `"brain"` (brain_documents). |
+| `filters` | `dict \| None` | No | `None` | Optional metadata filters for `"brain"` corpus retrieval. Accepted keys: `"project"` (scalar), `"layer"` (array overlap), `"status"` (scalar). Omitting or passing `None` reproduces current behavior exactly; ignored for `"content"` corpus. |
 
 ### Validation
 
-All four fields accept their Python-native types; Pydantic coerces UUID strings automatically.
+All five fields accept their Python-native types; Pydantic coerces UUID strings automatically.
 A missing `doc_id` or `question` raises a `ValidationError`. `corpus` is not constrained by the
-schema — the `RetrieveChunksNode` corpus dispatch handles unknown values.
+schema — the `RetrieveChunksNode` corpus dispatch handles unknown values. `filters` keys that are
+not declared in `filter_fields` for the target corpus are silently ignored.
 
 ---
 
