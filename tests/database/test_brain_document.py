@@ -71,6 +71,12 @@ class TestSchema:
             "indexed_at",
             "client_slug",
             "workflow_patterns",
+            "doc_id",
+            "layer",
+            "project",
+            "status",
+            "keywords",
+            "related",
         }
         assert expected <= columns
 
@@ -101,6 +107,36 @@ class TestSchema:
 
     def test_workflow_patterns_is_nullable(self):
         assert BrainDocument.__table__.columns["workflow_patterns"].nullable is True
+
+    def test_doc_id_is_nullable(self):
+        assert BrainDocument.__table__.columns["doc_id"].nullable is True
+
+    def test_layer_is_nullable(self):
+        assert BrainDocument.__table__.columns["layer"].nullable is True
+
+    def test_project_is_nullable(self):
+        assert BrainDocument.__table__.columns["project"].nullable is True
+
+    def test_status_frontmatter_is_nullable(self):
+        assert BrainDocument.__table__.columns["status"].nullable is True
+
+    def test_keywords_is_nullable(self):
+        assert BrainDocument.__table__.columns["keywords"].nullable is True
+
+    def test_related_is_nullable(self):
+        assert BrainDocument.__table__.columns["related"].nullable is True
+
+    def test_doc_id_is_string_type(self):
+        col = BrainDocument.__table__.columns["doc_id"]
+        assert isinstance(col.type, String)
+
+    def test_project_is_string_type(self):
+        col = BrainDocument.__table__.columns["project"]
+        assert isinstance(col.type, String)
+
+    def test_status_frontmatter_is_string_type(self):
+        col = BrainDocument.__table__.columns["status"]
+        assert isinstance(col.type, String)
 
     def test_indexed_at_is_datetime(self):
         assert isinstance(BrainDocument.__table__.columns["indexed_at"].type, DateTime)
@@ -138,6 +174,12 @@ class TestRoundTrip:
         fetched = repo.get(doc.id)
         assert fetched.client_slug is None
         assert fetched.workflow_patterns is None
+        assert fetched.doc_id is None
+        assert fetched.layer is None
+        assert fetched.project is None
+        assert fetched.status is None
+        assert fetched.keywords is None
+        assert fetched.related is None
 
     def test_round_trip_preserves_embedding_length(self, repo):
         doc = _make_brain_doc()
