@@ -7,7 +7,7 @@ status: draft
 
 # Task Spec — Phase 1, Block B (Frontmatter Indexer Enrich)
 
-**Status:** Not started · **Last run:** never
+**Status:** Done · **Last run:** 2026-06-25
 
 ## Goal
 Make `index_brain.py` parse frontmatter once per file, strip the YAML from the embedded body, build a metadata context-prefix prepended to each chunk's embed-text (not stored), and persist the parsed fields into six new nullable `BrainDocument` columns via an Alembic migration.
