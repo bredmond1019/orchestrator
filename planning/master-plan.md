@@ -65,7 +65,8 @@ ordering; they are owned here.
 
 | Brain block | Wave | Orchestrator work (this repo) | Status |
 |---|---|---|---|
-| **B** | 0 | Semantic Brain over the company-brain corpus — populate the store, confirm `"brain"`-corpus Q&A (**absorbs Project F**) | Not started (retrieval shipped in Project D; population pending) |
+| **T** | 0 | Enriched OKF frontmatter — `index_brain.py` parse/strip/enrich, `BrainDocument` columns + migration, retrieval keyword-boost + filters (**gates B**) | Not started |
+| **B** | 0 | Semantic Brain over the company-brain corpus — populate the store, confirm `"brain"`-corpus Q&A (**absorbs Project F**) | Not started (retrieval shipped in Project D; population pending; now gated by T) |
 | **O** | 0 | Widen the index corpus to all sub-repo `planning/` + `CLAUDE.md` | Not started |
 | **J** | 0 | Brain freshness loop — auto-reindex on commit (with the brain repo) | Not started |
 | **C** | 1 | Multi-workspace Brain — per-repo / per-client corpora (**Python half**; bastion does the graph-reader half) | Not started |
@@ -374,6 +375,34 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
+### Block T — Enriched OKF frontmatter (orchestrator half: indexer + model + retrieval)
+
+- **What:** Make `scripts/index_brain.py` parse frontmatter (reuse `python-frontmatter`), **strip** the
+  YAML from the embedded body, and bake a compact metadata context-prefix (`project`/`layer`/`type`/
+  `keywords`) into each chunk's embed-text while storing clean `content`. Add six nullable columns to
+  `BrainDocument` (`doc_id`, `layer`, `project`, `status`, `keywords`, `related`) + an Alembic migration.
+  Extend `retrieve_chunks_node` so the `"brain"` corpus keyword re-rank also matches `keywords` and an
+  optional `filters` arg scopes by `layer`/`project`/`status` (the `"content"` corpus is unchanged).
+- **Why:** Wave 0 — **gates Block B**. The first embedding `--rebuild` must run over enriched,
+  frontmatter-stripped docs, or the vectors are polluted (raw YAML) and under-enriched, and the Voyage
+  cost is paid twice. The schema is the shared contract the Console's graph layer also reads.
+- **Repo:** python-orchestration-system (this half) + the brain repo (the schema decision D27,
+  `docs/okf-frontmatter.md`, and the full doc backfill).
+- **Interfaces / contracts:** Consumes the frontmatter schema (brain D27); consumes the existing
+  `BrainDocument` model + corpus-dispatch contract. Produces the populated columns + enriched vectors the
+  retrieval path and the bastion graph layer read. No data-contract version bump (read path).
+- **Depends on:** The schema being settled (brain D27). Ship the model + migration + indexer atomically so
+  no write references a missing column.
+- **Out of scope:** The backfill of brain docs (brain repo). Running the embedding pass (that *is* Block
+  B). Code-corpus metadata (Block P). mev validation (future consumer).
+- **Acceptance criteria:** a fixture doc with frontmatter indexes with no raw YAML in `content`; text sent
+  to `embed_batch` starts with the prefix while stored `content` does not; the six columns populate on
+  insert and docs *without* the fields still index (defaults); `alembic upgrade head` applies; a `keywords`
+  hit earns the re-rank boost and `filters` scopes results; the `"content"` corpus path is unchanged; gate
+  holds (`uv run python -m pytest`, `ruff`, `pylint app/` 10.00/10).
+
+---
+
 ### Block B — Semantic Brain over the company-brain corpus (absorbs Project F)
 
 - **What:** Run `index_brain.py` to populate the pgvector store over the OKF brain corpus, and confirm
@@ -387,8 +416,9 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Interfaces / contracts:** Consumes the `BrainDocument` model + the `"brain"` corpus-dispatch
   contract already defined here. Produces a populated vector store the Console (`bastion`) and agents
   query. No data-contract version bump (read path only).
-- **Depends on:** Nothing hard — Project D shipped the retrieval; runs in parallel with bastion's
-  `knowledge_graph` block (graph reads files; this reads/writes Postgres).
+- **Depends on:** Block T (enriched frontmatter must land first so the one-time `--rebuild` embeds
+  enriched, frontmatter-stripped docs). Project D already shipped the retrieval; runs in parallel with
+  bastion's `knowledge_graph` block (graph reads files; this reads/writes Postgres).
 - **Out of scope:** MCP exposure of the Brain (Block R). Brain portability / multi-workspace (Block C).
   Any change to the retrieval algorithm. Answer-time grounding (Block L).
 - **Acceptance criteria:** `index_brain.py` populates the store over the live brain corpus; a known
