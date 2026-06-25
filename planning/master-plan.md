@@ -419,24 +419,27 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block J — Brain freshness loop (auto re-index on change)
+### Block J — Brain freshness loop (cron reindex + `bastion brain reindex`)
 
-- **What:** Make `index_brain.py` fire automatically on doc change instead of by hand — a git
-  post-commit hook (and/or a bastion-scheduled trigger) that runs the **existing incremental** indexer
-  over changed files only. The Engine still owns the write to pgvector (brain D25); the hook only
-  *triggers*.
+- **What:** Wire two triggers for `index_brain.py` — a **daily cron job** and a `bastion brain reindex`
+  convenience command — so the Brain stays current without manual CLI invocation. The incremental skip
+  logic already ships in Layer 1 (`indexed_at` vs. file `mtime`): a default run only re-embeds modified
+  files; `--rebuild` forces a full re-index. **No post-commit hooks** — sub-repo commits are frequent
+  SDLC commits, not meaningful doc changes; scoped to the brain corpus only.
 - **Why:** Wave 0 — today the indexer is a manual CLI, so the Brain silently goes stale between runs;
-  "self-updating" is currently false. Cheapest high-payoff fix in the extension.
-- **Repo:** Cross-repo — python-orchestration-system (the indexer trigger surface) + the brain repo
-  (the hook). Small.
+  "self-updating" is currently false. The incremental path is already built; this block is purely
+  wiring triggers. Cheapest high-payoff fix in the extension.
+- **Repo:** Cross-repo — python-orchestration-system (cron config + any runner script) + bastion (the
+  `bastion brain reindex` subcommand that shells out to `index_brain.py`).
 - **Interfaces / contracts:** Consumes the existing `BrainDocument` + corpus-dispatch contract and the
-  indexer's incremental-skip path (already shipped in Layer 1). No data-contract bump.
+  indexer's already-shipped incremental-skip path (`indexed_at` vs. mtime). No data-contract bump.
 - **Depends on:** Block B (a populated store to keep fresh).
-- **Out of scope:** Real-time streaming index. Re-embedding the whole corpus on every change (use the
-  incremental path). Multi-knowledge-dir scheduling (Block C handles portability).
-- **Acceptance criteria:** committing a changed brain doc results in that doc's chunks being re-indexed
-  without a manual command; unchanged files are skipped (incremental path proven); the orchestrator
-  gate holds; a test covers the change-detection → re-index trigger.
+- **Out of scope:** Post-commit hooks on sub-repos (too noisy — SDLC sessions commit constantly).
+  Real-time streaming index. Multi-knowledge-dir scheduling (Block C handles portability).
+- **Acceptance criteria:** a cron job runs `index_brain.py` on a daily schedule; `bastion brain reindex`
+  shells out to `index_brain.py` and surfaces the output; a run over an already-indexed, unchanged corpus
+  skips all files (incremental path confirmed); `--rebuild` forces a full re-index; both repos' gates
+  hold.
 
 ---
 
