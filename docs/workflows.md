@@ -293,6 +293,7 @@ The retrieval uses hybrid scoring: semantic similarity (Voyage embeddings) combi
 | `question` | string | yes | The user question |
 | `session_id` | UUID | no | Auto-generated; pass the same one to maintain conversation history |
 | `corpus` | `"content"` or `"brain"` | no (default: `"content"`) | `"brain"` queries the brain_documents corpus |
+| `filters` | dict | no | Optional metadata filters for `"brain"` corpus only. Accepted keys: `"layer"` (array overlap), `"project"` (scalar `==`), `"status"` (scalar `==`). Ignored for `"content"` corpus. |
 
 **Trigger (two-shot conversation):**
 

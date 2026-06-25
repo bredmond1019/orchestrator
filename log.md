@@ -10,6 +10,19 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-25 (close-out doc sweep for frontmatter specs)
+
+Patched developer reference docs after `frontmatter-indexer-enrich` and `frontmatter-retrieval-filters` shipped. Updated `docs/brain-rag.md` to clarify brain keyword OR-in (the `keywords` OKF column is ORed into Stage 2 keyword re-ranking) and added a new "Scoping retrieval with filters" subsection documenting the optional `filters` parameter with working curl example. Updated `docs/workflows.md` to add the `filters` field to the DOCUMENT_QA payload table with supported filter keys (`layer`, `project`, `status`). Updated `docs/app-architecture-overview.md` (line 163: expanded `BrainDocument` entry to detail the 6 new OKF columns + migration; line 249: test count bump 22→32 for `RetrieveChunksNode`, added brain keyword OR-in feature note and metadata filters feature summary; line 250: added `filters` field to `DocumentQAEventSchema` field list). No code changes — documentation-only close-out sweep to align developer reference with implemented features.
+
+```diff
+docs/app-architecture-overview.md | 7 ++++---
+docs/brain-rag.md                 | 21 ++++++++++++++++++++-
+docs/workflows.md                 |  1 +
+3 files changed, 25 insertions(+), 4 deletions(-)
+```
+
+---
+
 ### 2026-06-25 (frontmatter-retrieval-filters — Block C keyword-boost + metadata filters)
 
 Shipped the full `frontmatter-retrieval-filters` spec (2 tasks) in one pipeline pass: PASS on first review attempt. Extended `_CORPUS_CONFIG["brain"]` in `retrieve_chunks_node.py` with `"keyword_extra_fields": ["keywords"]` and `"filter_fields": {"layer": "array", "project": "scalar", "status": "scalar"}` — the `"content"` corpus entry is untouched. Added module-level `_apply_metadata_filters(query, model, filters, filter_fields)` helper that translates `{field: value}` pairs to WHERE clauses (scalar `==`, ARRAY `.overlap([value])`). Updated `_keyword_search` to OR-in `func.array_to_string(extra_col, " ").ilike(...)` per extra field per term; updated `_semantic_search` to accept and apply optional `filters: dict | None = None`; threaded `filters` from `process()` (via `getattr(event, "filters", None)`) through `retrieve()`. Added `filters: dict | None = Field(default=None)` to `DocumentQAEventSchema` so the filter surface is reachable end-to-end through the API. The `filters` parameter on `retrieve()` is keyword-only (via `*`) to satisfy pylint R0917; `max-args = 6` raised in `pyproject.toml`. Added 9 new tests across `TestProcess`, `TestKeywordExtraFields`, and `TestSemanticSearchFilters`; final count 755 passed + 8 skipped. Ruff clean, pylint 10.00/10. Docs patched: `docs/api-reference.md` (filters field, process()/retrieve()/_semantic_search()/_keyword_search()/_apply_metadata_filters descriptions, test count 23→32); `docs/app-architecture-overview.md` flagged NEEDS_REVIEW for the dense architecture timeline rows. Review: all 7 acceptance criteria MET, fresh gating checks all pass. Next: run `index_brain.py` against the actual brain corpus to populate the vector store (Block B population step), then Block O (corpus widening).
