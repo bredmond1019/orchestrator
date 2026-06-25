@@ -133,6 +133,13 @@ python scripts/index_brain.py --brain-path /path/to/agentic-portfolio
 
 Chunking is section-header-based (H2/H3 splits) so each chunk maps to a named section.
 
+**Frontmatter handling:** When a document contains an OKF YAML frontmatter block (delimited by `---`), the indexer:
+1. Parses the block with `parse_document()` and extracts the six OKF fields (`doc_id`, `layer`, `project`, `status`, `keywords`, `related`) via `normalize_metadata()`.
+2. Strips the frontmatter from `content` before storage — no `---` or field lines leak into the stored chunk text.
+3. Builds a semantic context prefix from the metadata (`type`, `title`, `description`, `layer`, `project`, `keywords`) via `build_context_prefix()` and prepends it to the text passed to `embed_batch` only — the stored `content` remains clean.
+
+Out-of-vocabulary `layer`/`project`/`status` values are logged as warnings and stored unchanged; they never raise. Documents without frontmatter fall back to safe defaults (`doc_id` derived from filename stem; other fields `null`).
+
 **Use this when:**
 - You've added or updated brain documents and want them searchable via `DOCUMENT_QA` with `corpus="brain"`
 - Before using the brain RAG layer for the first time

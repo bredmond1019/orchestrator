@@ -46,11 +46,17 @@ Each row is one section-level chunk of a brain document. The brain is indexed by
 | `file_path` | string | Relative path from brain root (e.g. `docs/career.md`) |
 | `doc_type` | string | Corpus category: `decision`, `project`, `career`, `brand`, `business`, `content`, `diagnostic`, `memory` |
 | `section` | string | H2/H3 header this chunk falls under |
-| `content` | text | Raw chunk text (up to ~500 tokens) |
+| `content` | text | Raw chunk text (up to ~500 tokens) — YAML frontmatter block is stripped before storage |
 | `embedding` | vector(1024) | Voyage AI `voyage-2` embedding |
 | `indexed_at` | datetime | When this chunk was last indexed |
 | `client_slug` | string (nullable) | Diagnostic client id — only for `doc_type="diagnostic"` |
 | `workflow_patterns` | ARRAY(string) (nullable) | Pattern tags from diagnostic docs |
+| `doc_id` | string (nullable) | OKF `id` frontmatter field; falls back to filename stem when absent |
+| `layer` | ARRAY(string) (nullable) | OKF `layer` frontmatter field (e.g. `["Brain", "Engine"]`); bare strings coerced to list |
+| `project` | string (nullable) | OKF `project` frontmatter field (controlled vocabulary; out-of-vocab values warn but are stored) |
+| `status` | string (nullable) | OKF `status` frontmatter field (e.g. `active`, `draft`, `archived`) |
+| `keywords` | ARRAY(string) (nullable) | OKF `keywords` frontmatter field; used in GIN-indexed search |
+| `related` | ARRAY(string) (nullable) | OKF `related` frontmatter field — `[[wikilink]]` targets for graph traversal |
 
 ---
 
