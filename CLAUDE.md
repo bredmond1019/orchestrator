@@ -5,6 +5,11 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 ## Before you start
 
 - **Strategic context:** `planning/context.md` (read first) → `planning/status.md` (current state)
+- **Role in Bastion:** this repo is the **Engine** + the **Python half of the Brain** of the brain's
+  primary program, Bastion. Cross-repo order + seams are authoritative in the brain
+  (`agentic-portfolio/planning/bastion-product/master-plan.md`); the local adoption + the new
+  Brain-side blocks are in `planning/master-plan.md` ("Role in Bastion" / "Bastion Program Blocks") and
+  `planning/decisions/D36-bastion-engine-brain-role.md`.
 - **Architecture reference:** `docs/app-architecture-overview.md`
 - **SDLC pipeline config:** `planning/harness.json` — the validation suite the SDLC engines run
   (the 8-check suite, now externalized via base-template's richer check kinds). This is the source of
@@ -19,7 +24,7 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 2. **Never hardcode a system prompt in Python.** All prompts are `.j2` files in `app/prompts/`, loaded via `PromptManager`.
 3. **`customer_care` is reference-only.** Do not extend it, add tests for it, or treat it as a pattern to modify. New workflows go alongside it.
 4. **New projects = new workflow directories.** Add `app/workflows/<name>_workflow.py` + `app/workflows/<name>_workflow_nodes/` + `app/schemas/<name>_schema.py`. Use `createworkflow` (see below).
-5. **Python stays Python.** Do not suggest Rust rewrites of any part of this repo. (Rust has a defined home elsewhere — the appliance shell — but never this orchestration core. See `planning/decisions/` D6, D17.)
+5. **Python stays Python; Rust is the Console.** Do not suggest Rust rewrites of any part of this repo. Rust (bastion, the Console) is a *separate Bastion layer* that reads this repo over HTTP/Postgres and never shares code with it — it harvests crates and observes; it never holds the orchestration core or any billable workflow. (See `planning/decisions/` D6, D17, **D36**; brain D24.)
 6. **Register every new workflow in both registries.** Add the enum member to `app/workflows/workflow_registry.py` AND add the corresponding event schema entry to `app/api/schema_registry.py`. Missing the second step causes the API dispatcher to 422 every request for that workflow. `tests/api/test_endpoint.py::TestSchemaRegistryCompleteness` enforces this automatically.
 7. **No deployment logic inside nodes.** This framework is the deployment-agnostic *brain* — it must not know where it runs. The two things that vary by deployment are **injected, never hardcoded**: model choice (per-node `model_provider` config) and persistence (always via `GenericRepository`). The first `if running_locally:` inside a node means two products have started being built. Keep deployment decisions in config and in the shell, never here. (See `planning/decisions/` D16, D18.)
 8. **The eval rubric, the validator, the test-runner, and any consolidation prompt are human-owned gates.** If self-improving / agent-contribution features are ever built, agents may *propose* changes to these by PR but never self-approve them, and never author-and-deploy new node code without human review. (See `planning/decisions/` D20. Not in scope until a node library exists to compose over — Phase 3+.)
