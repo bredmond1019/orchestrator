@@ -32,6 +32,7 @@ Developer reference for the orchestration framework. Start here, then open the d
 |---|---|
 | [claude-agent-sdk.md](claude-agent-sdk.md) | Complete Python API reference for the Claude Agent SDK — `query()`, `ClaudeSDKClient`, tool definitions, MCP servers, permissions, hooks, and all message/config types. |
 | [voyage_ai.md](voyage_ai.md) | Voyage AI Python client reference — API key setup, embedding models (`voyage-4-large`), rerankers, tokenization, async requests, and a quickstart RAG tutorial. |
+| [logfire.md](logfire.md) | Logfire observability — instrumentation setup (FastAPI + Celery + pydantic-ai extras), structured logging in nodes, and SQL query patterns for Project H eval work. |
 
 ## Architecture review — how each core abstraction works
 
