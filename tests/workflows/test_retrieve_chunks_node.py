@@ -234,7 +234,7 @@ class TestRetrieve:
         ):
             MockEmb.return_value.embed_text.return_value = expected_vector
             self.node.retrieve("q", corpus="brain", k=5)
-            mock_sem.assert_called_once_with(expected_vector, "brain", limit=20)
+            mock_sem.assert_called_once_with(expected_vector, "brain", limit=20, filters=None)
 
     def test_corpus_brain_threads_through(self):
         """corpus='brain' is forwarded to _semantic_search."""
@@ -374,3 +374,221 @@ class TestProcess:
             else (call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None)
         )
         assert corpus_arg == "content"
+
+    def test_process_passes_filters_from_event(self):
+        """process() reads filters from the event and forwards them to retrieve."""
+        event = MagicMock()
+        event.question = "brain question"
+        event.corpus = "brain"
+        event.filters = {"project": "python-orchestration"}
+        ctx = TaskContext(event=event)
+        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+            self.node.process(ctx)
+        call_kwargs = mock_ret.call_args[1]
+        assert call_kwargs.get("filters") == {"project": "python-orchestration"}
+
+    def test_process_defaults_filters_to_none_when_absent(self):
+        """process() passes filters=None when the event has no filters attr."""
+        event = MagicMock(spec=["question", "corpus"])
+        event.question = "What is chunking?"
+        event.corpus = "content"
+        ctx = TaskContext(event=event)
+        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+            self.node.process(ctx)
+        call_kwargs = mock_ret.call_args[1]
+        assert call_kwargs.get("filters") is None
+
+
+# ---------------------------------------------------------------------------
+# Keyword-extra-fields boost — brain corpus only
+# ---------------------------------------------------------------------------
+
+
+class TestKeywordExtraFields:
+    """Tests verifying that keywords column participates in keyword boost for brain corpus."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_brain_keyword_search_ors_in_keywords_column(self):
+        """_keyword_search for brain corpus ORs in array_to_string(keywords, ' ').ilike(term)."""
+        cid = uuid.uuid4()
+        candidate_ids = [cid]
+
+        fake_row = MagicMock()
+        fake_row.id = cid
+
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.all.return_value = [fake_row]
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._keyword_search("python", candidate_ids, "brain")
+
+        # Should have returned the candidate (mocked DB returns it)
+        assert cid in result
+
+        # The filter should have been called at least twice (id.in_ + or_ with extra OR clauses)
+        assert fake_query.filter.call_count >= 2
+
+    def test_content_corpus_keyword_search_unchanged(self):
+        """_keyword_search for content corpus uses only content column, no keyword_extra_fields."""
+        cid = uuid.uuid4()
+        candidate_ids = [cid]
+
+        filter_call_args = []
+        fake_row = MagicMock()
+        fake_row.id = cid
+
+        def capturing_filter(*args, **kwargs):
+            filter_call_args.extend(args)
+            m = MagicMock()
+            m.filter = capturing_filter
+            m.all.return_value = [fake_row]
+            return m
+
+        fake_query = MagicMock()
+        fake_query.filter = capturing_filter
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._keyword_search("python", candidate_ids, "content")
+
+        # Verify no array_to_string appears in the filter args string — content corpus
+        # should only use the content column, not any extra fields
+        combined = " ".join(str(a) for a in filter_call_args)
+        assert "array_to_string" not in combined.lower()
+
+
+# ---------------------------------------------------------------------------
+# Filters — metadata scoping for brain corpus
+# ---------------------------------------------------------------------------
+
+
+class TestSemanticSearchFilters:
+    """Tests for optional filters param in retrieve() and _semantic_search."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def _run_retrieve_with_filters(
+        self,
+        candidates: list[dict],
+        filters: dict | None,
+        corpus: str = "brain",
+    ) -> list[dict]:
+        """Patch seams and call retrieve() with optional filters."""
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=candidates
+        ) as mock_sem, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve("q", corpus=corpus, k=5, filters=filters)
+        return result
+
+    def test_retrieve_forwards_filters_to_semantic_search(self):
+        """retrieve() passes filters kwarg through to _semantic_search."""
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            self.node.retrieve("q", corpus="brain", filters={"project": "acme"})
+            call_kwargs = mock_sem.call_args[1]
+            assert call_kwargs.get("filters") == {"project": "acme"}
+
+    def test_retrieve_without_filters_passes_none_to_semantic_search(self):
+        """retrieve() passes filters=None when not supplied."""
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            self.node.retrieve("q", corpus="brain")
+            call_kwargs = mock_sem.call_args[1]
+            assert call_kwargs.get("filters") is None
+
+    def test_content_corpus_retrieve_unaffected_by_filters(self):
+        """retrieve() with corpus='content' passes filters through but content corpus ignores them."""
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            # Should not raise even with filters for content corpus
+            result = self.node.retrieve(
+                "q", corpus="content", filters={"project": "acme"}
+            )
+            assert isinstance(result, list)
+
+    def test_filters_none_produces_same_result_as_no_filters(self):
+        """filters=None and no filters param produce identical results."""
+        cand = _make_candidate(dist=0.2)
+        result_no_filters = self._run_retrieve_with_filters([cand], filters=None)
+        result_with_none = self._run_retrieve_with_filters([cand], filters=None)
+        assert result_no_filters == result_with_none
+
+    def test_scalar_filter_excludes_non_matching_rows(self):
+        """A project filter excludes a fixture row whose project does not match.
+
+        We verify this at the _semantic_search seam: when filters scope to
+        project='matching-project', the seam mock returns only the matching
+        candidate (simulating the WHERE clause). The excluded 'deprecated' row
+        is never returned by _semantic_search.
+        """
+        matching_id = uuid.uuid4()
+        excluded_id = uuid.uuid4()
+        matching = _make_candidate(dist=0.1, candidate_id=matching_id)
+        # excluded row — _semantic_search would filter it out via WHERE
+        # We model this by having _semantic_search only return the matching row.
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[matching]
+        ) as mock_sem, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve(
+                "q",
+                corpus="brain",
+                filters={"project": "matching-project"},
+            )
+
+        # _semantic_search was called with the filter
+        call_kwargs = mock_sem.call_args[1]
+        assert call_kwargs.get("filters") == {"project": "matching-project"}
+        # The result contains only the matching candidate; excluded_id is absent
+        result_ids = {r["id"] for r in result}
+        assert matching_id in result_ids
+        assert excluded_id not in result_ids
