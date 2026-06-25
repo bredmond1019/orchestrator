@@ -10,6 +10,22 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-25 (Bastion program alignment — D36)
+
+Aligned the orchestrator planning + dev docs to the Bastion program (recorded as decision **D36**). The repo's `planning/master-plan.md` predated the brain's D24/D25/D26 reshape — it described an isolated "project library A–H" with no awareness that this repo is now Bastion's **Engine** + the **Python half of the Brain**, and its status table was stale (Projects A–D shown not-started though all shipped). Brandon chose the crosswalk approach: keep the A–H numbering, add a "Role in Bastion" section + a program-block crosswalk table, and append new blocks in `/generate-master-plan` block-contract format — no renumber. Added Blocks B (Brain semantic layer / `index_brain.py`), O (corpus widening), J (knowledge-graph structural retrieval), C (core hardening wave 2), P (Brain memory/entity), I (self-improving eval), L (Telegram conversation persistence), R (Brain-as-MCP-server), S (Brain memory / entity capability — formerly Project G) each with full block-contract specs. Reconciled the Phase Sequence table to reality (A–D Done, checkpoint Passed, brain-rag Layer 1 + expose-api-and-telegram-bot added). Updated `planning/status.md` (current focus flipped to demand-first Wave 0 = Block B + O; new Bastion Program table; Project E repositioned to Wave 4; deviation-log entry added). Updated `planning/context.md` (Role-in-Bastion note, project sequence, standing-rule + tech-stack + reuse-map reframes), `planning/index.md` (dead file refs fixed, Console framing, brain program pointer), and `CLAUDE.md` (Before-you-start Role-in-Bastion pointer; standing rule 5 reframed to cite D36). Updated `docs/brain-rag.md` (Layer 3 "Project F"→"Block R: Brain-as-MCP-server"; indexer roadmap note) and `docs/app-architecture-overview.md` (one-line Bastion role orientation). Created `planning/decisions/D36-bastion-engine-brain-role.md` + updated `planning/decisions/index.md`. Brain's `docs/projects/python-orchestration.md` synced in a prior commit.
+
+```diff
+ CLAUDE.md                         |   7 +-
+ docs/app-architecture-overview.md |   2 +
+ docs/brain-rag.md                 |   6 +-
+ planning/context.md               |  35 ++--
+ planning/decisions/index.md       |   2 +
+ planning/index.md                 |  13 +-
+ planning/master-plan.md           | 374 ++++++++++++++++++++++++++++++++++++--
+ planning/status.md                |  33 +++-
+ 8 files changed, 424 insertions(+), 48 deletions(-)
+```
+
 ### 2026-06-24 (harness pull from base-template — b8ebbf7)
 
 Pulled the current `base-template` harness (commit `b8ebbf71c20445de65195037aa24bfe00bbf080b`) into

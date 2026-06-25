@@ -48,6 +48,7 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided �
 | D33 | No deployment logic inside nodes — workflow logic only; deployment concerns injected at harness layer | [D33-deployment-agnostic-nodes.md](D33-deployment-agnostic-nodes.md) |
 | D34 | No hardcoded prompts — all prompts in .j2 files via PromptManager | [D34-jinja2-prompts.md](D34-jinja2-prompts.md) |
 | D35 | Top-tier models first, then introduce local/open-weight via Project H | [D35-top-tier-models.md](D35-top-tier-models.md) |
+| D36 | This repo is Bastion's Engine + Python-half-of-Brain; adopt the program plan (F≡Block B, G≡Block S; add Brain blocks O/J/C/P/L/R + cost-control I; demand-first; keep A–H) | [D36-bastion-engine-brain-role.md](D36-bastion-engine-brain-role.md) |
 
 ---
 
@@ -56,5 +57,6 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided �
 - **D14–D25** — Company Brain product architecture (retained as technical reference; superseded as primary goal by D26/brain D1).
 - **D26** — goal revised to a solo contracting practice (stub; canonical record in brain D1).
 - **D27–D35** — OKF adoption, execution state, data contract, and orchestrator implementation conventions.
+- **D36** — adopts the brain's Bastion program (D24/D25/D26): this repo is the Engine + Python-half-of-Brain; reframes Projects F/G and adds the Brain-side program blocks. Cross-repo order is authoritative in the brain.
 
 *To add a decision: create the next `D{N}-<kebab>.md` with `type: Decision` frontmatter and the what / why / rejected body, then append a row above. To reverse one: add a new decision superseding it by number; leave the original intact.*

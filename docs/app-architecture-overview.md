@@ -17,6 +17,8 @@ This codebase is a **production-ready event-driven AI pipeline framework**. It i
 
 The mental model: **this is the scaffold, not the content**. Every project in the learning plan is a new workflow you build using these building blocks.
 
+In the Bastion program this repo is the **Engine** (the workflow runtime below) + the **Python half of the Brain** (`brain-rag` — see `docs/brain-rag.md`); the Console (`bastion`, Rust) is a separate layer that reads it over HTTP/Postgres. Planning lives in `planning/master-plan.md` ("Role in Bastion") and `planning/decisions/D36-bastion-engine-brain-role.md`.
+
 ---
 
 ## Architecture Diagram

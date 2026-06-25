@@ -26,6 +26,15 @@ All system prompts live in `app/prompts/*.j2`, loaded by `PromptManager` — nev
 For strategic context (practice goals, positioning, narrative):
 see `agentic-portfolio/docs/career.md` and `agentic-portfolio/docs/brand.md`.
 
+**Role in Bastion (the primary program).** This repo is **two of Bastion's five layers**: the
+**Engine** (where the LLM/agent workflows run) and the **Python half of the Brain** (`brain-rag` —
+semantic retrieval, indexing, the memory/entity store). Bastion is the brain's now-primary program
+(Brain · Engine · Factory · Console · Surfaces), sequenced demand-first. The cross-repo order and the
+seams between repos are authoritative in the brain — `agentic-portfolio/planning/bastion-product/`
+(governed by brain D24/D25/D26; adopted locally as **D36**). The Console (`bastion`, Rust) is a
+*separate* layer that reads this repo over HTTP/Postgres and never shares code with it. See
+`master-plan.md` → "Role in Bastion" + "Bastion Program Blocks" for what this entails here.
+
 ---
 
 ## Document Map
@@ -46,15 +55,19 @@ see `agentic-portfolio/docs/career.md` and `agentic-portfolio/docs/brand.md`.
 
 ## Project Sequence (names only)
 
-**Phase 0 — Foundation:** Block A (presence + codebase ownership) · Block B (Mac Mini harness) · Block C (test infra + 4 bugs fixed) · Block D (shared services + scaffold)
+**Phase 0 — Foundation:** Block A (presence + codebase ownership) · Block B (Mac Mini harness) · Block C (test infra + 4 bugs fixed) · Block D (shared services + scaffold) — *all Done except Block A personal tasks + the private Tailscale face.*
 
-**Phase 1 — Sellable Competence:** Project A (content pipeline — Done) · Project B (research agent) · Project C (proposal generator) · Project D (document Q&A + RAG) → competence checkpoint after D
+**Phase 1 — Sellable Competence:** Project A (content pipeline) · Project B (research agent, thin cut) · Project C (proposal generator) · Project D (document Q&A + RAG) — **all Done; competence checkpoint passed 2026-06-23.**
 
-**Phase 2 — Depth:** Projects E (specialization), F (semantic search), H (model eval harness) · Project G (agent memory — differentiating capstone)
+**Supporting:** brain-rag Layer 1 (BrainDocument + `index_brain.py`) · expose-api-and-telegram-bot — both Done.
 
-**Parallel:** Rust appliance shell (`bastion`) — personal ops CLI that monitors this framework
+**Phase 2 — Depth:** Project E (specialization / ParallelNode merge) · Project F (semantic search → **the Brain semantic layer ≡ Block B**, D36) · Project H (model eval harness) · Project G (agent memory → **the Brain memory/entity capability ≡ Block S**, D36).
 
-Full phase/project detail in `master-plan.md`. Full technical spec per project in `plans/` and `decisions/`.
+**Bastion program blocks (this repo's Engine + Brain work):** B (semantic Brain) · O (widen corpus) · J (freshness loop) · C (multi-workspace, Python half) · P (semantic code search) · I (abort + budget gate, Python half) · L (answer-time grounding) · R (Brain-as-MCP-server). Sequenced demand-first per the brain wave table.
+
+**Parallel:** Console — `bastion` (Rust) — Bastion's control layer; reads this Engine over HTTP/Postgres, never shares code (D36).
+
+Full phase/project + block detail in `master-plan.md` (the project library + "Bastion Program Blocks"). Full technical spec per project in `plans/` and `decisions/`. Demand-first cross-repo order: `agentic-portfolio/planning/bastion-product/master-plan.md`.
 
 ---
 
@@ -65,7 +78,7 @@ Full phase/project detail in `master-plan.md`. Full technical spec per project i
 3. **No deployment logic inside nodes.** Model choice and persistence are injected via config. *(D33)*
 4. **`customer_care` is reference-only.** Do not extend it or add tests for it. New workflows go alongside it. *(CLAUDE.md)*
 5. **Top-tier models first; measure before switching to local.** Project H owns that measurement. *(D35)*
-6. **Python stays Python.** Rust has a defined home (bastion). Never rewrite orchestration core in Rust. *(CLAUDE.md)*
+6. **Python stays Python; Rust is the Console.** This repo is the Engine + Python-half-of-Brain; bastion (Rust) is a separate layer that reads it over HTTP/Postgres. Never rewrite any orchestration core in Rust. *(D36; brain D24; CLAUDE.md)*
 
 ---
 
@@ -101,14 +114,14 @@ Full phase/project detail in `master-plan.md`. Full technical spec per project i
 | `Peer` / `AgentEpisode` / `SemanticMemory` models (multi-peer) | G | client memory patterns |
 | Eval harness + per-node routing config | H | every node's `model_provider` |
 | Clean documented HTTP API | Phase 0 / D | every shell + agent client |
-| Rust appliance shell | bastion (parallel track) | see `agentic-portfolio/docs/projects/bastion.md` |
+| Console — `bastion` (Rust) | bastion (parallel layer) | see `agentic-portfolio/docs/projects/bastion.md` |
 
 ### Tech Stack
 
 | Concern | Tool | Notes |
 |---|---|---|
-| Language (brain) | Python 3.12+ | Primary; deployment-agnostic |
-| Language (SMB shell) | Rust | Single binary in bastion; clap, optionally ratatui |
+| Language (Engine + Brain) | Python 3.12+ | Primary; deployment-agnostic |
+| Language (Console) | Rust | Single binary in bastion; clap, ratatui — separate layer, never shares code *(D36)* |
 | Framework | This orchestration system | Workflow, Node, TaskContext, AgentNode |
 | AI (agents) | Claude via pydantic-ai | `ModelProvider.ANTHROPIC` |
 | AI (tool loop) | `anthropic` SDK directly | Project B only — learn the loop by hand |
@@ -135,8 +148,8 @@ Three completed portfolio Rust projects serve as implementation references. Pyth
 | Project | What it demonstrates | Most relevant to |
 |---|---|---|
 | `rag-engine-rs` | Two-stage hybrid retrieval (semantic + keyword re-rank), bounded-concurrency embedding pipeline, Ollama local inference, pgvector via Diesel. 19 tests, CI clean. | **Project D** `RetrieveChunksNode` two-stage pattern; `EmbeddingService` concurrency model |
-| `claude-sdk-rs` | Typed async Rust SDK: `Config` → CLI flag mapping, `QueryBuilder`, streaming via `futures::Stream`, session continuity (`--resume`), structured error codes. v2.0.0 on crates.io, 149 tests. | **Rust appliance shell** CLI interaction model |
-| `workflow-engine-rs` | Compile-time-validated workflow graphs, multi-transport MCP client (HTTP/WS/stdio), real tiktoken token counting, Handlebars prompt templating. 717 tests, zero clippy warnings. | **Future MCP integration**; **Rust appliance shell** workspace structure |
+| `claude-sdk-rs` | Typed async Rust SDK: `Config` → CLI flag mapping, `QueryBuilder`, streaming via `futures::Stream`, session continuity (`--resume`), structured error codes. v2.0.0 on crates.io, 149 tests. | **Console (`bastion`)** CLI interaction model; harvested local-model spine |
+| `workflow-engine-rs` | Compile-time-validated workflow graphs, multi-transport MCP client (HTTP/WS/stdio), real tiktoken token counting, Handlebars prompt templating. 717 tests, zero clippy warnings. | **Block R MCP client** (vendored into bastion); **Console** workspace structure |
 
 ### Red Flags
 

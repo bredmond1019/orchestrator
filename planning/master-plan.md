@@ -1,7 +1,7 @@
 ---
 type: Plan
 title: Python Orchestration System — Master Plan
-description: Phase sequence, full project library (A–H), Diagnostic relationship, standing rules, and links to brain for business/career context.
+description: Phase sequence, full project library (A–H), this repo's role as Bastion's Engine + Python-half-of-Brain, the program-block crosswalk, the Diagnostic relationship, and standing rules.
 ---
 
 # Python Orchestration System — Master Plan
@@ -21,25 +21,90 @@ Stack: FastAPI · Celery · Redis · PostgreSQL + pgvector · Voyage AI embeddin
 
 ---
 
+## Role in Bastion (the primary program)
+
+This repo is **two of Bastion's five layers**: the **Engine** (where the LLM/agent workflows run) and
+the **Python half of the Brain** (`brain-rag` — semantic retrieval, indexing, the memory/entity
+store). Bastion is the brain's now-primary program — the five-layer practice OS (Brain · Engine ·
+Factory · Console · Surfaces) — sequenced **demand-first**. The cross-repo program plan, its block
+order, and the seams between repos are authoritative in the **brain**, not here:
+
+- Program roadmap + demand-first wave table — `agentic-portfolio/planning/bastion-product/master-plan.md`
+- Naming + layer-ownership rule — `agentic-portfolio/planning/bastion-product/ownership.md`
+- System architecture — `agentic-portfolio/planning/bastion-product/architecture.md`
+- Governing decisions — brain **D24** (Python/Rust seam), **D25** (read-only state, triggered
+  mutations), **D26** (Bastion-the-system naming, demand-first, F≡B unification, MCP server/client
+  split, code-aware Brain, memory as a Brain capability). Adopted locally as **D36**.
+
+**The seam (brain D24).** Python owns where the LLM/embedding ecosystem lives — agent loops,
+embeddings, RAG, prompt iteration. **Every client deliverable ships as a Python workflow here.** Rust
+(the Console, `bastion`) owns deployment, validation, protocol, and structure, and *harvests* tested
+crates from `workflow-engine-rs` / `claude-sdk-rs`. The two never share code; Rust never holds the
+billable work. This is the long-standing "Python stays Python" rule (D6/D33), now stated as a layer
+boundary.
+
+**What that means for this plan.** The project library (A–H) below is unchanged in identity — it is
+still how this repo's work is numbered and referenced across `status.md`, `decisions/`, and
+`CLAUDE.md`. Two reframings and a set of new Brain-side blocks land on top of it (brain D26 / local
+D36):
+
+- **Project F ≡ the Brain semantic layer** (brain-program **Block B**) — semantic search over the
+  corpus *is* the Brain's semantic retrieval; the two are one thing now, not a late Phase-2 extra.
+- **Project G ≡ the Brain's memory/entity capability** (brain-program **Block S**) — clients,
+  companies, products, and SOPs become first-class **entities**; the memory store is Brain data.
+- **New Brain-side blocks** (O, J, C, P, L, R) and the **Python half of cost-control** (I) are added
+  in the [Bastion Program Blocks](#bastion-program-blocks-engine--brain) section, in the brain's
+  block-contract format.
+
+### Program-block crosswalk
+
+How the brain's program blocks map to this repo's work and the **demand-first wave** they sit in
+(authoritative order lives in the brain wave table — this is the legibility bridge, not a second
+source of truth). Orchestrator Projects E and H appear in the brain table only for cross-repo
+ordering; they are owned here.
+
+| Brain block | Wave | Orchestrator work (this repo) | Status |
+|---|---|---|---|
+| **B** | 0 | Semantic Brain over the company-brain corpus — populate the store, confirm `"brain"`-corpus Q&A (**absorbs Project F**) | Not started (retrieval shipped in Project D; population pending) |
+| **O** | 0 | Widen the index corpus to all sub-repo `planning/` + `CLAUDE.md` | Not started |
+| **J** | 0 | Brain freshness loop — auto-reindex on commit (with the brain repo) | Not started |
+| **C** | 1 | Multi-workspace Brain — per-repo / per-client corpora (**Python half**; bastion does the graph-reader half) | Not started |
+| **P** | 1 | Semantic code search — source as a corpus | Not started |
+| **I** | 2 | Cost control **Python half** — abort endpoint + server-side budget gate (bastion drives the CLI half) | Not started |
+| **S** | 3 | Entity / memory layer — clients as first-class entities (**Project G reframed**) | Not started |
+| **L** | 3 | Answer-time grounding — citation verify + abstain (**Project D hardening**) | Not started |
+| **R** | 4 | Brain-as-MCP-server — Python **server** half of the MCP split | Not started |
+| — (Project **E**) | 4 ✲ | ParallelNode merge fix (Project E core) | Not started |
+| — (Project **H**) | 4 | Model eval & routing harness (Project H) | Not started |
+
+---
+
 ## Phase Sequence
+
+*Status mirrors `status.md` (the source of truth). The demand-first wave order above re-sequences
+**when** the post-checkpoint work happens; the phase numbering below is preserved for continuity of
+reference.*
 
 | Phase | Block / Project | Status |
 |---|---|---|
-| Phase 0 | Block A — presence + codebase ownership | Done |
+| Phase 0 | Block A — presence + codebase ownership | In progress (agent-executable parts done; personal tasks deferred) |
 | Phase 0 | Block B — Mac Mini harness (public face) | Done |
-| Phase 0 | Block B — Mac Mini harness (private face / Tailscale) | In progress |
+| Phase 0 | Block B — Mac Mini harness (private face / Tailscale) | In progress (Wave 0 #1) |
 | Phase 0 | Block C — test infra + 4 bug fixes | Done |
 | Phase 0 | Block D — shared services + Project A scaffold | Done |
 | Phase 1 | Project A — content pipeline | Done |
-| Phase 1 | Project B — research agent | Not started |
-| Phase 1 | Project C — proposal generator | Not started |
-| Phase 1 | Project D — document Q&A + RAG | Not started |
-| — | Competence checkpoint after Project D | Pending |
-| Phase 2 | Project E — specialization refactor | Not started |
-| Phase 2 | Project F — semantic search | Not started |
-| Phase 2 | Project H — model eval & routing harness | Not started |
-| Phase 3 | Project G — agent memory system (Honcho reference architecture) | Not started |
-| Parallel | Rust appliance shell (bastion) | Ongoing |
+| Phase 1 | Project B — research agent (thin cut) | Done |
+| Phase 1 | Project C — proposal generator | Done |
+| Phase 1 | Project D — document Q&A + RAG | Done |
+| — | Competence checkpoint after Project D | **Passed (2026-06-23)** |
+| Supporting | brain-rag Layer 1 (BrainDocument + index_brain.py) | Done |
+| Supporting | expose-api-and-telegram-bot (API key auth, CORS, Telegram bot) | Done |
+| Phase 2 | Project E — specialization refactor (ParallelNode merge) | Not started (brain Wave 4 ✲) |
+| Phase 2 | Project F — semantic search → **the Brain semantic layer (Block B)** | Not started (brain Wave 0) |
+| Phase 2 | Project H — model eval & routing harness | Not started (brain Wave 4) |
+| Phase 3 | Project G — agent memory → **the Brain memory/entity capability (Block S)** | Not started (brain Wave 3) |
+| Bastion | Brain-side blocks O, J, C, P, L, R + cost-control I (Python half) | Not started (see crosswalk) |
+| Parallel | Console — `bastion` (Rust) | Ongoing |
 
 ---
 
@@ -50,7 +115,8 @@ The Diagnostic Stage 1's two halves. Project B must produce output conforming to
 schema; Project C must produce output conforming to the deliverable template. See
 `planning/diagnostic-alignment/notes.md` for the output schema constraints before speccing either.
 
-Project D (document Q&A + RAG) gates the competence checkpoint independently of B+C.
+Project D (document Q&A + RAG) gated the competence checkpoint independently of B+C — **passed
+2026-06-23**.
 
 ---
 
@@ -59,6 +125,10 @@ Project D (document Q&A + RAG) gates the competence checkpoint independently of 
 - **Brain corpus indexer** (`scripts/index_brain.py`) — crawls the company brain repo,
   chunks by section, embeds via Voyage AI, stores in `brain_documents` table. Run manually
   to refresh: `python scripts/index_brain.py [--brain-path ../agentic-portfolio]`.
+  This is the **Python half of the Brain layer** (`brain-rag`): Layer 1 (model + indexer) shipped;
+  Layer 2 (corpus-dispatch retrieval) shipped with Project D; Layer 3 (MCP exposure) is **Block R**.
+  Brain-program **Block B** populates its vector store; **Block O** widens its corpus to every
+  sub-repo's docs; **Block J** makes the manual refresh automatic (reindex on commit).
 
 ---
 
@@ -68,6 +138,12 @@ Project D (document Q&A + RAG) gates the competence checkpoint independently of 
 - **All prompts are Jinja2 `.j2` files** in `app/prompts/`, loaded via `PromptManager`. Never hardcode a system prompt in Python. *(D34)*
 - **No deployment logic inside nodes.** This framework is deployment-agnostic. Model choice and persistence are injected via config, never hardcoded in a node. *(D33)*
 - **Top-tier models first.** Introduce local/open-weight model swaps via Project H after measuring. *(D35)*
+- **Python stays Python; Rust is the Console.** This repo is the Engine + Python-half-of-Brain. Rust
+  (bastion) is a *separate* layer that harvests crates and reads this repo over HTTP/Postgres — never a
+  rewrite of any part of this core. *(D6 / D33 / D36; brain D24)*
+- **The Console is read-only for state; this repo performs the mutations.** Kill switches and
+  self-healing PRs are *triggered* by bastion but *executed* here (the abort endpoint, the budget
+  gate) or by the Factory. Agents propose via PR; humans approve the gates. *(D20 / D36; brain D25)*
 
 ---
 
@@ -107,6 +183,7 @@ POST `{url, make_blog?}` to `/events/content`. Celery runs:
 
 **Pattern:** raw agentic tool loop + self-correction.
 **Reuse downstream:** tool loop feeds Project C's `CompanyResearchNode`.
+**Status: Done (thin cut). Hardened version deferred until a real prospect demands it.**
 
 **Thin cut first — build this, stop here until a prospect needs more:**
 A single `ToolUseNode` (raw `anthropic.Anthropic()` — write the `while stop_reason == "tool_use"` loop yourself). Input a company name; output a structured brief: what they do, where they likely bleed time, one automation hypothesis. **No Celery, no critic, no storage. ~50 lines.**
@@ -132,6 +209,7 @@ The `max_iterations` guard on `ToolUseNode` is not optional — it terminates th
 ### Project C — Client Proposal Generator
 
 **Pattern:** research → structured output → review/revise with routing.
+**Status: Done.**
 
 **End result:**
 Input: company name, industry, brief description.
@@ -157,6 +235,7 @@ Input: company name, industry, brief description.
 
 **Pattern:** full RAG + session memory.
 **Reuse downstream:** `RetrieveChunksNode` (verbatim later), `ContentChunk` + `ChatSession` models.
+**Status: Done. Competence checkpoint passed 2026-06-23.**
 
 **End result:**
 - **Ingestion** (`/events/ingest_document`): `ParseDocumentNode → ChunkDocumentNode → EmbedChunksNode → StoreChunksNode`
@@ -169,16 +248,20 @@ Input: company name, industry, brief description.
 - Chunk size: 500 tokens / 50 overlap starting point; tune on a real business doc.
 - RAG retrieves from the document; session memory tracks the conversation. Both assembled together in `AssembleContextNode`.
 - Note which nodes are local-friendly vs. frontier-dependent as input to Project H.
+- **Layer 2 of the Brain (brain-rag):** `RetrieveChunksNode` carries a `corpus` dispatch param so the
+  same retrieval serves the document Q&A *and* the `"brain"` corpus. Answer-time grounding (citation
+  verify + abstain) is hardened later as **Block L**.
 
 **Tests ship with it:** retrieval correctness (mock embeddings, assert ordering), RAG-vs-session-memory assembly, ingestion chunking boundaries.
 
-**Competence checkpoint after Project D:** can walk into an unfamiliar SMB and name 3 automatable workflows in 30 min, explain how to build each, scope a bounded engagement. If yes → ready for a paid diagnostic. If no → name exactly what's missing.
+**Competence checkpoint after Project D — PASSED (2026-06-23):** can walk into an unfamiliar SMB and name 3 automatable workflows in 30 min, explain how to build each, scope a bounded engagement.
 
 ---
 
 ### Project E — Specialization Refactor
 
 **Pattern:** specialized nodes + parallelism. Kept separate from Project A on purpose — you build the naive pipeline first, feel its limits, then refactor and watch quality change.
+**Bastion wave:** Wave 4 ✲ (floating — pull forward when a workflow's parallelism is genuinely needed).
 
 **The refactor:**
 - **Before:** `Fetch → Summarizer → BlogWriter → SelfCritic → Revise → Storage`
@@ -193,7 +276,13 @@ Input: company name, industry, brief description.
 
 ---
 
-### Project F — Semantic Search Over Your Corpus
+### Project F — Semantic Search Over Your Corpus → the Brain semantic layer
+
+> **Reframed (brain D26 / local D36): Project F ≡ brain-program Block B (the Brain semantic layer).**
+> "Semantic search over the corpus" and "the Brain answers semantically" are the same capability; F
+> is no longer a standalone Phase-2 extra but the **Wave 0** semantic-retrieval half of the Brain. The
+> endpoint below still describes its public surface; the cross-repo framing, dependencies, and
+> acceptance live in [Block B](#block-b--semantic-brain-over-the-company-brain-corpus-absorbs-project-f).
 
 **Pattern:** semantic retrieval at corpus scale. Mostly Project D components. Payoff for storing embeddings at write time since Project A.
 
@@ -203,12 +292,20 @@ Input: company name, industry, brief description.
 **Build notes:**
 - Prove semantic (not keyword) retrieval: search "agents communicating" and confirm results tagged "multi-agent orchestration."
 - Practical use: before each study session, query what you've learned about a topic.
+- The same retrieval, pointed at the `"brain"` corpus, *is* the Brain semantic layer (Block B).
 
 **Tests ship with it:** ranking/ordering with mocked embeddings; synthesis node with mocked agent.
 
 ---
 
-### Project G — Agent Memory System (Episodic → Semantic)
+### Project G — Agent Memory System (Episodic → Semantic) → the Brain memory/entity capability
+
+> **Reframed (brain D26 / local D36): Project G ≡ brain-program Block S (the Brain's memory
+> capability).** The store is **Brain data**; the workflows (ingest-time extraction, dream-time
+> consolidation) are **Engine**; the Console reads it. The reframing makes **clients, companies,
+> products, and SOPs first-class entities** so the Brain answers *"what's the status with client X,
+> what rate did I quote."* All build detail below stands; the cross-repo entity framing, dependencies,
+> and acceptance live in [Block S](#block-s--entity--memory-layer-project-g-reframed).
 
 **Pattern:** episodic→semantic consolidation, confidence decay, contradiction handling, multi-peer entity modeling.
 **Reuse downstream:** `MemoryLoaderNode` (verbatim), the whole module.
@@ -237,6 +334,7 @@ SemanticMemory(peer_id, fact, confidence, evidence_episode_ids, decay_factor, so
 - **Dream-time consolidation must stay on Claude.** Weak models produce confident-but-wrong durable facts that silently corrupt everything downstream. *(D35 named frontier-only exception)*
 - Build as a standalone importable module — `MemoryLoaderNode`, `EpisodeWriteService`, `IngestTimeExtractionNode`, `ConsolidationWorkflow`, no coupling to any one workflow.
 - **Target 5–10% context injection per query** (Honcho benchmark: 90.4% accuracy at median 5% context). If representations push 50%+ of context, consolidation quality is the problem.
+- **`workspace_id` is the multi-workspace seam (Block C):** entities are scoped per workspace (per-repo, per-client), so the memory layer and the corpus layer share the same addressing.
 
 **Tests ship with it — test harder than anything else in the plan:** consolidation output schema validity (per peer, multi-peer case); decay function (`freezegun` to advance weeks, assert `confidence * 0.95**weeks`); contradiction handling (old-fact confidence drops, new fact created, no overwrite); multi-peer isolation (peer A's facts don't bleed into peer B); ingest-time extraction (fast path produces valid summary and episode write); `MemoryLoaderNode` retrieval ordering (both cosine and NL query modes). Bad memory output is the trust-eroding silent failure.
 
@@ -246,6 +344,7 @@ SemanticMemory(peer_id, fact, confidence, evidence_episode_ids, decay_factor, so
 
 **Pattern:** offline evaluation; empirical model routing.
 **Output:** per-node routing config file the brain loads at startup — different config for local-heavy vs. cloud deployments.
+**Bastion wave:** Wave 4 (volume/economics-driven — build when run volume makes cost optimization pay).
 
 **Critical design principle: offline eval, not runtime router.** This runs occasionally and deliberately to *produce* routing decisions ("node X is safe on local-70B"). Those decisions bake into the node's `model_provider` config at design time. Not per-request runtime model selection. *(D33 / D8 orchestrator)*
 
@@ -263,9 +362,239 @@ For a given node, run 30–50 representative inputs through several models — f
 
 ---
 
-### Rust Appliance Shell
+## Bastion Program Blocks (Engine + Brain)
 
-Moved to `bastion` — see `agentic-portfolio/docs/projects/bastion.md` and `bastion/planning/master-plan.md`. The Rust shell commands and observes the Python brain over HTTP; the two never share code. Rust stays Rust; Python stays Python. *(D33, D35)*
+The Brain-side and cost-control work this repo owns in the Bastion program, written in the brain's
+**block-contract** format (`/generate-master-plan` skeleton: What · Why · Repo · Interfaces · Depends
+on · Out of scope · Acceptance criteria). These are executed *here* — open Claude Code in this repo and
+run `/generate-master-plan` → `/generate-tasks` → `/sdlc-flow` (or `/sdlc-block`). The cross-repo
+order is the brain's demand-first wave table; the per-block detail is canonical there and mirrored
+here so this repo is self-sufficient to execute against. "Brain-program Block X" = the same X in
+`bastion-product/master-plan.md` (distinct from this repo's Phase 0 Blocks A–D).
+
+---
+
+### Block B — Semantic Brain over the company-brain corpus (absorbs Project F)
+
+- **What:** Run `index_brain.py` to populate the pgvector store over the OKF brain corpus, and confirm
+  end-to-end semantic Q&A over the `"brain"` corpus through the existing two-stage hybrid retrieval
+  (Project D's `RetrieveChunksNode` with corpus dispatch). This is the work the old Project F named,
+  unified with the Brain's semantic layer (D26 F≡B).
+- **Why:** Wave 0 — the Brain must answer semantically end-to-end before structural+semantic can be
+  combined (bastion's graph layer) and before portability (Block C) generalizes the readers. The RAG
+  machinery already exists (Project D); this is population + verification, not new retrieval code.
+- **Repo:** python-orchestration-system (`brain-rag` + Project D retrieval).
+- **Interfaces / contracts:** Consumes the `BrainDocument` model + the `"brain"` corpus-dispatch
+  contract already defined here. Produces a populated vector store the Console (`bastion`) and agents
+  query. No data-contract version bump (read path only).
+- **Depends on:** Nothing hard — Project D shipped the retrieval; runs in parallel with bastion's
+  `knowledge_graph` block (graph reads files; this reads/writes Postgres).
+- **Out of scope:** MCP exposure of the Brain (Block R). Brain portability / multi-workspace (Block C).
+  Any change to the retrieval algorithm. Answer-time grounding (Block L).
+- **Acceptance criteria:** `index_brain.py` populates the store over the live brain corpus; a known
+  brain question returns a correctly cited answer over the `"brain"` corpus; the orchestrator gate
+  holds (`uv run python -m pytest` all pass, `ruff` clean, `pylint app/` 10.00/10); a brain-corpus
+  retrieval smoke test passes.
+
+---
+
+### Block O — Widen the index corpus to all sub-repo planning docs
+
+- **What:** Extend `index_brain.py`'s corpus list to include every sub-repo's `planning/` (status,
+  decisions, devlog) **+** `CLAUDE.md`, each as its own workspace/corpus. Answers *"where am I in repo
+  X, what did I decide, how does this project work"* across all repos.
+- **Why:** Wave 0 — highest value-to-cost ratio in the program: it is already OKF markdown, so this is
+  a corpus-config change, not new retrieval code. A daily-driver feature on day one.
+- **Repo:** python-orchestration-system (the indexer).
+- **Interfaces / contracts:** Consumes the existing `BrainDocument` + corpus-dispatch contract;
+  produces **per-repo corpora**. Light dependency on the multi-workspace addressing introduced in
+  Block C (corpora must be addressable by workspace).
+- **Depends on:** Block B (a populated, queryable store to widen). Block C for clean per-workspace
+  addressing (can ship a flat multi-corpus first and tighten under C).
+- **Out of scope:** Indexing source code (Block P). Per-client corpora (Block C / S). Auto-refresh
+  (Block J).
+- **Acceptance criteria:** a known status/decision question over a sub-repo returns a correctly cited
+  answer **scoped to that repo's corpus**; the indexer crawls each configured sub-repo's `planning/` +
+  `CLAUDE.md`; the orchestrator gate holds; a multi-corpus retrieval test covers cross-repo scoping.
+
+---
+
+### Block J — Brain freshness loop (auto re-index on change)
+
+- **What:** Make `index_brain.py` fire automatically on doc change instead of by hand — a git
+  post-commit hook (and/or a bastion-scheduled trigger) that runs the **existing incremental** indexer
+  over changed files only. The Engine still owns the write to pgvector (brain D25); the hook only
+  *triggers*.
+- **Why:** Wave 0 — today the indexer is a manual CLI, so the Brain silently goes stale between runs;
+  "self-updating" is currently false. Cheapest high-payoff fix in the extension.
+- **Repo:** Cross-repo — python-orchestration-system (the indexer trigger surface) + the brain repo
+  (the hook). Small.
+- **Interfaces / contracts:** Consumes the existing `BrainDocument` + corpus-dispatch contract and the
+  indexer's incremental-skip path (already shipped in Layer 1). No data-contract bump.
+- **Depends on:** Block B (a populated store to keep fresh).
+- **Out of scope:** Real-time streaming index. Re-embedding the whole corpus on every change (use the
+  incremental path). Multi-knowledge-dir scheduling (Block C handles portability).
+- **Acceptance criteria:** committing a changed brain doc results in that doc's chunks being re-indexed
+  without a manual command; unchanged files are skipped (incremental path proven); the orchestrator
+  gate holds; a test covers the change-detection → re-index trigger.
+
+---
+
+### Block C — Multi-workspace Brain (per-repo / per-client corpora) — Python half
+
+- **What:** Generalize the Python Brain readers — the RAG indexer and retriever — to point at an
+  **arbitrary knowledge directory / workspace** (a config/CLI-provided root + workspace id), not only
+  the brain repo's path. Same OKF + RAG behavior over any conforming directory; `workspace_id` becomes
+  the addressing key shared with the memory layer (Block S).
+- **Why:** Wave 1 — proves the Brain is a *capability* over a knowledge dir, not a hardcode of one
+  repo; required groundwork for per-repo (Block O) and per-client (Block S) corpora and for the
+  loop-proof's "point Bastion at your knowledge."
+- **Repo:** python-orchestration-system (indexer/retriever root + workspace config). The **bastion
+  graph-reader half** of the same shared "knowledge directory" convention is built in bastion.
+- **Interfaces / contracts:** Produces a shared **"knowledge directory / workspace" convention** (root
+  path + workspace id + OKF expectations) consumed identically by the Python RAG and the bastion graph
+  reader — the load-bearing cross-repo seam of this block.
+- **Depends on:** Block B (semantic retrieval populated). Coordinates with bastion's graph reader (it
+  consumes the same convention).
+- **Out of scope:** Multi-tenant switching UX. De-opinionating the OKF format itself. Packaging /
+  install. The Rust graph-reader root config (bastion's half).
+- **Acceptance criteria:** the Python readers index and answer over a **second, non-brain** OKF
+  directory passed by config/flag; default still resolves to the brain repo; the workspace convention
+  is documented as the shared contract; the orchestrator gate holds; a portability test fixture (small
+  OKF dir) is covered.
+
+---
+
+### Block P — Semantic code search (source as a corpus)
+
+- **What:** Chunk + embed source files per repo (chunk by function/class via tree-sitter) as new
+  **per-repo code corpora**. Answers *"how does X work, where's the code that does Y."*
+- **Why:** Wave 1 — "ask my own system how my own code works" is a genuine daily feature and a strong
+  dogfood story. Reuses the Project D retrieval machinery over a new corpus type.
+- **Repo:** python-orchestration-system (embeddings + retrieval = Engine/Brain Python half).
+- **Interfaces / contracts:** Produces **code-chunk corpora** addressable by repo/workspace (Block C
+  addressing). The deterministic structural twin — exact symbol/def/refs, code-as-graph — is bastion's
+  Block Q, **out of scope** here.
+- **Depends on:** Block C (multi-workspace addressing); benefits from Block O.
+- **Out of scope:** Exact symbol/def/refs and code-as-graph (bastion Block Q — deterministic,
+  Console-side). Cross-repo refactoring.
+- **Acceptance criteria:** a "how does X work" query returns the relevant functions with file/line
+  citations; chunking respects function/class boundaries; the orchestrator gate holds; a code-corpus
+  retrieval test covers function-boundary chunking + citation.
+
+---
+
+### Block I — Cost control (abort endpoint + server-side budget gate) — Python half
+
+- **What:** Add the **enforcement points** the Console's kill switch and budget controls trigger: a new
+  **authenticated abort endpoint** that cancels a run and stamps its terminal state, and a
+  **server-side budget gate** that refuses (or flags) a dispatch that would exceed a configured
+  ceiling. bastion drives the CLI half (`bastion kill`, `--watch`, thresholds); the Engine performs the
+  cancel and the gate.
+- **Why:** Wave 2 — retroactive cost estimation is not control. Per brain D25 the Console is read-only
+  for state and *triggers* mutations; the actual cancel + terminal stamp **must** live here, the layer
+  that owns the run lifecycle.
+- **Repo:** Cross-repo — python-orchestration-system (abort endpoint + budget gate, the enforcement
+  point) + bastion (the CLI surface that calls them).
+- **Interfaces / contracts:** **Produces two new D20 data-contract additions** — an authenticated abort
+  endpoint and a budget-gate field/response — bumped per the CLAUDE.md D20 protocol and re-pinned in
+  bastion's `data-contract.md`. Consumes the existing per-node cost/usage capture (D30).
+- **Depends on:** The incremental execution-state persistence (D28) so a run is abortable mid-flight;
+  bastion's structured-event spine strengthens alerting but is not hard-required here.
+- **Out of scope:** Per-client billing. Silent auto-killing (operator- or threshold-triggered with
+  confirmation). Any direct Celery/Redis manipulation by bastion (it calls the endpoint; it never
+  touches the queue).
+- **Acceptance criteria:** `POST` to the abort endpoint cancels a running workflow and the run reaches
+  terminal state in `node_runs`; a dispatch over the budget ceiling is refused/flagged per config; the
+  data-contract bump is recorded in both `data-contract.md` files; the orchestrator gate holds; tests
+  cover the abort path and the budget-gate decision.
+
+---
+
+### Block L — Answer-time grounding (citation verify + abstain)
+
+- **What:** Harden the RAG answer path (Project D): **verify** that a cited section actually contains
+  the claim it's cited for, add a **confidence/abstain threshold** (return "I don't have that" when
+  retrieval score is below a bar rather than relying only on the prompt rule), and prefer **two-source
+  corroboration** for high-stakes answers.
+- **Why:** Wave 3 — completes "prevent hallucinations" on the *answer* side (the corpus side is
+  bastion's deterministic integrity scan). Today grounding is a single soft prompt instruction with no
+  verification and no numeric abstain — not good enough once client work runs on the Brain.
+- **Repo:** python-orchestration-system (Project D retrieval/answer nodes).
+- **Interfaces / contracts:** Consumes the existing retrieval pipeline + `cited_sections` field.
+  Produces a **verified-citation + confidence signal** on the answer envelope.
+- **Depends on:** Block B (semantic retrieval populated). Independent of bastion.
+- **Out of scope:** A full eval/routing harness (Project H). Re-architecting retrieval (reuse the
+  two-stage hybrid path). LLM-judged semantic contradiction (that's the bastion deterministic
+  integrity scan's fuzzy follow-on).
+- **Acceptance criteria:** an answer whose cited section does not contain the claim is flagged/withheld
+  in a test; below-threshold retrieval returns an explicit abstain; the orchestrator gate holds
+  (pytest / ruff / pylint 10.00/10); tests cover the verification and abstain paths.
+
+---
+
+### Block R — Brain-as-MCP-server (Python server half of the MCP split)
+
+- **What:** Expose the Brain (semantic + structural + memory read path) as an **MCP server** in the
+  Engine, so agents and tools reach it over the protocol. The **server is Python** (here); the
+  **client is Rust** (bastion's harvested `workflow-engine-mcp`) — built together as distinct seam
+  halves (D26 MCP split).
+- **Why:** Wave 4 — brain-rag **Layer 3 = MCP**. This is the server peer the Console's MCP client
+  connects to; it makes the Brain reachable by any MCP-speaking agent, not just this orchestrator's own
+  nodes.
+- **Repo:** python-orchestration-system (the Engine / Brain Python half).
+- **Interfaces / contracts:** Produces an **MCP server surface** over the Brain read path; consumed by
+  bastion's vendored MCP client. Defines the tool schema (query kinds, corpus/workspace params) as the
+  client↔server contract.
+- **Depends on:** Block B (semantic) + the structural graph being queryable (bastion's graph block);
+  Block C (workspace addressing) for scoped queries.
+- **Out of scope:** The MCP client (bastion). Auth beyond what the transport provides. Write/mutation
+  tools (read path only; mutations stay endpoint-triggered per Block I / D25).
+- **Acceptance criteria:** bastion's vendored client connects to this server and invokes a Brain query
+  tool end-to-end; the tool schema is documented as the client↔server contract; the orchestrator gate
+  holds; a server-side tool-invocation test passes.
+
+---
+
+### Block S — Entity / memory layer (Project G reframed)
+
+- **What:** Build Project G as the Brain's **memory capability** with **clients, companies, products,
+  and SOPs as first-class entities**: the store (`Peer`/`AgentEpisode`/`SemanticMemory`) is Brain data;
+  the workflows (ingest-time extraction, dream-time consolidation on Claude, loader) are Engine; the
+  Console reads it. Index business/operational docs so the Brain answers *"what did I last discuss with
+  client X, what's their status, what rate did I quote."*
+- **Why:** Wave 3 — the "keep track of client work" capability, Bastion's operational memory.
+  Demand-first: the first real client creates the need for the **entity** half immediately; full
+  consolidation can follow.
+- **Repo:** python-orchestration-system (store + workflows) + the brain repo (operational docs
+  indexed).
+- **Interfaces / contracts:** Consumes the Honcho reference architecture (orchestrator D25). Produces
+  the **entity/memory store** the Console and Engine read, keyed by `workspace_id` (the Block C
+  addressing). The full Project G build spec (models, decay, contradiction handling, test bar) is the
+  Project Library entry above.
+- **Depends on:** Block B (retrieval) + Block C (the multi-workspace / entity addressing model).
+- **Out of scope:** Model-routing of the ingest/consolidation steps (Project H). Consolidation must
+  stay on Claude (D35) — never local.
+- **Acceptance criteria:** a client entity accumulates episodes/facts across interactions; confidence
+  decay + contradiction handling proven by test; a "what's the status with client X" query returns a
+  cited answer; the orchestrator gate holds — **Project G's heavier test bar applies** (test harder
+  than anything else in the plan).
+
+---
+
+## Console — `bastion` (the Rust layer; separate repo)
+
+The **Console** of Bastion — a single Rust binary (`bastion`) — commands and observes this Python
+Engine over HTTP and reads its Postgres state directly; the two **never share code**. It is *not* a
+rewrite of any part of this repo and holds no billable work (brain D24/D25, local D36). Where Rust
+uniquely wins, it **harvests** tested crates from the portfolio repos (`workflow-engine-rs`,
+`claude-sdk-rs`) — token counting, MCP client, the `knowledge_graph` structural layer, a local-model
+node — never standing up a second engine.
+
+This repo's only obligations to the Console are **data-contract** ones: keep the `events` /
+`task_context` / `node_runs` shapes pinned (D20/D30), and add the abort endpoint + budget gate
+(Block I) the Console triggers. See `agentic-portfolio/docs/projects/bastion.md` and
+`bastion/planning/` for the Console's own plan.
 
 ---
 
@@ -276,8 +605,13 @@ Business goals, contracting strategy, leads, and career posture live in the comp
 - Career strategy: `agentic-portfolio/docs/career.md`
 - Content plan: `agentic-portfolio/docs/content/ideas.md`
 - Lead pipeline: `agentic-portfolio/docs/business/pipeline.md`
-- The Diagnostic productized service: `agentic-portfolio/planning/the-diagnostic/plan.md`
+- The Diagnostic productized service: `agentic-portfolio/docs/diagnostic/plan.md`
+- The Bastion program (this repo is its Engine + Python-half-of-Brain):
+  `agentic-portfolio/planning/bastion-product/master-plan.md`
 
 ---
 
-*Last updated: June 2026. For the previous version's strategic arc, see `docs/career.md` in the brain.*
+*Last updated: 2026-06-25 — aligned to the Bastion program (brain D24/D25/D26; local D36): added the
+Role-in-Bastion section + program-block crosswalk, reconciled statuses (A–D Done, checkpoint passed),
+reframed Projects F→Block B and G→Block S, and added Brain-side blocks O/J/C/P/L/R + cost-control I.
+For the previous version's strategic arc, see `docs/career.md` in the brain.*

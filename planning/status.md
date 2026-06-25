@@ -9,8 +9,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-23 — documentation sweep: 4 new human-readable docs (getting-started, workflows, scripts, brain-rag), README/docs/index.md patches, send_workflow.py interactive CLI, API key explainer in getting-started; all merged; phase1-projectE is the standing focus
-**Current focus:** phase1-projectE — Specialization refactor (next project: ParallelNode merge + specialized nodes)
+**Last updated:** 2026-06-25 — aligned the repo to the Bastion program (brain D24/D25/D26; local D36): master-plan gained a Role-in-Bastion section + program-block crosswalk + Brain-side blocks O/J/C/P/L/R + cost-control I; Projects F→Block B and G→Block S reframed; this file gains the program-block table below
+**Current focus (demand-first, per the brain wave table):** Wave 0 — (1) finish the private Tailscale face, then (2) **Block B** (populate the Brain's vector store via `index_brain.py`, confirm `"brain"`-corpus Q&A — this is the old Project F) and **Block O** (widen the index corpus to all sub-repo docs). **Project E (specialization / ParallelNode merge) is repositioned to Wave 4 ✲** — pull forward only when a workflow's parallelism is genuinely needed.
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
@@ -48,15 +48,30 @@ description: Current state and progress tracker for the python-orchestration-sys
 ### Phase 2 — Depth + First Paid Work
 | Item | What | Status | Notes |
 |---|---|---|---|
-| E | Specialization refactor | Not started | Fix ParallelNode merge gap here — next after Project D |
-| F | Semantic search over corpus | Not started | Mostly D's components |
-| H | Model eval & routing harness | Not started | Flexible placement; needs real nodes (after D) |
-| — | First paid diagnostic | Not started | Waits for competence checkpoint, not a date |
+| E | Specialization refactor | Not started | Fix ParallelNode merge gap here. **Bastion Wave 4 ✲** — pull forward when parallelism is genuinely needed |
+| F | Semantic search over corpus → **the Brain semantic layer** | Not started | **Reframed: F ≡ Block B (D36).** Mostly D's components, pointed at the `"brain"` corpus. **Bastion Wave 0** |
+| H | Model eval & routing harness | Not started | Flexible placement; needs real nodes (after D). **Bastion Wave 4** |
+| — | First paid diagnostic | Not started | Competence checkpoint **passed 2026-06-23**; gated only by a real prospect now |
 
 ### Phase 3 — The Differentiating Build
 | Project | What | Status | Notes |
 |---|---|---|---|
-| G | Agent memory system — two-stage pipeline, multi-peer model | Not started | Read Honcho source first (D25). Two-stage: ingest-time fast extraction + dream-time consolidation. Multi-peer schema. NL query interface. The centerpiece. |
+| G | Agent memory system → **the Brain memory/entity capability** | Not started | **Reframed: G ≡ Block S (D36)** — clients/companies/products/SOPs as first-class entities, keyed by `workspace_id`. Read Honcho source first (D25). Two-stage: ingest-time fast extraction + dream-time consolidation. The centerpiece. **Bastion Wave 3** |
+
+### Bastion Program — Engine + Brain Blocks
+*This repo's Brain-side and cost-control work in the Bastion program. Block-contract detail lives in `master-plan.md` → "Bastion Program Blocks"; cross-repo order lives in the brain wave table. "Block X" = the same X in `agentic-portfolio/planning/bastion-product/master-plan.md`.*
+
+| Block | Wave | What | Status | Notes |
+|---|---|---|---|---|
+| B | 0 | Semantic Brain over the company-brain corpus (populate store; confirm `"brain"` Q&A) | Not started | Absorbs Project F. Retrieval shipped in Project D; population pending |
+| O | 0 | Widen the index corpus to all sub-repo `planning/` + `CLAUDE.md` | Not started | Corpus-config change; per-repo corpora |
+| J | 0 | Brain freshness loop — auto-reindex on commit | Not started | With the brain repo (git hook); reuses the incremental indexer |
+| C | 1 | Multi-workspace Brain — per-repo / per-client corpora (Python half) | Not started | Shared "knowledge dir / workspace" convention with bastion's graph reader |
+| P | 1 | Semantic code search — source as a corpus | Not started | tree-sitter function/class chunking; per-repo code corpora |
+| I | 2 | Cost control — abort endpoint + server-side budget gate (Python half) | Not started | New D20 contract additions; bastion drives the CLI half |
+| S | 3 | Entity / memory layer — clients as first-class entities | Not started | = Project G reframed; heavier test bar applies |
+| L | 3 | Answer-time grounding — citation verify + abstain | Not started | Project D answer-path hardening |
+| R | 4 | Brain-as-MCP-server — Python server half of the MCP split | Not started | brain-rag Layer 3; bastion vendors the client |
 
 ### Supporting Infrastructure
 | Block | What | Status | Notes |
@@ -66,7 +81,7 @@ description: Current state and progress tracker for the python-orchestration-sys
 ### Parallel Track
 | Track | What | Status | Notes |
 |---|---|---|---|
-| Rust appliance shell | SMB single-binary delivery vehicle — the privacy promise made physical; commands + observes the Python brain over HTTP | Not started | Anytime after harness exists; start with one command (ingest + query + print cost). Formerly "Rust CLI" — see DECISIONS D17 |
+| Console — `bastion` (Rust) | Bastion's Console layer — commands + observes this Engine over HTTP/Postgres; **never shares code** with it (brain D24/D25, local D36) | Ongoing (own repo) | Tracked in `bastion/planning/` + `agentic-portfolio/docs/projects/bastion.md`. This repo's only obligation: keep the D20/D30 data contract pinned + add the Block I abort/budget endpoint. Formerly "Rust appliance shell" (D17, scope revised by D36) |
 
 ---
 
@@ -95,6 +110,8 @@ description: Current state and progress tracker for the python-orchestration-sys
 ## Decisions & Deviations Log
 
 *Record anything where reality diverged from the plan, or a notable choice was made. Keeps the plans clean and stable.*
+
+- **2026-06-25 — aligned the repo to the Bastion program (local D36; brain D24/D25/D26).** The brain made Bastion the primary program and assigned this repo the **Engine** + the **Python half of the Brain** roles. Reconciled `master-plan.md` to it: added a Role-in-Bastion section + a program-block crosswalk table; reframed **Project F ≡ Block B** (the Brain semantic layer) and **Project G ≡ Block S** (the Brain's memory/entity capability — clients as first-class entities); added Brain-side blocks **O** (widen corpus), **J** (freshness loop), **C** (multi-workspace, Python half), **P** (semantic code search), **L** (answer-time grounding), **R** (Brain-as-MCP-server), and the Python half of **I** (abort endpoint + budget gate), each in the `/generate-master-plan` block-contract format. Re-sequenced the post-checkpoint work **demand-first** per the brain wave table: **Current focus shifts from Project E to Wave 0** (finish Tailscale, then Block B + O); Project E moves to Wave 4 ✲. Kept the A–H project numbering (renumbering would cascade across this file, decisions, and CLAUDE.md). Recorded local decision **D36**; updated `context.md`, `CLAUDE.md`, `planning/index.md`. No product code changed — planning alignment only.
 
 - **2026-06-23 — documentation sweep: human readability pass on 4 new developer docs.** Wrote `docs/getting-started.md` (local dev via Homebrew scripts + OrbStack/Docker path, first event walkthrough, API key shared-secret explainer), `docs/workflows.md` (all 5 workflows with DAG diagrams, payload fields, and ready-to-paste curl examples), `docs/scripts.md` (all 4 developer scripts: dev-setup.sh, dev.sh, inspect_run.py, index_brain.py), and `docs/brain-rag.md` (BrainDocument model, index_brain.py indexer, querying via DOCUMENT_QA). Patched `README.md` (fixed broken curl example hitting `/` instead of `/events/`, added `X-API-Key` header, expanded docs table from 2 to 10 entries). Fixed `docs/index.md` (removed 3 dead links to deleted agentic-workflows docs, reorganized table structure, added new docs and Integrations section). Updated `requests/send_event.py` to read API key from `app/.env` automatically instead of prompting. Added `requests/send_workflow.py` — an interactive CLI for triggering any of the 5 workflows by name without hand-crafting JSON payloads. Archived 340 old planning/task report files (pre-OKF era) to `archive/` to clean the planning/ tree; this generated the large deletion count in git diff. No block status changes — documentation-only maintenance pass. Next: phase1-projectE (ParallelNode specialization).
 
