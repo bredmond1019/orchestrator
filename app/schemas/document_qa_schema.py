@@ -32,3 +32,11 @@ class DocumentQAEventSchema(BaseModel):
         default="content",
         description="'content' or 'brain'",
     )
+    filters: dict | None = Field(
+        default=None,
+        description=(
+            "Optional metadata filters for 'brain' corpus retrieval. "
+            "Supported keys: 'layer' (array overlap), 'project' (scalar ==), "
+            "'status' (scalar ==). Ignored for 'content' corpus."
+        ),
+    )

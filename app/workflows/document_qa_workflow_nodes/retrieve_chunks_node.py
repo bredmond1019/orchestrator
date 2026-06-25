@@ -35,7 +35,7 @@ from database.brain_document import BrainDocument
 from database.content_chunk import ContentChunk
 from database.session import db_session
 from services.embedding_service import EmbeddingService
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 # ---------------------------------------------------------------------------
 # Corpus configuration map — extend here to add a third corpus
@@ -53,8 +53,37 @@ _CORPUS_CONFIG: dict[str, dict] = {
         "content_field": "content",
         "section_title_field": "section",
         "is_section_title_field": None,
+        "keyword_extra_fields": ["keywords"],
+        "filter_fields": {
+            "layer": "array",
+            "project": "scalar",
+            "status": "scalar",
+        },
     },
 }
+
+
+def _apply_metadata_filters(query, model, filters: dict, filter_fields: dict):
+    """Apply optional metadata WHERE clauses to a SQLAlchemy query.
+
+    For each ``{field: value}`` pair in ``filters``, looks up the declared type
+    in ``filter_fields`` and appends the appropriate clause: ``==`` for scalars,
+    ``.overlap([value])`` for arrays. Unknown fields and ``None`` values are
+    silently skipped so callers don't need to pre-sanitize.
+
+    Returns the (possibly modified) query object.
+    """
+    for field, value in filters.items():
+        if value is None or field not in filter_fields:
+            continue
+        col = getattr(model, field, None)
+        if col is None:
+            continue
+        if filter_fields[field] == "array":
+            query = query.filter(col.overlap([value]))
+        else:
+            query = query.filter(col == value)
+    return query
 
 
 def _row_to_candidate(row, distance: float, config: dict) -> dict:
@@ -85,7 +114,8 @@ class RetrieveChunksNode(Node):
         event = task_context.event
         query = event.question
         corpus = getattr(event, "corpus", "content")
-        chunks = self.retrieve(query, corpus=corpus, k=5)
+        filters = getattr(event, "filters", None)
+        chunks = self.retrieve(query, corpus=corpus, k=5, filters=filters)
         task_context.update_node(
             node_name=self.node_name,
             result={"chunks": chunks},
@@ -98,6 +128,8 @@ class RetrieveChunksNode(Node):
         corpus: str = "content",
         k: int = 5,
         threshold: float = 0.0,
+        *,
+        filters: dict | None = None,
     ) -> list[dict]:
         """Run the two-stage hybrid retrieval pipeline.
 
@@ -114,7 +146,7 @@ class RetrieveChunksNode(Node):
             fused score descending.
         """
         vector = EmbeddingService().embed_text(query)
-        candidates = self._semantic_search(vector, corpus, limit=20)
+        candidates = self._semantic_search(vector, corpus, limit=20, filters=filters)
         candidate_ids = [c["id"] for c in candidates]
         keyword_ids = self._keyword_search(query, candidate_ids, corpus)
         return self._fuse_and_rank(candidates, keyword_ids, k, threshold)
@@ -124,11 +156,18 @@ class RetrieveChunksNode(Node):
         vector: list[float],
         corpus: str,
         limit: int,
+        filters: dict | None = None,
     ) -> list[dict]:
         """Stage 1: pgvector cosine-distance query returning a wide candidate set.
 
         Queries the corpus table ordered by cosine distance to ``vector``, up
-        to ``limit`` rows. Returns a list of candidate dicts with keys:
+        to ``limit`` rows. When ``filters`` is provided and the corpus declares
+        ``filter_fields``, applies WHERE clauses before ordering — scalar fields
+        use ``==``; array fields (e.g. ``layer``) use ``.overlap([value])``.
+        Unknown filter keys and corpora without ``filter_fields`` are silently
+        ignored so ``"content"`` remains unaffected.
+
+        Returns a list of candidate dicts with keys:
         ``id``, ``content``, ``section_title``, ``is_section_title``,
         ``distance``.
 
@@ -138,12 +177,12 @@ class RetrieveChunksNode(Node):
         model = config["model"]
         with contextmanager(db_session)() as session:
             distance_expr = model.embedding.cosine_distance(vector)
-            rows = (
-                session.query(model, distance_expr.label("_distance"))
-                .order_by(distance_expr)
-                .limit(limit)
-                .all()
-            )
+            q = session.query(model, distance_expr.label("_distance"))
+            if filters and config.get("filter_fields"):
+                q = _apply_metadata_filters(
+                    q, model, filters, config["filter_fields"]
+                )
+            rows = q.order_by(distance_expr).limit(limit).all()
             return [_row_to_candidate(row, distance, config) for row, distance in rows]
 
     def _keyword_search(
@@ -165,24 +204,27 @@ class RetrieveChunksNode(Node):
 
         config = _CORPUS_CONFIG[corpus]
         model = config["model"]
-        content_field = config["content_field"]
-        content_col = getattr(model, content_field)
-
-        terms = [re.sub(r"\W+", "", t) for t in query.split()]
-        terms = [t for t in terms if t]
+        content_col = getattr(model, config["content_field"])
+        terms = [t for t in (re.sub(r"\W+", "", w) for w in query.split()) if t]
         if not terms:
             return set()
 
+        ilike_filters = [content_col.ilike(f"%{t}%") for t in terms]
+        for extra_field in config.get("keyword_extra_fields", []):
+            extra_col = getattr(model, extra_field, None)
+            if extra_col is None:
+                continue
+            ilike_filters.extend(
+                func.array_to_string(extra_col, " ").ilike(f"%{t}%") for t in terms
+            )
+
         with contextmanager(db_session)() as session:
-            ilike_filters = [content_col.ilike(f"%{term}%") for term in terms]
             q = (
                 session.query(model.id)
                 .filter(model.id.in_(candidate_ids))
                 .filter(or_(*ilike_filters))
             )
-            matching_ids = {row.id for row in q.all()}
-
-        return matching_ids
+            return {row.id for row in q.all()}
 
     def _fuse_and_rank(
         self,
