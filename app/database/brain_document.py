@@ -79,3 +79,37 @@ class BrainDocument(Base):
             " (e.g. ['WhatsApp order tracking'])"
         ),
     )
+    # OKF frontmatter fields — populated by index_brain.py from parsed YAML
+    doc_id = Column(
+        String(256),
+        nullable=True,
+        doc="OKF doc_id field (unique document identifier); derived from filename stem when absent",
+    )
+    layer = Column(
+        ARRAY(String),
+        nullable=True,
+        doc="OKF layer field — which Bastion layers this doc belongs to (e.g. ['brain', 'engine'])",
+    )
+    project = Column(
+        String(128),
+        nullable=True,
+        doc=(
+            "OKF project field — which sub-project this doc belongs to"
+            " (e.g. 'python-orchestration')"
+        ),
+    )
+    status = Column(
+        String(32),
+        nullable=True,
+        doc="OKF status field — document lifecycle status (e.g. 'active', 'draft', 'archived')",
+    )
+    keywords = Column(
+        ARRAY(String),
+        nullable=True,
+        doc="OKF keywords field — searchable keyword tags extracted from frontmatter",
+    )
+    related = Column(
+        ARRAY(String),
+        nullable=True,
+        doc="OKF related field — relative paths to related documents in the brain repo",
+    )
