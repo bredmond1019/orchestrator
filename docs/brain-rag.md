@@ -112,7 +112,26 @@ curl -X POST http://localhost:8080/events/ \
   }'
 ```
 
-The retrieval runs the same two-stage hybrid search as regular document Q&A: semantic similarity (Voyage embedding) + keyword ILIKE re-rank, with 2× weight on section-title matches.
+The retrieval runs the same two-stage hybrid search as regular document Q&A: semantic similarity (Voyage embedding) + keyword ILIKE re-rank, with 2× weight on section-title matches. The brain corpus also ORs the `keywords` column into the keyword stage, so tagged documents surface even when the section body doesn't match.
+
+**Scoping retrieval with filters** — pass an optional `filters` dict to restrict Stage 1 semantic search to documents matching the specified OKF metadata fields:
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "DOCUMENT_QA",
+    "data": {
+      "doc_id": "00000000-0000-0000-0000-000000000000",
+      "question": "What is the current contracting rate strategy?",
+      "corpus": "brain",
+      "filters": {"project": "python-orchestration", "status": "active"}
+    }
+  }'
+```
+
+Supported filter keys: `"layer"` (array overlap — matches if the document's layer list contains the value), `"project"` (scalar `==`), `"status"` (scalar `==`). Unknown keys and `null` values are silently skipped.
 
 ---
 
