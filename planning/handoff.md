@@ -1,90 +1,98 @@
 ---
 type: Handoff
-created: 2026-06-25
+created: 2026-06-26
 ---
 
-# Handoff — frontmatter specs shipped; Wave 0 Block B next
+# Handoff — brain-rag-improvements Blocks C + D done; E + F next
 
 > **For the next agent:** Read this immediately after `/prime`. Delete this file once consumed.
 
 ## What we're doing and why
 
-We are executing the Bastion program's **Wave 0** demand-first work for this repo (the Engine +
-Python Brain). Two supporting-infrastructure specs — `frontmatter-indexer-enrich` (Block B
-indexer enrichment) and `frontmatter-retrieval-filters` (Block C metadata filters) — were
-completed this session via `/sdlc-run`. Both are fully shipped and on `main`. The pipeline
-infrastructure is now ready to populate the Brain's vector store with OKF-enriched frontmatter
-and to scope brain-corpus Q&A by `layer`/`project`/`status`. The next operator step is to
-actually **run `index_brain.py`** to populate the store and confirm `corpus="brain"` Q&A works
-end-to-end. After that, `Block O` widens the corpus to all sub-repo `planning/` + `CLAUDE.md`
-files.
+We are executing the **brain-rag-improvements** initiative
+(`agentic-portfolio/planning/brain-rag-improvements/plan.md`) — a pre-`--rebuild` overhaul
+of the brain RAG stack to fix corpus gaps, vocabulary mismatches, and weak keyword search
+before paying the Voyage embedding cost. **Blocks C and D are now complete.** The DB has the
+new columns, the GIN FTS index, and the HNSW ANN index. Next are **Block E** (`index_brain.py`
+corpus/vocab/column-population fixes) and **Block F** (`retrieve_chunks_node.py` graded FTS
+retrieval rewrite).
 
 ## Completed this session
 
-- **`frontmatter-indexer-enrich`** shipped (commits `d417a07` → `c61ff5c`):
-  - 6 OKF columns (`doc_id`, `layer`, `project`, `status`, `keywords`, `related`) + GIN/btree
-    indexes on `BrainDocument` via Alembic migration `d1e2f3a4b5c6`
-  - `parse_document()`, `normalize_metadata()`, `build_context_prefix()` in `scripts/index_brain.py`
-  - 32 new tests; 746 pass; pylint 10.00/10; review PASS in 1 attempt
-  - Docs patched: `docs/brain-rag.md` (column table), `docs/scripts.md` (frontmatter subsection)
+- **Block C — Alembic migration** (`app/alembic/versions/e2f3a4b5c6d7_brain_documents_fts_ann_and_metadata_columns.py`):
+  - Added `is_section_title` (boolean NOT NULL default false), `title` (varchar 512),
+    `description` (text) columns
+  - Added `content_tsv` as a Postgres GENERATED ALWAYS STORED tsvector with weighted FTS:
+    title+keywords at weight A, description at B, content at C
+  - Added GIN index `ix_brain_documents_content_tsv` on `content_tsv`
+  - Added HNSW index `ix_brain_documents_embedding_hnsw` on `embedding` (cosine ops)
+  - **Key implementation fix:** `array_to_string(keywords, ' ')` is STABLE not IMMUTABLE in
+    Postgres, so it is rejected in generated columns. Replaced with `array_to_tsvector(keywords)`
+    (which IS IMMUTABLE). Trade-off: keywords indexed as exact tokens, no stemming — correct
+    for the controlled OKF vocabulary (`'brain'`, `'engine'`, etc.). This deviates from the
+    plan's snippet but is equivalent or better for this use case.
+  - Down/up/down cycle verified clean
+  - `alembic upgrade head` applied against live DB — migration is at head
 
-- **`frontmatter-retrieval-filters`** shipped (commits `e8678a1` → `e8bd767`):
-  - `_apply_metadata_filters` helper; `filters: dict | None` on `DocumentQAEventSchema`
-  - `_CORPUS_CONFIG["brain"]` extended with `keyword_extra_fields` + `filter_fields`
-  - `keywords` ARRAY column ORed into brain-corpus keyword stage
-  - `pyproject.toml` raised `max-args = 6` to accommodate new `retrieve()` signature (amendment logged)
-  - 9 new tests; 755 pass; pylint 10.00/10; review PASS in 1 attempt
-  - Docs patched: `docs/api-reference.md` (filters field, `_apply_metadata_filters`, test count)
+- **Block D — BrainDocument model** (`app/database/brain_document.py`):
+  - Added `Boolean`, `FetchedValue` to SQLAlchemy imports; `TSVECTOR` to dialects
+  - Added `is_section_title` (Boolean, default False), `title` (String 512),
+    `description` (Text), and `content_tsv` (TSVECTOR, FetchedValue — read-only, never written
+    by the indexer)
 
-- **`/close-out` doc sweep** patched two more stale docs:
-  - `docs/workflows.md` — added `filters` row to DOCUMENT_QA payload table
-  - `docs/brain-rag.md` — added filters usage subsection + brain `keywords` OR-in note
+- **Gate: 760 passed, 8 skipped; ruff clean; pylint 10.00/10**
 
 ## Remaining work
 
-1. **Run `index_brain.py`** (operator step — not a spec):
-   ```bash
-   python scripts/index_brain.py --dry-run   # verify corpus list
-   python scripts/index_brain.py             # populate the vector store
-   ```
-   Then confirm `corpus="brain"` Q&A returns grounded answers from the enriched store.
-
-2. **Block O** — widen the index corpus to all sub-repo `planning/` + `CLAUDE.md` files
-   (per-repo corpora). Next spec to generate from `master-plan.md` → Block O.
-
-3. **Block J** — brain freshness loop (auto-reindex on commit via git hook). Wave 0, after B+O.
-
-4. **NEEDS_REVIEW: `docs/app-architecture-overview.md`** — three stale entries flagged by the
-   document agent during `/sdlc-run` and confirmed by `/update-docs`. Do NOT auto-patch; human
-   review needed before editing:
-   - **Line 163** (BrainDocument status entry): missing 6 new OKF columns and migration
-     `d1e2f3a4b5c6`; current text only mentions `Vector(1024)` + `ARRAY(String)` workflow_patterns.
-   - **Line 249** (Project D Task 3 row): says "22 tests"; doesn't mention `filters` kwarg,
-     `_apply_metadata_filters`, or `keywords` OR-in.
-   - **Line 250** (Project D Task 4 row): `DocumentQAEventSchema` field list missing `filters`.
-
-5. **Block B private face** (Tailscale) — remaining: Pixel tablet/phone, orchestration API
-   binding. Separate from this spec track; tracked in `planning/status.md` Block B.
+1. **Block E** (`scripts/index_brain.py`) — fix CORPUS list, case-normalize + fix vocab sets,
+   add `_is_header_only_chunk` helper, populate new columns at write time. Rated Opus in the
+   plan (the `is_section_title` correctness guardrail is the expensive-mistake blocker).
+2. **Block F** (`app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`) — update
+   `_CORPUS_CONFIG["brain"]` with `tsv_field`, rewrite `_keyword_search` to graded FTS
+   (dict[id→rank] shape for brain corpus), update `_fuse_and_rank` for graded fusion, add
+   explicit `include_archived: bool = False` to `DocumentQAEventSchema`, enrich returned dicts
+   with `file_path`/`doc_id`/`title`. Rated Opus.
+3. **Block G** (tests) — covers all new behavior in C–F; only after E + F land.
+4. **Block H** (`--rebuild` + verification) — execution against live DB; gate before running.
+5. **Blocks A + B** (brain repo) — doc relocation + commit hook. Independent; can run
+   in parallel or after orchestrator work.
 
 ## Open questions / choices
 
-- Whether to record the OKF vocabulary constants sync (`_VALID_LAYERS`/`_VALID_PROJECTS`/`_VALID_STATUSES`
-  in `scripts/index_brain.py`) as a decision in `planning/decisions/` — deferred per wrap-up; only
-  needed if the sync mechanism is ever formalized beyond the current warning-based approach.
-- `docs/app-architecture-overview.md` NEEDS_REVIEW: decide how granular the frontmatter and
-  filters entries should be in that dense timeline doc before editing it.
+- **`array_to_tsvector` vs `array_to_string` deviation:** The plan called for
+  `array_to_string(keywords, ' ')` + `to_tsvector` so keywords get stemmed. This was
+  impossible (STABLE not IMMUTABLE). `array_to_tsvector` is the correct substitute —
+  keywords are OKF controlled vocabulary, so exact token matching is better than stemming.
+  Block F's `_keyword_search` should use `plainto_tsquery` for prose (title/description/content
+  FTS) while the generated column already handles keywords as exact tokens. **No action needed
+  — the substitution is correct by design.**
+- **Block F `_keyword_search` FTS path:** The retrieval node will call
+  `func.plainto_tsquery('english', query)` against `content_tsv`. Since keywords are
+  stored as exact tokens (e.g., `'brain'`, `'engine'`), a query like `"brain rag"` will
+  match docs with keyword `'brain'` at weight A — working as designed.
 
 ## Context the next agent needs
 
-- The two net-new-lint baseline JSON files (`planning/frontmatter-indexer-enrich/sdlc/reports/net-new-lint-baseline.json`
-  and `planning/frontmatter-retrieval-filters/sdlc/reports/net-new-lint-baseline.json`) are
-  generated artifacts from the SDLC pipeline; they are untracked and benign — do not commit them.
-- The Alembic migration `d1e2f3a4b5c6` must be applied (`alembic upgrade head`) before
-  `index_brain.py` will write to the new OKF columns. The migration chains off `c4d5e6f7a8b9`.
-- `corpus="brain"` queries on `DocumentQAEventSchema` now accept `filters` dict with keys
-  `"layer"` (array overlap), `"project"` (scalar `==`), `"status"` (scalar `==`).
-- The `pyproject.toml` amendment (raised `max-args = 6`) is intentional and covered by tests.
+- **The new migration is already applied** — the DB is at head `e2f3a4b5c6d7`. Do NOT run
+  `alembic upgrade head` again before Block E/F (it's already done). Run `alembic current` to
+  confirm if in doubt.
+- **`content_tsv` is a generated column** — the indexer must NEVER write it (no `content_tsv`
+  in the BrainDocument constructor in `index_brain.py`). It is also not settable via
+  SQLAlchemy (`FetchedValue` makes it read-only on the model side).
+- **Block E plan ref:** `agentic-portfolio/planning/brain-rag-improvements/plan.md` → Block E.
+  Sub-changes: E1 (fix CORPUS list — note `docs/bastion` entry only works after Block A),
+  E2 (case-normalize vocab sets), E3 (no-op — FTS supersedes stop-word list), E4
+  (`_is_header_only_chunk` on the header-stripped body, not the combined chunk text).
+- **Block F plan ref:** same file → Block F. The `_keyword_search` return shape changes to
+  `dict[id→float]` for brain corpus (graded by `ts_rank`) vs `set[id]` for legacy content
+  corpus. `_fuse_and_rank` must branch on `isinstance(kw, dict)`.
+- **Test count baseline:** 760 passed, 8 skipped (up from 755 before this session).
+- **Previous handoff consumed** — the prior `planning/handoff.md` referenced
+  `frontmatter-indexer-enrich` + `frontmatter-retrieval-filters` as the just-completed work;
+  those are done and in the Decisions & Deviations log in `planning/status.md`.
 
 ## First command after `/prime`
 
-`python scripts/index_brain.py --dry-run`
+`uv run python -m alembic current`
+
+(Confirm migration is at `e2f3a4b5c6d7 (head)`, then proceed to Block E.)
