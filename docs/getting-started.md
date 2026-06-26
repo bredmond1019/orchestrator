@@ -2,6 +2,12 @@
 type: Guide
 title: Getting Started
 description: Set up and run the orchestration framework locally — Homebrew path and OrbStack/Docker path.
+doc_id: getting-started
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [setup, local development, Docker, Homebrew, PostgreSQL, Redis]
+related: [configuration, scripts]
 ---
 
 # Getting Started

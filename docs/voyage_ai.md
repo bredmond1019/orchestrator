@@ -2,6 +2,12 @@
 type: Reference
 title: Voyage AI SDK Reference
 description: Reference for the Voyage AI Python client — API key setup, embedding models, rerankers, tokenization, async requests, and a quickstart RAG tutorial.
+doc_id: voyage-ai
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [Voyage AI, embeddings, reranker, tokenization, RAG, Python client]
+related: [brain-rag, D37-local-embeddings-mxbai]
 ---
 
 > ## Documentation Index
