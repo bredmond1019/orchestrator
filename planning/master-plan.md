@@ -532,6 +532,13 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Interfaces / contracts:** **Produces two new D20 data-contract additions** — an authenticated abort
   endpoint and a budget-gate field/response — bumped per the CLAUDE.md D20 protocol and re-pinned in
   bastion's `data-contract.md`. Consumes the existing per-node cost/usage capture (D30).
+- **Downstream consumers (no new endpoint required of them):** beyond `bastion kill`, the **BastionUI**
+  program (brain **D28**) is a downstream consumer — `bastion serve` proxies *this* abort endpoint so
+  the phone can kill a run (BastionUI server Phase 11 Block G; brain BastionUI program Block N). The
+  BastionUI program defines **no new orchestrator endpoint** — it depends on this Block I. There is no
+  scheduling change here: Block I stays Wave 2; BastionUI's Engine-control phase is post-v1 and waits on
+  it. (Block I's prerequisite, **D28 incremental persistence, is already shipped** — see
+  `app/worker/tasks.py` `on_progress`.)
 - **Depends on:** The incremental execution-state persistence (D28) so a run is abortable mid-flight;
   bastion's structured-event spine strengthens alerting but is not hard-required here.
 - **Out of scope:** Per-client billing. Silent auto-killing (operator- or threshold-triggered with
