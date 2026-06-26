@@ -346,6 +346,26 @@ class TestDryRun:
         assert "Total:" in caplog.text
 
 
+class TestLimit:
+    """--limit N caps the corpus to the first N files (pre-rebuild subset check)."""
+
+    def test_limit_caps_file_count(self, tmp_path, caplog):
+        """--limit 1 reduces a multi-file corpus to a single file."""
+        import logging
+
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "career.md").write_text("## A\nContent.", encoding="utf-8")
+        (docs / "brand.md").write_text("## B\nContent.", encoding="utf-8")
+        (docs / "index.md").write_text("## C\nContent.", encoding="utf-8")
+
+        with caplog.at_level(logging.INFO, logger="index_brain"):
+            main(["--brain-path", str(tmp_path), "--dry-run", "--limit", "1"])
+
+        assert "--limit 1: processing first 1 file(s) only" in caplog.text
+        assert "Total: 1 files" in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # _collect_files tests
 # ---------------------------------------------------------------------------

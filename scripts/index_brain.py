@@ -484,6 +484,16 @@ def main(argv: list[str] | None = None) -> None:
         "then exit. Surgical orphan cleanup — no embedding, no API call. "
         "Used by the brain repo's delete/rename freshness hook.",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Process only the first N corpus files. Use with --rebuild for the "
+        "pre-rebuild write-path check (embed a 2-3 file subset and confirm "
+        "is_section_title is a True/False mix + title/description populate) "
+        "before paying for the full corpus.",
+    )
     args = parser.parse_args(argv)
 
     brain_path = _resolve_brain_path(args.brain_path)
@@ -501,6 +511,9 @@ def main(argv: list[str] | None = None) -> None:
 
     # Collect files
     files = _collect_files(brain_path)
+    if args.limit is not None:
+        files = files[: args.limit]
+        logger.info("--limit %d: processing first %d file(s) only", args.limit, len(files))
 
     if args.dry_run:
         logger.info("Dry run — no DB writes, no API calls.")
@@ -575,9 +588,9 @@ def main(argv: list[str] | None = None) -> None:
             if not final_chunks:
                 continue
 
-            # Stored content: clean chunk text (no YAML, no prefix)
-            chunk_texts = [c[1] for c in final_chunks]
-            # Embed text: prefix + chunk (prefix is semantic context; not stored)
+            # Embed text: prefix + chunk (prefix is semantic context; not stored).
+            # Stored content is the clean chunk text (c[1]) — taken directly from
+            # final_chunks in the upsert loop below, no YAML and no prefix.
             embed_texts = [context_prefix + c[1] for c in final_chunks]
 
             # Batch embed
@@ -592,8 +605,10 @@ def main(argv: list[str] | None = None) -> None:
             # Upsert: delete existing rows for this file+section, insert new
             with next(db_session()) as session:  # type: ignore[arg-type]
                 try:
+                    # strict=True: a Voyage count mismatch must fail loudly here,
+                    # never silently truncate into misaligned chunk↔embedding rows.
                     for (section_header, chunk_text), embedding in zip(
-                        final_chunks, embeddings
+                        final_chunks, embeddings, strict=True
                     ):
                         # Delete old rows matching file_path + section
                         session.query(BrainDocument).filter(
