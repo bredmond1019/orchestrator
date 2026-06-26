@@ -125,7 +125,24 @@ curl -X POST http://localhost:8080/events/ \
   }'
 ```
 
-The retrieval runs the same two-stage hybrid search as regular document Q&A: semantic similarity (Voyage embedding) + keyword ILIKE re-rank, with 2× weight on section-title matches. The brain corpus also ORs the `keywords` column into the keyword stage, so tagged documents surface even when the section body doesn't match.
+The retrieval runs two-stage hybrid search: HNSW-indexed semantic similarity (Voyage embedding) + a **graded Postgres full-text re-rank**, with 2× weight on section-title chunks. Unlike the content corpus (which uses a binary ILIKE keyword match), the brain corpus scores keyword relevance with `ts_rank` over a generated `content_tsv` column: a term in a document's `title` or `keywords` (full-text weight `'A'`) outranks the same term buried in body text (weight `'C'`). `plainto_tsquery` strips English stop words and stems terms natively (`"contracts"` matches `"contract"`), so no manual stop-word list is needed. Returned chunks also carry `file_path`, `doc_id`, and `title` provenance for citation.
+
+By default the brain corpus **excludes archived documents** (`status='archived'`). Pass `"include_archived": true` in the event to surface them (e.g. for historical questions):
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "DOCUMENT_QA",
+    "data": {
+      "doc_id": "00000000-0000-0000-0000-000000000000",
+      "question": "When did we do the OKF backfill?",
+      "corpus": "brain",
+      "include_archived": true
+    }
+  }'
+```
 
 **Scoping retrieval with filters** — pass an optional `filters` dict to restrict Stage 1 semantic search to documents matching the specified OKF metadata fields:
 
@@ -151,9 +168,10 @@ Supported filter keys: `"layer"` (array overlap — matches if the document's la
 ## When to re-index
 
 Re-run `index_brain.py` after:
-- Adding or updating any document in the brain's `docs/`, `planning/the-diagnostic/`, or `memory/` directories
-- Adding a new memory entry
+- Adding or updating any document in a corpus path — `docs/` (incl. `docs/diagnostic/`, `docs/projects/`, `docs/business/`), the in-corpus `planning/` docs (`bastion-product`, `bastion-ui`, `status.md`, `archived`), or top-level `CLAUDE.md`/`README.md`
 - Publishing a decision (`docs/decisions/`)
+
+> The auto-memory (`~/.claude/.../memory/` + `MEMORY.md`) is **not** in the corpus — it lives outside the brain repo and drifts, so the repo docs are the authoritative current-state source. See the brain-rag-improvements plan, Block E1.
 
 The incremental mode is fast — it compares `indexed_at` against file modification time and skips unchanged docs. Only updated or new sections get re-embedded.
 
