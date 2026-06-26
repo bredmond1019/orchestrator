@@ -49,6 +49,7 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided �
 | D34 | No hardcoded prompts — all prompts in .j2 files via PromptManager | [D34-jinja2-prompts.md](D34-jinja2-prompts.md) |
 | D35 | Top-tier models first, then introduce local/open-weight via Project H | [D35-top-tier-models.md](D35-top-tier-models.md) |
 | D36 | This repo is Bastion's Engine + Python-half-of-Brain; adopt the program plan (F≡Block B, G≡Block S; add Brain blocks O/J/C/P/L/R + cost-control I; demand-first; keep A–H) | [D36-bastion-engine-brain-role.md](D36-bastion-engine-brain-role.md) |
+| D37 | Embeddings go local — `mxbai-embed-large` via Ollama (1024-dim, no migration, free + repeatable), not Voyage; executes D35's Project-H local step early for embeddings | [D37-local-embeddings-mxbai.md](D37-local-embeddings-mxbai.md) |
 
 ---
 
@@ -58,5 +59,6 @@ Each decision lives in its own file, `D{N}-<kebab-title>.md`, in the **Decided �
 - **D26** — goal revised to a solo contracting practice (stub; canonical record in brain D1).
 - **D27–D35** — OKF adoption, execution state, data contract, and orchestrator implementation conventions.
 - **D36** — adopts the brain's Bastion program (D24/D25/D26): this repo is the Engine + Python-half-of-Brain; reframes Projects F/G and adds the Brain-side program blocks. Cross-repo order is authoritative in the brain.
+- **D37** — embeddings go local (`mxbai-embed-large` via Ollama, 1024-dim ⇒ no migration, free + repeatable) rather than Voyage; the rate-limited Block H rebuild pulled D35's Project-H local step forward for the embedding provider. Cheap to reverse; revisit when paying clients justify a larger/hosted model.
 
 *To add a decision: create the next `D{N}-<kebab>.md` with `type: Decision` frontmatter and the what / why / rejected body, then append a row above. To reverse one: add a new decision superseding it by number; leave the original intact.*

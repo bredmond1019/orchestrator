@@ -110,6 +110,7 @@ _VALID_PROJECTS: frozenset[str] = frozenset(
         "claude-sdk-rs",
         "workflow-engine-rs",
         "bastion",
+        "bastion-ui",  # add — used in docs/projects/bastion-ui.md + planning/bastion-ui/
         "markdown-engine-validator",
         "price-scout",
         "learn-ai",
