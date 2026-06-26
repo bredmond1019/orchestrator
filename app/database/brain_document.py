@@ -13,8 +13,8 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, DateTime, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy import Boolean, Column, DateTime, FetchedValue, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR, UUID
 
 from database.session import Base
 
@@ -112,4 +112,35 @@ class BrainDocument(Base):
         ARRAY(String),
         nullable=True,
         doc="OKF related field — relative paths to related documents in the brain repo",
+    )
+    # Columns added in migration e2f3a4b5c6d7
+    is_section_title = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        doc=(
+            "True when this chunk is a section-header-only chunk (body empty or < 40 chars); "
+            "enables 2x score weight in RetrieveChunksNode._fuse_and_rank"
+        ),
+    )
+    title = Column(
+        String(512),
+        nullable=True,
+        doc="OKF frontmatter title field; stored for FTS keyword search and citation display",
+    )
+    description = Column(
+        Text,
+        nullable=True,
+        doc="OKF frontmatter description field; stored for FTS keyword search and citation display",
+    )
+    # Read-only: Postgres maintains this generated column automatically from
+    # content/title/description/keywords. The indexer must NEVER write it (no INSERT/UPDATE).
+    content_tsv = Column(
+        TSVECTOR,
+        nullable=True,
+        server_default=FetchedValue(),
+        doc=(
+            "Generated tsvector over weighted title+keywords ('A') / description ('B') / "
+            "content ('C'); GIN-indexed for graded Postgres full-text search"
+        ),
     )
