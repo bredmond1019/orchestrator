@@ -25,6 +25,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from index_brain import (  # noqa: E402
     CORPUS,
+    _DEFAULT_BRAIN_PATH,
     _collect_files,
     _get_doc_type_for_path,
     build_context_prefix,
@@ -708,3 +709,114 @@ class TestFrontmatterIntegration:
             main(["--brain-path", str(tmp_path)])
 
         assert mock_embed.embed_batch.called
+
+
+# ---------------------------------------------------------------------------
+# Default brain path (cwd-independence)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultBrainPath:
+    """The default --brain-path is derived from the script location, not cwd."""
+
+    def test_default_points_at_orchestration_repo_parent(self):
+        """_DEFAULT_BRAIN_PATH is the parent of the orchestration repo root."""
+        repo_root = Path(__file__).resolve().parent.parent
+        assert _DEFAULT_BRAIN_PATH == repo_root.parent
+
+    def test_default_is_absolute(self):
+        """A script-derived default must be absolute so any cwd resolves it."""
+        assert _DEFAULT_BRAIN_PATH.is_absolute()
+
+
+# ---------------------------------------------------------------------------
+# --prune-paths tests
+# ---------------------------------------------------------------------------
+
+
+class TestPrunePaths:
+    """--prune-paths deletes rows for deleted/renamed-away files and exits early.
+
+    db_session is lazily imported inside _prune_paths, so it is patched at its
+    source module path. _resolve_brain_path requires a docs/ dir, so each test
+    builds a minimal brain layout under tmp_path.
+    """
+
+    def _make_mock_session(self) -> tuple[MagicMock, MagicMock]:
+        """A chainable MagicMock (session, query) usable as a context manager."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.count.return_value = 0
+        mock_query.delete.return_value = 0
+        mock_session = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session, mock_query
+
+    def test_dry_run_does_not_delete_or_commit(self, tmp_path):
+        """--prune-paths with --dry-run reports intent but writes nothing."""
+        (tmp_path / "docs").mkdir()
+        mock_session, mock_query = self._make_mock_session()
+
+        def fake_db_session():
+            yield mock_session
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService") as mock_embed_cls,
+        ):
+            main(
+                [
+                    "--brain-path",
+                    str(tmp_path),
+                    "--prune-paths",
+                    "docs/gone.md",
+                    "--dry-run",
+                ]
+            )
+
+        mock_query.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+        mock_query.count.assert_called()
+        # Prune exits before any embedding work.
+        mock_embed_cls.assert_not_called()
+
+    def test_real_prune_deletes_and_commits(self, tmp_path):
+        """--prune-paths (no dry-run) deletes prunable rows and commits."""
+        (tmp_path / "docs").mkdir()
+        mock_session, mock_query = self._make_mock_session()
+
+        def fake_db_session():
+            yield mock_session
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService") as mock_embed_cls,
+        ):
+            main(["--brain-path", str(tmp_path), "--prune-paths", "docs/gone.md"])
+
+        mock_query.delete.assert_called_once()
+        mock_session.commit.assert_called_once()
+        mock_embed_cls.assert_not_called()
+
+    def test_absolute_in_brain_path_is_relativised(self, tmp_path, caplog):
+        """An absolute path under the brain root is logged as a brain-relative path."""
+        import logging
+
+        (tmp_path / "docs").mkdir()
+        mock_session, _ = self._make_mock_session()
+
+        def fake_db_session():
+            yield mock_session
+
+        abs_path = str(tmp_path / "docs" / "career.md")
+        with (
+            patch("database.session.db_session", fake_db_session),
+            caplog.at_level(logging.INFO, logger="index_brain"),
+        ):
+            main(["--brain-path", str(tmp_path), "--prune-paths", abs_path])
+
+        # The absolute path collapses to the stored relative form.
+        assert "docs/career.md" in caplog.text
+        assert abs_path not in caplog.text

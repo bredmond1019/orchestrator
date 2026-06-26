@@ -112,9 +112,20 @@ python scripts/index_brain.py
 # Force rebuild — drops all non-diagnostic rows and re-indexes
 python scripts/index_brain.py --rebuild
 
-# Custom brain path (defaults to ../agentic-portfolio relative to the repo root)
+# Prune rows for deleted/renamed-away files (surgical — no embedding, no API call)
+python scripts/index_brain.py --prune-paths docs/old.md docs/decisions/gone.md
+
+# Custom brain path (defaults to the parent of the orchestration repo, resolved
+# from the script's own location — so it works from any working directory)
 python scripts/index_brain.py --brain-path /path/to/agentic-portfolio
 ```
+
+**`--prune-paths`** deletes `brain_documents` rows whose `file_path` matches the given
+paths, then exits. The incremental upsert keys on `file_path + section`, so a deleted or
+renamed file's old rows are never revisited and linger as stale retrieval hits; this removes
+them without re-embedding anything. Diagnostic rows (`client_slug` set) are preserved and a
+warning is logged if any matched. This mode powers the brain repo's `post-commit` freshness
+hook (see `hooks/README.md` in the brain repo), which prunes automatically on delete/rename.
 
 **What gets indexed** (defined in `CORPUS` inside the script):
 

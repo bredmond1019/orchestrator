@@ -8,12 +8,19 @@ This script runs from the CLI — it is NOT a workflow node and is NOT run by Ce
 
 Usage:
     python scripts/index_brain.py [--brain-path PATH] [--rebuild] [--dry-run]
+    python scripts/index_brain.py --prune-paths PATH [PATH ...] [--dry-run]
 
 Args:
-    --brain-path PATH    Path to the brain repo root. Defaults to ../agentic-portfolio.
+    --brain-path PATH    Path to the brain repo root. Defaults to the parent of the
+                         orchestration repo (the brain root) — resolved from this
+                         script's location, so it is independent of the current
+                         working directory.
     --rebuild            Drop all non-diagnostic rows and re-index from scratch.
-    --dry-run            Print what would be indexed without writing to DB or calling
-                         the embedding API.
+    --dry-run            Print what would be indexed (or pruned) without writing to
+                         DB or calling the embedding API.
+    --prune-paths PATH … Delete brain_documents rows for these deleted/renamed-away
+                         file paths, then exit. Surgical orphan cleanup with no
+                         embedding call; driven by the brain repo's freshness hook.
 """
 
 import argparse
@@ -48,6 +55,11 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
+
+# Brain repo root = parent of the orchestration repo. Derived from this script's
+# location (scripts/index_brain.py) so the default is correct regardless of the
+# current working directory.
+_DEFAULT_BRAIN_PATH = Path(__file__).resolve().parent.parent.parent
 
 # ---------------------------------------------------------------------------
 # OKF controlled vocabularies (from docs/okf-frontmatter.md + D27)
@@ -319,6 +331,70 @@ def _get_doc_type_for_path(file_path: str, brain_path: Path) -> str:
     return "content"  # fallback
 
 
+def _prune_paths(paths: list[str], brain_path: Path, dry_run: bool = False) -> None:
+    """Delete ``brain_documents`` rows for files removed or renamed away.
+
+    Surgical orphan cleanup: the incremental indexer keys its upsert on
+    ``file_path + section``, so when a file is deleted or renamed its old rows
+    are never revisited and linger as stale retrieval hits.  This deletes every
+    row whose ``file_path`` matches one of ``paths`` — no embedding, no API call.
+
+    Diagnostic rows (``client_slug`` set) are preserved, mirroring the
+    ``--rebuild`` protection; if any matched a warning is logged so they can be
+    handled by hand.
+
+    Args:
+        paths:      File paths to prune, relative to the brain root (absolute
+                    paths under the brain root are accepted and relativised).
+        brain_path: Absolute path to the brain repo root.
+        dry_run:    When True, report what would be deleted without writing.
+    """
+    from database.brain_document import BrainDocument
+    from database.session import db_session
+
+    # Normalise to brain-root-relative strings to match the stored file_path.
+    rel_paths: list[str] = []
+    for raw in paths:
+        p = Path(raw)
+        if p.is_absolute():
+            try:
+                p = p.relative_to(brain_path)
+            except ValueError:
+                pass
+        rel_paths.append(str(p))
+
+    with next(db_session()) as session:  # type: ignore[arg-type]
+        base = session.query(BrainDocument).filter(
+            BrainDocument.file_path.in_(rel_paths)
+        )
+        protected = base.filter(BrainDocument.client_slug.isnot(None)).count()
+        prunable = base.filter(BrainDocument.client_slug.is_(None))
+
+        if dry_run:
+            count = prunable.count()
+            logger.info(
+                "Dry run — would prune %d row(s) for %d path(s): %s",
+                count,
+                len(rel_paths),
+                ", ".join(rel_paths),
+            )
+        else:
+            deleted = prunable.delete(synchronize_session=False)
+            session.commit()
+            logger.info(
+                "--prune-paths: deleted %d row(s) for %d path(s): %s",
+                deleted,
+                len(rel_paths),
+                ", ".join(rel_paths),
+            )
+
+    if protected:
+        logger.warning(
+            "--prune-paths: kept %d diagnostic row(s) (client_slug set) — prune by hand if intended",
+            protected,
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the brain corpus indexer."""
     parser = argparse.ArgumentParser(
@@ -326,8 +402,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--brain-path",
-        default="../agentic-portfolio",
-        help="Path to the brain repo root (default: ../agentic-portfolio)",
+        default=str(_DEFAULT_BRAIN_PATH),
+        help=f"Path to the brain repo root (default: {_DEFAULT_BRAIN_PATH})",
     )
     parser.add_argument(
         "--rebuild",
@@ -339,6 +415,14 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Print what would be indexed without writing to DB or calling the embedding API",
     )
+    parser.add_argument(
+        "--prune-paths",
+        nargs="+",
+        metavar="PATH",
+        help="Delete brain_documents rows for these (deleted/renamed-away) file paths, "
+        "then exit. Surgical orphan cleanup — no embedding, no API call. "
+        "Used by the brain repo's delete/rename freshness hook.",
+    )
     args = parser.parse_args(argv)
 
     brain_path = _resolve_brain_path(args.brain_path)
@@ -347,6 +431,12 @@ def main(argv: list[str] | None = None) -> None:
     app_dir = Path(__file__).resolve().parent.parent / "app"
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
+
+    # --prune-paths: surgical orphan cleanup, exits before any embedding work
+    # (so it needs no VOYAGE_API_KEY and never touches the corpus walk).
+    if args.prune_paths:
+        _prune_paths(args.prune_paths, brain_path, dry_run=args.dry_run)
+        return
 
     # Collect files
     files = _collect_files(brain_path)
@@ -362,7 +452,6 @@ def main(argv: list[str] | None = None) -> None:
 
     # Import DB and service dependencies only when not dry-run
     from database.brain_document import BrainDocument
-    from database.repository import GenericRepository
     from database.session import db_session
     from services.embedding_service import EmbeddingService
 
