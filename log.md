@@ -10,6 +10,18 @@ description: Chronological log of work completed for the python-orchestration-sy
 
 ---
 
+### 2026-06-26 (brain-rag-improvements Blocks C + D — FTS + ANN infrastructure)
+
+Shipped the full brain-rag-improvements specification for Blocks C (FTS infrastructure) and D (model update) in a single implementation pass: migration `e2f3a4b5c6d7` adds three metadata columns (`is_section_title`, `title`, `description`) for weighted document ranking + a generated `content_tsv` tsvector column (GIN-indexed) for graded Postgres full-text search + an HNSW index on `embedding` for approximate nearest-neighbor search. The generated column formula weights title/keywords ('A') > description ('B') > content ('C') to amplify term frequency based on section granularity. Implementation note: used `array_to_tsvector()` (IMMUTABLE) instead of `array_to_string()` (STABLE) because Postgres rejects STABLE functions in generated columns; the trade-off is keywords match as exact tokens without stemming, which is correct for controlled OKF vocabulary (e.g., 'brain', 'engine', 'factory'). `BrainDocument` model updated to declare all four new columns (three regular, `content_tsv` as read-only FetchedValue). This infrastructure is the prerequisite for Block B (indexing the brain corpus) and Block E (retrieval ranking refinement). Final: 760 tests pass + 8 skipped; ruff clean; pylint 10.00/10.
+
+```diff
+app/alembic/versions/e2f3a4b5c6d7_brain_documents_fts_ann_and_metadata_columns.py | 86 ++++++++++++++++++++++
+app/database/brain_document.py                                                      | 35 +++++++++
+2 files changed, 121 insertions(+)
+```
+
+---
+
 ### 2026-06-25 (close-out doc sweep for frontmatter specs)
 
 Patched developer reference docs after `frontmatter-indexer-enrich` and `frontmatter-retrieval-filters` shipped. Updated `docs/brain-rag.md` to clarify brain keyword OR-in (the `keywords` OKF column is ORed into Stage 2 keyword re-ranking) and added a new "Scoping retrieval with filters" subsection documenting the optional `filters` parameter with working curl example. Updated `docs/workflows.md` to add the `filters` field to the DOCUMENT_QA payload table with supported filter keys (`layer`, `project`, `status`). Updated `docs/app-architecture-overview.md` (line 163: expanded `BrainDocument` entry to detail the 6 new OKF columns + migration; line 249: test count bump 22→32 for `RetrieveChunksNode`, added brain keyword OR-in feature note and metadata filters feature summary; line 250: added `filters` field to `DocumentQAEventSchema` field list). No code changes — documentation-only close-out sweep to align developer reference with implemented features.
