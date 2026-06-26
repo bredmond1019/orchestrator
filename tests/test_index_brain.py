@@ -28,6 +28,7 @@ from index_brain import (  # noqa: E402
     _DEFAULT_BRAIN_PATH,
     _collect_files,
     _get_doc_type_for_path,
+    _is_header_only_chunk,
     build_context_prefix,
     chunk_by_section,
     main,
@@ -167,24 +168,39 @@ class TestDocTypeAssignment:
         )
 
     def test_diagnostic_file(self):
+        # The Diagnostic offering now lives in docs/diagnostic (was the
+        # nonexistent planning/the-diagnostic path).
         assert (
             _get_doc_type_for_path(
-                "/fake/brain/planning/the-diagnostic/plan.md", self.brain_path
+                "/fake/brain/docs/diagnostic/plan.md", self.brain_path
             )
             == "diagnostic"
         )
 
-    def test_memory_file(self):
+    def test_claude_md_file(self):
+        # CLAUDE.md is newly in the corpus, typed "meta".
         assert (
-            _get_doc_type_for_path("/fake/brain/MEMORY.md", self.brain_path) == "memory"
+            _get_doc_type_for_path("/fake/brain/CLAUDE.md", self.brain_path) == "meta"
         )
 
-    def test_memory_dir_file(self):
+    def test_archived_dir_file(self):
+        # planning/archived is indexed as "archived" (filtered from default retrieval).
         assert (
             _get_doc_type_for_path(
-                "/fake/brain/memory/notes.md", self.brain_path
+                "/fake/brain/planning/archived/old-plan.md", self.brain_path
             )
-            == "memory"
+            == "archived"
+        )
+
+    def test_memory_path_falls_back_to_content(self):
+        # memory/ + MEMORY.md are no longer in the corpus (out-of-repo, drift);
+        # any such path now resolves to the "content" fallback, not "memory".
+        assert (
+            _get_doc_type_for_path("/fake/brain/MEMORY.md", self.brain_path) == "content"
+        )
+        assert (
+            _get_doc_type_for_path("/fake/brain/memory/notes.md", self.brain_path)
+            == "content"
         )
 
     def test_unknown_path_falls_back_to_content(self):
@@ -714,6 +730,244 @@ class TestFrontmatterIntegration:
 # ---------------------------------------------------------------------------
 # Default brain path (cwd-independence)
 # ---------------------------------------------------------------------------
+
+
+class TestIsHeaderOnlyChunk:
+    """_is_header_only_chunk measures the header-STRIPPED body (the E4 blocker).
+
+    Because chunk_by_section prepends the header to every chunk's text, a naive
+    startswith('#') would flag every chunk. The flag must be False for chunks
+    that carry a real body.
+    """
+
+    def test_header_with_no_body_is_true(self):
+        assert _is_header_only_chunk("## Section", "## Section") is True
+
+    def test_header_with_trivial_body_is_true(self):
+        # Stripped body "Tiny." is < 40 chars → still a header-only chunk.
+        assert _is_header_only_chunk("## Section", "## Section\nTiny.") is True
+
+    def test_header_with_real_body_is_false(self):
+        combined = (
+            "## Section\nA real paragraph body that comfortably exceeds the "
+            "forty-character threshold."
+        )
+        assert _is_header_only_chunk("## Section", combined) is False
+
+    def test_guardrail_flag_is_a_mix_not_all_true(self):
+        """Across a multi-section doc the flag must be a mix — the E4 guardrail.
+
+        If header-stripping were wrong, every chunk would read as a header.
+        """
+        content = (
+            "## Header Only\n\n"
+            "## Has Body\nA long paragraph body that clearly exceeds the forty "
+            "character threshold by a wide margin."
+        )
+        chunks = chunk_by_section(content)
+        flags = [_is_header_only_chunk(h, t) for h, t in chunks]
+        assert any(flags) and not all(flags)
+
+
+class TestVocabCaseNormalization:
+    """normalize_metadata lowercases layer/project/status before checking + storing.
+
+    The real warning source was capitalization (status: Draft/Active), not a
+    vocabulary gap. Lowercasing fixes the whole class of bug.
+    """
+
+    def setup_method(self):
+        self.brain_path = Path("/fake/brain")
+        self.file_path = Path("/fake/brain/docs/test.md")
+
+    def test_project_brain_does_not_warn(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = normalize_metadata(
+                {"project": "brain"}, self.file_path, self.brain_path
+            )
+        assert result["project"] == "brain"
+        assert "Out-of-vocabulary" not in caplog.text
+
+    def test_layer_surface_singular_does_not_warn(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = normalize_metadata(
+                {"layer": ["surface"]}, self.file_path, self.brain_path
+            )
+        assert result["layer"] == ["surface"]
+        assert "Out-of-vocabulary" not in caplog.text
+
+    def test_capitalized_status_is_normalized_and_does_not_warn(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            draft = normalize_metadata(
+                {"status": "Draft"}, self.file_path, self.brain_path
+            )
+            active = normalize_metadata(
+                {"status": "Active"}, self.file_path, self.brain_path
+            )
+        assert draft["status"] == "draft"
+        assert active["status"] == "active"
+        assert "Out-of-vocabulary" not in caplog.text
+
+    def test_mixed_case_layer_is_normalized(self):
+        result = normalize_metadata(
+            {"layer": ["Brain", "Engine"]}, self.file_path, self.brain_path
+        )
+        assert result["layer"] == ["brain", "engine"]
+
+    def test_superseded_status_is_valid(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = normalize_metadata(
+                {"status": "superseded"}, self.file_path, self.brain_path
+            )
+        assert result["status"] == "superseded"
+        assert "Out-of-vocabulary" not in caplog.text
+
+    def test_genuinely_bogus_layer_still_warns(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = normalize_metadata(
+                {"layer": ["bogus"]}, self.file_path, self.brain_path
+            )
+        assert result["layer"] == ["bogus"]
+        assert "Out-of-vocabulary" in caplog.text
+
+
+class TestCorpusContents:
+    """The CORPUS list adds the missing docs and drops the broken/out-of-repo ones."""
+
+    def test_corpus_includes_newly_added_entries(self):
+        rels = [r for r, _ in CORPUS]
+        for expected in (
+            "docs/diagnostic",
+            "planning/status.md",
+            "CLAUDE.md",
+            "docs/progress.md",
+            "docs/okf-frontmatter.md",
+            "docs/integrations",
+            "planning/archived",
+        ):
+            assert expected in rels, f"{expected} missing from CORPUS"
+
+    def test_corpus_excludes_removed_and_out_of_repo_entries(self):
+        rels = [r for r, _ in CORPUS]
+        for excluded in (
+            "planning/the-diagnostic",  # broken path
+            "memory",  # out of repo
+            "MEMORY.md",  # out of repo
+            "planning/handoff.md",  # ephemeral
+        ):
+            assert excluded not in rels, f"{excluded} should not be in CORPUS"
+
+
+class TestNewColumnPopulation:
+    """The indexer populates is_section_title/title/description, never content_tsv."""
+
+    def _make_mock_session(self) -> MagicMock:
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.first.return_value = None
+        mock_query.delete.return_value = 0
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session
+
+    def test_columns_populated_from_frontmatter_and_body(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        doc = (
+            "---\n"
+            "title: My Title\n"
+            "description: A one-line description.\n"
+            "type: ProjectContext\n"
+            "---\n\n"
+            "## Header Only\n\n"
+            "## Has Body\n"
+            "A long paragraph body that comfortably exceeds the forty character "
+            "threshold for a real section.\n"
+        )
+        # docs/brand.md is a CORPUS-matched single-file entry.
+        (docs / "brand.md").write_text(doc, encoding="utf-8")
+
+        captured: list = []
+
+        def fake_db_session():
+            mock_session = self._make_mock_session()
+
+            def capturing_add(obj):
+                captured.append(obj)
+
+            mock_session.add = capturing_add
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024, [0.2] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch(
+                "services.embedding_service.EmbeddingService",
+                return_value=mock_embed,
+            ),
+        ):
+            main(["--brain-path", str(tmp_path)])
+
+        assert len(captured) == 2
+        # title + description come from frontmatter on every chunk of the doc.
+        assert all(d.title == "My Title" for d in captured)
+        assert all(d.description == "A one-line description." for d in captured)
+        # is_section_title is a mix (header-only True, body False) — the guardrail.
+        flags = [d.is_section_title for d in captured]
+        assert any(flags) and not all(flags)
+        # content_tsv is a generated column — the indexer must never set it.
+        assert all(getattr(d, "content_tsv", None) is None for d in captured)
+
+    def test_missing_title_stores_none(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        # No frontmatter title/description.
+        (docs / "career.md").write_text(
+            "## Section\nA paragraph body with enough length to be a real chunk here.",
+            encoding="utf-8",
+        )
+
+        captured: list = []
+
+        def fake_db_session():
+            mock_session = self._make_mock_session()
+
+            def capturing_add(obj):
+                captured.append(obj)
+
+            mock_session.add = capturing_add
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch(
+                "services.embedding_service.EmbeddingService",
+                return_value=mock_embed,
+            ),
+        ):
+            main(["--brain-path", str(tmp_path)])
+
+        assert len(captured) == 1
+        assert captured[0].title is None
+        assert captured[0].description is None
 
 
 class TestDefaultBrainPath:

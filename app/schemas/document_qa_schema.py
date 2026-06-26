@@ -40,3 +40,11 @@ class DocumentQAEventSchema(BaseModel):
             "'status' (scalar ==). Ignored for 'content' corpus."
         ),
     )
+    include_archived: bool = Field(
+        default=False,
+        description=(
+            "When False (default), the 'brain' corpus excludes docs with "
+            "status='archived' from retrieval. Set True to surface archived "
+            "historical context. No effect on the 'content' corpus."
+        ),
+    )

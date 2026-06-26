@@ -52,15 +52,29 @@ _CORPUS_CONFIG: dict[str, dict] = {
         "model": BrainDocument,
         "content_field": "content",
         "section_title_field": "section",
-        "is_section_title_field": None,
-        "keyword_extra_fields": ["keywords"],
+        "is_section_title_field": "is_section_title",  # was None — now wired
+        # FTS column: a generated, weighted tsvector over title+keywords ('A'),
+        # description ('B'), content ('C'). Its presence switches the keyword
+        # stage from binary ILIKE to graded ts_rank (see _keyword_search).
+        "tsv_field": "content_tsv",
         "filter_fields": {
             "layer": "array",
             "project": "scalar",
             "status": "scalar",
         },
+        # Exclude archived docs from default retrieval; override with
+        # include_archived=True (an explicit DocumentQAEventSchema field).
+        "default_status_exclude": "archived",
     },
 }
+
+# Keyword fusion weights (tune against the Block H smoke queries):
+# - _KW_WEIGHT scales the graded FTS ts_rank contribution (ts_rank values are
+#   small, typically < 0.1, so this is larger than the legacy flat boost).
+# - _KW_BOOST is the legacy flat boost for the ILIKE-set ("content") corpus,
+#   preserved unchanged at 1.0 so that path is regression-free.
+_KW_WEIGHT: float = 5.0
+_KW_BOOST: float = 1.0
 
 
 def _apply_metadata_filters(query, model, filters: dict, filter_fields: dict):
@@ -96,6 +110,10 @@ def _row_to_candidate(row, distance: float, config: dict) -> dict:
         "section_title": getattr(row, stf, None),
         "is_section_title": bool(getattr(row, istf, False)) if istf else False,
         "distance": float(distance),
+        # Provenance / citation fields (None for corpora that lack them, e.g. content_chunks).
+        "file_path": getattr(row, "file_path", None),
+        "doc_id": getattr(row, "doc_id", None),
+        "title": getattr(row, "title", None),
     }
 
 
@@ -115,7 +133,14 @@ class RetrieveChunksNode(Node):
         query = event.question
         corpus = getattr(event, "corpus", "content")
         filters = getattr(event, "filters", None)
-        chunks = self.retrieve(query, corpus=corpus, k=5, filters=filters)
+        include_archived = getattr(event, "include_archived", False)
+        chunks = self.retrieve(
+            query,
+            corpus=corpus,
+            k=5,
+            filters=filters,
+            include_archived=include_archived,
+        )
         task_context.update_node(
             node_name=self.node_name,
             result={"chunks": chunks},
@@ -130,6 +155,7 @@ class RetrieveChunksNode(Node):
         threshold: float = 0.0,
         *,
         filters: dict | None = None,
+        include_archived: bool = False,
     ) -> list[dict]:
         """Run the two-stage hybrid retrieval pipeline.
 
@@ -139,17 +165,22 @@ class RetrieveChunksNode(Node):
                 ``"brain"`` (brain_documents).
             k: Maximum number of chunks to return.
             threshold: Minimum fused score to include a chunk in results.
+            filters: Optional metadata WHERE clauses (brain corpus only).
+            include_archived: When False (default), brain-corpus results exclude
+                docs with ``status="archived"``.
 
         Returns:
             List of up to ``k`` normalized chunk dicts, each containing
-            ``{"content", "section_title", "score", "source"}``, sorted by
-            fused score descending.
+            ``{"content", "section_title", "score", "source", "file_path",
+            "doc_id", "title"}``, sorted by fused score descending.
         """
         vector = EmbeddingService().embed_text(query)
-        candidates = self._semantic_search(vector, corpus, limit=20, filters=filters)
+        candidates = self._semantic_search(
+            vector, corpus, limit=20, filters=filters, include_archived=include_archived
+        )
         candidate_ids = [c["id"] for c in candidates]
-        keyword_ids = self._keyword_search(query, candidate_ids, corpus)
-        return self._fuse_and_rank(candidates, keyword_ids, k, threshold)
+        keyword_matches = self._keyword_search(query, candidate_ids, corpus)
+        return self._fuse_and_rank(candidates, keyword_matches, k, threshold)
 
     def _semantic_search(
         self,
@@ -157,6 +188,7 @@ class RetrieveChunksNode(Node):
         corpus: str,
         limit: int,
         filters: dict | None = None,
+        include_archived: bool = False,
     ) -> list[dict]:
         """Stage 1: pgvector cosine-distance query returning a wide candidate set.
 
@@ -182,6 +214,15 @@ class RetrieveChunksNode(Node):
                 q = _apply_metadata_filters(
                     q, model, filters, config["filter_fields"]
                 )
+            # Default: exclude archived docs unless the caller opts in. A NULL
+            # status is kept (only an explicit "archived" is filtered).
+            exclude = config.get("default_status_exclude")
+            if exclude and not include_archived:
+                status_col = getattr(model, "status", None)
+                if status_col is not None:
+                    q = q.filter(
+                        (status_col != exclude) | (status_col.is_(None))
+                    )
             rows = q.order_by(distance_expr).limit(limit).all()
             return [_row_to_candidate(row, distance, config) for row, distance in rows]
 
@@ -190,19 +231,53 @@ class RetrieveChunksNode(Node):
         query: str,
         candidate_ids: list,
         corpus: str,
-    ) -> set:
-        """Stage 2: ILIKE keyword match scoped to stage-1 candidate IDs.
+    ) -> set | dict:
+        """Stage 2: keyword re-rank scoped to stage-1 candidate IDs.
 
-        Returns the set of candidate IDs whose content field contains at least
-        one query term as a substring (case-insensitive). Scoped to
-        ``candidate_ids`` so only candidates from Stage 1 are re-ranked.
+        Two paths, selected by whether the corpus declares a ``tsv_field``:
 
-        This method is isolated so tests can patch it without a live DB.
+        - **FTS path** (brain corpus): a single ranked Postgres full-text query
+          against the generated ``content_tsv`` column. Returns a
+          ``dict[id -> ts_rank]`` — a *graded* signal where a query term in a
+          doc's title (setweight 'A') outranks the same term in body text
+          (setweight 'C'). ``plainto_tsquery`` strips English stop words and
+          stems natively, so no manual term/stop-word handling is needed.
+        - **Legacy ILIKE path** (content corpus): binary substring match
+          returning a ``set[id]`` of candidates that matched at least one term.
+
+        Scoped to ``candidate_ids`` so only Stage-1 candidates are re-ranked.
+        Isolated so tests can patch it without a live DB.
         """
-        if not candidate_ids:
-            return set()
-
         config = _CORPUS_CONFIG[corpus]
+        tsv_field = config.get("tsv_field")
+
+        if not candidate_ids:
+            return {} if tsv_field else set()
+
+        if tsv_field:
+            return self._keyword_search_fts(query, candidate_ids, config, tsv_field)
+        return self._keyword_search_ilike(query, candidate_ids, config)
+
+    @staticmethod
+    def _keyword_search_fts(
+        query: str, candidate_ids: list, config: dict, tsv_field: str
+    ) -> dict:
+        """Graded full-text search: returns ``dict[id -> ts_rank]`` (FTS corpora)."""
+        model = config["model"]
+        tsv_col = getattr(model, tsv_field)
+        tsquery = func.plainto_tsquery("english", query)
+        rank = func.ts_rank(tsv_col, tsquery)
+        with contextmanager(db_session)() as session:
+            q = (
+                session.query(model.id, rank.label("kw_rank"))
+                .filter(model.id.in_(candidate_ids))
+                .filter(tsv_col.op("@@")(tsquery))
+            )
+            return {row.id: float(row.kw_rank) for row in q.all()}
+
+    @staticmethod
+    def _keyword_search_ilike(query: str, candidate_ids: list, config: dict) -> set:
+        """Legacy binary substring match: returns ``set[id]`` (content corpus)."""
         model = config["model"]
         content_col = getattr(model, config["content_field"])
         terms = [t for t in (re.sub(r"\W+", "", w) for w in query.split()) if t]
@@ -229,7 +304,7 @@ class RetrieveChunksNode(Node):
     def _fuse_and_rank(
         self,
         candidates: list[dict],
-        keyword_ids: set,
+        keyword_matches: set | dict,
         k: int,
         threshold: float,
     ) -> list[dict]:
@@ -238,7 +313,14 @@ class RetrieveChunksNode(Node):
         Score formula (ported from rag-engine-rs ``two_stage_retrieval.rs``):
 
             score = (1.0 - distance) * (2.0 if is_section_title else 1.0)
-                    + (1.0 if id in keyword_ids else 0.0)
+                    + keyword_contribution
+
+        The keyword contribution depends on the shape of ``keyword_matches``:
+
+        - ``dict[id -> ts_rank]`` (FTS corpora): graded —
+          ``_KW_WEIGHT * ts_rank``. A stronger / better-weighted match scores
+          higher than a weak one.
+        - ``set[id]`` (legacy ILIKE corpora): flat ``_KW_BOOST`` for membership.
 
         NaN-safe: candidates whose ``distance`` is NaN are filtered out before
         sorting (the Rust ``total_cmp`` guard, which never panics on NaN).
@@ -246,14 +328,17 @@ class RetrieveChunksNode(Node):
         Args:
             candidates: Stage-1 candidates with ``id``, ``distance``,
                 ``is_section_title``, ``content``, ``section_title`` keys.
-            keyword_ids: Set of candidate IDs that matched the keyword filter.
+            keyword_matches: Either a ``dict[id -> ts_rank]`` (graded FTS) or a
+                ``set[id]`` (legacy binary) of keyword hits.
             k: Maximum number of results to return.
             threshold: Minimum fused score to include a result.
 
         Returns:
             List of normalized dicts ``{"content", "section_title", "score",
-            "source"}`` sorted by score descending, length <= ``k``.
+            "source", "file_path", "doc_id", "title"}`` sorted by score
+            descending, length <= ``k``.
         """
+        graded = isinstance(keyword_matches, dict)
         scored = []
         for c in candidates:
             distance = c["distance"]
@@ -262,7 +347,10 @@ class RetrieveChunksNode(Node):
                 continue
             similarity = 1.0 - distance
             title_weight = 2.0 if c.get("is_section_title") else 1.0
-            keyword_boost = 1.0 if c["id"] in keyword_ids else 0.0
+            if graded:
+                keyword_boost = _KW_WEIGHT * keyword_matches.get(c["id"], 0.0)
+            else:
+                keyword_boost = _KW_BOOST if c["id"] in keyword_matches else 0.0
             score = similarity * title_weight + keyword_boost
             if score < threshold:
                 continue
@@ -273,6 +361,10 @@ class RetrieveChunksNode(Node):
                     "section_title": c.get("section_title"),
                     "score": score,
                     "source": c.get("section_title") or "General",
+                    # Provenance / citation fields (carried through from candidates).
+                    "file_path": c.get("file_path"),
+                    "doc_id": c.get("doc_id"),
+                    "title": c.get("title"),
                 }
             )
 
