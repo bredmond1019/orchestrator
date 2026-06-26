@@ -79,7 +79,7 @@ python scripts/index_brain.py
 python scripts/index_brain.py --rebuild
 ```
 
-The script defaults to `../agentic-portfolio` relative to the repo root. If your brain repo is elsewhere:
+The script defaults to the parent of the orchestration repo (the brain root), resolved from the script's own location — so it works from any working directory. If your brain repo is elsewhere:
 
 ```bash
 python scripts/index_brain.py --brain-path /absolute/path/to/agentic-portfolio
@@ -143,6 +143,15 @@ Re-run `index_brain.py` after:
 - Publishing a decision (`docs/decisions/`)
 
 The incremental mode is fast — it compares `indexed_at` against file modification time and skips unchanged docs. Only updated or new sections get re-embedded.
+
+### Deleted and renamed files (orphan rows)
+
+The incremental upsert keys on `file_path + section`, so it only ever *adds or replaces* rows for files it walks. When a file is **deleted or renamed away**, the indexer never revisits the old path and its rows linger as stale retrieval hits. Two ways to clean them up:
+
+- **Surgical:** `python scripts/index_brain.py --prune-paths <old paths…>` deletes just those files' rows — no re-embedding, no API call. Diagnostic rows (`client_slug` set) are preserved.
+- **Automatic:** the brain repo ships a `post-commit` git hook (tracked in `hooks/`, enabled via `git config core.hooksPath hooks`) that runs `--prune-paths` for exactly the files a commit deleted or renamed. It is a no-op on ordinary edits and catches renames whether or not `git mv` was used. See `hooks/README.md` in the brain repo.
+
+Note this is **file-level** cleanup only. A section renamed or removed *inside* a still-existing file leaves an orphan row that neither incremental indexing nor `--prune-paths` removes — run `--rebuild` after structural edits within files.
 
 ---
 
