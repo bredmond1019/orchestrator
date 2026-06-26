@@ -2229,22 +2229,36 @@ similarity search from `RetrieveChunksNode` corpus `"brain"`) is available as of
 |---|---|---|---|---|
 | `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key, UUID v4 generated at insert time. |
 | `file_path` | `String(512)` | No | — | Relative path from brain repo root (e.g. `'docs/career.md'`). |
-| `doc_type` | `String(50)` | No | — | Corpus category: `decision`, `project`, `career`, `brand`, `business`, `content`, `diagnostic`, or `memory`. |
+| `doc_type` | `String(50)` | No | — | Corpus category derived from the CORPUS map: `decision`, `project`, `career`, `brand`, `business`, `content`, `diagnostic`, `meta`, `plan`, `archived` (the `memory` type was retired when memory left the corpus). |
 | `section` | `String(256)` | Yes | — | H2/H3 header the chunk falls under; empty string if the file has no headers. |
 | `content` | `Text` | No | — | Raw chunk text (section header + body, up to ~500 tokens). |
-| `embedding` | `Vector(1024)` | Yes | — | 1024-dim Voyage AI embedding (`voyage-2`) for semantic similarity search (pgvector). |
+| `embedding` | `Vector(1024)` | Yes | — | 1024-dim Voyage AI embedding (`voyage-2`) for semantic similarity search (pgvector). HNSW-indexed (`ix_brain_documents_embedding_hnsw`, cosine) so queries skip the brute-force scan. |
 | `indexed_at` | `DateTime` | Yes | `datetime.now` | Timestamp when this chunk was last indexed; used for incremental skip logic. |
 | `client_slug` | `String(128)` | Yes | `NULL` | Diagnostic client identifier (e.g. `'acme-sp-2026-07'`); `NULL` for non-diagnostic docs. |
 | `workflow_patterns` | `ARRAY(String)` | Yes | `NULL` | Workflow pattern tags from diagnostic docs (e.g. `['WhatsApp order tracking']`); `NULL` for other doc types. |
+| `doc_id` | `String(256)` | Yes | `NULL` | OKF `doc_id`; derived from the filename stem when absent. |
+| `layer` | `ARRAY(String)` | Yes | `NULL` | OKF `layer` (e.g. `['brain', 'engine']`). Case-normalized to lowercase by the indexer; supports `layer`-filter array overlap. |
+| `project` | `String(128)` | Yes | `NULL` | OKF `project` (e.g. `'python-orchestration'`). Case-normalized to lowercase; supports `project`-filter scalar match. |
+| `status` | `String(32)` | Yes | `NULL` | OKF `status` (e.g. `'active'`, `'draft'`, `'archived'`). Case-normalized to lowercase; `'archived'` rows are excluded from default brain retrieval. |
+| `keywords` | `ARRAY(String)` | Yes | `NULL` | OKF `keywords` tags; folded into `content_tsv` at FTS weight `'A'`. |
+| `related` | `ARRAY(String)` | Yes | `NULL` | OKF `related` paths to related docs (stored; not yet traversed at query time). |
+| `is_section_title` | `Boolean` | No | `False` | `True` when the chunk is a header-only section (header-stripped body empty or `< 40` chars); drives the 2x section-title weight in `RetrieveChunksNode._fuse_and_rank`. |
+| `title` | `String(512)` | Yes | `NULL` | OKF frontmatter `title`; stored for FTS (weight `'A'`) and citation display. |
+| `description` | `Text` | Yes | `NULL` | OKF frontmatter `description`; stored for FTS (weight `'B'`) and citation display. |
+| `content_tsv` | `TSVECTOR` | Yes | generated | **Read-only generated column** — Postgres maintains it from `title`+`keywords` (weight `'A'`), `description` (`'B'`), and `content` (`'C'`). GIN-indexed (`ix_brain_documents_content_tsv`) for graded `ts_rank` full-text search. The indexer must **never** write it. |
 
 ### Migration
 
 The `brain_documents` table is created by migration `b3c4d5e6f7a8`
 (`app/alembic/versions/b3c4d5e6f7a8_create_brain_documents_table.py`).
 `down_revision` chains off the `a1b2c3d4e5f6` migration (learning_artifacts table).
+Two later migrations extend it: `d1e2f3a4b5c6` adds the six OKF columns
+(`doc_id`/`layer`/`project`/`status`/`keywords`/`related`) with their GIN/btree indexes, and
+`e2f3a4b5c6d7` adds `is_section_title`/`title`/`description`, the generated `content_tsv`
+column with its GIN index, and the HNSW ANN index on `embedding`.
 
-**SQLite note:** The `ARRAY(String)` column for `workflow_patterns` is a PostgreSQL-only
-type. The SQLite-backed test fixtures exclude `brain_documents` from `create_all`; round-trip
+**SQLite note:** The `ARRAY(String)`, `Vector`, and `TSVECTOR` columns are PostgreSQL-only
+types. The SQLite-backed test fixtures exclude `brain_documents` from `create_all`; round-trip
 tests that require a live table are skipped with a documented reason. Schema tests (which do not
 require table creation) pass on SQLite.
 
@@ -2396,14 +2410,24 @@ Implements the semantic-then-keyword re-rank pattern ported from the rag-engine-
 
 **Retrieval pipeline:**
 
-1. **Stage 1 — semantic candidate set:** pgvector cosine-distance query returns the top-20 closest
-   chunks from the target corpus table.
-2. **Stage 2 — keyword re-rank:** ILIKE keyword match scoped to the Stage-1 candidate IDs.
-   Each whitespace-separated query term is matched case-insensitively against the content field.
-3. **Additive score fusion:** `score = (1.0 − distance) × title_weight + keyword_boost`, where
-   `title_weight = 2.0` for `is_section_title=True` chunks (section-title 2x weight) and
-   `keyword_boost = 1.0` for keyword-matched candidates. NaN distances are filtered out before
-   sorting (mirrors the Rust `total_cmp` guard).
+1. **Stage 1 — semantic candidate set:** pgvector cosine-distance query (HNSW-indexed for the
+   brain corpus) returns the top-20 closest chunks from the target corpus table. For the brain
+   corpus, `status='archived'` rows are excluded unless `include_archived=True`.
+2. **Stage 2 — keyword re-rank:** scoped to the Stage-1 candidate IDs. The path depends on the
+   corpus:
+   - **Brain corpus** (declares a `tsv_field`): a graded Postgres full-text query against the
+     generated `content_tsv` column — `ts_rank(content_tsv, plainto_tsquery('english', query))`.
+     Returns a `dict[id -> ts_rank]`. `plainto_tsquery` strips English stop words and stems
+     natively, and `setweight` makes a term in a doc's `title`/`keywords` (weight `'A'`) outrank
+     the same term in body text (weight `'C'`).
+   - **Content corpus** (no `tsv_field`): the legacy binary ILIKE match (each whitespace-separated
+     query term, punctuation-stripped, matched case-insensitively against the content field),
+     returning a `set` of matched IDs.
+3. **Additive score fusion:** `score = (1.0 − distance) × title_weight + keyword_contribution`,
+   where `title_weight = 2.0` for `is_section_title=True` chunks (section-title 2x weight). The
+   keyword contribution is graded for FTS corpora (`_KW_WEIGHT × ts_rank`) and a flat `_KW_BOOST`
+   for the legacy set path. NaN distances are filtered out before sorting (mirrors the Rust
+   `total_cmp` guard).
 
 **Corpus dispatch** — controlled by the `corpus` field on the incoming event:
 
@@ -2416,9 +2440,10 @@ Adding a third corpus requires one entry in the module-level `_CORPUS_CONFIG` di
 
 ### `process(task_context: TaskContext) -> TaskContext`
 
-Reads `event.question`, `event.corpus` (defaults to `"content"`), and `event.filters`
-(via `getattr` defensive read, defaults to `None`) from the task context, calls `retrieve()`
-with `k=5` and `filters`, and writes the result:
+Reads `event.question`, `event.corpus` (defaults to `"content"`), `event.filters`, and
+`event.include_archived` (all via `getattr` defensive read — defaulting to `None`/`False`) from
+the task context, calls `retrieve()` with `k=5`, `filters`, and `include_archived`, and writes
+the result:
 
 ```python
 task_context.update_node(node_name=self.node_name, result={"chunks": chunks})
@@ -2431,7 +2456,7 @@ output = task_context.get_node_output("RetrieveChunksNode")
 chunks = output["result"]["chunks"]
 ```
 
-### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None) -> list[dict]`
+### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None, include_archived=False) -> list[dict]`
 
 Public retrieval method. Embeds `query` via `EmbeddingService`, runs the two-stage pipeline,
 and returns up to `k` normalized chunk dicts sorted by fused score descending.
@@ -2445,6 +2470,7 @@ and returns up to `k` normalized chunk dicts sorted by fused score descending.
 | `k` | `int` | `5` | Maximum number of chunks to return. |
 | `threshold` | `float` | `0.0` | Minimum fused score; chunks below are excluded. |
 | `filters` | `dict \| None` | `None` | Optional metadata filters (keyword-only). Applied only when the corpus declares `filter_fields`. See `DocumentQAEventSchema` for accepted keys. |
+| `include_archived` | `bool` | `False` | Keyword-only. When `False`, brain-corpus results exclude `status='archived'` docs. No effect on the content corpus. |
 
 **Return schema** — each element of the returned list contains:
 
@@ -2454,15 +2480,20 @@ and returns up to `k` normalized chunk dicts sorted by fused score descending.
 | `section_title` | `str \| None` | Markdown section header the chunk falls under. |
 | `score` | `float` | Fused retrieval score (higher = more relevant). |
 | `source` | `str` | Display label: `section_title` or `"General"` if none. |
+| `file_path` | `str \| None` | Provenance: source file path (brain corpus; `None` when the row lacks it). |
+| `doc_id` | `str \| None` | Provenance: OKF `doc_id` of the source doc. |
+| `title` | `str \| None` | Provenance: OKF `title` of the source doc, for citation display. |
 
 ### Internal methods (mockable test seams)
 
 | Method | Description |
 |---|---|
-| `_semantic_search(vector, corpus, limit, filters=None)` | Stage 1: pgvector cosine-distance query. Accepts optional `filters` dict; when present and the corpus declares `filter_fields`, delegates to `_apply_metadata_filters` before executing. Isolated for unit-test patching without a live DB. |
-| `_keyword_search(query, candidate_ids, corpus)` | Stage 2: ILIKE match scoped to candidate IDs. Query terms are stripped of non-word characters before ILIKE matching (e.g. `"RAG?"` → `"RAG"`). For the `"brain"` corpus, also ORs in `func.array_to_string(keywords, " ").ilike(f"%{term}%")` per `keyword_extra_fields` config — a query term present only in the `keywords` column still earns the keyword boost. Returns a `set` of matching IDs. Isolated for unit-test patching. |
+| `_semantic_search(vector, corpus, limit, filters=None, include_archived=False)` | Stage 1: pgvector cosine-distance query. Accepts optional `filters` dict; when present and the corpus declares `filter_fields`, delegates to `_apply_metadata_filters` before executing. When the corpus declares `default_status_exclude` and `include_archived` is `False`, also filters out that status (NULL status kept). Isolated for unit-test patching without a live DB. |
+| `_keyword_search(query, candidate_ids, corpus)` | Stage 2 dispatcher. Returns a `dict[id -> ts_rank]` for corpora declaring a `tsv_field` (graded FTS) or a `set[id]` for the legacy ILIKE path; returns the matching empty shape when `candidate_ids` is empty. Delegates to one of the two helpers below. |
+| `_keyword_search_fts(query, candidate_ids, config, tsv_field)` | Graded full-text search (brain corpus). Builds `ts_rank(content_tsv, plainto_tsquery('english', query))` scoped to candidate IDs, returns `dict[id -> float ts_rank]`. Stop-word removal and stemming come from `plainto_tsquery`. |
+| `_keyword_search_ilike(query, candidate_ids, config)` | Legacy binary ILIKE (content corpus). Query terms are stripped of non-word characters before matching (e.g. `"RAG?"` → `"RAG"`); ORs in any `keyword_extra_fields` columns. Returns a `set` of matched IDs. |
 | `_apply_metadata_filters(query, model, filters, filter_fields)` | Module-level helper. Translates `{field: value}` pairs to SQLAlchemy WHERE clauses: scalar fields use `col == value`; array fields (e.g. `layer`) use `.overlap([value])`. Applied inside `_semantic_search`; extracted to keep `_semantic_search` under the pylint locals limit and to make filter logic independently testable. |
-| `_fuse_and_rank(candidates, keyword_ids, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. No DB calls. |
+| `_fuse_and_rank(candidates, keyword_matches, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. Grades the keyword contribution when `keyword_matches` is a `dict` (`_KW_WEIGHT × ts_rank`) and applies a flat `_KW_BOOST` when it is a `set`. Carries `file_path`/`doc_id`/`title` provenance through to each result. No DB calls. |
 
 ### Test coverage
 
@@ -3171,13 +3202,16 @@ session without generating an id client-side.
 | `session_id` | `UUID` | No | `uuid4()` | Q&A session identifier; a new UUID is generated if absent (new session). |
 | `corpus` | `str` | No | `"content"` | Corpus to retrieve from: `"content"` (content_chunks) or `"brain"` (brain_documents). |
 | `filters` | `dict \| None` | No | `None` | Optional metadata filters for `"brain"` corpus retrieval. Accepted keys: `"project"` (scalar), `"layer"` (array overlap), `"status"` (scalar). Omitting or passing `None` reproduces current behavior exactly; ignored for `"content"` corpus. |
+| `include_archived` | `bool` | No | `False` | When `False`, the `"brain"` corpus excludes `status='archived'` docs from retrieval. Set `True` to surface archived historical context. No effect on the `"content"` corpus. |
 
 ### Validation
 
-All five fields accept their Python-native types; Pydantic coerces UUID strings automatically.
+All six fields accept their Python-native types; Pydantic coerces UUID strings automatically.
 A missing `doc_id` or `question` raises a `ValidationError`. `corpus` is not constrained by the
 schema — the `RetrieveChunksNode` corpus dispatch handles unknown values. `filters` keys that are
-not declared in `filter_fields` for the target corpus are silently ignored.
+not declared in `filter_fields` for the target corpus are silently ignored. `include_archived` is
+an explicit boolean field (not a `filters` key) so the archived-override is type-checked and
+self-documenting.
 
 ---
 

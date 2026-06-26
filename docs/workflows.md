@@ -273,7 +273,7 @@ Note the `doc_id` from the payload (or generate one before sending): you'll need
 EmbedQuestionNode → RetrieveChunksNode → AssembleContextNode → AnswerNode → UpdateSessionMemoryNode
 ```
 
-The retrieval uses hybrid scoring: semantic similarity (Voyage embeddings) combined with keyword ILIKE matching, with 2× weight on section-title matches.
+The retrieval uses hybrid scoring: semantic similarity (Voyage embeddings) combined with a keyword re-rank, with 2× weight on section-title chunks. The `"content"` corpus uses a binary ILIKE keyword match; the `"brain"` corpus uses graded Postgres full-text search (`ts_rank` over a weighted `content_tsv` column) so a term in a doc's title/keywords outranks one in body text.
 
 **Event payload:**
 
@@ -294,6 +294,7 @@ The retrieval uses hybrid scoring: semantic similarity (Voyage embeddings) combi
 | `session_id` | UUID | no | Auto-generated; pass the same one to maintain conversation history |
 | `corpus` | `"content"` or `"brain"` | no (default: `"content"`) | `"brain"` queries the brain_documents corpus |
 | `filters` | dict | no | Optional metadata filters for `"brain"` corpus only. Accepted keys: `"layer"` (array overlap), `"project"` (scalar `==`), `"status"` (scalar `==`). Ignored for `"content"` corpus. |
+| `include_archived` | bool | no (default: `false`) | `"brain"` corpus only. When `false`, excludes `status='archived'` docs; set `true` for historical queries. No effect on `"content"`. |
 
 **Trigger (two-shot conversation):**
 
