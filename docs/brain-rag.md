@@ -96,6 +96,19 @@ python scripts/index_brain.py --brain-path /absolute/path/to/agentic-portfolio
 
 ## Querying the brain
 
+### Choosing the corpus
+
+`DOCUMENT_QA` answers questions over **one of two corpora**, selected by the `corpus` field on the event payload. The same workflow and the same two-stage hybrid retrieval serve both — only the table queried changes:
+
+| `corpus` value | Table queried | Model | Populated by | What it holds |
+|---|---|---|---|---|
+| `"content"` *(default)* | `content_chunks` | `ContentChunk` | the `DOCUMENT_INGEST` workflow | documents you ingest at runtime via the API |
+| `"brain"` | `brain_documents` | `BrainDocument` | `scripts/index_brain.py` (this page) | the company-brain markdown corpus |
+
+`corpus` is **optional and defaults to `"content"`** — so a `DOCUMENT_QA` event with no `corpus` field queries ingested documents, *not* the brain. **To query the brain you must explicitly set `"corpus": "brain"`.** The `filters` field (below) applies to the `"brain"` corpus only and is ignored for `"content"`. (Adding a third corpus is a single entry in `RetrieveChunksNode`'s module-level `_CORPUS_CONFIG` dict.)
+
+### Brain query example
+
 Use `DOCUMENT_QA` with `corpus="brain"`. The `doc_id` field is required by the schema but not used for brain corpus queries — pass any valid UUID:
 
 ```bash
@@ -152,6 +165,23 @@ The incremental upsert keys on `file_path + section`, so it only ever *adds or r
 - **Automatic:** the brain repo ships a `post-commit` git hook (tracked in `hooks/`, enabled via `git config core.hooksPath hooks`) that runs `--prune-paths` for exactly the files a commit deleted or renamed. It is a no-op on ordinary edits and catches renames whether or not `git mv` was used. See `hooks/README.md` in the brain repo.
 
 Note this is **file-level** cleanup only. A section renamed or removed *inside* a still-existing file leaves an orphan row that neither incremental indexing nor `--prune-paths` removes — run `--rebuild` after structural edits within files.
+
+---
+
+## Resetting and tearing down the store
+
+There are three levels of reset, from softest to hardest:
+
+| Goal | Command | Effect |
+|---|---|---|
+| Rebuild the corpus (keep the schema) | `python scripts/index_brain.py --rebuild` | Deletes all **non-diagnostic** rows (`client_slug IS NULL`), then re-indexes from scratch. **Diagnostic rows are preserved** — this is *not* a full wipe. |
+| Remove specific files' rows | `python scripts/index_brain.py --prune-paths <paths>` | Deletes rows for the named files only. No re-embedding. |
+| Drop the OKF columns | `cd app && alembic downgrade c4d5e6f7a8b9` | Reverts migration `d1e2f3a4b5c6` only (the six OKF columns + their indexes). Restore with `alembic upgrade head`. |
+| Drop the `brain_documents` table | **Not a clean `alembic downgrade`** — see note below | Manual `DROP TABLE brain_documents` or a new targeted migration. |
+
+**Why the table can't be cleanly downgraded:** `brain_documents` is created by migration `b3c4d5e6f7a8`, which sits *below* the mergepoint `020c9f7f89e2` that it shares with the `events` and `content_chunks`/`chat_sessions` tables. Downgrading far enough to drop `brain_documents` would also drop those tables. To drop just this table, run a manual `DROP TABLE brain_documents CASCADE` or author a dedicated down-migration — don't reach for `alembic downgrade`.
+
+**On the diagnostic-row carve-out:** `doc_type="diagnostic"` rows carry client-specific pattern data that is expensive to regenerate, so `--rebuild` deliberately leaves them in place. If you genuinely need a *full* clear including diagnostic rows, delete them by hand (e.g. `DELETE FROM brain_documents WHERE doc_type = 'diagnostic'`).
 
 ---
 
