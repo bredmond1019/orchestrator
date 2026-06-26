@@ -2,6 +2,12 @@
 type: Decision
 title: D8 — Project H (model eval) is offline evaluation, NOT a runtime router
 description: The eval harness produces per-node routing decisions baked in at design time, not per-request at runtime.
+doc_id: D8-project-h-offline-eval
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [Project H, model eval, offline evaluation, per-node routing, eval harness]
+related: [D35-top-tier-models, master-plan]
 ---
 
 # D8 — Project H (model eval) is offline evaluation, NOT a runtime router

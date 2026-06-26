@@ -1,9 +1,13 @@
 ---
 type: Decision
-id: D29
 title: Execute the OKF Phase 2 migration; adopt base-template's richer-check + token-telemetry engines
-status: Accepted
-date: 2026-06-19
+description: The OKF Phase 2 conventions agreed in D27 are now executed in this repo, in lockstep with pulling base-template's rewritten SDLC engines (richer-check kinds, per-stage token telemetry).
+doc_id: D29-execute-okf-and-adopt-richer-check-engines
+layer: [engine, meta]
+project: python-orchestration
+status: active
+keywords: [OKF Phase 2 migration, SDLC engines, richer-check, token telemetry, harness.json]
+related: [D27-adopt-okf-phase-2-conventions, planning-index]
 ---
 
 # D29 — Execute OKF Phase 2; adopt base-template's richer-check + telemetry engines

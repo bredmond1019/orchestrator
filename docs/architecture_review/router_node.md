@@ -2,6 +2,12 @@
 type: Reference
 title: RouterNode & BaseRouter — How They Work
 description: How RouterNode and BaseRouter work — conditional branching in a workflow graph.
+doc_id: router-node
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [RouterNode, BaseRouter, conditional branching, workflow graph, routing]
+related: [app-architecture-overview, api-reference]
 ---
 
 # RouterNode & BaseRouter — How They Work

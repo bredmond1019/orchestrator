@@ -1,7 +1,13 @@
 ---
 type: Decision
-title: D12 — Repo strategy: one Python monorepo; separate repos only for different languages/deployables
+title: "D12 — Repo strategy: one Python monorepo; separate repos only for different languages/deployables"
 description: The Python framework and all Python workflows live in one monorepo; separate repos only for different languages/deploy lifecycles.
+doc_id: D12-repo-strategy-monorepo
+layer: [engine, meta]
+project: python-orchestration
+status: active
+keywords: [monorepo, repo strategy, Python framework, workflow directories, language boundary]
+related: [master-plan]
 ---
 
 # D12 — Repo strategy: one Python monorepo; separate repos only for different languages/deployables

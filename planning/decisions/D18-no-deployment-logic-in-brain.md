@@ -2,6 +2,12 @@
 type: Decision
 title: D18 — No deployment logic in the brain
 description: Where models run and where data lives are injected, never hardcoded; no environment branching inside nodes.
+doc_id: D18-no-deployment-logic-in-brain
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [deployment agnostic, model injection, GenericRepository, environment branching, portability]
+related: [D16-one-brain-two-shells, D33-deployment-agnostic-nodes]
 ---
 
 # D18 — No deployment logic in the brain

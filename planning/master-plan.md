@@ -2,6 +2,12 @@
 type: Plan
 title: Python Orchestration System — Master Plan
 description: Phase sequence, full project library (A–H), this repo's role as Bastion's Engine + Python-half-of-Brain, the program-block crosswalk, the Diagnostic relationship, and standing rules.
+doc_id: master-plan
+layer: [engine, brain]
+project: python-orchestration
+status: active
+keywords: [master plan, phase sequence, project library, Bastion Engine, program blocks]
+related: [context, status, D36-bastion-engine-brain-role]
 ---
 
 # Python Orchestration System — Master Plan

@@ -2,6 +2,12 @@
 type: Decision
 title: D33 — No deployment logic inside nodes
 description: DAG workflow nodes contain workflow logic only; deployment concerns are injected at the harness layer.
+doc_id: D33-deployment-agnostic-nodes
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [deployment agnostic, node logic, model injection, GenericRepository, environment]
+related: [D18-no-deployment-logic-in-brain, app-architecture-overview]
 ---
 
 # D33 — No deployment logic inside nodes

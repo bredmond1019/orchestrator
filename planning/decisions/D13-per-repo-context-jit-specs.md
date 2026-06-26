@@ -2,6 +2,12 @@
 type: Decision
 title: D13 — Per-repo agent context (CLAUDE.md) and daily log (log.md); just-in-time task specs
 description: Each repo carries its own CLAUDE.md and log.md; per-block work orders are generated just-in-time with acceptance criteria.
+doc_id: D13-per-repo-context-jit-specs
+layer: [engine, meta]
+project: python-orchestration
+status: active
+keywords: [CLAUDE.md, per-repo context, log.md, just-in-time specs, acceptance criteria]
+related: [context, D11-docs-orientation-vs-state]
 ---
 
 # D13 — Per-repo agent context (CLAUDE.md) and daily log (log.md); just-in-time task specs

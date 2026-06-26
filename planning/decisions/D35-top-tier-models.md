@@ -2,6 +2,12 @@
 type: Decision
 title: D35 — Top-tier models first, then introduce local/open-weight via Project H
 description: All first implementations use the best available hosted model; local/open-weight alternatives enter via eval-driven routing in Project H.
+doc_id: D35-top-tier-models
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [top-tier models, local models, open-weight, Project H, eval-driven routing]
+related: [D8-project-h-offline-eval, D37-local-embeddings-mxbai]
 ---
 
 # D35 — Top-tier models first, then introduce local/open-weight via Project H

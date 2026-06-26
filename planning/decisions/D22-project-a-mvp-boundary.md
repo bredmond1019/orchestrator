@@ -1,7 +1,13 @@
 ---
 type: Decision
-title: D22 — Project A MVP boundary: ingestion + store + dumb display now; search and "what I know" via Projects F/G later
+title: "D22 — Project A MVP boundary: ingestion + store + dumb display now; search and \"what I know\" via Projects F/G later"
 description: Day-1 Project A ships ingestion + store + a deliberately dumb reading surface only; smart layers attach later because embeddings are stored at write time.
+doc_id: D22-project-a-mvp-boundary
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [Project A, MVP boundary, ingestion, reading surface, search, smart layers]
+related: [D21-project-a-knowledge-feed, master-plan]
 ---
 
 # D22 — Project A MVP boundary: ingestion + store + dumb display now; search and "what I know" via Projects F/G later

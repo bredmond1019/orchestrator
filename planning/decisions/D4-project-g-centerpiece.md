@@ -2,6 +2,12 @@
 type: Decision
 title: D4 — Project G (agent memory) is the centerpiece, retained at full weight
 description: The episodic→semantic memory system stays as the differentiating build.
+doc_id: D4-project-g-centerpiece
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [Project G, agent memory, episodic-semantic memory, expertise-first, capstone]
+related: [D3-drop-socratic-tutor, D25-honcho-reference, master-plan]
 ---
 
 # D4 — Project G (agent memory) is the centerpiece, retained at full weight

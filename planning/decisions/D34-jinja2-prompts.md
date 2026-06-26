@@ -2,6 +2,12 @@
 type: Decision
 title: D34 — No hardcoded prompts — all prompts in .j2 files via PromptManager
 description: Every LLM prompt is a Jinja2 template managed by PromptManager; no inline prompt strings in node code.
+doc_id: D34-jinja2-prompts
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [Jinja2, PromptManager, j2 templates, system prompts, prompt versioning]
+related: [prompt-manager, api-reference]
 ---
 
 # D34 — No hardcoded prompts — all prompts in .j2 files via PromptManager

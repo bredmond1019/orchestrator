@@ -1,7 +1,13 @@
 ---
 type: Decision
-title: D16 — Architecture: one deployment-agnostic Python brain, two shells (superseded by D26 as product architecture; retained as engineering discipline)
+title: "D16 — Architecture: one deployment-agnostic Python brain, two shells (superseded by D26 as product architecture; retained as engineering discipline)"
 description: One Python core exposing a clean HTTP API, wrapped by two shells. Superseded by D26 as product architecture; deployment-agnostic discipline retained.
+doc_id: D16-one-brain-two-shells
+layer: [engine, business]
+project: python-orchestration
+status: superseded
+keywords: [Python core, HTTP API, two shells, deployment-agnostic, architecture]
+related: [D14-company-brain-product, D26-goal-solo-contracting, D18-no-deployment-logic-in-brain]
 ---
 
 # D16 — Architecture: one deployment-agnostic Python brain, two shells *(superseded by D26 as product architecture; retained as engineering discipline)*

@@ -2,6 +2,13 @@
 type: ProjectStatus
 title: Project Status
 description: Current state and progress tracker for the python-orchestration-system.
+doc_id: status
+layer: [engine]
+project: python-orchestration
+status: active
+timestamp: "2026-06-26"
+keywords: [project status, current focus, Block H, local embeddings, Wave 0]
+related: [context, master-plan]
 ---
 
 # STATUS — Current State & Progress

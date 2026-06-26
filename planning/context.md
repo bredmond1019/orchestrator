@@ -2,6 +2,12 @@
 type: LocalContext
 title: Project Context
 description: Orientation, architecture overview, document map, and standing rules for the python-orchestration-system.
+doc_id: context
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [project context, orchestration framework, FastAPI, Celery, orientation]
+related: [master-plan, status, D36-bastion-engine-brain-role]
 ---
 
 # CONTEXT — python-orchestration-system

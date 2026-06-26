@@ -2,6 +2,12 @@
 type: Decision
 title: D37 — Embeddings go local (mxbai-embed-large via Ollama), not Voyage
 description: For the Brain vector store, use a local 1024-dim embedding model (mxbai-embed-large via Ollama) instead of Voyage. Pulls the Project H local-embedding step forward (per D35), keeps EMBEDDING_DIM=1024 so no migration is needed, and makes index_brain.py --rebuild free and repeatable. Revisit a hosted/larger model when real clients justify it.
+doc_id: D37-local-embeddings-mxbai
+layer: [engine, brain]
+project: python-orchestration
+status: active
+keywords: [mxbai-embed-large, Ollama, local embeddings, EmbeddingService, Voyage, 1024-dim]
+related: [brain-rag, D35-top-tier-models, voyage-ai]
 ---
 
 # D37 — Embeddings go local (mxbai-embed-large via Ollama), not Voyage

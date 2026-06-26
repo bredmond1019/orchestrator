@@ -2,6 +2,12 @@
 type: Decision
 title: D17 — Rust earns its place as the appliance shell (scope revised by D26 back to personal CLI)
 description: Rust's role was upgraded to the SMB appliance shell. Scope revised by D26 back to the personal ops CLI.
+doc_id: D17-rust-appliance-shell
+layer: [engine, console]
+project: python-orchestration
+status: superseded
+keywords: [Rust, appliance shell, SMB, personal CLI, scope revision]
+related: [D7-rust-home-cli, D26-goal-solo-contracting]
 ---
 
 # D17 — Rust earns its place as the appliance shell *(scope revised by D26 back to personal CLI)*

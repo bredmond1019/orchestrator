@@ -2,6 +2,12 @@
 type: Decision
 title: D27 — Adopt OKF Phase 2 conventions (lowercase names, concept-folder planning, index.md)
 description: This repo converges to the cross-repo OKF Phase 2 conventions settled in the company brain (D15–D18) during the WS7 lockstep workflow rewrite, and retires the deprecated scaffold-project command.
+doc_id: D27-adopt-okf-phase-2-conventions
+layer: [engine, meta]
+project: python-orchestration
+status: active
+keywords: [OKF Phase 2, lowercase names, index.md, concept-folder, planning conventions]
+related: [D29-execute-okf-and-adopt-richer-check-engines, planning-index]
 ---
 
 # D27 — Adopt OKF Phase 2 conventions (lowercase names, concept-folder planning, `index.md`)

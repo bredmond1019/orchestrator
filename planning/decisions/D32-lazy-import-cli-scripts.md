@@ -2,6 +2,12 @@
 type: Decision
 title: D32 — Lazy imports inside main() for standalone CLI scripts
 description: Scripts under scripts/ import heavy dependencies (EmbeddingService, db_session, models) inside main() rather than at module level, so --dry-run and help flags work without a live DB or API key.
+doc_id: D32-lazy-import-cli-scripts
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [lazy imports, CLI scripts, EmbeddingService, dry-run, module-level imports]
+related: [scripts, brain-rag]
 ---
 
 # D32 — Lazy imports inside main() for standalone CLI scripts

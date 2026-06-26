@@ -2,6 +2,12 @@
 type: Decision
 title: D36 — This repo is Bastion's Engine + Python-half-of-Brain; adopt the program plan
 description: Adopt the brain's Bastion program (D24/D25/D26) locally — this repo is the Engine and the Python half of the Brain; Project F ≡ Block B, Project G ≡ Block S; add Brain-side blocks O/J/C/P/L/R + cost-control I; sequence demand-first; keep the A–H numbering.
+doc_id: D36-bastion-engine-brain-role
+layer: [engine, brain]
+project: python-orchestration
+status: active
+keywords: [Bastion Engine, Python brain, program blocks, demand-first, brain RAG]
+related: [master-plan, app-architecture-overview, brain-rag]
 ---
 
 # D36 — This repo is Bastion's Engine + Python-half-of-Brain; adopt the program plan

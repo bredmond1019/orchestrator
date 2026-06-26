@@ -2,6 +2,12 @@
 type: Index
 title: Decisions Registry
 description: Registry of architectural decisions and settled choices for the python-orchestration-system, one atomic file per decision.
+doc_id: decisions-index
+layer: [engine, meta]
+project: python-orchestration
+status: active
+keywords: [decisions registry, architectural decisions, settled choices]
+related: [planning-index]
 ---
 
 # Decisions — Settled Choices & Their Reasoning

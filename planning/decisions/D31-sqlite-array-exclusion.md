@@ -2,6 +2,12 @@
 type: Decision
 title: D31 — Exclude ARRAY and Vector models from SQLite test fixtures
 description: SQLAlchemy models with PostgreSQL-only column types (ARRAY, Vector) must be excluded from the SQLite in-memory test database and tested only against real PostgreSQL.
+doc_id: D31-sqlite-array-exclusion
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [SQLite, ARRAY, Vector, pgvector, SQLAlchemy, test fixtures]
+related: [app-architecture-overview]
 ---
 
 # D31 — Exclude ARRAY and Vector models from SQLite test fixtures

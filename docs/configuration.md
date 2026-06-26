@@ -2,6 +2,12 @@
 type: Reference
 title: Configuration Reference
 description: Reference for every environment variable, connection-string assembly, and Docker service topology needed to configure the stack for local or Docker deployment.
+doc_id: configuration
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [environment variables, connection string, Docker, PostgreSQL, Redis, Celery]
+related: [getting-started, scripts]
 ---
 
 # Configuration Reference

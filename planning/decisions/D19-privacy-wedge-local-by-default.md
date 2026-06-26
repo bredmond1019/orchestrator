@@ -2,6 +2,12 @@
 type: Decision
 title: D19 — The privacy wedge is real today, with honest qualifiers; "local-by-default, frontier-for-the-few"
 description: Local-model privacy is viable now with honest qualifiers; "local-by-default, frontier-for-the-named-few-steps" with Project H producing the audit list.
+doc_id: D19-privacy-wedge-local-by-default
+layer: [engine, business]
+project: python-orchestration
+status: active
+keywords: [privacy wedge, local models, open-weight, frontier models, LGPD]
+related: [D14-company-brain-product, D8-project-h-offline-eval]
 ---
 
 # D19 — The privacy wedge is real today, with honest qualifiers; "local-by-default, frontier-for-the-few"
