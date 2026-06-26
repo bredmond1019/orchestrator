@@ -2,6 +2,12 @@
 type: Reference
 title: AgentNode — How It Works
 description: How AgentNode works — the LLM-calling node abstraction.
+doc_id: agent-node
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [AgentNode, pydantic-ai, structured output, LLM, workflow node]
+related: [app-architecture-overview, api-reference]
 ---
 
 # AgentNode — How It Works

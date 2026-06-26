@@ -2,6 +2,12 @@
 type: Guide
 title: Brain RAG
 description: How the company brain corpus is indexed and queried — BrainDocument model, index_brain.py, and retrieval via DOCUMENT_QA.
+doc_id: brain-rag
+layer: [engine, brain]
+project: python-orchestration
+status: active
+keywords: [brain RAG, BrainDocument, index_brain, semantic retrieval, DOCUMENT_QA, embeddings]
+related: [app-architecture-overview, D36-bastion-engine-brain-role, D37-local-embeddings-mxbai]
 ---
 
 # Brain RAG

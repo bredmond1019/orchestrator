@@ -2,6 +2,12 @@
 type: Reference
 title: Orchestrator ↔ Consumer Data Contract
 description: The versioned, canonical contract for how external consumers (e.g. the bastion CLI) read this orchestrator's execution state from PostgreSQL and the HTTP API.
+doc_id: data-contract
+layer: [engine, console]
+project: python-orchestration
+status: active
+keywords: [data contract, versioning, node_runs, task_context, external consumer, bastion]
+related: [D28-node-level-execution-state, D30-data-contract-ownership, app-architecture-overview]
 ---
 
 # Data Contract — Orchestrator Execution State

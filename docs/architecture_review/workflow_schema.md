@@ -2,6 +2,12 @@
 type: Reference
 title: WorkflowSchema & NodeConfig — How They Work
 description: How WorkflowSchema and NodeConfig work — declaring a workflow's start, nodes, and connections.
+doc_id: workflow-schema
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [WorkflowSchema, NodeConfig, DAG declaration, workflow graph, schema.py]
+related: [app-architecture-overview, api-reference]
 ---
 
 # WorkflowSchema & NodeConfig — How They Work

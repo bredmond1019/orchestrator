@@ -2,6 +2,12 @@
 type: Reference
 title: ParallelNode — How It Works
 description: How ParallelNode works — fan-out execution of child nodes.
+doc_id: parallel-node
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [ParallelNode, fan-out, concurrent execution, TaskContext, workflow]
+related: [app-architecture-overview, api-reference, agent-node]
 ---
 
 # ParallelNode — How It Works

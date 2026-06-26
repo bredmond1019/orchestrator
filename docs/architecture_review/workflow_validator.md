@@ -2,6 +2,12 @@
 type: Reference
 title: WorkflowValidator — How It Works
 description: How WorkflowValidator works — validating a workflow graph before execution.
+doc_id: workflow-validator
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [WorkflowValidator, DAG validation, validate.py, workflow graph, cycles]
+related: [app-architecture-overview, api-reference, workflow-schema]
 ---
 
 # WorkflowValidator — How It Works

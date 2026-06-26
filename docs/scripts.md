@@ -2,6 +2,12 @@
 type: Reference
 title: Developer Scripts
 description: Reference for all scripts in the scripts/ directory — setup, dev server, inspection, and brain indexing.
+doc_id: scripts
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, developer scripts]
+related: [getting-started, brain-rag, configuration]
 ---
 
 # Developer Scripts

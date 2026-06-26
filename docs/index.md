@@ -2,6 +2,12 @@
 type: Index
 title: Developer Documentation Index
 description: Index of the developer reference documentation for the python-orchestration-system.
+doc_id: docs-index
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [docs index, developer reference, orchestration framework, getting-started, API reference]
+related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract]
 ---
 
 # Documentation Index

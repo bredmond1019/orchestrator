@@ -2,6 +2,12 @@
 type: Reference
 title: Workflow (workflow.py) — How It Works
 description: How workflow.py works — the Workflow base class and its execution loop.
+doc_id: workflow
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [Workflow, workflow.py, execution loop, base class, DAG orchestration]
+related: [app-architecture-overview, api-reference, task-context]
 ---
 
 # How `workflow.py` Works — Step-by-Step

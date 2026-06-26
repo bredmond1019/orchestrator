@@ -2,6 +2,12 @@
 type: Guide
 title: Workflow Catalog
 description: What each workflow does, its node DAG, how to trigger it, and example payloads.
+doc_id: workflows
+layer: [engine]
+project: python-orchestration
+status: active
+keywords: [workflow catalog, CONTENT_PIPELINE, DOCUMENT_QA, PRICE_SCOUT, event payload, curl]
+related: [api-reference, app-architecture-overview, data-contract]
 ---
 
 # Workflow Catalog
