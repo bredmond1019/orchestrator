@@ -234,7 +234,13 @@ class TestRetrieve:
         ):
             MockEmb.return_value.embed_text.return_value = expected_vector
             self.node.retrieve("q", corpus="brain", k=5)
-            mock_sem.assert_called_once_with(expected_vector, "brain", limit=20, filters=None)
+            mock_sem.assert_called_once_with(
+                expected_vector,
+                "brain",
+                limit=20,
+                filters=None,
+                include_archived=False,
+            )
 
     def test_corpus_brain_threads_through(self):
         """corpus='brain' is forwarded to _semantic_search."""
@@ -404,19 +410,21 @@ class TestProcess:
 # ---------------------------------------------------------------------------
 
 
-class TestKeywordExtraFields:
-    """Tests verifying that keywords column participates in keyword boost for brain corpus."""
+class TestKeywordSearchShapes:
+    """_keyword_search returns a graded dict for FTS corpora, a set for legacy."""
 
     def setup_method(self):
         self.node = RetrieveChunksNode()
 
-    def test_brain_keyword_search_ors_in_keywords_column(self):
-        """_keyword_search for brain corpus ORs in array_to_string(keywords, ' ').ilike(term)."""
+    def test_brain_keyword_search_returns_graded_dict(self):
+        """The brain corpus uses the FTS path: returns dict[id -> ts_rank]."""
         cid = uuid.uuid4()
         candidate_ids = [cid]
 
+        # FTS path selects (model.id, ts_rank) rows — supply a concrete rank.
         fake_row = MagicMock()
         fake_row.id = cid
+        fake_row.kw_rank = 0.42
 
         fake_query = MagicMock()
         fake_query.filter.return_value = fake_query
@@ -432,13 +440,23 @@ class TestKeywordExtraFields:
             "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_search("python", candidate_ids, "brain")
+            result = self.node._keyword_search("data contract", candidate_ids, "brain")
 
-        # Should have returned the candidate (mocked DB returns it)
-        assert cid in result
-
-        # The filter should have been called at least twice (id.in_ + or_ with extra OR clauses)
+        # Graded result: a dict mapping id -> float ts_rank (not a set).
+        assert isinstance(result, dict)
+        assert result[cid] == pytest.approx(0.42)
+        # FTS path filters twice: id.in_(candidate_ids) and tsv @@ tsquery.
         assert fake_query.filter.call_count >= 2
+
+    def test_brain_empty_candidates_returns_empty_dict(self):
+        """No candidates → empty dict (FTS shape), not an empty set."""
+        result = self.node._keyword_search("anything", [], "brain")
+        assert result == {}
+
+    def test_content_empty_candidates_returns_empty_set(self):
+        """No candidates → empty set (legacy shape) for the content corpus."""
+        result = self.node._keyword_search("anything", [], "content")
+        assert result == set()
 
     def test_content_corpus_keyword_search_unchanged(self):
         """_keyword_search for content corpus uses only content column, no keyword_extra_fields."""
@@ -592,3 +610,184 @@ class TestSemanticSearchFilters:
         result_ids = {r["id"] for r in result}
         assert matching_id in result_ids
         assert excluded_id not in result_ids
+
+
+# ---------------------------------------------------------------------------
+# Graded keyword fusion (FTS dict path) + provenance fields
+# ---------------------------------------------------------------------------
+
+
+class TestGradedKeywordFusion:
+    """_fuse_and_rank grades the keyword contribution when given a dict[id->rank]."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_higher_ts_rank_yields_higher_score(self):
+        """With equal distance, the candidate with the larger ts_rank ranks first."""
+        weak_id = uuid.uuid4()
+        strong_id = uuid.uuid4()
+        weak = _make_candidate(dist=0.2, candidate_id=weak_id)
+        strong = _make_candidate(dist=0.2, candidate_id=strong_id)
+        graded = {weak_id: 0.01, strong_id: 0.30}
+        results = self.node._fuse_and_rank([weak, strong], graded, k=2, threshold=0.0)
+        assert results[0]["id"] == strong_id
+
+    def test_graded_score_uses_kw_weight(self):
+        """Score = similarity*title_weight + _KW_WEIGHT*ts_rank (exact)."""
+        from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
+            _KW_WEIGHT,
+        )
+
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.2, is_section_title=False, candidate_id=cid)
+        results = self.node._fuse_and_rank([c], {cid: 0.10}, k=1, threshold=0.0)
+        expected = (1.0 - 0.2) * 1.0 + _KW_WEIGHT * 0.10
+        assert results[0]["score"] == pytest.approx(expected)
+
+    def test_dict_without_match_adds_zero(self):
+        """A candidate absent from the graded dict gets no keyword contribution."""
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.3, candidate_id=cid)
+        results = self.node._fuse_and_rank([c], {}, k=1, threshold=0.0)
+        assert results[0]["score"] == pytest.approx(0.7)  # (1-0.3)*1 + 0
+
+    def test_legacy_set_boost_still_flat(self):
+        """A set (legacy corpus) still applies the flat _KW_BOOST, not a graded one."""
+        from workflows.document_qa_workflow_nodes.retrieve_chunks_node import _KW_BOOST
+
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.2, candidate_id=cid)
+        results = self.node._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
+        assert results[0]["score"] == pytest.approx((1.0 - 0.2) + _KW_BOOST)
+
+    def test_provenance_fields_carried_through(self):
+        """file_path / doc_id / title flow from the candidate into the result dict."""
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.2, candidate_id=cid)
+        c["file_path"] = "docs/decisions/D20-shared-data-contract.md"
+        c["doc_id"] = "D20-shared-data-contract"
+        c["title"] = "Shared Data Contract"
+        results = self.node._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        assert results[0]["file_path"] == "docs/decisions/D20-shared-data-contract.md"
+        assert results[0]["doc_id"] == "D20-shared-data-contract"
+        assert results[0]["title"] == "Shared Data Contract"
+
+    def test_provenance_fields_default_to_none(self):
+        """Candidates lacking provenance keys still produce the keys, set to None."""
+        c = _make_candidate(dist=0.2)
+        results = self.node._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        assert results[0]["file_path"] is None
+        assert results[0]["doc_id"] is None
+        assert results[0]["title"] is None
+
+
+# ---------------------------------------------------------------------------
+# Archived exclusion — default-off filter on the brain corpus
+# ---------------------------------------------------------------------------
+
+
+class TestArchivedExclusion:
+    """The brain corpus excludes status='archived' unless include_archived=True."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def _run_semantic_search(self, corpus: str, include_archived: bool):
+        """Invoke _semantic_search against a mock session; return the query mock."""
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.order_by.return_value = fake_query
+        fake_query.limit.return_value = fake_query
+        fake_query.all.return_value = []
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+        fake_session.__enter__ = MagicMock(return_value=fake_session)
+        fake_session.__exit__ = MagicMock(return_value=False)
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            self.node._semantic_search(
+                [0.1] * 1024,
+                corpus,
+                limit=20,
+                filters=None,
+                include_archived=include_archived,
+            )
+        return fake_query
+
+    def test_brain_excludes_archived_by_default(self):
+        """A status filter is applied for the brain corpus when not including archived."""
+        fake_query = self._run_semantic_search("brain", include_archived=False)
+        # query → filter (status) → order_by → limit. The status filter call is
+        # the extra one beyond order_by/limit; assert at least one filter ran.
+        assert fake_query.filter.called
+
+    def test_brain_includes_archived_when_flagged(self):
+        """No status filter is applied when include_archived=True."""
+        fake_query = self._run_semantic_search("brain", include_archived=True)
+        # With no metadata filters and include_archived=True, filter() must not
+        # be called at all (no WHERE clauses added).
+        assert not fake_query.filter.called
+
+    def test_content_corpus_never_filters_status(self):
+        """The content corpus has no default_status_exclude → no status filter."""
+        fake_query = self._run_semantic_search("content", include_archived=False)
+        assert not fake_query.filter.called
+
+
+class TestIncludeArchivedThreading:
+    """include_archived threads process → retrieve → _semantic_search."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_retrieve_forwards_include_archived(self):
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            self.node.retrieve("q", corpus="brain", include_archived=True)
+            assert mock_sem.call_args[1].get("include_archived") is True
+
+    def test_retrieve_defaults_include_archived_false(self):
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            self.node.retrieve("q", corpus="brain")
+            assert mock_sem.call_args[1].get("include_archived") is False
+
+    def test_process_reads_include_archived_from_event(self):
+        event = MagicMock()
+        event.question = "brain question"
+        event.corpus = "brain"
+        event.filters = None
+        event.include_archived = True
+        ctx = TaskContext(event=event)
+        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+            self.node.process(ctx)
+        assert mock_ret.call_args[1].get("include_archived") is True
+
+    def test_process_defaults_include_archived_false_when_absent(self):
+        event = MagicMock(spec=["question", "corpus"])
+        event.question = "What is chunking?"
+        event.corpus = "content"
+        ctx = TaskContext(event=event)
+        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+            self.node.process(ctx)
+        assert mock_ret.call_args[1].get("include_archived") is False

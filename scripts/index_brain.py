@@ -36,17 +36,43 @@ import frontmatter
 # Corpus definition: (relative-path-in-brain-repo, doc_type)
 # ---------------------------------------------------------------------------
 CORPUS: list[tuple[str, str]] = [
+    # Decisions (all ADRs + index)
     ("docs/decisions", "decision"),
+    # Projects (all project context docs)
     ("docs/projects", "project"),
+    # Navigation and orientation
+    ("README.md", "meta"),
+    ("docs/index.md", "meta"),
+    ("docs/progress.md", "meta"),
+    ("CLAUDE.md", "meta"),
+    # Career and business
     ("docs/career.md", "career"),
-    ("docs/brand.md", "brand"),
-    ("docs/business", "business"),
-    ("docs/content", "content"),
-    ("docs/linkedin.md", "content"),
     ("docs/profile-and-pitch.md", "career"),
-    ("planning/the-diagnostic", "diagnostic"),
-    ("memory", "memory"),
-    ("MEMORY.md", "memory"),
+    ("docs/brand.md", "brand"),
+    ("docs/linkedin.md", "content"),
+    ("docs/business", "business"),
+    # Content backlog
+    ("docs/content", "content"),
+    # Diagnostic service offering (was: planning/the-diagnostic — does not exist)
+    ("docs/diagnostic", "diagnostic"),
+    # Infrastructure and integrations
+    ("docs/infrastructure.md", "meta"),
+    ("docs/okf-frontmatter.md", "meta"),
+    ("docs/integrations", "meta"),
+    # Bastion program planning
+    ("planning/bastion-product", "plan"),
+    # cross-repo program; plan stays in brain (multi-repo). The bastion-ui/
+    # Flutter sub-repo is gitignored — not in corpus.
+    ("planning/bastion-ui", "plan"),
+    # after Block A relocates architecture.md + ownership.md here
+    ("docs/bastion", "meta"),
+    ("planning/status.md", "meta"),
+    # Archived — indexed but filtered out of default retrieval (status: archived)
+    ("planning/archived", "archived"),
+    # NOTE: memory/ + MEMORY.md are intentionally NOT in the corpus — they live
+    # outside the brain repo (harness-managed auto-memory) and drift; the repo
+    # docs are the authoritative current-state source. See brain-rag-improvements
+    # plan, Block E1.
 ]
 
 logging.basicConfig(
@@ -65,7 +91,17 @@ _DEFAULT_BRAIN_PATH = Path(__file__).resolve().parent.parent.parent
 # OKF controlled vocabularies (from docs/okf-frontmatter.md + D27)
 # ---------------------------------------------------------------------------
 _VALID_LAYERS: frozenset[str] = frozenset(
-    ["brain", "engine", "factory", "console", "surfaces"]
+    [
+        "brain",
+        "engine",
+        "factory",
+        "console",
+        "surface",  # was "surfaces" — no doc uses the plural
+        "infra",  # add — used by infrastructure docs
+        "business",  # add — used by business docs
+        "content",  # add — used by content docs
+        "meta",  # add — used by navigation/meta docs
+    ]
 )
 _VALID_PROJECTS: frozenset[str] = frozenset(
     [
@@ -78,9 +114,14 @@ _VALID_PROJECTS: frozenset[str] = frozenset(
         "price-scout",
         "learn-ai",
         "base-template",
+        "brain",  # add — used in ~44 docs
+        "bella",  # add — used in docs/projects/bella.md
+        "amistad",  # add — used in docs/projects/amistad.md
     ]
 )
-_VALID_STATUSES: frozenset[str] = frozenset(["active", "draft", "archived", "deprecated"])
+_VALID_STATUSES: frozenset[str] = frozenset(
+    ["active", "draft", "archived", "deprecated", "superseded"]  # add "superseded"
+)
 
 _HEADER_RE = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 
@@ -127,13 +168,15 @@ def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
     if not doc_id:
         doc_id = file_path.stem
 
-    # layer: coerce bare string → single-element list
+    # layer: coerce bare string → single-element list; lowercase before the
+    # membership check and for storage (the real warning source was case —
+    # e.g. "Surface" vs "surface" — not a vocabulary gap).
     raw_layer = meta.get("layer")
     layer: list[str] | None = None
     if raw_layer is not None:
         if isinstance(raw_layer, str):
             raw_layer = [raw_layer]
-        layer = [str(v) for v in raw_layer]
+        layer = [str(v).strip().lower() for v in raw_layer]
         invalid = [v for v in layer if v not in _VALID_LAYERS]
         if invalid:
             logger.warning(
@@ -142,8 +185,9 @@ def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
                 invalid,
             )
 
-    # project: scalar string
-    project: str | None = meta.get("project") or None
+    # project: scalar string, case-normalized
+    raw_project = meta.get("project")
+    project: str | None = str(raw_project).strip().lower() if raw_project else None
     if project and project not in _VALID_PROJECTS:
         logger.warning(
             "Out-of-vocabulary project value in %s: %s",
@@ -151,8 +195,9 @@ def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
             project,
         )
 
-    # status: scalar string
-    status: str | None = meta.get("status") or None
+    # status: scalar string, case-normalized ("Draft" → "draft", "Active" → "active")
+    raw_status = meta.get("status")
+    status: str | None = str(raw_status).strip().lower() if raw_status else None
     if status and status not in _VALID_STATUSES:
         logger.warning(
             "Out-of-vocabulary status value in %s: %s",
@@ -290,6 +335,22 @@ def chunk_by_section(content: str) -> list[tuple[str, str]]:
         chunks.append((section_header, combined))
 
     return chunks
+
+
+def _is_header_only_chunk(section_header: str, chunk_text: str) -> bool:
+    """True when a chunk is just a section header with no real body.
+
+    ``chunk_by_section`` prepends the header to every chunk's text
+    (``combined = f"{section_header}\n{body}"``), so a naive
+    ``chunk_text.startswith("#")`` would flag *every* chunk. The flag must be
+    measured on the **header-stripped body**: strip the leading header span,
+    then treat the chunk as a section title only when what remains is empty or
+    trivially short (< 40 chars). This feeds the 2x section-title weight in
+    ``RetrieveChunksNode._fuse_and_rank`` — if it fired on every chunk the
+    weight would be pure noise.
+    """
+    body = chunk_text[len(section_header):].strip()
+    return body == "" or len(body) < 40
 
 
 def _count_tokens(text: str) -> int:
@@ -553,6 +614,13 @@ def main(argv: list[str] | None = None) -> None:
                             status=norm["status"],
                             keywords=norm["keywords"],
                             related=norm["related"],
+                            is_section_title=_is_header_only_chunk(
+                                section_header, chunk_text
+                            ),
+                            title=meta.get("title") or None,
+                            description=meta.get("description") or None,
+                            # content_tsv is a generated column — Postgres
+                            # maintains it; NEVER set it here.
                         )
                         session.add(doc)
                     session.commit()
