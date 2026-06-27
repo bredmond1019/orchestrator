@@ -2,7 +2,8 @@
 
 Tests cover:
 - chunk_by_section: section-header splitting logic
-- doc_type assignment via CORPUS mapping
+- doc_type assignment via the path classifier
+- corpus derivation from brain.toml (root walk-up + docs/planning crawl)
 - incremental skip logic (mocked DB)
 - dry-run mode (no DB writes)
 - parse_document: frontmatter parsing and stripping
@@ -24,9 +25,11 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from index_brain import (  # noqa: E402
-    CORPUS,
     _DEFAULT_BRAIN_PATH,
+    BrainConfig,
+    _classify_doc_type,
     _collect_files,
+    _find_brain_root,
     _get_doc_type_for_path,
     _is_header_only_chunk,
     build_context_prefix,
@@ -37,6 +40,81 @@ from index_brain import (  # noqa: E402
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "brain_docs"
+
+# ---------------------------------------------------------------------------
+# Shared test config / brain-root scaffolding
+# ---------------------------------------------------------------------------
+# The indexer reads its vocab + crawl rules + manifest from brain.toml (HQ
+# Restructure Block I). Unit tests that call normalize_metadata / _collect_files
+# directly pass this BrainConfig; tests that drive main() write a brain.toml into
+# tmp_path so _resolve_brain_path treats it as a brain root and main() can load it.
+TEST_CONFIG = BrainConfig(
+    valid_layers=frozenset(
+        [
+            "brain",
+            "engine",
+            "factory",
+            "console",
+            "surface",
+            "infra",
+            "business",
+            "content",
+            "meta",
+        ]
+    ),
+    valid_projects=frozenset(
+        [
+            "brain",
+            "orchestrator",
+            "mev",
+            "bastion",
+            "bastion-ui",
+            "bella",
+            "rag-engine-rs",
+            "workflow-engine-rs",
+            "claude-sdk-rs",
+            "amistad",
+            "price-scout",
+            "learn-ai",
+            "base-template",
+        ]
+    ),
+    valid_statuses=frozenset(
+        ["active", "draft", "deprecated", "superseded", "archived"]
+    ),
+    skip_dirs=("planning/archive", "node_modules", ".git"),
+    repos=(),
+)
+
+_TEST_BRAIN_TOML = """\
+[vocab]
+layer = ["brain", "engine", "factory", "console", "surface", "infra", "business", "content", "meta"]
+status = ["active", "draft", "deprecated", "superseded", "archived"]
+
+[crawl]
+skip_dirs = ["target", "node_modules", ".git", ".claude", ".agent", "planning/archive", "venv", ".venv"]
+
+[[repos]]
+slug = "brain"
+tier = "_root"
+repo_path = "."
+status_file = "planning/status.md"
+cache_doc = "README.md"
+heading = "Company Brain"
+"""
+
+
+@pytest.fixture(autouse=True)
+def _auto_brain_toml(tmp_path):
+    """Make every test's tmp_path a valid brain root.
+
+    The indexer's _resolve_brain_path now requires brain.toml as the root marker,
+    and main() loads vocab/crawl rules from it. Writing it for every test keeps
+    main()-driven tests working without each one repeating the boilerplate; it is
+    inert for tests that pass TEST_CONFIG directly (brain.toml is not a *.md file,
+    so it never enters the corpus).
+    """
+    (tmp_path / "brain.toml").write_text(_TEST_BRAIN_TOML, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +196,7 @@ class TestChunkBySection:
 
 
 class TestDocTypeAssignment:
-    """_get_doc_type_for_path assigns doc_types matching the CORPUS map."""
+    """_get_doc_type_for_path assigns doc_types via the path classifier."""
 
     def setup_method(self):
         self.brain_path = Path("/fake/brain")
@@ -183,13 +261,25 @@ class TestDocTypeAssignment:
             _get_doc_type_for_path("/fake/brain/CLAUDE.md", self.brain_path) == "meta"
         )
 
-    def test_archived_dir_file(self):
-        # planning/archived is indexed as "archived" (filtered from default retrieval).
+    def test_planning_dir_file_is_plan(self):
+        # Any planning/** path classifies as "plan". (planning/archive is skipped
+        # from the corpus entirely via brain.toml [crawl].skip_dirs, so archived
+        # docs are no longer embedded; the classifier is doc_type-only metadata.)
         assert (
             _get_doc_type_for_path(
-                "/fake/brain/planning/archived/old-plan.md", self.brain_path
+                "/fake/brain/planning/bastion-product/plan.md", self.brain_path
             )
-            == "archived"
+            == "plan"
+        )
+
+    def test_tier_prefixed_cache_classifies_as_project(self):
+        # A tiered cache path (core/docs/projects/...) classifies the same as its
+        # HQ-relative equivalent — the leading tier component is stripped.
+        assert (
+            _get_doc_type_for_path(
+                "/fake/brain/core/docs/projects/bastion.md", self.brain_path
+            )
+            == "project"
         )
 
     def test_memory_path_falls_back_to_content(self):
@@ -380,7 +470,7 @@ class TestCollectFiles:
         career = docs / "career.md"
         career.write_text("# Career", encoding="utf-8")
 
-        result = _collect_files(tmp_path)
+        result = _collect_files(tmp_path, TEST_CONFIG)
         paths = [r[0] for r in result]
         assert career in paths
 
@@ -390,7 +480,7 @@ class TestCollectFiles:
         (decisions / "_draft.md").write_text("draft", encoding="utf-8")
         (decisions / "D1.md").write_text("real", encoding="utf-8")
 
-        result = _collect_files(tmp_path)
+        result = _collect_files(tmp_path, TEST_CONFIG)
         names = [r[0].name for r in result]
         assert "_draft.md" not in names
         assert "D1.md" in names
@@ -400,7 +490,7 @@ class TestCollectFiles:
         docs = tmp_path / "docs"
         docs.mkdir()
         # No career.md created — should be silently skipped
-        result = _collect_files(tmp_path)
+        result = _collect_files(tmp_path, TEST_CONFIG)
         paths = [r[0] for r in result]
         for p in paths:
             assert "career.md" not in str(p)
@@ -468,24 +558,24 @@ class TestNormalizeMetadata:
         self.file_path = Path("/fake/brain/docs/test-doc.md")
 
     def test_empty_meta_derives_doc_id_from_filename(self):
-        result = normalize_metadata({}, self.file_path, self.brain_path)
+        result = normalize_metadata({}, self.file_path, self.brain_path, TEST_CONFIG)
         assert result["doc_id"] == "test-doc"
 
     def test_explicit_doc_id_is_preserved(self):
         result = normalize_metadata(
-            {"doc_id": "my-custom-id"}, self.file_path, self.brain_path
+            {"doc_id": "my-custom-id"}, self.file_path, self.brain_path, TEST_CONFIG
         )
         assert result["doc_id"] == "my-custom-id"
 
     def test_bare_string_layer_is_coerced_to_list(self):
         result = normalize_metadata(
-            {"layer": "brain"}, self.file_path, self.brain_path
+            {"layer": "brain"}, self.file_path, self.brain_path, TEST_CONFIG
         )
         assert result["layer"] == ["brain"]
 
     def test_list_layer_is_preserved(self):
         result = normalize_metadata(
-            {"layer": ["brain", "engine"]}, self.file_path, self.brain_path
+            {"layer": ["brain", "engine"]}, self.file_path, self.brain_path, TEST_CONFIG
         )
         assert result["layer"] == ["brain", "engine"]
 
@@ -494,7 +584,7 @@ class TestNormalizeMetadata:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             result = normalize_metadata(
-                {"layer": "unknown-layer"}, self.file_path, self.brain_path
+                {"layer": "unknown-layer"}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert result["layer"] == ["unknown-layer"]
         assert "Out-of-vocabulary" in caplog.text or "layer" in caplog.text.lower()
@@ -504,7 +594,7 @@ class TestNormalizeMetadata:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             result = normalize_metadata(
-                {"project": "nonexistent-project"}, self.file_path, self.brain_path
+                {"project": "nonexistent-project"}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert result["project"] == "nonexistent-project"
         assert "Out-of-vocabulary" in caplog.text
@@ -514,25 +604,25 @@ class TestNormalizeMetadata:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             result = normalize_metadata(
-                {"status": "pending"}, self.file_path, self.brain_path
+                {"status": "pending"}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert result["status"] == "pending"
         assert "Out-of-vocabulary" in caplog.text
 
     def test_keywords_as_list_is_preserved(self):
         result = normalize_metadata(
-            {"keywords": ["foo", "bar"]}, self.file_path, self.brain_path
+            {"keywords": ["foo", "bar"]}, self.file_path, self.brain_path, TEST_CONFIG
         )
         assert result["keywords"] == ["foo", "bar"]
 
     def test_related_as_list_is_preserved(self):
         result = normalize_metadata(
-            {"related": ["docs/a.md", "docs/b.md"]}, self.file_path, self.brain_path
+            {"related": ["docs/a.md", "docs/b.md"]}, self.file_path, self.brain_path, TEST_CONFIG
         )
         assert result["related"] == ["docs/a.md", "docs/b.md"]
 
     def test_missing_optional_fields_are_none(self):
-        result = normalize_metadata({}, self.file_path, self.brain_path)
+        result = normalize_metadata({}, self.file_path, self.brain_path, TEST_CONFIG)
         assert result["layer"] is None
         assert result["project"] is None
         assert result["status"] is None
@@ -542,7 +632,7 @@ class TestNormalizeMetadata:
     def test_bare_string_layer_fixture(self):
         content = (FIXTURES_DIR / "bare_string_layer.md").read_text(encoding="utf-8")
         meta, _ = parse_document(content)
-        result = normalize_metadata(meta, self.file_path, self.brain_path)
+        result = normalize_metadata(meta, self.file_path, self.brain_path, TEST_CONFIG)
         assert isinstance(result["layer"], list)
         assert result["layer"] == ["brain"]
 
@@ -805,7 +895,7 @@ class TestVocabCaseNormalization:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             result = normalize_metadata(
-                {"project": "brain"}, self.file_path, self.brain_path
+                {"project": "brain"}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert result["project"] == "brain"
         assert "Out-of-vocabulary" not in caplog.text
@@ -815,7 +905,7 @@ class TestVocabCaseNormalization:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             result = normalize_metadata(
-                {"layer": ["surface"]}, self.file_path, self.brain_path
+                {"layer": ["surface"]}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert result["layer"] == ["surface"]
         assert "Out-of-vocabulary" not in caplog.text
@@ -825,10 +915,10 @@ class TestVocabCaseNormalization:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             draft = normalize_metadata(
-                {"status": "Draft"}, self.file_path, self.brain_path
+                {"status": "Draft"}, self.file_path, self.brain_path, TEST_CONFIG
             )
             active = normalize_metadata(
-                {"status": "Active"}, self.file_path, self.brain_path
+                {"status": "Active"}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert draft["status"] == "draft"
         assert active["status"] == "active"
@@ -836,7 +926,7 @@ class TestVocabCaseNormalization:
 
     def test_mixed_case_layer_is_normalized(self):
         result = normalize_metadata(
-            {"layer": ["Brain", "Engine"]}, self.file_path, self.brain_path
+            {"layer": ["Brain", "Engine"]}, self.file_path, self.brain_path, TEST_CONFIG
         )
         assert result["layer"] == ["brain", "engine"]
 
@@ -845,7 +935,7 @@ class TestVocabCaseNormalization:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             result = normalize_metadata(
-                {"status": "superseded"}, self.file_path, self.brain_path
+                {"status": "superseded"}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert result["status"] == "superseded"
         assert "Out-of-vocabulary" not in caplog.text
@@ -855,37 +945,71 @@ class TestVocabCaseNormalization:
 
         with caplog.at_level(logging.WARNING, logger="index_brain"):
             result = normalize_metadata(
-                {"layer": ["bogus"]}, self.file_path, self.brain_path
+                {"layer": ["bogus"]}, self.file_path, self.brain_path, TEST_CONFIG
             )
         assert result["layer"] == ["bogus"]
         assert "Out-of-vocabulary" in caplog.text
 
 
-class TestCorpusContents:
-    """The CORPUS list adds the missing docs and drops the broken/out-of-repo ones."""
+class TestCorpusDerivation:
+    """_collect_files crawls docs/ + planning/ and honours skip + ephemeral rules."""
 
-    def test_corpus_includes_newly_added_entries(self):
-        rels = [r for r, _ in CORPUS]
-        for expected in (
-            "docs/diagnostic",
-            "planning/status.md",
-            "CLAUDE.md",
-            "docs/progress.md",
-            "docs/okf-frontmatter.md",
-            "docs/integrations",
-            "planning/archived",
-        ):
-            assert expected in rels, f"{expected} missing from CORPUS"
+    def test_includes_docs_planning_and_root_files(self, tmp_path):
+        (tmp_path / "docs" / "diagnostic").mkdir(parents=True)
+        (tmp_path / "docs" / "diagnostic" / "plan.md").write_text("# x", encoding="utf-8")
+        (tmp_path / "docs" / "okf-frontmatter.md").write_text("# o", encoding="utf-8")
+        (tmp_path / "planning").mkdir()
+        (tmp_path / "planning" / "status.md").write_text("# s", encoding="utf-8")
+        (tmp_path / "CLAUDE.md").write_text("# c", encoding="utf-8")
 
-    def test_corpus_excludes_removed_and_out_of_repo_entries(self):
-        rels = [r for r, _ in CORPUS]
-        for excluded in (
-            "planning/the-diagnostic",  # broken path
-            "memory",  # out of repo
-            "MEMORY.md",  # out of repo
-            "planning/handoff.md",  # ephemeral
-        ):
-            assert excluded not in rels, f"{excluded} should not be in CORPUS"
+        rels = {
+            p.relative_to(tmp_path).as_posix() for p, _ in _collect_files(tmp_path, TEST_CONFIG)
+        }
+        assert "docs/diagnostic/plan.md" in rels
+        assert "docs/okf-frontmatter.md" in rels
+        assert "planning/status.md" in rels
+        assert "CLAUDE.md" in rels
+
+    def test_excludes_ephemeral_archive_and_out_of_corpus(self, tmp_path):
+        (tmp_path / "planning" / "archive").mkdir(parents=True)
+        (tmp_path / "planning" / "archive" / "old.md").write_text("# o", encoding="utf-8")
+        (tmp_path / "planning" / "handoff.md").write_text("# h", encoding="utf-8")
+        (tmp_path / "MEMORY.md").write_text("# m", encoding="utf-8")
+        (tmp_path / "log.md").write_text("# l", encoding="utf-8")
+
+        rels = {
+            p.relative_to(tmp_path).as_posix() for p, _ in _collect_files(tmp_path, TEST_CONFIG)
+        }
+        assert "planning/archive/old.md" not in rels  # [crawl].skip_dirs
+        assert "planning/handoff.md" not in rels  # ephemeral
+        assert "MEMORY.md" not in rels  # out of repo (not README/CLAUDE)
+        assert "log.md" not in rels  # not a crawled root file
+
+    def test_sub_brain_tier_docs_are_collected(self, tmp_path):
+        # A tier sub-brain (core/) with its own docs/projects cache is crawled;
+        # doc_type classification strips the leading tier component.
+        (tmp_path / "core" / "docs" / "projects").mkdir(parents=True)
+        (tmp_path / "core" / "docs" / "projects" / "bastion.md").write_text(
+            "# b", encoding="utf-8"
+        )
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "career.md").write_text("# c", encoding="utf-8")
+
+        by_rel = {
+            p.relative_to(tmp_path).as_posix(): dt
+            for p, dt in _collect_files(tmp_path, TEST_CONFIG)
+        }
+        assert by_rel.get("core/docs/projects/bastion.md") == "project"
+        assert by_rel.get("docs/career.md") == "career"
+
+    def test_classify_doc_type_relative_rules(self):
+        assert _classify_doc_type("docs/decisions/D1.md") == "decision"
+        assert _classify_doc_type("docs/projects/x.md") == "project"
+        assert _classify_doc_type("docs/brand.md") == "brand"
+        assert _classify_doc_type("planning/hq-restructure/plan.md") == "plan"
+        assert _classify_doc_type("docs/index.md") == "meta"
+        assert _classify_doc_type("README.md") == "meta"
+        assert _classify_doc_type("unknown/thing.md") == "content"
 
 
 class TestNewColumnPopulation:
@@ -991,16 +1115,19 @@ class TestNewColumnPopulation:
 
 
 class TestDefaultBrainPath:
-    """The default --brain-path is derived from the script location, not cwd."""
-
-    def test_default_points_at_orchestration_repo_parent(self):
-        """_DEFAULT_BRAIN_PATH is the parent of the orchestration repo root."""
-        repo_root = Path(__file__).resolve().parent.parent
-        assert _DEFAULT_BRAIN_PATH == repo_root.parent
+    """The default --brain-path is resolved by walking up to brain.toml, not cwd."""
 
     def test_default_is_absolute(self):
         """A script-derived default must be absolute so any cwd resolves it."""
         assert _DEFAULT_BRAIN_PATH.is_absolute()
+
+    def test_default_resolves_to_brain_root_when_inside_brain(self):
+        """When the orchestrator lives inside the brain repo (the normal case),
+        the walk-up resolves the real brain.toml as the default root."""
+        root = _find_brain_root(Path(__file__))
+        if root is not None:  # standalone clones without the brain skip this
+            assert (root / "brain.toml").is_file()
+            assert _DEFAULT_BRAIN_PATH == root
 
 
 # ---------------------------------------------------------------------------

@@ -11,10 +11,11 @@ Usage:
     python scripts/index_brain.py --prune-paths PATH [PATH ...] [--dry-run]
 
 Args:
-    --brain-path PATH    Path to the brain repo root. Defaults to the parent of the
-                         orchestration repo (the brain root) — resolved from this
-                         script's location, so it is independent of the current
-                         working directory.
+    --brain-path PATH    Path to the brain repo root (the directory holding
+                         brain.toml). Defaults to the nearest ancestor of this
+                         script that contains brain.toml — resolved by walking up,
+                         so it is independent of the current working directory and
+                         of where in the tier tree the orchestrator repo lives.
     --rebuild            Drop all non-diagnostic rows and re-index from scratch.
     --dry-run            Print what would be indexed (or pruned) without writing to
                          DB or calling the embedding API.
@@ -27,53 +28,57 @@ import argparse
 import logging
 import re
 import sys
+import tomllib
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import frontmatter
 
 # ---------------------------------------------------------------------------
-# Corpus definition: (relative-path-in-brain-repo, doc_type)
+# Corpus derivation (manifest-driven; HQ Restructure Block I)
 # ---------------------------------------------------------------------------
-CORPUS: list[tuple[str, str]] = [
-    # Decisions (all ADRs + index)
+# The corpus is no longer a hand-maintained list. It is derived from the brain
+# structure described by ``brain.toml``: the ``docs/`` and ``planning/`` subtrees
+# of the brain root and each sub-brain tier (``core/``, ``portfolio/`` …), plus
+# each scope's ``README.md`` + ``CLAUDE.md``. Sub-repo internals (the gitignored
+# project repos named in the manifest) are excluded — indexing per-repo planning
+# or source is Block O/P of the Bastion program, out of scope here.
+#
+# ``doc_type`` is a soft categorisation column (retrieval filters on ``status`` and
+# ``corpus``, never on ``doc_type``); it is assigned by a path classifier applied
+# relative to each scope root.
+#
+# NOTE: memory/ + MEMORY.md are intentionally NOT in the corpus — they live
+# outside the brain repo (harness-managed auto-memory) and drift; the repo docs
+# are the authoritative current-state source. They are never crawled because only
+# the docs/ + planning/ subtrees and README/CLAUDE of each scope are walked.
+
+# Path-prefix → doc_type, matched against a path relative to a brain/sub-brain
+# root. Order matters: specific entries precede the broad ``planning``/``docs``
+# fallbacks.
+_DOC_TYPE_RULES: list[tuple[str, str]] = [
     ("docs/decisions", "decision"),
-    # Projects (all project context docs)
     ("docs/projects", "project"),
-    # Navigation and orientation
-    ("README.md", "meta"),
-    ("docs/index.md", "meta"),
-    ("docs/progress.md", "meta"),
-    ("CLAUDE.md", "meta"),
-    # Career and business
+    ("docs/business", "business"),
+    ("docs/content", "content"),
+    ("docs/diagnostic", "diagnostic"),
     ("docs/career.md", "career"),
     ("docs/profile-and-pitch.md", "career"),
     ("docs/brand.md", "brand"),
     ("docs/linkedin.md", "content"),
-    ("docs/business", "business"),
-    # Content backlog
-    ("docs/content", "content"),
-    # Diagnostic service offering (was: planning/the-diagnostic — does not exist)
-    ("docs/diagnostic", "diagnostic"),
-    # Infrastructure and integrations
-    ("docs/infrastructure.md", "meta"),
-    ("docs/okf-frontmatter.md", "meta"),
-    ("docs/integrations", "meta"),
-    # Bastion program planning
-    ("planning/bastion-product", "plan"),
-    # cross-repo program; plan stays in brain (multi-repo). The bastion-ui/
-    # Flutter sub-repo is gitignored — not in corpus.
-    ("planning/bastion-ui", "plan"),
-    # after Block A relocates architecture.md + ownership.md here
-    ("docs/bastion", "meta"),
-    ("planning/status.md", "meta"),
-    # Archived — indexed but filtered out of default retrieval (status: archived)
-    ("planning/archived", "archived"),
-    # NOTE: memory/ + MEMORY.md are intentionally NOT in the corpus — they live
-    # outside the brain repo (harness-managed auto-memory) and drift; the repo
-    # docs are the authoritative current-state source. See brain-rag-improvements
-    # plan, Block E1.
+    ("planning", "plan"),
+    ("docs", "meta"),
+    ("README.md", "meta"),
+    ("CLAUDE.md", "meta"),
 ]
+
+# Subtrees crawled within each brain/sub-brain root, and the root-level files.
+_CORPUS_SUBTREES: tuple[str, ...] = ("docs", "planning")
+_CORPUS_ROOT_FILES: tuple[str, ...] = ("README.md", "CLAUDE.md")
+
+# Ephemeral / non-corpus files skipped even inside crawled subtrees.
+_EPHEMERAL_FILENAMES: frozenset[str] = frozenset({"handoff.md"})
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,47 +87,69 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Brain repo root = parent of the orchestration repo. Derived from this script's
-# location (scripts/index_brain.py) so the default is correct regardless of the
-# current working directory.
-_DEFAULT_BRAIN_PATH = Path(__file__).resolve().parent.parent.parent
+# ---------------------------------------------------------------------------
+# brain.toml — root marker, controlled vocab, crawl rules, repo manifest
+# ---------------------------------------------------------------------------
+_BRAIN_CONFIG_FILENAME = "brain.toml"
 
-# ---------------------------------------------------------------------------
-# OKF controlled vocabularies (from docs/okf-frontmatter.md + D27)
-# ---------------------------------------------------------------------------
-_VALID_LAYERS: frozenset[str] = frozenset(
-    [
-        "brain",
-        "engine",
-        "factory",
-        "console",
-        "surface",  # was "surfaces" — no doc uses the plural
-        "infra",  # add — used by infrastructure docs
-        "business",  # add — used by business docs
-        "content",  # add — used by content docs
-        "meta",  # add — used by navigation/meta docs
-    ]
-)
-_VALID_PROJECTS: frozenset[str] = frozenset(
-    [
-        "orchestrator",
-        "rag-engine-rs",
-        "claude-sdk-rs",
-        "workflow-engine-rs",
-        "bastion",
-        "bastion-ui",  # add — used in docs/projects/bastion-ui.md + planning/bastion-ui/
-        "mev",
-        "price-scout",
-        "learn-ai",
-        "base-template",
-        "brain",  # add — used in ~44 docs
-        "bella",  # add — used in docs/projects/bella.md
-        "amistad",  # add — used in docs/projects/amistad.md
-    ]
-)
-_VALID_STATUSES: frozenset[str] = frozenset(
-    ["active", "draft", "archived", "deprecated", "superseded"]  # add "superseded"
-)
+
+def _find_brain_root(start: Path) -> Path | None:
+    """Walk up from ``start`` to the nearest directory containing ``brain.toml``.
+
+    ``brain.toml`` doubles as the brain root marker, so the indexer resolves the
+    root by walking up rather than by counting directory levels (depth math broke
+    when the orchestrator repo was relocated under the ``core/`` tier).
+    """
+    start = start.resolve()
+    search = [start] if start.is_dir() else []
+    search.extend(start.parents)
+    for directory in search:
+        if (directory / _BRAIN_CONFIG_FILENAME).is_file():
+            return directory
+    return None
+
+
+# Default brain root: walk up from this script to brain.toml. Independent of CWD
+# and of where in the tier tree the orchestrator repo lives. Falls back to a
+# best-effort guess only so import never fails; real runs always find a brain.toml
+# (and --brain-path / _resolve_brain_path validate it).
+_DEFAULT_BRAIN_PATH = _find_brain_root(Path(__file__)) or Path(__file__).resolve().parents[3]
+
+
+@dataclass(frozen=True)
+class BrainConfig:
+    """Parsed ``brain.toml`` — the single source of vocab, crawl rules, manifest."""
+
+    valid_layers: frozenset[str]
+    valid_projects: frozenset[str]
+    valid_statuses: frozenset[str]
+    skip_dirs: tuple[str, ...]
+    repos: tuple[dict, ...]
+
+
+def _load_brain_config(brain_path: Path) -> BrainConfig:
+    """Load and parse ``brain.toml`` at ``brain_path`` into a :class:`BrainConfig`.
+
+    Project vocab is *derived* from the ``[[repos]]`` slugs rather than listed —
+    the manifest is the single source of the valid-project set.
+    """
+    config_file = brain_path / _BRAIN_CONFIG_FILENAME
+    if not config_file.is_file():
+        raise SystemExit(f"Error: {_BRAIN_CONFIG_FILENAME} not found at {config_file}")
+    with config_file.open("rb") as fh:
+        data = tomllib.load(fh)
+
+    vocab = data.get("vocab", {})
+    crawl = data.get("crawl", {})
+    repos = tuple(data.get("repos", []))
+    return BrainConfig(
+        valid_layers=frozenset(vocab.get("layer", [])),
+        valid_projects=frozenset(r["slug"] for r in repos if "slug" in r),
+        valid_statuses=frozenset(vocab.get("status", [])),
+        skip_dirs=tuple(crawl.get("skip_dirs", [])),
+        repos=repos,
+    )
+
 
 _HEADER_RE = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
 
@@ -146,18 +173,21 @@ def parse_document(text: str) -> tuple[dict, str]:
     return dict(post.metadata), post.content
 
 
-def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
+def normalize_metadata(
+    meta: dict, file_path: Path, brain_path: Path, config: BrainConfig
+) -> dict:
     """Normalise raw frontmatter metadata to the six OKF filterable fields.
 
     Applies typed defaults, coerces bare strings to lists where the schema
     expects lists, derives ``doc_id`` from the filename stem when absent, and
-    logs (never raises) out-of-vocabulary values.
+    logs (never raises) out-of-vocabulary values against the ``brain.toml`` vocab.
 
     Args:
         meta:       Raw metadata dict returned by ``parse_document``.
         file_path:  Absolute path to the source markdown file.
         brain_path: Absolute path to the brain repo root (used for rel-path
                     derivation only).
+        config:     Parsed ``brain.toml`` supplying the controlled vocab.
 
     Returns:
         A dict with keys: ``doc_id``, ``layer``, ``project``, ``status``,
@@ -178,7 +208,7 @@ def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
         if isinstance(raw_layer, str):
             raw_layer = [raw_layer]
         layer = [str(v).strip().lower() for v in raw_layer]
-        invalid = [v for v in layer if v not in _VALID_LAYERS]
+        invalid = [v for v in layer if v not in config.valid_layers]
         if invalid:
             logger.warning(
                 "Out-of-vocabulary layer value(s) in %s: %s",
@@ -189,7 +219,7 @@ def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
     # project: scalar string, case-normalized
     raw_project = meta.get("project")
     project: str | None = str(raw_project).strip().lower() if raw_project else None
-    if project and project not in _VALID_PROJECTS:
+    if project and project not in config.valid_projects:
         logger.warning(
             "Out-of-vocabulary project value in %s: %s",
             file_path.relative_to(brain_path) if brain_path else file_path,
@@ -199,7 +229,7 @@ def normalize_metadata(meta: dict, file_path: Path, brain_path: Path) -> dict:
     # status: scalar string, case-normalized ("Draft" → "draft", "Active" → "active")
     raw_status = meta.get("status")
     status: str | None = str(raw_status).strip().lower() if raw_status else None
-    if status and status not in _VALID_STATUSES:
+    if status and status not in config.valid_statuses:
         logger.warning(
             "Out-of-vocabulary status value in %s: %s",
             file_path.relative_to(brain_path) if brain_path else file_path,
@@ -280,32 +310,98 @@ def build_context_prefix(meta: dict) -> str:
 
 
 def _resolve_brain_path(raw: str) -> Path:
-    """Resolve --brain-path to an absolute path and validate it looks like the brain repo."""
+    """Resolve --brain-path to an absolute path and validate it is a brain root."""
     p = Path(raw).resolve()
     if not p.exists():
         raise SystemExit(f"Error: --brain-path does not exist: {p}")
-    if not (p / "docs").is_dir():
+    if not (p / _BRAIN_CONFIG_FILENAME).is_file():
         raise SystemExit(
-            f"Error: {p} does not look like the brain repo — 'docs/' directory not found"
+            f"Error: {p} does not look like a brain root — "
+            f"'{_BRAIN_CONFIG_FILENAME}' not found"
         )
     return p
 
 
-def _collect_files(brain_path: Path) -> list[tuple[Path, str]]:
-    """Return (absolute_path, doc_type) pairs for every file in the corpus."""
-    result: list[tuple[Path, str]] = []
-    for rel, doc_type in CORPUS:
-        entry = brain_path / rel
-        if not entry.exists():
-            logger.info("Corpus entry not found, skipping: %s", rel)
+def _classify_doc_type(rel_posix: str) -> str:
+    """Map a path (relative to a brain/sub-brain root) to its ``doc_type``."""
+    for prefix, doc_type in _DOC_TYPE_RULES:
+        if rel_posix == prefix or rel_posix.startswith(prefix + "/"):
+            return doc_type
+    return "content"
+
+
+def _is_skipped(rel_posix: str, skip_dirs: tuple[str, ...]) -> bool:
+    """True when a path matches a ``[crawl].skip_dirs`` entry.
+
+    Single-name entries (``node_modules``, ``.git``) match any path component;
+    path-like entries (``planning/archive``) match a prefix of the path.
+    """
+    parts = rel_posix.split("/")
+    for skip in skip_dirs:
+        if "/" in skip:
+            if rel_posix == skip or rel_posix.startswith(skip + "/"):
+                return True
+        elif skip in parts:
+            return True
+    return False
+
+
+def _corpus_roots(brain_path: Path, config: BrainConfig) -> list[Path]:
+    """The brain root plus every immediate sub-brain tier directory.
+
+    A sub-brain is an immediate child directory that has a ``docs/`` or
+    ``planning/`` subtree and is neither a skipped dir nor a gitignored project
+    repo named in the manifest (so ``core/`` is a root but ``core/orchestrator``
+    and the top-level ``learn-ai``/``base-template`` repos are not).
+    """
+    excluded = {
+        (brain_path / r["repo_path"]).resolve()
+        for r in config.repos
+        if r.get("repo_path") and r["repo_path"] != "."
+    }
+    roots = [brain_path]
+    for child in sorted(brain_path.iterdir()):
+        if not child.is_dir():
             continue
-        if entry.is_file():
-            result.append((entry, doc_type))
-        elif entry.is_dir():
-            for md_file in sorted(entry.rglob("*.md")):
-                if md_file.name.startswith("_"):
+        if child.name.startswith(".") or child.name in config.skip_dirs:
+            continue
+        if child.resolve() in excluded:
+            continue
+        if (child / "docs").is_dir() or (child / "planning").is_dir():
+            roots.append(child)
+    return roots
+
+
+def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, str]]:
+    """Return (absolute_path, doc_type) pairs for the whole brain corpus.
+
+    Crawls the ``docs/`` and ``planning/`` subtrees plus the README/CLAUDE of the
+    brain root and each sub-brain tier, honouring ``[crawl].skip_dirs`` and
+    skipping underscore-prefixed and ephemeral files. Sub-repo internals are never
+    reached because only those subtrees (not the tier roots wholesale) are walked.
+    """
+    result: list[tuple[Path, str]] = []
+    seen: set[Path] = set()
+    for root in _corpus_roots(brain_path, config):
+        for subtree in _CORPUS_SUBTREES:
+            base = root / subtree
+            if not base.is_dir():
+                continue
+            for md_file in sorted(base.rglob("*.md")):
+                if md_file.name.startswith("_") or md_file.name in _EPHEMERAL_FILENAMES:
                     continue
-                result.append((md_file, doc_type))
+                rel_to_root = md_file.relative_to(root).as_posix()
+                if _is_skipped(rel_to_root, config.skip_dirs):
+                    continue
+                if md_file in seen:
+                    continue
+                seen.add(md_file)
+                result.append((md_file, _classify_doc_type(rel_to_root)))
+        for fname in _CORPUS_ROOT_FILES:
+            root_file = root / fname
+            if root_file.is_file() and root_file not in seen:
+                seen.add(root_file)
+                result.append((root_file, _classify_doc_type(fname)))
     return result
 
 
@@ -379,18 +475,26 @@ def _split_chunk(text: str, max_tokens: int = 500, overlap: int = 50) -> list[st
 
 
 def _get_doc_type_for_path(file_path: str, brain_path: Path) -> str:
-    """Determine doc_type from a file path using the CORPUS mapping."""
+    """Determine doc_type from a file path via the classifier.
+
+    Strips a leading sub-brain/tier component (e.g. ``core/``) so a tiered cache
+    path classifies the same as its HQ-relative equivalent.
+    """
     rel = Path(file_path)
     try:
         rel = rel.relative_to(brain_path)
     except ValueError:
         pass
-    rel_str = str(rel)
-
-    for corpus_rel, doc_type in CORPUS:
-        if rel_str == corpus_rel or rel_str.startswith(corpus_rel.rstrip("/") + "/"):
-            return doc_type
-    return "content"  # fallback
+    parts = rel.parts
+    # Drop a leading tier/sub-brain directory if present (anything that isn't a
+    # crawled subtree or a known root-level file).
+    if (
+        len(parts) > 1
+        and parts[0] not in _CORPUS_SUBTREES
+        and parts[0] not in _CORPUS_ROOT_FILES
+    ):
+        rel = Path(*parts[1:])
+    return _classify_doc_type(rel.as_posix())
 
 
 def _prune_paths(paths: list[str], brain_path: Path, dry_run: bool = False) -> None:
@@ -510,8 +614,9 @@ def main(argv: list[str] | None = None) -> None:
         _prune_paths(args.prune_paths, brain_path, dry_run=args.dry_run)
         return
 
-    # Collect files
-    files = _collect_files(brain_path)
+    # Load the manifest (vocab + crawl rules + repo list), then collect files.
+    config = _load_brain_config(brain_path)
+    files = _collect_files(brain_path, config)
     if args.limit is not None:
         files = files[: args.limit]
         logger.info("--limit %d: processing first %d file(s) only", args.limit, len(files))
@@ -572,7 +677,7 @@ def main(argv: list[str] | None = None) -> None:
             # Read, parse frontmatter, and chunk the body only (no YAML)
             raw_content = file_path.read_text(encoding="utf-8")
             meta, body = parse_document(raw_content)
-            norm = normalize_metadata(meta, file_path, brain_path)
+            norm = normalize_metadata(meta, file_path, brain_path, config)
             context_prefix = build_context_prefix(meta)
             section_chunks = chunk_by_section(body)
 
