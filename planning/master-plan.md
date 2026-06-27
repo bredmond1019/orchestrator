@@ -58,16 +58,24 @@ D36):
   corpus *is* the Brain's semantic retrieval; the two are one thing now, not a late Phase-2 extra.
 - **Project G ≡ the Brain's memory/entity capability** (brain-program **Block S**) — clients,
   companies, products, and SOPs become first-class **entities**; the memory store is Brain data.
-- **New Brain-side blocks** (O, J, C, P, L, R) and the **Python half of cost-control** (I) are added
-  in the [Bastion Program Blocks](#bastion-program-blocks-engine--brain) section, in the brain's
-  block-contract format.
+- **Project H ≡ the Eval + success-metrics engine** (brain-program **Block U**) — model eval & routing
+  is elevated from a floating wave-table row to a *named capability track* (Self-Improvement); it is the
+  engine that *licenses* autonomy promotion (Block X) and feeds the Console metrics surface (Block V).
+- **New Brain-side blocks** (O, J, C, P, L, R), the **Python half of cost-control** (I), and the three
+  north-star tracks this repo now owns — **U** (eval/metrics, above), **W** (external-intelligence loop +
+  external-knowledge memory), and **Z** (`sdlc-flow`/`sdlc-run` graduated into orchestrator-native
+  nodes & workflows — the Coding & Delivery harness becoming Engine-native) — are specified in the
+  [Bastion Program Blocks](#bastion-program-blocks-engine--brain) section, in the brain's block-contract
+  format.
 
 ### Program-block crosswalk
 
 How the brain's program blocks map to this repo's work and the **demand-first wave** they sit in
 (authoritative order lives in the brain wave table — this is the legibility bridge, not a second
-source of truth). Orchestrator Projects E and H appear in the brain table only for cross-repo
-ordering; they are owned here.
+source of truth). Project H is now elevated to **Block U**; Project E is **pulled forward to Wave 2**
+as the hard prerequisite for **Block Z** (the wave fan-out needs the `ParallelNode` merge fix). The
+three north-star tracks this repo owns — **U** (eval/metrics), **W** (external-intelligence), **Z**
+(sdlc-as-nodes) — are detailed in the block-contract section below.
 
 | Brain block | Wave | Orchestrator work (this repo) | Status |
 |---|---|---|---|
@@ -81,8 +89,52 @@ ordering; they are owned here.
 | **S** | 3 | Entity / memory layer — clients as first-class entities (**Project G reframed**) | Not started |
 | **L** | 3 | Answer-time grounding — citation verify + abstain (**Project D hardening**) | Not started |
 | **R** | 4 | Brain-as-MCP-server — Python **server** half of the MCP split | Not started |
-| — (Project **E**) | 4 ✲ | ParallelNode merge fix (Project E core) | Not started |
-| — (Project **H**) | 4 | Model eval & routing harness (Project H) | Not started |
+| **Z** | 2 | **`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows** (HL2 graduation into the Engine) | Not started |
+| **U** | 4 | Eval + success-metrics engine (**absorbs Project H** — model eval & routing) | Not started |
+| **W** | 5 ✲ | External-intelligence loop + external-knowledge memory | Not started |
+| — (Project **E**) | 2 | ParallelNode merge fix (Project E core) — **pulled forward as Block Z's prerequisite** | Not started |
+
+---
+
+## North-Star Alignment (umbrella view)
+
+> **Added 2026-06-27 (north-star Thread 2c).** The cross-repo program master-plan was reorganized around
+> the [north star](file:///Users/brandon/Dev/agentic-portfolio/planning/hq-restructure/north-star.md) into
+> **7 capability tracks** (see `agentic-portfolio/planning/bastion-product/master-plan.md`). This section
+> maps **this repo's phases/projects onto those tracks** so the two plans read as one — **nothing here is
+> removed or renumbered**; the A–H project numbering is load-bearing (referenced across `status.md`,
+> `decisions/`, `CLAUDE.md`) and stays exactly as is. This is the *capability lens* over it, plus the
+> three new program tracks the orchestrator now owns. (Worked reference: `bastion/planning/master-plan.md`
+> Thread 2b.)
+
+**orchestrator phase / project → program capability track:**
+
+| This repo's work | Program capability track | What the orchestrator owns in it |
+|---|---|---|
+| `brain-rag` + Projects D/F → Blocks B, O, C, P, L, R, S | **Track 1 — Brain: Context & Memory** | the Python half of the Brain — semantic retrieval, corpus widening, multi-workspace, code search, MCP server, entity/memory store |
+| Project D answer-path → Block L; freshness → Block J | **Track 3 — Verification & Brain Integrity** | answer-time grounding (citation verify + abstain); the cron freshness loop |
+| cost-control Python half → Block I | **Track 2 — Console: Observe, Cost & Control** | the *enforcement* point — abort endpoint + server-side budget gate the Console triggers (D25) |
+| **Project H → Block U** ; **new Block W** | **Track 4 — Self-Improvement & Self-Healing** | the eval + success-metrics engine (elevated Project H) and the external-intelligence loop + external-knowledge memory |
+| orchestrator half of Block X | **Track 5 — Governance & Autonomy** | dispatch-time enforcement of the trust ladder (the Engine runs the mutation, D25) |
+| **new Block Z** (HL2 graduation) ; HL3/HL4 substrate | **Track 6 — The Harness Library** | `sdlc-flow`/`sdlc-run` graduated into Engine-native nodes/workflows (HL2); the `research_agent` (HL3) + `document_*` (HL4) substrate |
+| Block G (loop-proof) | **Track 7 — The Loop-Proof** | the Engine runs the agentic workflows the narrated proof exercises |
+
+**In-flight vs queued (this repo's program-track slice — authoritative status in `status.md`):**
+- **🟢 Done (substrate):** Project D (RAG retrieval) · `brain-rag` Layer 1–2 · the frontmatter
+  indexer/retrieval infra (Block T orchestrator half) · the Claude Code SDK + session providers (the
+  seam Block Z builds on).
+- **🟡 In flight:** Block B (semantic Brain — next up; the local-embedding `--rebuild`) · the private
+  Tailscale face (Wave 0 infra).
+- **⚪ Queued:** O · J · C (Python half) · P · I (Python half) · L · R · S · **U** (eval engine) ·
+  **W** (external-intel) · **Z** (sdlc-as-nodes) · Project E (ParallelNode merge — pulled to Wave 2 for Z).
+
+**The north-star tracks the orchestrator owns** (the LLM/embedding-ecosystem side of the D24 seam): the
+whole Python half of the **Brain** (Track 1), the **answer-side** verification (Track 3), the cost-control
+**enforcement** point (Track 2), and — **new from the umbrella reorg** — the **eval + success-metrics
+engine** (Block U, elevating Project H), the **external-intelligence loop** (Block W), and the
+**graduation of the Coding & Delivery harness into Engine-native nodes & workflows** (Block Z). The
+Console-side blocks (the graph layer, exact cost, the kill-switch CLI, the MCP client, the trust
+registry surface) stay in `bastion`; the brain umbrella owns the cross-repo order.
 
 ---
 
@@ -106,11 +158,12 @@ reference.*
 | — | Competence checkpoint after Project D | **Passed (2026-06-23)** |
 | Supporting | brain-rag Layer 1 (BrainDocument + index_brain.py) | Done |
 | Supporting | expose-api-and-telegram-bot (API key auth, CORS, Telegram bot) | Done |
-| Phase 2 | Project E — specialization refactor (ParallelNode merge) | Not started (brain Wave 4 ✲) |
+| Phase 2 | Project E — specialization refactor (ParallelNode merge) | Not started (**brain Wave 2** — pulled forward as Block Z's prerequisite) |
 | Phase 2 | Project F — semantic search → **the Brain semantic layer (Block B)** | Not started (brain Wave 0) |
-| Phase 2 | Project H — model eval & routing harness | Not started (brain Wave 4) |
+| Phase 2 | Project H — model eval & routing → **the Eval + success-metrics engine (Block U)** | Not started (brain Wave 4) |
 | Phase 3 | Project G — agent memory → **the Brain memory/entity capability (Block S)** | Not started (brain Wave 3) |
 | Bastion | Brain-side blocks O, J, C, P, L, R + cost-control I (Python half) | Not started (see crosswalk) |
+| Bastion | **Block Z** — sdlc-as-nodes (HL2 graduation) + **Block U** (eval engine) + **Block W** (external-intel) | Not started (see crosswalk; Z = Wave 2, U = Wave 4, W = Wave 5 ✲) |
 | Parallel | Console — `bastion` (Rust) | Ongoing |
 
 ---
@@ -268,7 +321,7 @@ Input: company name, industry, brief description.
 ### Project E — Specialization Refactor
 
 **Pattern:** specialized nodes + parallelism. Kept separate from Project A on purpose — you build the naive pipeline first, feel its limits, then refactor and watch quality change.
-**Bastion wave:** Wave 4 ✲ (floating — pull forward when a workflow's parallelism is genuinely needed).
+**Bastion wave:** **Wave 2 — pulled forward as [Block Z](#block-z--sdlc-flowsdlc-run--orchestrator-native-nodes--workflows-hl2-graduation)'s hard prerequisite** (the SDLC wave fan-out needs the `ParallelNode` merge fix). Was Wave 4 ✲; Block Z is the genuine parallelism need that pulls it in.
 
 **The refactor:**
 - **Before:** `Fetch → Summarizer → BlogWriter → SelfCritic → Revise → Storage`
@@ -348,6 +401,12 @@ SemanticMemory(peer_id, fact, confidence, evidence_episode_ids, decay_factor, so
 ---
 
 ### Project H — Model Evaluation & Routing Harness
+
+> **Reframed (north-star Thread 2c): Project H ≡ brain-program Block U (the Eval + success-metrics
+> engine).** Model eval & routing is elevated from a floating wave-table row to the **named
+> Self-Improvement track** — the engine that licenses autonomy promotion (Block X) and feeds the Console
+> metrics surface (Block V). All build detail below stands as the seed; the cross-repo framing,
+> dependencies, and acceptance live in [Block U](#block-u--eval--success-metrics-engine-elevates-project-h).
 
 **Pattern:** offline evaluation; empirical model routing.
 **Output:** per-node routing config file the brain loads at startup — different config for local-heavy vs. cloud deployments.
@@ -628,6 +687,161 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
+### Block Z — `sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows (HL2 graduation)
+
+> **★ Brandon's priority ask (north-star Thread 2c).** Graduate the **Coding & Delivery harness (HL2)**
+> from a base-template JS harness into **Engine-native Node/Workflow primitives** — so coding work runs
+> with *more control*: typed state, durable retries/checkpoints, live observability (bastion monitor),
+> and exact cost. Sequenced **early but after the cross-repo unblock work** (Brandon: "move this up
+> sooner than later so we can start doing coding work with more control, but only after we unblock some
+> work for other repos") — Wave 2, gated only on the Wave-0 Brain unblock (T/B) + the cost-control seam
+> (Block I) other repos need, with **Project E (ParallelNode merge) as its hard local prerequisite.**
+> When executed, this block is large enough to warrant its own sub-master-plan (open Claude Code here and
+> run `/generate-master-plan` for it) — start with one stage/workflow, prove parity with the JS engine,
+> then expand. **Do not rewrite the JS engines in one shot.**
+
+**The graduation, concretely.** Today `sdlc-flow`/`sdlc-run` are JS workflow engines in
+`base-template/.claude/workflows/` that orchestrate `/sdlc-task` pipelines across dependency-ordered
+waves — each task in its own git worktree, with bounded retries, triage, escalation, and additive
+merges. The orchestrator already has every primitive needed to host this natively:
+- the **Node / Workflow / TaskContext** DAG engine (the deterministic orchestration layer);
+- **`ParallelNode`** (once Project E's merge gap is fixed) for the per-wave task fan-out;
+- the **`CLAUDE_CODE_SDK` + `CLAUDE_CODE_SESSION` providers (already shipped)** — these *drive Claude
+  Code* to do the actual coding, exactly as a node's `model_provider`. **The Engine never writes code
+  itself**; the SDLC nodes drive Claude Code agents through these providers — the load-bearing seam that
+  makes this fit D24/D25;
+- **`RouterNode`** for triage / escalation branching;
+- **incremental execution persistence** (D28 `on_progress`) → a coding run shows up in `events` /
+  `node_runs` like any workflow, so **bastion monitors it live** (a direct boost to the loop-proof, Block G).
+
+The work: model the SDLC stages (scout → implement → test → review → merge) as orchestrator **Nodes**,
+and block-level orchestration (wave fan-out, per-task worktree isolation, retry/escalation) as a
+**Workflow** composing `ParallelNode` + `RouterNode`. base-template keeps the *spec/command authoring
+surface* (the `/sdlc-*` commands, the spec format, `harness.json`); only the *execution runtime*
+graduates into the Engine.
+
+- **What:** Build Engine-native SDLC **nodes** (scout/implement/test/review/merge, each driving Claude
+  Code via the existing providers) and a block-orchestration **workflow** (wave fan-out via `ParallelNode`,
+  per-task worktree isolation, bounded retry + escalation via `RouterNode`, additive merge) that
+  reproduce the `sdlc-flow`/`sdlc-run` behavior as orchestrator primitives. Incremental: one
+  stage/workflow first, prove parity, then expand.
+- **Why:** north-star §"Separate open-ended reasoning from deterministic workflows" + §"Every repeated
+  success should become a reusable asset" — the deterministic SDLC orchestration becomes typed,
+  checkpointed Engine state while the per-task coding stays open-ended agent work driven via the
+  providers. Graduating HL2 into the Engine gives the operator real control over coding work (durable
+  retries, live monitor, exact cost) and makes the loop-proof (Block G) a *native* Engine run, not a JS
+  side-process. Fits D24's "one authoring engine (Python)".
+- **Repo:** python-orchestration-system (the Engine — SDLC nodes + the orchestration workflow). Consumes
+  base-template's spec/command surface; observed by bastion.
+- **Interfaces / contracts:** Consumes the Node/Workflow/TaskContext primitives + `CLAUDE_CODE_SDK`/
+  `CLAUDE_CODE_SESSION` providers + `ParallelNode` (Project E). Consumes **base-template's `/sdlc-*` spec
+  format + `harness.json`** as the *input contract* (likely warrants a new shared **SDLC-spec/harness
+  contract** doc between base-template and orchestrator — author it with this block). Produces
+  Engine-native SDLC nodes + workflow; the coding run is exposed over the existing **D20/D30 data
+  contract** (`events`/`node_runs`) so bastion observes it with no new endpoint.
+- **Depends on:** **Project E (ParallelNode merge) — hard prerequisite** (the wave fan-out needs it).
+  Soft sequencing: after Wave-0 Brain unblock (T/B) + cost-control seam (Block I). The Claude Code
+  providers are already shipped.
+- **Out of scope:** **Auto-merge** — the human review gate stays (D25; agents propose via PR, humans
+  approve). Replacing base-template's spec/command *authoring* surface (only the execution runtime
+  graduates). A one-shot rewrite of the JS engines (incremental parity instead). Self-healing trigger
+  (that's program Block N, which *drives* this harness).
+- **Ratchet:** the reusable Engine-native HL2 harness — SDLC stage nodes + the wave-fan-out/worktree/
+  additive-merge workflow as first-class Engine primitives any future coding work composes; plus the
+  shared SDLC-spec contract.
+- **Eval slice:** the **coding** eval domain in Block U — pass-rate of spec→shipped runs, retry rate,
+  intervention rate, regression rate; this is the harness whose evals Block U most needs.
+- **Ladder rung:** advances HL2 from rung 5 (a specialized harness, in JS) to rung 7 (a durable,
+  observable, checkpointed automation made Engine-native) — the explicit "graduate a reliability-critical
+  workflow into the platform" move.
+- **Acceptance criteria:** a spec runs through the Engine-native SDLC workflow (scout→implement→test→
+  review) driving Claude Code via the providers and producing a draft PR with the review gate intact;
+  wave fan-out across ≥2 independent tasks runs via `ParallelNode` with correct per-task worktree
+  isolation + additive merge; the run is visible in `events`/`node_runs` (bastion can monitor it); the
+  orchestrator gate holds (`uv run python -m pytest`, `ruff`, `pylint app/` 10.00/10); tests cover the
+  stage nodes + the fan-out/merge path.
+
+---
+
+### Block U — Eval + success-metrics engine (elevates Project H)
+
+> **Project H ≡ Block U.** The model-eval & routing harness (Project H) is elevated from a floating
+> wave-table row to the **named Self-Improvement track** the north-star demands. The Project Library
+> entry below stands as the build detail (scoring strategies, blind/randomized judge, routing config);
+> this block widens it into the program's eval + success-metrics engine.
+
+- **What:** Stand up an **evaluation + success-metrics engine**: an eval harness covering the north-star
+  eval domains (coding, review, test-writing, browser, docs, research, project-management, long-horizon,
+  failure-injection, policy/safety, uncertainty, scope-control, adversarial-input), tracking
+  pass-rate · pass-rate-under-repeat · by-domain · by-model · by-profile · time-to-success ·
+  cost-to-success · intervention frequency · silent-failure frequency · regression history. **Absorbs
+  Project H** (model eval & routing). Reads the per-repo `status.md` **Metrics** sections (D30) as the
+  lagging operational signal.
+- **Why:** north-star Layer I — *"this is the core of self-improvement; without this the system is
+  theater."* Today eval is an unscoped floating row; the north-star elevates it to a track. Its outcomes
+  are what *license* autonomy promotion (Block X — trust earned from measured results), and they feed the
+  Console metrics surface (Block V) and model routing.
+- **Repo:** python-orchestration-system (the eval harness + metrics aggregation = Engine).
+- **Interfaces / contracts:** Consumes the D30 `status.md` Metrics convention + workflow run records
+  (the D20/D30 `node_runs` cost/usage). Produces eval pass/regression signals consumed by Block X (trust
+  promotion), Block V (the Console metrics rollup), and model routing. No data-contract bump (read path)
+  unless a new eval-result field is exposed cross-repo.
+- **Depends on:** Block B (a working Brain/agent path to eval over) + the D30 Metrics convention (HQ
+  Restructure Thread 1). Project H's design is the seed. Demand-first: pull forward when run
+  volume/economics justify routing decisions, or before any autonomy promotion (Block X). **Block Z's
+  coding eval is its first high-value slice.**
+- **Out of scope:** Model-routing *enforcement* (stays Project H's routing half until volume demands it).
+  Per-harness evals beyond the slices each harness owns (Track 6). Adopting external ideas without a
+  local eval (that's Block W's discipline, run *through* this engine).
+- **Ratchet:** the eval harness + the scorer library + the per-node routing config + the regression-
+  history store — reusable across every harness and the one-change self-improvement loop.
+- **Eval slice:** this block *is* the eval engine — it defines the slices; its own success is "a slice
+  runs and scores by domain/model and regression persists across runs."
+- **Ladder rung:** makes rung 6 (add eval coverage) first-class — the engine the whole ladder's rung 6
+  runs on, and the gate that licenses rungs 8–9 (monitoring, trust-based autonomy).
+- **Acceptance criteria:** an eval slice runs offline and scores pass-rate by domain/model; regression
+  history persists across runs; a representative slice gates a self-improvement change (the one-change
+  loop) with keep-if-better/revert-if-worse demonstrated; the orchestrator gate holds.
+
+---
+
+### Block W — External-intelligence loop + external-knowledge memory
+
+- **What:** A **recurring news→improvement pipeline** (north-star §"External Intelligence Loop"):
+  scheduled monitoring of open-source agent/AI architecture repos, releases/changelogs, model-provider
+  updates, protocols (MCP / agent-to-agent), benchmarks, papers, and dependency security advisories.
+  Produces a dated, ranked **digest** + improvement candidates (new eval / skill / workflow / adapter /
+  policy / dashboard / contract). Writes a dedicated **external-knowledge memory** layer with fields
+  `source · url · date · category · claim · relevance · confidence · suggested-experiment · status ·
+  outcome`. **Adopt nothing into core without a local eval / shadow run** (runs through Block U).
+- **Why:** north-star §"External Intelligence Loop" + §"News-to-Improvement Pipeline" — the system
+  learns from the outside world, not only from its own failures. The curated reference list in
+  `north-star.md` (LangGraph, Letta, Temporal, Graphiti, Langfuse, Mastra, …) is the seed feed. Answers
+  *"what changed in the agent ecosystem this week; which ideas improved us; which did we reject and
+  why; which of our assumptions are getting stale."*
+- **Repo:** python-orchestration-system (the recurring workflow = Engine; a `research_agent`
+  specialization) + the brain repo (the external-knowledge memory docs, indexed as a Brain corpus).
+- **Interfaces / contracts:** Consumes WebSearch/fetch + MCP + the north-star reference list. Produces
+  external-knowledge memory entries (queryable in the Brain via Track 1) + improvement candidates feeding
+  the D30 `improve` queue and Block U's eval-candidate intake.
+- **Depends on:** Block B (a Brain to store into) + recurring-loop infra (cron, like Block J).
+  Demand-first: low urgency until the core loop is stable (north-star: "expand breadth only after the
+  loop is stable"); high leverage for not going stale. Wave 5 ✲.
+- **Out of scope:** Auto-adopting any external claim (must pass a Block U eval / shadow run). Building
+  new MCP *servers* (Block R). Ingesting thin-wrapper / chat-shell projects (north-star de-prioritization
+  rules apply).
+- **Ratchet:** the external-knowledge memory layer + the recurring digest workflow (a `research_agent`
+  specialization that also seeds the HL3 Browser Research harness).
+- **Eval slice:** candidates it surfaces are validated through Block U; its own success metric = share of
+  surfaced candidates that became adopted improvements vs. rejected-with-reason.
+- **Ladder rung:** a recurring automation (rung 7) + monitoring (rung 8) pointed at the *external* world,
+  feeding rung 6 (new evals) and rungs 3–4 (new skills/workflows).
+- **Acceptance criteria:** a scheduled run produces a dated, ranked digest + ≥1 bounded experiment
+  candidate; external-knowledge entries carry the full field set and are retrievable in the Brain; at
+  least one candidate is shown routed into the `improve` queue or Block U; the orchestrator gate holds.
+
+---
+
 ## Console — `bastion` (the Rust layer; separate repo)
 
 The **Console** of Bastion — a single Rust binary (`bastion`) — commands and observes this Python
@@ -657,7 +871,12 @@ Business goals, contracting strategy, leads, and career posture live in the comp
 
 ---
 
-*Last updated: 2026-06-25 — aligned to the Bastion program (brain D24/D25/D26; local D36): added the
-Role-in-Bastion section + program-block crosswalk, reconciled statuses (A–D Done, checkpoint passed),
-reframed Projects F→Block B and G→Block S, and added Brain-side blocks O/J/C/P/L/R + cost-control I.
-For the previous version's strategic arc, see `docs/career.md` in the brain.*
+*Last updated: 2026-06-27 — north-star Thread 2c (orchestrator reorg): added the North-Star Alignment
+(umbrella view) section mapping phases/projects → the 7 capability tracks; reframed Project H → Block U
+(eval + success-metrics engine); added the three north-star tracks this repo now owns — Block U,
+Block W (external-intelligence loop), and Block Z (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes &
+workflows, the HL2 graduation); pulled Project E forward to Wave 2 as Block Z's prerequisite. Block
+contracts use the north-star-enriched `/generate-master-plan` skeleton (Ratchet · Eval slice · Ladder
+rung). Earlier — 2026-06-25 — aligned to the Bastion program (brain D24/D25/D26; local D36): Role-in-
+Bastion section + program-block crosswalk, reframed Projects F→Block B and G→Block S, added Brain-side
+blocks O/J/C/P/L/R + cost-control I. For the previous version's strategic arc, see `docs/career.md`.*
