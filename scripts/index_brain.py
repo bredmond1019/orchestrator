@@ -105,13 +105,13 @@ _VALID_LAYERS: frozenset[str] = frozenset(
 )
 _VALID_PROJECTS: frozenset[str] = frozenset(
     [
-        "python-orchestration",
+        "orchestrator",
         "rag-engine-rs",
         "claude-sdk-rs",
         "workflow-engine-rs",
         "bastion",
         "bastion-ui",  # add — used in docs/projects/bastion-ui.md + planning/bastion-ui/
-        "markdown-engine-validator",
+        "mev",
         "price-scout",
         "learn-ai",
         "base-template",

@@ -4,7 +4,7 @@ title: Claude Agent SDK Reference (Python)
 description: Complete API reference for the Python Claude Agent SDK — query(), ClaudeSDKClient, tool definitions, MCP servers, permissions, hooks, message types, and all configuration options.
 doc_id: claude-agent-sdk
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [Claude Agent SDK, query, ClaudeSDKClient, tool definitions, MCP, streaming]
 related: [api-reference, workflows]

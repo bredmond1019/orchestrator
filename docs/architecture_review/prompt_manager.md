@@ -4,7 +4,7 @@ title: PromptManager — How It Works
 description: How PromptManager works — loading .j2 system prompts from app/prompts/.
 doc_id: prompt-manager
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [PromptManager, Jinja2, system prompt, j2 templates, prompt_loader]
 related: [app-architecture-overview, D34-jinja2-prompts]

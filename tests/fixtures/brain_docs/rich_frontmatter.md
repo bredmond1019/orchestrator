@@ -6,7 +6,7 @@ doc_id: rich-frontmatter-example
 layer:
   - engine
   - brain
-project: python-orchestration
+project: orchestrator
 status: active
 keywords:
   - frontmatter

@@ -4,7 +4,7 @@ title: TaskContext (task.py) — How It Works
 description: How task.py / TaskContext works — node output accumulation and retrieval.
 doc_id: task-context
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [TaskContext, node output, task.py, shared state, workflow execution]
 related: [app-architecture-overview, api-reference, D28-node-level-execution-state]

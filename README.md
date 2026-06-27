@@ -4,7 +4,7 @@ title: Python Orchestration System — README
 description: Event-driven AI pipeline framework — FastAPI, Celery, Workflow DAG, TaskContext. Entry point for the repo.
 doc_id: readme
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [orchestration framework, FastAPI, Celery, workflow DAG, quick start]
 related: [docs-index, app-architecture-overview, getting-started]

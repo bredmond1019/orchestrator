@@ -4,7 +4,7 @@ title: App Architecture Overview
 description: Codebase analysis of the FastAPI -> Celery -> Workflow DAG -> TaskContext architecture for agentic engineering projects.
 doc_id: app-architecture-overview
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [FastAPI, Celery, DAG, TaskContext, AgentNode, workflow architecture]
 related: [api-reference, brain-rag, D36-bastion-engine-brain-role]

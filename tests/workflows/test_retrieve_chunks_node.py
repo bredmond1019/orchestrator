@@ -386,12 +386,12 @@ class TestProcess:
         event = MagicMock()
         event.question = "brain question"
         event.corpus = "brain"
-        event.filters = {"project": "python-orchestration"}
+        event.filters = {"project": "orchestrator"}
         ctx = TaskContext(event=event)
         with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         call_kwargs = mock_ret.call_args[1]
-        assert call_kwargs.get("filters") == {"project": "python-orchestration"}
+        assert call_kwargs.get("filters") == {"project": "orchestrator"}
 
     def test_process_defaults_filters_to_none_when_absent(self):
         """process() passes filters=None when the event has no filters attr."""

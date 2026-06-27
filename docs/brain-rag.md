@@ -4,7 +4,7 @@ title: Brain RAG
 description: How the company brain corpus is indexed and queried — BrainDocument model, index_brain.py, and retrieval via DOCUMENT_QA.
 doc_id: brain-rag
 layer: [engine, brain]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [brain RAG, BrainDocument, index_brain, semantic retrieval, DOCUMENT_QA, embeddings]
 related: [app-architecture-overview, D36-bastion-engine-brain-role, D37-local-embeddings-mxbai]
@@ -162,7 +162,7 @@ curl -X POST http://localhost:8080/events/ \
       "doc_id": "00000000-0000-0000-0000-000000000000",
       "question": "What is the current contracting rate strategy?",
       "corpus": "brain",
-      "filters": {"project": "python-orchestration", "status": "active"}
+      "filters": {"project": "orchestrator", "status": "active"}
     }
   }'
 ```

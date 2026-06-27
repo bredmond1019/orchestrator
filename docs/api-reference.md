@@ -4,7 +4,7 @@ title: Core Engine API Reference
 description: Class-level reference for the public abstractions in app/core, app/database, app/services, and app/workflows that a developer subclasses when writing a new workflow.
 doc_id: api-reference
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [API reference, Workflow, TaskContext, AgentNode, WorkflowSchema, NodeConfig]
 related: [app-architecture-overview, workflows, getting-started]
@@ -2244,7 +2244,7 @@ similarity search from `RetrieveChunksNode` corpus `"brain"`) is available as of
 | `workflow_patterns` | `ARRAY(String)` | Yes | `NULL` | Workflow pattern tags from diagnostic docs (e.g. `['WhatsApp order tracking']`); `NULL` for other doc types. |
 | `doc_id` | `String(256)` | Yes | `NULL` | OKF `doc_id`; derived from the filename stem when absent. |
 | `layer` | `ARRAY(String)` | Yes | `NULL` | OKF `layer` (e.g. `['brain', 'engine']`). Case-normalized to lowercase by the indexer; supports `layer`-filter array overlap. |
-| `project` | `String(128)` | Yes | `NULL` | OKF `project` (e.g. `'python-orchestration'`). Case-normalized to lowercase; supports `project`-filter scalar match. |
+| `project` | `String(128)` | Yes | `NULL` | OKF `project` (e.g. `'orchestrator'`). Case-normalized to lowercase; supports `project`-filter scalar match. |
 | `status` | `String(32)` | Yes | `NULL` | OKF `status` (e.g. `'active'`, `'draft'`, `'archived'`). Case-normalized to lowercase; `'archived'` rows are excluded from default brain retrieval. |
 | `keywords` | `ARRAY(String)` | Yes | `NULL` | OKF `keywords` tags; folded into `content_tsv` at FTS weight `'A'`. |
 | `related` | `ARRAY(String)` | Yes | `NULL` | OKF `related` paths to related docs (stored; not yet traversed at query time). |

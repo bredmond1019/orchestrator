@@ -50,7 +50,7 @@ export const meta = {
   ],
 }
 
-const REPO_ROOT = '~/agentic-portfolio'
+const REPO_ROOT = '.'
 
 // ─── Phase 1: Scan ────────────────────────────────────────────────────────────
 phase('Scan')
