@@ -95,7 +95,7 @@ class BrainDocument(Base):
         nullable=True,
         doc=(
             "OKF project field — which sub-project this doc belongs to"
-            " (e.g. 'python-orchestration')"
+            " (e.g. 'orchestrator')"
         ),
     )
     status = Column(
