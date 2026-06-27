@@ -11,7 +11,7 @@ description: Complete pipeline execution report for the final validation task of
 **Task scope:** Task 8 (Validation)
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projectc-task8
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projectc-task8
 **Branch:** phase1-projectc-task8
 
 ## Final Verdict

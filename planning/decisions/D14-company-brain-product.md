@@ -4,7 +4,7 @@ title: "D14 — The destination has a named product: the Company Brain (supersed
 description: The three RFS ideas are three layers of one system — a Company Brain. Superseded by D26 as active build; retained as technical reference.
 doc_id: D14-company-brain-product
 layer: [engine, business]
-project: python-orchestration
+project: orchestrator
 status: superseded
 keywords: [Company Brain, product naming, knowledge fragmentation, three layers]
 related: [D15-buyer-wedge-smb, D16-one-brain-two-shells, D26-goal-solo-contracting]

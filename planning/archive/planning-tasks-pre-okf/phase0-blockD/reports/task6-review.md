@@ -30,7 +30,7 @@
 ```
 ============================= test session starts ==============================
 platform darwin -- Python 3.12.4, pytest-9.0.3, pluggy-1.6.0
-rootdir: /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task6
+rootdir: /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task6
 configfile: pytest.ini
 testpaths: tests
 collected 174 items

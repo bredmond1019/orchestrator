@@ -4,7 +4,7 @@ title: Handoff — brain-rag-improvements reviewed PASS; Block H local-embedding
 description: Handoff note for the next agent — brain-rag-improvements Blocks C–G are PASS; Block H is pending a local mxbai-embed-large embedding swap before the final --rebuild.
 doc_id: handoff
 layer: [engine, brain]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [handoff, brain-rag-improvements, Block H, local embeddings, mxbai]
 related: [status, master-plan]

@@ -4,7 +4,7 @@ title: "D24 — Firecrawl role: trafilatura-first for single articles, Firecrawl
 description: ArticleExtractionService uses trafilatura as default with Firecrawl as fallback; Firecrawl /crawl powers a CrawlSiteNode; free tier until a real crawl demands upgrade.
 doc_id: D24-firecrawl-role
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [Firecrawl, trafilatura, article extraction, CrawlSiteNode, web scraping]
 related: [master-plan, D21-project-a-knowledge-feed]

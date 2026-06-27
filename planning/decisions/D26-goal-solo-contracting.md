@@ -4,7 +4,7 @@ title: "D26 — Goal revised: solo contracting practice (moved to brain)"
 description: This decision has been moved to the brain repo. See Brain D1 — Solo Contracting Practice.
 doc_id: D26-goal-solo-contracting
 layer: [business]
-project: python-orchestration
+project: orchestrator
 status: superseded
 keywords: [solo contracting, goal revision, moved to brain, Company Brain, practice]
 related: [D14-company-brain-product, D15-buyer-wedge-smb, D16-one-brain-two-shells, D17-rust-appliance-shell]

@@ -4,7 +4,7 @@ title: D30 — Orchestrator owns the versioned data contract
 description: The orchestrator publishes a single, versioned data-contract document (docs/data-contract.md) describing the execution state external consumers read, and captures per-node input + serializable output to complete it.
 doc_id: D30-data-contract-ownership
 layer: [engine, console]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [data contract, versioning, orchestrator ownership, external consumer, node input/output]
 related: [data-contract, D28-node-level-execution-state]

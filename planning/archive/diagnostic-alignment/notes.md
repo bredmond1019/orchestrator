@@ -10,7 +10,7 @@ brain_ref: agentic-portfolio/planning/the-diagnostic/
 
 ## 1. What this document is
 
-The Diagnostic (brain `planning/the-diagnostic/plan.md`) is the productized contracting practice — a paid intake session that turns a client interview into a ranked automation roadmap. Projects B and C in the python-orchestration-system are the orchestrated implementation of Stage 1's two halves. This document ensures they're built toward client-revenue output, not generic portfolio demos. Whoever specs Project B or C must read this before writing their task specs.
+The Diagnostic (brain `planning/the-diagnostic/plan.md`) is the productized contracting practice — a paid intake session that turns a client interview into a ranked automation roadmap. Projects B and C in the orchestrator are the orchestrated implementation of Stage 1's two halves. This document ensures they're built toward client-revenue output, not generic portfolio demos. Whoever specs Project B or C must read this before writing their task specs.
 
 ---
 

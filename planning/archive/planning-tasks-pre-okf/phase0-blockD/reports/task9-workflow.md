@@ -5,7 +5,7 @@
 **Task scope:** Task 9 (Scaffold Project A)
 **Pipeline started from:** implement
 **Review attempts:** 2 of 3 max
-**Worktree:** /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task9
+**Worktree:** /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task9
 **Branch:** phase0-blockd-task9
 
 ## Final Verdict

@@ -23,7 +23,7 @@
   {
     "test_name": "CHECK 1: App import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8/app && uv run python -c \"import main\"",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8/app && uv run python -c \"import main\"",
     "test_purpose": "Verify main FastAPI app module imports without errors",
     "error": null,
     "exit_code": 0
@@ -31,7 +31,7 @@
   {
     "test_name": "CHECK 2: Worker import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8/app && uv run python -c \"import worker.config\"",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8/app && uv run python -c \"import worker.config\"",
     "test_purpose": "Verify Celery worker configuration module imports without errors",
     "error": null,
     "exit_code": 0
@@ -39,7 +39,7 @@
   {
     "test_name": "CHECK 3: Database session import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8/app && uv run python -c \"import database.session\"",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8/app && uv run python -c \"import database.session\"",
     "test_purpose": "Verify database session module imports without errors",
     "error": null,
     "exit_code": 0
@@ -47,7 +47,7 @@
   {
     "test_name": "CHECK 4: Repository import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8/app && uv run python -c \"import database.repository\"",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8/app && uv run python -c \"import database.repository\"",
     "test_purpose": "Verify database repository module imports without errors",
     "error": null,
     "exit_code": 0
@@ -55,7 +55,7 @@
   {
     "test_name": "CHECK 5: Ruff lint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8 && uv run ruff check app/",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8 && uv run ruff check app/",
     "test_purpose": "Verify code meets Ruff linting standards",
     "error": null,
     "exit_code": 0,
@@ -64,7 +64,7 @@
   {
     "test_name": "CHECK 6: Pylint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8 && uv run pylint app/",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8 && uv run pylint app/",
     "test_purpose": "Verify code meets Pylint standards",
     "error": null,
     "exit_code": 0,
@@ -73,7 +73,7 @@
   {
     "test_name": "CHECK 7: Pytest collect",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8 && uv run pytest --collect-only -q",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8 && uv run pytest --collect-only -q",
     "test_purpose": "Verify all tests can be collected without errors",
     "error": null,
     "exit_code": 0,
@@ -82,7 +82,7 @@
   {
     "test_name": "CHECK 8: Pytest full",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task8 && uv run pytest",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task8 && uv run pytest",
     "test_purpose": "Run full pytest suite and verify all tests pass",
     "error": null,
     "exit_code": 0,

@@ -4,7 +4,7 @@ title: "D5 — Testing scope: Option A (core only)"
 description: Test the core engine, infrastructure, and services; fix four documented bugs; do not test customer-care.
 doc_id: D5-testing-scope-option-a
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [testing scope, core engine tests, customer-care, production bugs, test coverage]
 related: [master-plan]

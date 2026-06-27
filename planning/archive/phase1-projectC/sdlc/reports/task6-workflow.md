@@ -11,7 +11,7 @@ description: Pipeline execution summary and final verdict for StorageNode implem
 **Task scope:** Task 6
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projectc-task6
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projectc-task6
 **Branch:** phase1-projectc-task6
 
 ## Final Verdict

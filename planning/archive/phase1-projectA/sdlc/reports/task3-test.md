@@ -26,14 +26,14 @@
   {
     "test_name": "standing-rules",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && grep -rnE 'logging\\.[a-z]+\\(.*f[\"\\047]' --include='*.py' app/ && echo 'RULE f-string-in-logging: MATCHED (violation)' || echo 'RULE f-string-in-logging: clean'; grep -rnE 'open\\(' --include='*.py' app/ | grep -vE 'encoding=|#|\\.open\\(' && echo 'RULE open-without-encoding: MATCHED (violation)' || echo 'RULE open-without-encoding: clean'; grep -rnE 'def [a-zA-Z_]+\\([^)]*\\bid\\b' --include='*.py' app/ | grep -vE 'obj_id|record_id|node_id|workflow_id|task_id|invalid' && echo 'RULE param-named-id: MATCHED (violation)' || echo 'RULE param-named-id: clean'",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && grep -rnE 'logging\\.[a-z]+\\(.*f[\"\\047]' --include='*.py' app/ && echo 'RULE f-string-in-logging: MATCHED (violation)' || echo 'RULE f-string-in-logging: clean'; grep -rnE 'open\\(' --include='*.py' app/ | grep -vE 'encoding=|#|\\.open\\(' && echo 'RULE open-without-encoding: MATCHED (violation)' || echo 'RULE open-without-encoding: clean'; grep -rnE 'def [a-zA-Z_]+\\([^)]*\\bid\\b' --include='*.py' app/ | grep -vE 'obj_id|record_id|node_id|workflow_id|task_id|invalid' && echo 'RULE param-named-id: MATCHED (violation)' || echo 'RULE param-named-id: clean'",
     "test_purpose": "Scan for CLAUDE.md standing-rule violations: f-string-in-logging, open-without-encoding, param-named-id",
     "error": ""
   },
   {
     "test_name": "app-import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && cd app && uv run python -c 'import main'",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && cd app && uv run python -c 'import main'",
     "test_purpose": "Verify app imports cleanly (non-gating); scan for Pydantic field-shadow warnings (advisory)",
     "error": "",
     "warnings": "UserWarning: Field name 'json' in 'MonitorPageDiff' shadows an attribute in parent 'BaseModel'; UserWarning: Field name 'json' in 'MonitorPageSnapshot' shadows an attribute in parent 'BaseModel'"
@@ -41,7 +41,7 @@
   {
     "test_name": "worker-import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && cd app && uv run python -c 'import worker.config'",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && cd app && uv run python -c 'import worker.config'",
     "test_purpose": "Verify worker config imports cleanly (non-gating); scan for Pydantic field-shadow warnings (advisory)",
     "error": "",
     "warnings": "UserWarning: Field name 'json' in 'MonitorPageDiff' shadows an attribute in parent 'BaseModel'; UserWarning: Field name 'json' in 'MonitorPageSnapshot' shadows an attribute in parent 'BaseModel'"
@@ -49,35 +49,35 @@
   {
     "test_name": "db-session-import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && cd app && uv run python -c 'import database.session'",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && cd app && uv run python -c 'import database.session'",
     "test_purpose": "Verify database.session module imports cleanly (gating check)",
     "error": ""
   },
   {
     "test_name": "db-repository-import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && cd app && uv run python -c 'import database.repository'",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && cd app && uv run python -c 'import database.repository'",
     "test_purpose": "Verify database.repository module imports cleanly (gating check)",
     "error": ""
   },
   {
     "test_name": "net-new-lint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && uv run python -m ruff check app/ --output-format=json; python3 baseline-diff check",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && uv run python -m ruff check app/ --output-format=json; python3 baseline-diff check",
     "test_purpose": "Ruff baseline-diff: fail only on violations this task introduced (gating check)",
     "error": ""
   },
   {
     "test_name": "pylint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && uv run python -m pylint app/",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && uv run python -m pylint app/",
     "test_purpose": "Pylint code quality check (gating check)",
     "error": ""
   },
   {
     "test_name": "pytest-count",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && uv run python -m pytest --collect-only -q",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && uv run python -m pytest --collect-only -q",
     "test_purpose": "Pytest test count must not drop vs previous task (gating check)",
     "error": "",
     "count_delta": "+11 (258 → 269)"
@@ -85,7 +85,7 @@
   {
     "test_name": "pytest",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task3 && uv run python -m pytest",
+    "execution_command": "cd /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task3 && uv run python -m pytest",
     "test_purpose": "Full test suite execution (gating check — authoritative for verdict)",
     "error": "",
     "test_count": 269,

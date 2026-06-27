@@ -5,7 +5,7 @@
 **Task scope:** Task 4 — Worker wires persistence at each boundary (Phase 1d)
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/incremental-execution-observability-task4
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/incremental-execution-observability-task4
 **Branch:** incremental-execution-observability-task4
 
 ## Final Verdict

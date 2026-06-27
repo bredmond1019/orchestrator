@@ -50,7 +50,7 @@ export const meta = {
   ],
 }
 
-const REPO_ROOT = '/Users/brandon/Dev/agentic-portfolio/python-orchestration-system'
+const REPO_ROOT = '/Users/brandon/Dev/agentic-portfolio/orchestrator'
 
 // ─── Phase 1: Scan ────────────────────────────────────────────────────────────
 phase('Scan')

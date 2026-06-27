@@ -4,7 +4,7 @@ title: Logfire Observability Reference
 description: How to add Logfire tracing to the orchestration framework — instrumentation setup, pydantic-ai integration, and querying trace data for eval work.
 doc_id: logfire
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [Logfire, observability, OpenTelemetry, pydantic-ai, tracing, eval]
 related: [app-architecture-overview, D8-project-h-offline-eval]

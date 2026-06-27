@@ -1,10 +1,10 @@
 ---
 type: Plan
-title: Update python-orchestration-system to Complete OKF (Phase 1)
+title: Update orchestrator to Complete OKF (Phase 1)
 description: Close the deliberately-deferred OKF gaps in the orchestration repo without disturbing the SDLC workflows — split DECISIONS, OKF-frontmatter docs/, update log-work.
 ---
 
-# Plan: Update python-orchestration-system to Complete OKF — Phase 1
+# Plan: Update orchestrator to Complete OKF — Phase 1
 
 > **Part of a multi-repo initiative.** Master tracker (state, decisions, execution order):
 > `../../../planning/okf-initiative/index.md` in the company brain. This is workstream WS2.

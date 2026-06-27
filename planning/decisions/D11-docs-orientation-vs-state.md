@@ -4,7 +4,7 @@ title: "D11 — Documentation: separate orientation from state; minimum-context 
 description: Five planning files with distinct jobs; pass only the subset a question needs; CONTEXT routes, STATUS mirrors names only.
 doc_id: D11-docs-orientation-vs-state
 layer: [engine, meta]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [documentation structure, context vs state, minimum context, planning files]
 related: [context, status, planning-index]

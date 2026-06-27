@@ -11,7 +11,7 @@ description: Complete pipeline execution report for Task 2 (ProposalCompanyResea
 **Task scope:** Task 2
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projectc-task2
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projectc-task2
 **Branch:** phase1-projectc-task2
 
 ## Final Verdict

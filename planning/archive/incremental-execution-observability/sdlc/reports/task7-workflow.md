@@ -5,7 +5,7 @@
 **Task scope:** Task 7
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/incremental-execution-observability-task7
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/incremental-execution-observability-task7
 **Branch:** incremental-execution-observability-task7
 
 ## Final Verdict

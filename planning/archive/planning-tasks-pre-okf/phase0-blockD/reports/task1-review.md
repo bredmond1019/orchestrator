@@ -30,7 +30,7 @@ Block-level acceptance criteria are listed in the spec. This review evaluates wh
 ```
 ============================= test session info ==============================
 platform darwin -- Python 3.12.4, pytest-9.0.3, pluggy-1.6.0
-rootdir: /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task1
+rootdir: /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task1
 configfile: pytest.ini
 testpaths: tests
 plugins: mock-3.15.1, anyio-4.9.0, env-1.6.0, langsmith-0.8.12

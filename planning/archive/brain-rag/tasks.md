@@ -1,17 +1,17 @@
 ---
 type: Tasks
 title: Brain RAG — BrainDocument Model + Brain Corpus Indexer
-description: Implement Layer 1 of the brain's sovereign context layer. New BrainDocument SQLAlchemy model + Alembic migration + index_brain.py ingestion script in python-orchestration-system. Reuses existing EmbeddingService, ChunkingService, and GenericRepository.
+description: Implement Layer 1 of the brain's sovereign context layer. New BrainDocument SQLAlchemy model + Alembic migration + index_brain.py ingestion script in orchestrator. Reuses existing EmbeddingService, ChunkingService, and GenericRepository.
 status: Not started
 model: sonnet
-target_repo: python-orchestration-system
+target_repo: orchestrator
 ---
 
 # Brain RAG — Layer 1 Implementation
 
 ## Context
 
-The brain repo is flat markdown. The python-orchestration-system already has Voyage AI + pgvector + ChunkingService + GenericRepository built and live (used by Project A). This workstream adds a new `BrainDocument` model and a standalone `index_brain.py` script that crawls brain docs, chunks them by section, embeds via Voyage AI, and stores in pgvector — making the brain semantically queryable.
+The brain repo is flat markdown. The orchestrator already has Voyage AI + pgvector + ChunkingService + GenericRepository built and live (used by Project A). This workstream adds a new `BrainDocument` model and a standalone `index_brain.py` script that crawls brain docs, chunks them by section, embeds via Voyage AI, and stores in pgvector — making the brain semantically queryable.
 
 This is Layer 1 of a three-layer architecture. Read `agentic-portfolio/planning/the-diagnostic/workstreams/brain-rag/index.md` for the full picture before starting.
 
@@ -25,7 +25,7 @@ This is Layer 1 of a three-layer architecture. Read `agentic-portfolio/planning/
 
 ## Prerequisites
 
-- Working `python-orchestration-system` environment: PostgreSQL running, pgvector extension applied, `VOYAGE_API_KEY` set
+- Working `orchestrator` environment: PostgreSQL running, pgvector extension applied, `VOYAGE_API_KEY` set
 - Familiar with the existing `LearningArtifact` model (`app/database/learning_artifact.py`) — `BrainDocument` follows the same pattern
 - Read `agentic-portfolio/planning/the-diagnostic/workstreams/brain-rag/index.md` — schema, corpus scope, and architecture context
 

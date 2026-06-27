@@ -4,7 +4,7 @@ title: "D7 — Rust's home: the CLI now, an inference runtime only later (with d
 description: The Rust CLI is the near-term Rust project; a Rust inference runtime is not in scope until a measured limit demands it.
 doc_id: D7-rust-home-cli
 layer: [engine, console]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [Rust CLI, inference runtime, bastion, console, language boundary]
 related: [D6-python-for-orchestration, D17-rust-appliance-shell]

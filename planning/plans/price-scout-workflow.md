@@ -4,7 +4,7 @@ title: Price Scout Workflow — ingest + analyze
 description: Plan to register a PRICE_SCOUT workflow that ingests a completed Price Scout search result via POST /events/ and runs an LLM analysis node over it (persist → analyze → structured verdict).
 doc_id: price-scout-workflow
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [price scout, PRICE_SCOUT, workflow, cross-repo, LLM analysis, data contract]
 related: [data-contract, workflows, master-plan]

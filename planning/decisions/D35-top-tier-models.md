@@ -4,7 +4,7 @@ title: D35 — Top-tier models first, then introduce local/open-weight via Proje
 description: All first implementations use the best available hosted model; local/open-weight alternatives enter via eval-driven routing in Project H.
 doc_id: D35-top-tier-models
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [top-tier models, local models, open-weight, Project H, eval-driven routing]
 related: [D8-project-h-offline-eval, D37-local-embeddings-mxbai]
@@ -16,4 +16,4 @@ related: [D8-project-h-offline-eval, D37-local-embeddings-mxbai]
 **Why:** Prototyping on weaker models masks capability gaps and produces misleading benchmarks. Establish the ceiling first, then optimize cost/latency with evidence.
 **Rejected:** Premature model tiering — selecting cheaper models up front introduces noise before baselines exist and conflates capability limits with model limits.
 
-*Originated in brain D9. Moved to python-orchestration-system 2026-06-22 — Project H is an orchestrator project; this is an orchestrator-scoped model selection rule.*
+*Originated in brain D9. Moved to orchestrator 2026-06-22 — Project H is an orchestrator project; this is an orchestrator-scoped model selection rule.*

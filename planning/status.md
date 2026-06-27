@@ -1,10 +1,10 @@
 ---
 type: ProjectStatus
 title: Project Status
-description: Current state and progress tracker for the python-orchestration-system.
+description: Current state and progress tracker for the orchestrator.
 doc_id: status
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 timestamp: "2026-06-27"
 now: "Block H — local-embedding swap (Ollama mxbai-embed-large) + free --rebuild; unblocks Block B (Wave 0)"

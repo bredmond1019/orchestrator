@@ -23,56 +23,56 @@
   {
     "test_name": "CHECK 1 — App import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10/app && uv run python -c \"import main\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10/app && uv run python -c \"import main\" 2>&1",
     "test_purpose": "Verify the main application module can be imported without errors",
     "error": null
   },
   {
     "test_name": "CHECK 2 — Worker import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10/app && uv run python -c \"import worker.config\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10/app && uv run python -c \"import worker.config\" 2>&1",
     "test_purpose": "Verify the worker.config module can be imported without errors",
     "error": null
   },
   {
     "test_name": "CHECK 3 — Database session import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10/app && uv run python -c \"import database.session\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10/app && uv run python -c \"import database.session\" 2>&1",
     "test_purpose": "Verify the database.session module can be imported without errors",
     "error": null
   },
   {
     "test_name": "CHECK 4 — Repository import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10/app && uv run python -c \"import database.repository\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10/app && uv run python -c \"import database.repository\" 2>&1",
     "test_purpose": "Verify the database.repository module can be imported without errors",
     "error": null
   },
   {
     "test_name": "CHECK 5 — Ruff lint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10 && uv run ruff check app/ 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10 && uv run ruff check app/ 2>&1",
     "test_purpose": "Verify code passes ruff linting checks",
     "error": null
   },
   {
     "test_name": "CHECK 6 — Pylint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10 && uv run pylint app/ 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10 && uv run pylint app/ 2>&1",
     "test_purpose": "Verify code passes pylint checks (10.00/10 rating achieved)",
     "error": null
   },
   {
     "test_name": "CHECK 7 — Pytest collect",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10 && uv run pytest --collect-only -q 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10 && uv run pytest --collect-only -q 2>&1",
     "test_purpose": "Verify all 174 tests can be collected successfully",
     "error": null
   },
   {
     "test_name": "CHECK 8 — Pytest full",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10 && uv run pytest 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10 && uv run pytest 2>&1",
     "test_purpose": "Execute all 174 tests and verify they all pass",
     "error": null
   }

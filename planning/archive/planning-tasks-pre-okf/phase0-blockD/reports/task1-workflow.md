@@ -5,7 +5,7 @@
 **Task scope:** Task 1 — Step 1: Add New Runtime Dependencies
 **Pipeline started from:** implement
 **Review attempts:** 2 of 3 max
-**Worktree:** /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task1
+**Worktree:** /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task1
 **Branch:** phase0-blockd-task1
 
 ## Final Verdict

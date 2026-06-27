@@ -146,7 +146,7 @@ class TestDocTypeAssignment:
     def test_project_file(self):
         assert (
             _get_doc_type_for_path(
-                "/fake/brain/docs/projects/python-orchestration.md", self.brain_path
+                "/fake/brain/docs/projects/orchestrator.md", self.brain_path
             )
             == "project"
         )

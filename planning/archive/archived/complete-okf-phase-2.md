@@ -1,10 +1,10 @@
 ---
 type: Plan
-title: Complete OKF — Phase 2 (python-orchestration-system execution)
+title: Complete OKF — Phase 2 (orchestrator execution)
 description: pos's execution of the workflow-coupled OKF changes deferred from Phase 1 — file renames, README→index, planning/ structure convergence, SDLC workflow adaptation, and scaffold-project removal.
 ---
 
-# Plan: Complete OKF — Phase 2 (python-orchestration-system)
+# Plan: Complete OKF — Phase 2 (orchestrator)
 
 > **Part of a multi-repo initiative.** Master tracker (state, decisions, execution order):
 > `../../../planning/okf-initiative/index.md` in the company brain. This is workstream WS7.
@@ -16,7 +16,7 @@ touches the SDLC workflow JS. **The shared decisions are NOT made here** — the
 by the brain coordination plan: `../../../planning/okf-phase-2/plan.md`. Do not start
 until D-a … D-d there are settled, or pos will diverge from learn-ai and the template.
 
-> **Prerequisite:** `python-orchestration-system/planning/plans/update-repo-to-complete-okf.md`
+> **Prerequisite:** `orchestrator/planning/plans/update-repo-to-complete-okf.md`
 > (Phase 1) must be done first — atomic `planning/decisions/`, OKF `docs/`.
 
 This repo is Claude-only (`.claude/`, no `.agents/`).

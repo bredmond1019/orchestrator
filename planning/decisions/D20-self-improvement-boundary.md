@@ -4,7 +4,7 @@ title: "D20 — Self-improvement boundary: agents evolve what's gated; new capab
 description: Agents may evolve prompts/routing/memory and compose workflows; new node code enters only by human-reviewed PR; validator, test-runner, rubric, and consolidation prompt are human-owned gates.
 doc_id: D20-self-improvement-boundary
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [self-improvement, agent safety, human review, PR gate, validator]
 related: [master-plan]

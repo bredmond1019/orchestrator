@@ -4,7 +4,7 @@ title: D28 — Persist node-level execution state incrementally
 description: Workflow execution state is recorded per-node as it happens, via an injected persistence callback the worker supplies — the brain never opens a DB session itself.
 doc_id: D28-node-level-execution-state
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [node_runs, incremental persistence, on_progress callback, TaskContext, execution state]
 related: [data-contract, D30-data-contract-ownership, app-architecture-overview]

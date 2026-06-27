@@ -26,35 +26,35 @@
   {
     "test_name": "App import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11/app && uv run python -c \"import main\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11/app && uv run python -c \"import main\" 2>&1",
     "test_purpose": "Verify FastAPI main application module imports without errors",
     "error": null
   },
   {
     "test_name": "Worker import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11/app && uv run python -c \"import worker.config\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11/app && uv run python -c \"import worker.config\" 2>&1",
     "test_purpose": "Verify Celery worker configuration module imports without errors",
     "error": null
   },
   {
     "test_name": "Database session import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11/app && uv run python -c \"import database.session\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11/app && uv run python -c \"import database.session\" 2>&1",
     "test_purpose": "Verify database session factory module imports without errors",
     "error": null
   },
   {
     "test_name": "Repository import",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11/app && uv run python -c \"import database.repository\" 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11/app && uv run python -c \"import database.repository\" 2>&1",
     "test_purpose": "Verify database repository module imports without errors",
     "error": null
   },
   {
     "test_name": "Ruff lint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11 && uv run ruff check app/ 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11 && uv run ruff check app/ 2>&1",
     "test_purpose": "Run fast code style and common error checks via Ruff",
     "error": null,
     "output_summary": "All checks passed!"
@@ -62,7 +62,7 @@
   {
     "test_name": "Pylint",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11 && uv run pylint app/ 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11 && uv run pylint app/ 2>&1",
     "test_purpose": "Run deep static analysis via Pylint",
     "error": null,
     "output_summary": "Code rated at 10.00/10"
@@ -70,7 +70,7 @@
   {
     "test_name": "Pytest collect",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11 && uv run pytest --collect-only -q 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11 && uv run pytest --collect-only -q 2>&1",
     "test_purpose": "Verify pytest can discover and parse all test files without import errors",
     "error": null,
     "output_summary": "210 tests collected in 1.39s"
@@ -78,7 +78,7 @@
   {
     "test_name": "Pytest full",
     "passed": true,
-    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task11 && uv run pytest 2>&1",
+    "execution_command": "cd /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task11 && uv run pytest 2>&1",
     "test_purpose": "Run full test suite and verify all tests pass",
     "error": null,
     "output_summary": "210 passed, 7 warnings in 1.54s"

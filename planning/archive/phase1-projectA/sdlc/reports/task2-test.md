@@ -41,8 +41,8 @@ All three standing-rule patterns clean:
 Command exit code: 0  
 Warnings detected: 2 (non-gating advisories from pydantic field shadowing)
 ```
-/Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task2-11/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:198: UserWarning: Field name "json" in "MonitorPageDiff" shadows an attribute in parent "BaseModel"
-/Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projecta-task2-11/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:198: UserWarning: Field name "json" in "MonitorPageSnapshot" shadows an attribute in parent "BaseModel"
+/Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task2-11/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:198: UserWarning: Field name "json" in "MonitorPageDiff" shadows an attribute in parent "BaseModel"
+/Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projecta-task2-11/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:198: UserWarning: Field name "json" in "MonitorPageSnapshot" shadows an attribute in parent "BaseModel"
 ```
 
 These are pre-existing pydantic library warnings (not code in this repo) and marked non-gating. App imports successfully.

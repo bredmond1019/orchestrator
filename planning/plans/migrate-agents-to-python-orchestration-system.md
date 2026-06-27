@@ -1,10 +1,10 @@
 ---
 type: Plan
 title: Migration Plan — Harvesting PyAgent into the Orchestration System
-description: Plan for selectively harvesting patterns and node implementations from the PyAgent codebase into the python-orchestration-system, avoiding engine duplication.
-doc_id: migrate-agents-to-python-orchestration-system
+description: Plan for selectively harvesting patterns and node implementations from the PyAgent codebase into the orchestrator, avoiding engine duplication.
+doc_id: migrate-agents-to-orchestrator
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [PyAgent, migration, harvest, node patterns, agent library]
 related: [master-plan, app-architecture-overview]
@@ -13,7 +13,7 @@ related: [master-plan, app-architecture-overview]
 # Migration Plan: Harvesting PyAgent into the Orchestration System
 
 **Source:** `/Users/brandon/Dev/potential-portfolio-projects/PyAgent` (`agent_lib/`)
-**Target:** `/Users/brandon/Dev/agentic-portfolio/python-orchestration-system` (`app/`)
+**Target:** `/Users/brandon/Dev/agentic-portfolio/orchestrator` (`app/`)
 **Date:** 2026-06-17
 
 ## TL;DR

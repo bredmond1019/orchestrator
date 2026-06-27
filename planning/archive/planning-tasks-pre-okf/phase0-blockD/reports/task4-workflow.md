@@ -5,7 +5,7 @@
 **Task scope:** Task 4
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task4
+**Worktree:** /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task4
 **Branch:** phase0-blockd-task4
 
 ## Final Verdict

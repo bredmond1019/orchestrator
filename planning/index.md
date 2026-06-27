@@ -1,10 +1,10 @@
 ---
 type: Index
 title: Brandon — Agentic Engineering Practice · Planning Docs
-description: Index and router for all planning documents in the python-orchestration-system.
+description: Index and router for all planning documents in the orchestrator.
 doc_id: planning-index
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [planning index, context, status, master-plan, decisions]
 related: [context, status, master-plan, decisions-index]

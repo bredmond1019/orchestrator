@@ -5,7 +5,7 @@
 **Task scope:** Task 10 — Clean API Contract
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task10
+**Worktree:** /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task10
 **Branch:** phase0-blockd-task10
 
 ## Final Verdict

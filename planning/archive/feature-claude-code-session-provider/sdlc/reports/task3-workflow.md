@@ -5,7 +5,7 @@
 **Task scope:** Task 3
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/feature-claude-code-session-provider-task3
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/feature-claude-code-session-provider-task3
 **Branch:** feature-claude-code-session-provider-task3
 
 ## Final Verdict

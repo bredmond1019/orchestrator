@@ -11,7 +11,7 @@ description: Complete pipeline report for task 5 (review + router + revise branc
 **Task scope:** Task 5
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projectc-task5
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projectc-task5
 **Branch:** phase1-projectc-task5
 
 ## Final Verdict

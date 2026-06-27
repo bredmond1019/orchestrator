@@ -5,7 +5,7 @@
 **Task scope:** Task 4
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/feature-claude-code-sdk-provider-task4
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/feature-claude-code-sdk-provider-task4
 **Branch:** feature-claude-code-sdk-provider-task4
 
 ## Final Verdict

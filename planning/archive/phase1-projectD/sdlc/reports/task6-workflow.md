@@ -11,7 +11,7 @@ description: Complete pipeline execution report for phase1-projectD task 6.
 **Task scope:** Task 6
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projectd-task6
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projectd-task6
 **Branch:** phase1-projectd-task6
 
 ## Final Verdict

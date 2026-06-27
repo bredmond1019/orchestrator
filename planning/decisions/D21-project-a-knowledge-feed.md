@@ -4,7 +4,7 @@ title: D21 — Project A is a personal knowledge feed first, blog engine second;
 description: Dual-input, dual-output (personal digest always + blog on flag), static HTML on the Mac Mini served privately via Caddy, embeddings stored at write time.
 doc_id: D21-project-a-knowledge-feed
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [Project A, knowledge feed, content pipeline, digest, static HTML, embeddings]
 related: [D22-project-a-mvp-boundary, master-plan]

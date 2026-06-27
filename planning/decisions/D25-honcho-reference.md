@@ -4,7 +4,7 @@ title: D25 — Honcho as Project G reference architecture; personal feed as Honc
 description: Read Honcho source before writing Project G; use Honcho for the personal feed's memory upgrade as an experiment; build custom G for the Company Brain in production.
 doc_id: D25-honcho-reference
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [Honcho, Project G, agent memory, reference architecture, episodic memory]
 related: [D4-project-g-centerpiece, master-plan]

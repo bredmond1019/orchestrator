@@ -4,7 +4,7 @@ title: "D15 — Buyer wedge: fast-growing SMBs caught at the 30\u201380 inflecti
 description: The primary wedge is fast-growing SMBs at the 30–80-employee inflection, privacy-first. Superseded by D26 as product strategy.
 doc_id: D15-buyer-wedge-smb
 layer: [engine, business]
-project: python-orchestration
+project: orchestrator
 status: superseded
 keywords: [buyer wedge, SMB, 30-80 inflection, privacy-first, product strategy]
 related: [D14-company-brain-product, D26-goal-solo-contracting]

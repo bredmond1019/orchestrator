@@ -4,7 +4,7 @@ title: Phase 1 — Project A (content_pipeline) — Test Run 1
 description: End-to-end test run of the content_pipeline workflow against a real LLM via the CLAUDE_CODE_SDK provider, with step-by-step observability captured.
 doc_id: phase1-projecta-test-run1
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 timestamp: "2026-06-22"
 keywords: [test run, content_pipeline, CLAUDE_CODE_SDK, end-to-end test, workflow]

@@ -4,7 +4,7 @@ title: D3 — Drop the Socratic Tutor as the organizing goal
 description: Projects are sequenced by sellable competence, not by assembling one app; the tutor is archived.
 doc_id: D3-drop-socratic-tutor
 layer: [engine, meta]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [project sequencing, sellable competence, Socratic Tutor, expertise-first]
 related: [D4-project-g-centerpiece, master-plan]

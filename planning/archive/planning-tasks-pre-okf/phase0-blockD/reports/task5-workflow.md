@@ -5,7 +5,7 @@
 **Task scope:** Task 5 — ArticleExtractionService
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Documents/agentic-portfolio/python-orchestration-system/trees/phase0-blockd-task5
+**Worktree:** /Users/brandon/Documents/agentic-portfolio/orchestrator/trees/phase0-blockd-task5
 **Branch:** phase0-blockd-task5
 
 ## Final Verdict

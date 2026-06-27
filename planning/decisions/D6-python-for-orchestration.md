@@ -4,7 +4,7 @@ title: D6 — Python for orchestration; Rust only where it genuinely wins
 description: The orchestration framework stays Python (I/O-bound); Rust is reserved for CPU/latency/memory-bound work.
 doc_id: D6-python-for-orchestration
 layer: [engine]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [Python orchestration, Rust seam, I/O-bound, language choice, architecture]
 related: [D7-rust-home-cli, D36-bastion-engine-brain-role]

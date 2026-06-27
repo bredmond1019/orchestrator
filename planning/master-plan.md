@@ -4,7 +4,7 @@ title: Python Orchestration System — Master Plan
 description: Phase sequence, full project library (A–H), this repo's role as Bastion's Engine + Python-half-of-Brain, the program-block crosswalk, the Diagnostic relationship, and standing rules.
 doc_id: master-plan
 layer: [engine, brain]
-project: python-orchestration
+project: orchestrator
 status: active
 keywords: [master plan, phase sequence, project library, Bastion Engine, program blocks]
 related: [context, status, D36-bastion-engine-brain-role]
@@ -451,7 +451,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 0 — **gates Block B**. The first embedding `--rebuild` must run over enriched,
   frontmatter-stripped docs, or the vectors are polluted (raw YAML) and under-enriched, and the Voyage
   cost is paid twice. The schema is the shared contract the Console's graph layer also reads.
-- **Repo:** python-orchestration-system (this half) + the brain repo (the schema decision D27,
+- **Repo:** orchestrator (this half) + the brain repo (the schema decision D27,
   `docs/okf-frontmatter.md`, and the full doc backfill).
 - **Interfaces / contracts:** Consumes the frontmatter schema (brain D27); consumes the existing
   `BrainDocument` model + corpus-dispatch contract. Produces the populated columns + enriched vectors the
@@ -477,7 +477,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 0 — the Brain must answer semantically end-to-end before structural+semantic can be
   combined (bastion's graph layer) and before portability (Block C) generalizes the readers. The RAG
   machinery already exists (Project D); this is population + verification, not new retrieval code.
-- **Repo:** python-orchestration-system (`brain-rag` + Project D retrieval).
+- **Repo:** orchestrator (`brain-rag` + Project D retrieval).
 - **Interfaces / contracts:** Consumes the `BrainDocument` model + the `"brain"` corpus-dispatch
   contract already defined here. Produces a populated vector store the Console (`bastion`) and agents
   query. No data-contract version bump (read path only).
@@ -500,7 +500,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
   X, what did I decide, how does this project work"* across all repos.
 - **Why:** Wave 0 — highest value-to-cost ratio in the program: it is already OKF markdown, so this is
   a corpus-config change, not new retrieval code. A daily-driver feature on day one.
-- **Repo:** python-orchestration-system (the indexer).
+- **Repo:** orchestrator (the indexer).
 - **Interfaces / contracts:** Consumes the existing `BrainDocument` + corpus-dispatch contract;
   produces **per-repo corpora**. Light dependency on the multi-workspace addressing introduced in
   Block C (corpora must be addressable by workspace).
@@ -524,7 +524,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 0 — today the indexer is a manual CLI, so the Brain silently goes stale between runs;
   "self-updating" is currently false. The incremental path is already built; this block is purely
   wiring triggers. Cheapest high-payoff fix in the extension.
-- **Repo:** Cross-repo — python-orchestration-system (cron config + any runner script) + bastion (the
+- **Repo:** Cross-repo — orchestrator (cron config + any runner script) + bastion (the
   `bastion brain reindex` subcommand that shells out to `index_brain.py`).
 - **Interfaces / contracts:** Consumes the existing `BrainDocument` + corpus-dispatch contract and the
   indexer's already-shipped incremental-skip path (`indexed_at` vs. mtime). No data-contract bump.
@@ -547,7 +547,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 1 — proves the Brain is a *capability* over a knowledge dir, not a hardcode of one
   repo; required groundwork for per-repo (Block O) and per-client (Block S) corpora and for the
   loop-proof's "point Bastion at your knowledge."
-- **Repo:** python-orchestration-system (indexer/retriever root + workspace config). The **bastion
+- **Repo:** orchestrator (indexer/retriever root + workspace config). The **bastion
   graph-reader half** of the same shared "knowledge directory" convention is built in bastion.
 - **Interfaces / contracts:** Produces a shared **"knowledge directory / workspace" convention** (root
   path + workspace id + OKF expectations) consumed identically by the Python RAG and the bastion graph
@@ -569,7 +569,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
   **per-repo code corpora**. Answers *"how does X work, where's the code that does Y."*
 - **Why:** Wave 1 — "ask my own system how my own code works" is a genuine daily feature and a strong
   dogfood story. Reuses the Project D retrieval machinery over a new corpus type.
-- **Repo:** python-orchestration-system (embeddings + retrieval = Engine/Brain Python half).
+- **Repo:** orchestrator (embeddings + retrieval = Engine/Brain Python half).
 - **Interfaces / contracts:** Produces **code-chunk corpora** addressable by repo/workspace (Block C
   addressing). The deterministic structural twin — exact symbol/def/refs, code-as-graph — is bastion's
   Block Q, **out of scope** here.
@@ -592,7 +592,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 2 — retroactive cost estimation is not control. Per brain D25 the Console is read-only
   for state and *triggers* mutations; the actual cancel + terminal stamp **must** live here, the layer
   that owns the run lifecycle.
-- **Repo:** Cross-repo — python-orchestration-system (abort endpoint + budget gate, the enforcement
+- **Repo:** Cross-repo — orchestrator (abort endpoint + budget gate, the enforcement
   point) + bastion (the CLI surface that calls them).
 - **Interfaces / contracts:** **Produces two new D20 data-contract additions** — an authenticated abort
   endpoint and a budget-gate field/response — bumped per the CLAUDE.md D20 protocol and re-pinned in
@@ -625,7 +625,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 3 — completes "prevent hallucinations" on the *answer* side (the corpus side is
   bastion's deterministic integrity scan). Today grounding is a single soft prompt instruction with no
   verification and no numeric abstain — not good enough once client work runs on the Brain.
-- **Repo:** python-orchestration-system (Project D retrieval/answer nodes).
+- **Repo:** orchestrator (Project D retrieval/answer nodes).
 - **Interfaces / contracts:** Consumes the existing retrieval pipeline + `cited_sections` field.
   Produces a **verified-citation + confidence signal** on the answer envelope.
 - **Depends on:** Block B (semantic retrieval populated). Independent of bastion.
@@ -647,7 +647,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 4 — brain-rag **Layer 3 = MCP**. This is the server peer the Console's MCP client
   connects to; it makes the Brain reachable by any MCP-speaking agent, not just this orchestrator's own
   nodes.
-- **Repo:** python-orchestration-system (the Engine / Brain Python half).
+- **Repo:** orchestrator (the Engine / Brain Python half).
 - **Interfaces / contracts:** Produces an **MCP server surface** over the Brain read path; consumed by
   bastion's vendored MCP client. Defines the tool schema (query kinds, corpus/workspace params) as the
   client↔server contract.
@@ -671,7 +671,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 - **Why:** Wave 3 — the "keep track of client work" capability, Bastion's operational memory.
   Demand-first: the first real client creates the need for the **entity** half immediately; full
   consolidation can follow.
-- **Repo:** python-orchestration-system (store + workflows) + the brain repo (operational docs
+- **Repo:** orchestrator (store + workflows) + the brain repo (operational docs
   indexed).
 - **Interfaces / contracts:** Consumes the Honcho reference architecture (orchestrator D25). Produces
   the **entity/memory store** the Console and Engine read, keyed by `workspace_id` (the Block C
@@ -731,7 +731,7 @@ graduates into the Engine.
   providers. Graduating HL2 into the Engine gives the operator real control over coding work (durable
   retries, live monitor, exact cost) and makes the loop-proof (Block G) a *native* Engine run, not a JS
   side-process. Fits D24's "one authoring engine (Python)".
-- **Repo:** python-orchestration-system (the Engine — SDLC nodes + the orchestration workflow). Consumes
+- **Repo:** orchestrator (the Engine — SDLC nodes + the orchestration workflow). Consumes
   base-template's spec/command surface; observed by bastion.
 - **Interfaces / contracts:** Consumes the Node/Workflow/TaskContext primitives + `CLAUDE_CODE_SDK`/
   `CLAUDE_CODE_SESSION` providers + `ParallelNode` (Project E). Consumes **base-template's `/sdlc-*` spec
@@ -781,7 +781,7 @@ graduates into the Engine.
   theater."* Today eval is an unscoped floating row; the north-star elevates it to a track. Its outcomes
   are what *license* autonomy promotion (Block X — trust earned from measured results), and they feed the
   Console metrics surface (Block V) and model routing.
-- **Repo:** python-orchestration-system (the eval harness + metrics aggregation = Engine).
+- **Repo:** orchestrator (the eval harness + metrics aggregation = Engine).
 - **Interfaces / contracts:** Consumes the D30 `status.md` Metrics convention + workflow run records
   (the D20/D30 `node_runs` cost/usage). Produces eval pass/regression signals consumed by Block X (trust
   promotion), Block V (the Console metrics rollup), and model routing. No data-contract bump (read path)
@@ -819,7 +819,7 @@ graduates into the Engine.
   `north-star.md` (LangGraph, Letta, Temporal, Graphiti, Langfuse, Mastra, …) is the seed feed. Answers
   *"what changed in the agent ecosystem this week; which ideas improved us; which did we reject and
   why; which of our assumptions are getting stale."*
-- **Repo:** python-orchestration-system (the recurring workflow = Engine; a `research_agent`
+- **Repo:** orchestrator (the recurring workflow = Engine; a `research_agent`
   specialization) + the brain repo (the external-knowledge memory docs, indexed as a Brain corpus).
 - **Interfaces / contracts:** Consumes WebSearch/fetch + MCP + the north-star reference list. Produces
   external-knowledge memory entries (queryable in the Brain via Track 1) + improvement candidates feeding

@@ -5,7 +5,7 @@
 **Task scope:** Task 1
 **Pipeline started from:** implement
 **Review attempts:** 1 of 3 max
-**Worktree:** /Users/brandon/Dev/agentic-portfolio/python-orchestration-system/trees/phase1-projectd-task1
+**Worktree:** /Users/brandon/Dev/agentic-portfolio/orchestrator/trees/phase1-projectd-task1
 **Branch:** phase1-projectd-task1
 
 ## Final Verdict

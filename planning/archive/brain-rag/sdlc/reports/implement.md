@@ -81,7 +81,7 @@ Status: PASSED
 - **Lazy imports in index_brain.py**: EmbeddingService, db_session, and BrainDocument are imported inside `main()` so that `--dry-run` mode works without requiring a DB connection or API key. Tests patch at the source module path (`services.embedding_service.EmbeddingService`, `database.session.db_session`) since module-level attributes don't exist.
 - **Migration is hand-crafted**: The DB is not running in CI, so `alembic revision --autogenerate` cannot be run. The migration is written to match the model exactly, following the pattern of the existing `a1b2c3d4e5f6` migration.
 - **Logging capture in tests**: `logging.basicConfig(stream=sys.stdout)` is called at module import time before pytest's `capsys` patch. Dry-run tests use `caplog` (which captures at the log record level) rather than `capsys`/`capfd`.
-- **Default brain path**: The script defaults to `../agentic-portfolio` (relative to cwd), which works when run from the python-orchestration-system root. The absolute path is also accepted.
+- **Default brain path**: The script defaults to `../agentic-portfolio` (relative to cwd), which works when run from the orchestrator root. The absolute path is also accepted.
 
 ## Follow-up Work
 
