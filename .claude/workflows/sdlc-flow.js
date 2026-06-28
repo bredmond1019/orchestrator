@@ -344,6 +344,35 @@ async function tracedAgent(prompt, opts = {}) {
   return r
 }
 
+// Build the canonical `tokens` block from the accumulated per-agent metrics (Block A — the shared
+// committed-state token contract, identical across all four engines; engines are self-contained, so
+// this is lifted, not imported). Per-stage output tokens + the D15 input-cost estimate (promptTok +
+// filesReadKb→tokens at ~256 tok/KB) + a cumulative total. filesReadKb is null here (flow stages do
+// not self-report it yet); inTokEst then reduces to promptTokEst. writeFlowState folds the latest
+// block into the COMMITTED state.json on every write, so token usage is persisted and rolled up
+// rather than vanishing when the run ends.
+//
+// CONTRACT SCOPE (Phase 0 /code-review carry-in): `metrics` — and therefore `tokens.total` — cover the
+// SUBSTANTIVE stages only. Cheap helper / state-writer agents (the Haiku state-writer, config + baseline
+// loaders) deliberately use bare agent() and are EXCLUDED; this bounded, Haiku-cheap exclusion is the
+// same boundary in all four engines, named here so it is explicit rather than silent — it keeps the
+// two-level /sdlc-block roll-up summing comparable substantive-stage totals at both levels.
+function buildTokensBlock() {
+  const stages = metrics.map(m => {
+    const filesReadKb = m.filesReadKb != null ? m.filesReadKb : null
+    const inTokEst = m.promptTokEst + (filesReadKb != null ? Math.round(filesReadKb * 256) : 0)
+    return { label: m.label, model: m.model, promptTokEst: m.promptTokEst, filesReadKb, inTokEst, outTok: m.outTok }
+  })
+  const total = stages.reduce((acc, s) => {
+    acc.promptTokEst += s.promptTokEst
+    acc.filesReadKb  += s.filesReadKb || 0
+    acc.inTokEst     += s.inTokEst
+    acc.outTok       += s.outTok || 0
+    return acc
+  }, { promptTokEst: 0, filesReadKb: 0, inTokEst: 0, outTok: 0 })
+  return { stages, total }
+}
+
 // ----------------------------------------------------------------
 // HARNESS CONFIG — mechanism/policy split (see planning/harness.json)
 //
@@ -571,12 +600,14 @@ const state = {
   docs: { changed: [], created: [] },
   bail_reason: null,
   pr: { url: null, number: null },
+  tokens: { stages: [], total: { promptTokEst: 0, filesReadKb: 0, inTokEst: 0, outTok: 0 } },  // Block A — refreshed by writeFlowState on every write
 }
 
 // Persist `state` to the committed state.json + append `worklogEntry` (markdown) to worklog.md, then
 // commit both on the branch. `label` names the commit. `extraAdd` lists any other paths to stage
 // (e.g. the tasks.md checkbox edit was made by an upstream agent on the branch already).
 async function writeFlowState(label, worklogEntry, { cwd, extraAdd = [] } = {}) {
+  state.tokens = buildTokensBlock()   // Block A — refresh the committed token roll-up before persisting
   const stateJson = JSON.stringify(state, null, 2)
   const addList = ['planning/' + blockId + '/sdlc/sdlc-flow-state.json', 'planning/' + blockId + '/sdlc/worklog.md', ...extraAdd]
   const result = await agent(`
@@ -1134,6 +1165,18 @@ the surface this run changed. All Bash from the worktree root.
 2. For each changed source file, find docs/*.md that reference it (component/function/route/file names):
    Run: cd ${worktreePath} && grep -rl "<name>" docs/ 2>/dev/null
 
+2b. CHECK — does docs/ have any project-facing docs?
+   Run: cd ${worktreePath} && ls docs/ 2>/dev/null | grep -v '^workflows$' | grep '\\.md$' | wc -l
+   If the count is 0 (no project docs exist yet), switch to BOOTSTRAP MODE:
+   - Read every source file from step 1's git diff (full read, not just stat).
+   - Create appropriate reference docs from scratch based on what the source actually contains.
+     At minimum: docs/architecture.md (module map, key types, data flow). Add docs/cli.md for
+     CLIs, docs/api-reference.md for servers/APIs, docs/pages.md for web apps — as applicable.
+   - Create docs/index.md if it does not exist; add a row per created doc.
+   - Every new file must include OKF frontmatter (required: type, title, description).
+   - Skip step 3 and go directly to step 4 (NEEDS_REVIEW flag check) then step 5 (commit).
+   If count > 0: proceed with surgical patch in step 3.
+
 3. Surgically patch ONLY the affected sections (Edit tool — never rewrite whole files). Update changed
    signatures/prop tables/route lists/descriptions; add docs for new public APIs. Never delete documented
    items that still exist. Never edit CLAUDE.md. No emoji.
@@ -1344,7 +1387,10 @@ Return via StructuredOutput: merged, worktreeRemoved, branchDeleted, notes.
 }
 
 // ----------------------------------------------------------------
+const tokensBlock = buildTokensBlock()
+log(`Token roll-up: ${tokensBlock.total.inTokEst} inTokEst${tokensBlock.total.outTok ? ` | ${tokensBlock.total.outTok} outTok` : ''} across ${tokensBlock.stages.length} stage(s) — persisted in ${stateFile}.`)
 log(`/sdlc-flow complete. Verdict: ${finalVerdict} | tasks passed: ${passedTasks.length}/${taskList.length}${bailed ? ` | BAILED: ${bailReason}` : ''}${prInfo?.created ? ` | PR: ${prInfo.url || prInfo.number}` : ''}`)
+if (!noPr && !autoMerge) log('Next: run /close-out to verify coverage + patch docs before handing off.')
 
 return {
   blockId,
@@ -1361,4 +1407,5 @@ return {
   merged: mergeInfo?.merged || false,
   stateFile,
   worklogFile,
+  tokens: tokensBlock,
 }
