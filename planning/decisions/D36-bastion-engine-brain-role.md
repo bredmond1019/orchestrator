@@ -19,22 +19,22 @@ memory/entity store). The brain's Bastion program plan
 cross-repo order and seams. This decision adopts it locally and records the concrete consequences for
 this repo's `master-plan.md`:
 
-1. **Project F ≡ brain-program Block B** — "semantic search over the corpus" *is* the Brain's semantic
+1. **Project F ≡ brain-program `OR.B`** — "semantic search over the corpus" *is* the Brain's semantic
    layer; the two are unified (brain D26 F≡B). F is no longer a standalone Phase-2 extra but the
    Wave-0 semantic-retrieval half of the Brain (populate the store, confirm `"brain"`-corpus Q&A;
    retrieval already shipped in Project D).
-2. **Project G ≡ brain-program Block S** — agent memory is the Brain's memory capability: the store is
+2. **Project G ≡ brain-program `OR.S`** — agent memory is the Brain's memory capability: the store is
    Brain data, the workflows (ingest-time extraction, dream-time consolidation on Claude) are Engine,
    the Console reads it. Reframed so **clients, companies, products, and SOPs are first-class
    entities**, keyed by `workspace_id`.
 3. **New Brain-side blocks** are added to the master-plan in the `/generate-master-plan` block-contract
-   format and owned here: **O** (widen the index corpus to all sub-repo docs), **J** (freshness loop —
-   auto-reindex on commit), **C** (multi-workspace Brain — Python half), **P** (semantic code search),
-   **L** (answer-time grounding — citation verify + abstain), **R** (Brain-as-MCP-server — Python
-   server half of the MCP split), and the **Python half of I** (the abort endpoint + server-side budget
+   format and owned here: **`OR.O`** (widen the index corpus to all sub-repo docs), **`OR.J`** (freshness loop —
+   auto-reindex on commit), **`OR.C`** (multi-workspace Brain — Python half), **`OR.P`** (semantic code search),
+   **`OR.L`** (answer-time grounding — citation verify + abstain), **`OR.R`** (Brain-as-MCP-server — Python
+   server half of the MCP split), and the **Python half of `OR.I`** (the abort endpoint + server-side budget
    gate the Console's kill switch triggers, per brain D25).
 4. **Demand-first sequencing.** Post-checkpoint work follows the brain's demand-first wave table, not
-   the old phase order: Wave 0 = Block B + O (after the private Tailscale face); Project E moves to
+   the old phase order: Wave 0 = `OR.B` + `OR.O` (after the private Tailscale face); Project E moves to
    Wave 4 ✲. The brain wave table is the authoritative order; the local crosswalk is the legibility
    bridge.
 5. **The A–H project numbering is preserved.** It is referenced across `status.md`, `decisions/`, and

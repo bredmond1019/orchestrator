@@ -15,7 +15,7 @@ created: 2026-06-26
 
 > **For the next agent:** Read this immediately after `/prime`. Delete this file once consumed.
 > **Your job:** one last independent sweep of the brain-rag-improvements code (Blocks C–G + the
-> pre-rebuild sweep), then drive **Block H** — the live, paid, one-shot `index_brain.py --rebuild`
+> pre-rebuild sweep), then drive **`OR.H`** — the live, paid, one-shot `index_brain.py --rebuild`
 > against the Mac Mini Postgres. This is the irreversible step the whole initiative exists to get
 > right, so verify before you spend.
 
@@ -54,7 +54,7 @@ applied a **final pre-rebuild sweep** (commit `3b96cfa`).
 
 1. **One independent review pass** (your call how deep — the work is committed and green). If you
    concur, proceed to Block H.
-2. **Block H — the live `--rebuild`** (paid, one-shot, against Mac Mini Postgres). Order:
+2. **`OR.H` — the live `--rebuild`** (paid, one-shot, against Mac Mini Postgres). Order:
    - `cd app && uv run python -m alembic upgrade head`  (single head `e2f3a4b5c6d7`)
    - `uv run python scripts/index_brain.py --dry-run`  (expect ~109 files; spot-check paths)
    - **Pre-rebuild write-path check:** `uv run python scripts/index_brain.py --rebuild --limit 3`,

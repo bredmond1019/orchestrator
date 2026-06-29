@@ -61,7 +61,7 @@ seams between repos are authoritative in the brain — `agentic-portfolio/planni
 
 ## Project Sequence (names only)
 
-**Phase 0 — Foundation:** Block A (presence + codebase ownership) · Block B (Mac Mini harness) · Block C (test infra + 4 bugs fixed) · Block D (shared services + scaffold) — *all Done except Block A personal tasks + the private Tailscale face.*
+**Phase 0 — Foundation:** `OR.0.A` (presence + codebase ownership) · `OR.0.B` (Mac Mini harness) · `OR.0.C` (test infra + 4 bugs fixed) · `OR.0.D` (shared services + scaffold) — *all Done except `OR.0.A` personal tasks + the private Tailscale face.*
 
 **Phase 1 — Sellable Competence:** Project A (content pipeline) · Project B (research agent, thin cut) · Project C (proposal generator) · Project D (document Q&A + RAG) — **all Done; competence checkpoint passed 2026-06-23.**
 
@@ -69,7 +69,7 @@ seams between repos are authoritative in the brain — `agentic-portfolio/planni
 
 **Phase 2 — Depth:** Project E (specialization / ParallelNode merge) · Project F (semantic search → **the Brain semantic layer ≡ Block B**, D36) · Project H (model eval harness) · Project G (agent memory → **the Brain memory/entity capability ≡ Block S**, D36).
 
-**Bastion program blocks (this repo's Engine + Brain work):** B (semantic Brain) · O (widen corpus) · J (freshness loop) · C (multi-workspace, Python half) · P (semantic code search) · I (abort + budget gate, Python half) · L (answer-time grounding) · R (Brain-as-MCP-server). Sequenced demand-first per the brain wave table.
+**Bastion program blocks (this repo's Engine + Brain work):** `OR.B` (semantic Brain) · `OR.O` (widen corpus) · `OR.J` (freshness loop) · `OR.C` (multi-workspace, Python half) · `OR.P` (semantic code search) · `OR.I` (abort + budget gate, Python half) · `OR.L` (answer-time grounding) · `OR.R` (Brain-as-MCP-server). Sequenced demand-first per the brain wave table.
 
 **Parallel:** Console — `bastion` (Rust) — Bastion's control layer; reads this Engine over HTTP/Postgres, never shares code (D36).
 

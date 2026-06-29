@@ -213,7 +213,7 @@ Project D (document Q&A + RAG) gated the competence checkpoint independently of 
 
 ---
 
-### Project A — Content Pipeline (YouTube/Article → Personal Digest + optional Blog)
+### OR.1.A — Content Pipeline (YouTube/Article → Personal Digest + optional Blog)
 
 **Pattern:** source-routed linear pipeline + self-correction loop, forking to two outputs.
 **Reuse downstream:** `LearningArtifact` model, `SelfCriticNode → ReviseNode` pattern, voice prompt, `FetchArticleNode`.
@@ -239,7 +239,7 @@ POST `{url, make_blog?}` to `/events/content`. Celery runs:
 
 ---
 
-### Project B — Research Agent (thin first, then hardened)
+### OR.1.B — Research Agent (thin first, then hardened)
 
 **Pattern:** raw agentic tool loop + self-correction.
 **Reuse downstream:** tool loop feeds Project C's `CompanyResearchNode`.
@@ -266,7 +266,7 @@ The `max_iterations` guard on `ToolUseNode` is not optional — it terminates th
 
 ---
 
-### Project C — Client Proposal Generator
+### OR.1.C — Client Proposal Generator
 
 **Pattern:** research → structured output → review/revise with routing.
 **Status: Done.**
@@ -291,7 +291,7 @@ Input: company name, industry, brief description.
 
 ---
 
-### Project D — Document Q&A + Session Memory (RAG)
+### OR.1.D — Document Q&A + Session Memory (RAG)
 
 **Pattern:** full RAG + session memory.
 **Reuse downstream:** `RetrieveChunksNode` (verbatim later), `ContentChunk` + `ChatSession` models.
@@ -318,10 +318,10 @@ Input: company name, industry, brief description.
 
 ---
 
-### Project E — Specialization Refactor
+### OR.1.E — Specialization Refactor
 
 **Pattern:** specialized nodes + parallelism. Kept separate from Project A on purpose — you build the naive pipeline first, feel its limits, then refactor and watch quality change.
-**Bastion wave:** **Wave 2 — pulled forward as [Block Z](#block-z--sdlc-flowsdlc-run--orchestrator-native-nodes--workflows-hl2-graduation)'s hard prerequisite** (the SDLC wave fan-out needs the `ParallelNode` merge fix). Was Wave 4 ✲; Block Z is the genuine parallelism need that pulls it in.
+**Bastion wave:** **Wave 2 — pulled forward as [OR.Z](#or-z--sdlc-flowsdlc-run--orchestrator-native-nodes--workflows-hl2-graduation)'s hard prerequisite** (the SDLC wave fan-out needs the `ParallelNode` merge fix). Was Wave 4 ✲; Block Z is the genuine parallelism need that pulls it in.
 
 **The refactor:**
 - **Before:** `Fetch → Summarizer → BlogWriter → SelfCritic → Revise → Storage`
@@ -336,13 +336,13 @@ Input: company name, industry, brief description.
 
 ---
 
-### Project F — Semantic Search Over Your Corpus → the Brain semantic layer
+### OR.1.F — Semantic Search Over Your Corpus → the Brain semantic layer
 
 > **Reframed (brain D26 / local D36): Project F ≡ brain-program Block B (the Brain semantic layer).**
 > "Semantic search over the corpus" and "the Brain answers semantically" are the same capability; F
 > is no longer a standalone Phase-2 extra but the **Wave 0** semantic-retrieval half of the Brain. The
 > endpoint below still describes its public surface; the cross-repo framing, dependencies, and
-> acceptance live in [Block B](#block-b--semantic-brain-over-the-company-brain-corpus-absorbs-project-f).
+> acceptance live in [OR.B](#or-b--semantic-brain-over-the-company-brain-corpus-absorbs-project-f).
 
 **Pattern:** semantic retrieval at corpus scale. Mostly Project D components. Payoff for storing embeddings at write time since Project A.
 
@@ -358,14 +358,14 @@ Input: company name, industry, brief description.
 
 ---
 
-### Project G — Agent Memory System (Episodic → Semantic) → the Brain memory/entity capability
+### OR.1.G — Agent Memory System (Episodic → Semantic) → the Brain memory/entity capability
 
 > **Reframed (brain D26 / local D36): Project G ≡ brain-program Block S (the Brain's memory
 > capability).** The store is **Brain data**; the workflows (ingest-time extraction, dream-time
 > consolidation) are **Engine**; the Console reads it. The reframing makes **clients, companies,
 > products, and SOPs first-class entities** so the Brain answers *"what's the status with client X,
 > what rate did I quote."* All build detail below stands; the cross-repo entity framing, dependencies,
-> and acceptance live in [Block S](#block-s--entity--memory-layer-project-g-reframed).
+> and acceptance live in [OR.S](#or-s--entity--memory-layer-project-g-reframed).
 
 **Pattern:** episodic→semantic consolidation, confidence decay, contradiction handling, multi-peer entity modeling.
 **Reuse downstream:** `MemoryLoaderNode` (verbatim), the whole module.
@@ -400,13 +400,13 @@ SemanticMemory(peer_id, fact, confidence, evidence_episode_ids, decay_factor, so
 
 ---
 
-### Project H — Model Evaluation & Routing Harness
+### OR.1.H — Model Evaluation & Routing Harness
 
 > **Reframed (north-star Thread 2c): Project H ≡ brain-program Block U (the Eval + success-metrics
 > engine).** Model eval & routing is elevated from a floating wave-table row to the **named
 > Self-Improvement track** — the engine that licenses autonomy promotion (Block X) and feeds the Console
 > metrics surface (Block V). All build detail below stands as the seed; the cross-repo framing,
-> dependencies, and acceptance live in [Block U](#block-u--eval--success-metrics-engine-elevates-project-h).
+> dependencies, and acceptance live in [OR.U](#or-u--eval--success-metrics-engine-elevates-project-h).
 
 **Pattern:** offline evaluation; empirical model routing.
 **Output:** per-node routing config file the brain loads at startup — different config for local-heavy vs. cloud deployments.
@@ -440,7 +440,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block T — Enriched OKF frontmatter (orchestrator half: indexer + model + retrieval)
+### OR.T — Enriched OKF frontmatter (orchestrator half: indexer + model + retrieval)
 
 - **What:** Make `scripts/index_brain.py` parse frontmatter (reuse `python-frontmatter`), **strip** the
   YAML from the embedded body, and bake a compact metadata context-prefix (`project`/`layer`/`type`/
@@ -468,7 +468,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block B — Semantic Brain over the company-brain corpus (absorbs Project F)
+### OR.B — Semantic Brain over the company-brain corpus (absorbs Project F)
 
 - **What:** Run `index_brain.py` to populate the pgvector store over the OKF brain corpus, and confirm
   end-to-end semantic Q&A over the `"brain"` corpus through the existing two-stage hybrid retrieval
@@ -493,7 +493,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block O — Widen the index corpus to all sub-repo planning docs
+### OR.O — Widen the index corpus to all sub-repo planning docs
 
 - **What:** Extend `index_brain.py`'s corpus list to include every sub-repo's `planning/` (status,
   decisions, devlog) **+** `CLAUDE.md`, each as its own workspace/corpus. Answers *"where am I in repo
@@ -514,7 +514,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block J — Brain freshness loop (cron reindex + `bastion brain reindex`)
+### OR.J — Brain freshness loop (cron reindex + `bastion brain reindex`)
 
 - **What:** Wire two triggers for `index_brain.py` — a **daily cron job** and a `bastion brain reindex`
   convenience command — so the Brain stays current without manual CLI invocation. The incremental skip
@@ -538,7 +538,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block C — Multi-workspace Brain (per-repo / per-client corpora) — Python half
+### OR.C — Multi-workspace Brain (per-repo / per-client corpora) — Python half
 
 - **What:** Generalize the Python Brain readers — the RAG indexer and retriever — to point at an
   **arbitrary knowledge directory / workspace** (a config/CLI-provided root + workspace id), not only
@@ -563,7 +563,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block P — Semantic code search (source as a corpus)
+### OR.P — Semantic code search (source as a corpus)
 
 - **What:** Chunk + embed source files per repo (chunk by function/class via tree-sitter) as new
   **per-repo code corpora**. Answers *"how does X work, where's the code that does Y."*
@@ -582,7 +582,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block I — Cost control (abort endpoint + server-side budget gate) — Python half
+### OR.I — Cost control (abort endpoint + server-side budget gate) — Python half
 
 - **What:** Add the **enforcement points** the Console's kill switch and budget controls trigger: a new
   **authenticated abort endpoint** that cancels a run and stamps its terminal state, and a
@@ -616,7 +616,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block L — Answer-time grounding (citation verify + abstain)
+### OR.L — Answer-time grounding (citation verify + abstain)
 
 - **What:** Harden the RAG answer path (Project D): **verify** that a cited section actually contains
   the claim it's cited for, add a **confidence/abstain threshold** (return "I don't have that" when
@@ -638,7 +638,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block R — Brain-as-MCP-server (Python server half of the MCP split)
+### OR.R — Brain-as-MCP-server (Python server half of the MCP split)
 
 - **What:** Expose the Brain (semantic + structural + memory read path) as an **MCP server** in the
   Engine, so agents and tools reach it over the protocol. The **server is Python** (here); the
@@ -661,7 +661,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block S — Entity / memory layer (Project G reframed)
+### OR.S — Entity / memory layer (Project G reframed)
 
 - **What:** Build Project G as the Brain's **memory capability** with **clients, companies, products,
   and SOPs as first-class entities**: the store (`Peer`/`AgentEpisode`/`SemanticMemory`) is Brain data;
@@ -687,7 +687,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### Block Z — `sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows (HL2 graduation)
+### OR.Z — `sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows (HL2 graduation)
 
 > **★ Brandon's priority ask (north-star Thread 2c).** Graduate the **Coding & Delivery harness (HL2)**
 > from a base-template JS harness into **Engine-native Node/Workflow primitives** — so coding work runs
@@ -763,7 +763,7 @@ graduates into the Engine.
 
 ---
 
-### Block U — Eval + success-metrics engine (elevates Project H)
+### OR.U — Eval + success-metrics engine (elevates Project H)
 
 > **Project H ≡ Block U.** The model-eval & routing harness (Project H) is elevated from a floating
 > wave-table row to the **named Self-Improvement track** the north-star demands. The Project Library
@@ -805,7 +805,7 @@ graduates into the Engine.
 
 ---
 
-### Block W — External-intelligence loop + external-knowledge memory
+### OR.W — External-intelligence loop + external-knowledge memory
 
 - **What:** A **recurring news→improvement pipeline** (north-star §"External Intelligence Loop"):
   scheduled monitoring of open-source agent/AI architecture repos, releases/changelogs, model-provider

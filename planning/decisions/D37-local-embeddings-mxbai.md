@@ -21,12 +21,12 @@ model — `mxbai-embed-large` served by Ollama** on the Mac Mini — rather than
 ## Why
 
 1. **The free tier wall forced the choice now.** The first live `index_brain.py --rebuild` (brain-rag
-   Block H) was blocked by Voyage's free tier — 3 RPM / 10K TPM with no payment method — and the
+   `OR.H`) was blocked by Voyage's free tier — 3 RPM / 10K TPM with no payment method — and the
    indexer has no backoff, so the full 109-file corpus could not be embedded. The realistic options
    were "add Voyage billing" or "go local." For a single-operator brain with no paying clients yet,
    adding a card to a metered API for a personal knowledge base is the wrong trade.
-2. **This is the Project H local step, pulled forward.** D35 already committed to "top-tier models
-   first, then introduce local/open-weight **via Project H**." D37 executes that local step early and
+2. **This is the OR.1.H local step, pulled forward.** D35 already committed to "top-tier models
+   first, then introduce local/open-weight **via OR.1.H**." D37 executes that local step early and
    narrowly — **for embeddings only** — because the rate limit made it the path of least resistance,
    not because chat-model quality is in question. D35's posture (prefer strong models for *reasoning*)
    is unchanged; this is purely the embedding provider.
@@ -38,7 +38,7 @@ model — `mxbai-embed-large` served by Ollama** on the Mac Mini — rather than
 4. **Free + repeatable dissolves the "pay once" constraint.** The brain-rag-improvements plan was
    shaped around getting the corpus perfect before a single expensive Voyage pass. Local embeddings
    make `--rebuild` free and repeatable, so the corpus can be re-embedded freely as it grows
-   (Block O) or the model is upgraded — a strictly better operating posture for a fast-moving brain.
+   (`OR.O`) or the model is upgraded — a strictly better operating posture for a fast-moving brain.
 5. **Trivial to run.** `mxbai-embed-large` is ~670 MB download / ~1–2 GB resident — negligible on the
    M1 16 GB Mac Mini that already hosts the orchestrator's Postgres and runs `llama3.1` (~4.7 GB) for
    `rag-engine-rs`. Co-locating the embedder with the DB keeps the whole `--rebuild` loop local.
@@ -61,17 +61,17 @@ model — `mxbai-embed-large` served by Ollama** on the Mac Mini — rather than
 ## Scope / revisit
 
 - **Implementation is deferred** to an at-home session (install Ollama on the Mini → `ollama pull
-  mxbai-embed-large` → repoint `EmbeddingService` → `--rebuild` → Block H smoke tests). Until then the
+  mxbai-embed-large` → repoint `EmbeddingService` → `--rebuild` → `OR.H` smoke tests). Until then the
   Brain vector store is empty (schema migrated, write-path verified) — **not blocking** other work;
-  only Brain semantic retrieval (Block B) waits on it.
+  only Brain semantic retrieval (`OR.B`) waits on it.
 - **Revisit when real clients justify it:** a multi-tenant or higher-recall need may warrant a larger
   local model or a hosted embedder. Any model change means a free local `--rebuild` (and a migration
   only if the new model's dimension ≠ 1024). This decision is cheap to reverse by design.
 
 ## References
 
-- D35 (top-tier models first, then local/open-weight via Project H) — D37 executes its local step for embeddings.
+- D35 (top-tier models first, then local/open-weight via OR.1.H) — D37 executes its local step for embeddings.
 - D36 (this repo is the Engine + Python half of the Brain) — the Brain store this populates.
-- brain-rag Block H + the embedding-provider note: `docs/brain-rag.md`; the deviation-log entry in
+- brain-rag `OR.H` + the embedding-provider note: `docs/brain-rag.md`; the deviation-log entry in
   `planning/status.md`; brain `planning/brain-rag-improvements/implementation-report.md`.
 - `app/services/embedding_service.py` (the `model`/`dims` provider seam); `app/database/brain_document.py` (`EMBEDDING_DIM = 1024`).

@@ -7,9 +7,9 @@ layer: [engine]
 project: orchestrator
 status: active
 timestamp: "2026-06-27"
-now: "Block H — local-embedding swap (Ollama mxbai-embed-large) + free --rebuild; unblocks Block B (Wave 0)"
-next: "Block B semantic Brain → Block O widen corpus; then Wave-2 priority Project E → Block Z (sdlc-as-nodes)"
-blocked: ["Block B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
+now: "OR.H — local-embedding swap (Ollama mxbai-embed-large) + free --rebuild; unblocks OR.B (Wave 0)"
+next: "OR.B semantic Brain → OR.O widen corpus; then Wave-2 priority Project E → OR.Z (sdlc-as-nodes)"
+blocked: ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
 keywords: [project status, current focus, Block H, local embeddings, Wave 0, capability tracks]
 related: [context, master-plan]
 ---
@@ -19,8 +19,8 @@ related: [context, master-plan]
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-26 — Block H attempted against live Postgres: schema confirmed migrated, `--dry-run` (109 files, zero warnings) + `--rebuild --limit 3` write-path check both passed; full `--rebuild` blocked by Voyage free-tier rate limit (3 RPM, no payment method). **Decision: switch to local `mxbai-embed-large` via Ollama** (1024-dim → no migration, free, repeatable). Block H paused pending that local-embedding swap — **not blocking** other work.
-**Current focus (demand-first, per the brain wave table):** Wave 0 — (1) finish the private Tailscale face, then (2) **Block H — now a local-embedding swap + free `--rebuild`** (Voyage free-tier rate-limited the pass on 2026-06-26; schema already migrated and write-path verified): install Ollama on the Mini → `ollama pull mxbai-embed-large` → repoint `EmbeddingService` (1024-dim = no migration) at the Ollama embeddings endpoint → `--rebuild` (now free, repeatable) → smoke tests. **Blocks C + D + E/F/G are complete and REVIEWED PASS — prerequisite work for Block B.** **Project E (specialization / ParallelNode merge) is now pulled forward to Wave 2** as the hard prerequisite for the new **Block Z** (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows). **Plan reorganized 2026-06-27 (north-star Thread 2c):** see `master-plan.md` "North-Star Alignment (umbrella view)" + the new Blocks U/W/Z — the three north-star tracks this repo now owns.
+**Last updated:** 2026-06-26 — `OR.H` attempted against live Postgres: schema confirmed migrated, `--dry-run` (109 files, zero warnings) + `--rebuild --limit 3` write-path check both passed; full `--rebuild` blocked by Voyage free-tier rate limit (3 RPM, no payment method). **Decision: switch to local `mxbai-embed-large` via Ollama** (1024-dim → no migration, free, repeatable). `OR.H` paused pending that local-embedding swap — **not blocking** other work.
+**Current focus (demand-first, per the brain wave table):** Wave 0 — (1) finish the private Tailscale face, then (2) **`OR.H` — now a local-embedding swap + free `--rebuild`** (Voyage free-tier rate-limited the pass on 2026-06-26; schema already migrated and write-path verified): install Ollama on the Mini → `ollama pull mxbai-embed-large` → repoint `EmbeddingService` (1024-dim = no migration) at the Ollama embeddings endpoint → `--rebuild` (now free, repeatable) → smoke tests. **Blocks C + D + E/F/G are complete and REVIEWED PASS — prerequisite work for `OR.B`.** **Project E (specialization / ParallelNode merge) is now pulled forward to Wave 2** as the hard prerequisite for the new **`OR.Z`** (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows). **Plan reorganized 2026-06-27 (north-star Thread 2c):** see `master-plan.md` "North-Star Alignment (umbrella view)" + the new `OR.U`/`OR.W`/`OR.Z` — the three north-star tracks this repo now owns.
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
@@ -31,20 +31,20 @@ related: [context, master-plan]
 > Live queues (D30 / brain `docs/planning-conventions.md`). The `now`/`next`/`blocked` frontmatter
 > scalars above mirror the first three for glanceable cross-repo querying (Console Block V surfaces them).
 
-- **now** — Block H: swap the embedding provider to a local **Ollama `mxbai-embed-large`** (1024-dim → no
+- **now** — `OR.H`: swap the embedding provider to a local **Ollama `mxbai-embed-large`** (1024-dim → no
   migration) and run the free, repeatable `--rebuild` to populate the Brain vector store. Deferred to an
   at-home session; **not blocking** other work.
-- **next** — Block B (confirm `"brain"`-corpus semantic Q&A end-to-end) → Block O (widen corpus to all
+- **next** — `OR.B` (confirm `"brain"`-corpus semantic Q&A end-to-end) → `OR.O` (widen corpus to all
   sub-repo `planning/` + `CLAUDE.md`). Then the **Wave-2 priority**: Project E (`ParallelNode` merge fix)
-  → **Block Z** (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows — the HL2 graduation).
-- **blocked** — Block B's `--rebuild` waits on the at-home session (install Ollama + pull
+  → **`OR.Z`** (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows — the HL2 graduation).
+- **blocked** — `OR.B`'s `--rebuild` waits on the at-home session (install Ollama + pull
   `mxbai-embed-large` on the Mini). The FTS/`content_tsv` half is model-independent and already shipped.
 - **improve** — Project A follow-ups (the 5 items above) · harden Project B's `research_agent` (feeds
-  Block W external-intel + the HL3 Browser harness) · once **Block U** exists, repeated failures + eval
+  `OR.W` external-intel + the HL3 Browser harness) · once **`OR.U`** exists, repeated failures + eval
   gaps land there as the one-change self-improvement loop.
 - **recurring** — the SDLC harness gated checks per spec (`uv run python -m pytest` · `ruff` · `pylint
-  app/` 10.00/10). *Planned, not yet wired:* the Brain freshness loop (Block J, cron reindex) and the
-  external-intelligence sweep (Block W).
+  app/` 10.00/10). *Planned, not yet wired:* the Brain freshness loop (`OR.J`, cron reindex) and the
+  external-intelligence sweep (`OR.W`).
 
 ## Metrics
 
@@ -54,8 +54,7 @@ related: [context, master-plan]
 - **Blocks shipped this period:** brain-rag-improvements C + D (FTS + ANN infra) and E + F + G
   (pre-rebuild corpus/retrieval/indexer hardening).
 - **Intervention / retry rate:** recent specs PASS in 1 review attempt (E/F/G reviewed PASS, sweep applied).
-- **Reusable assets created:** the frontmatter indexer/enricher + graded-FTS retrieval (reused by Blocks
-  B/O); the `CLAUDE_CODE_SDK` + `CLAUDE_CODE_SESSION` providers (the seam **Block Z** builds on).
+- **Reusable assets created:** the frontmatter indexer/enricher + graded-FTS retrieval (reused by `OR.B`/`OR.O`); the `CLAUDE_CODE_SDK` + `CLAUDE_CODE_SESSION` providers (the seam **`OR.Z`** builds on).
 - **Days since last new capability block:** brain-rag-improvements G merged 2026-06-26.
 - **% of runs ending with an explicit next action:** 100% (each `/log-work` sets the next focus).
 
@@ -93,33 +92,33 @@ related: [context, master-plan]
 ### Phase 2 — Depth + First Paid Work
 | Item | What | Status | Notes |
 |---|---|---|---|
-| E | Specialization refactor | Not started | Fix ParallelNode merge gap here. **Bastion Wave 2 — pulled forward as Block Z's hard prerequisite** (the SDLC wave fan-out needs it); was Wave 4 ✲ |
-| F | Semantic search over corpus → **the Brain semantic layer** | Not started | **Reframed: F ≡ Block B (D36).** Mostly D's components, pointed at the `"brain"` corpus. **Bastion Wave 0** |
-| H | Model eval & routing harness → **the Eval + success-metrics engine** | Not started | **Reframed: H ≡ Block U (Thread 2c)** — elevated to the named Self-Improvement track. **Bastion Wave 4** |
+| E | Specialization refactor | Not started | Fix ParallelNode merge gap here. **Bastion Wave 2 — pulled forward as `OR.Z`'s hard prerequisite** (the SDLC wave fan-out needs it); was Wave 4 ✲ |
+| F | Semantic search over corpus → **the Brain semantic layer** | Not started | **Reframed: F ≡ `OR.B` (D36).** Mostly D's components, pointed at the `"brain"` corpus. **Bastion Wave 0** |
+| H | Model eval & routing harness → **the Eval + success-metrics engine** | Not started | **Reframed: H ≡ `OR.U` (Thread 2c)** — elevated to the named Self-Improvement track. **Bastion Wave 4** |
 | — | First paid diagnostic | Not started | Competence checkpoint **passed 2026-06-23**; gated only by a real prospect now |
 
 ### Phase 3 — The Differentiating Build
 | Project | What | Status | Notes |
 |---|---|---|---|
-| G | Agent memory system → **the Brain memory/entity capability** | Not started | **Reframed: G ≡ Block S (D36)** — clients/companies/products/SOPs as first-class entities, keyed by `workspace_id`. Read Honcho source first (D25). Two-stage: ingest-time fast extraction + dream-time consolidation. The centerpiece. **Bastion Wave 3** |
+| G | Agent memory system → **the Brain memory/entity capability** | Not started | **Reframed: G ≡ `OR.S` (D36)** — clients/companies/products/SOPs as first-class entities, keyed by `workspace_id`. Read Honcho source first (D25). Two-stage: ingest-time fast extraction + dream-time consolidation. The centerpiece. **Bastion Wave 3** |
 
 ### Bastion Program — Engine + Brain Blocks
-*This repo's Brain-side and cost-control work in the Bastion program. Block-contract detail lives in `master-plan.md` → "Bastion Program Blocks"; cross-repo order lives in the brain wave table. "Block X" = the same X in `agentic-portfolio/planning/bastion-product/master-plan.md`.*
+*This repo's Brain-side and cost-control work in the Bastion program. Block-contract detail lives in `master-plan.md` → "Bastion Program Blocks"; cross-repo order lives in the brain wave table.*
 
 | Block | Wave | What | Status | Notes |
 |---|---|---|---|---|
-| B | 0 | Semantic Brain over the company-brain corpus (populate store; confirm `"brain"` Q&A) | Not started | Absorbs Project F. Retrieval shipped in Project D; population pending |
-| O | 0 | Widen the index corpus to all sub-repo `planning/` + `CLAUDE.md` | Not started | Corpus-config change; per-repo corpora |
-| J | 0 | Brain freshness loop — auto-reindex on commit | Not started | With the brain repo (git hook); reuses the incremental indexer |
-| C | 1 | Multi-workspace Brain — per-repo / per-client corpora (Python half) | Not started | Shared "knowledge dir / workspace" convention with bastion's graph reader |
-| P | 1 | Semantic code search — source as a corpus | Not started | tree-sitter function/class chunking; per-repo code corpora |
-| I | 2 | Cost control — abort endpoint + server-side budget gate (Python half) | Not started | New D20 contract additions; bastion drives the CLI half |
-| S | 3 | Entity / memory layer — clients as first-class entities | Not started | = Project G reframed; heavier test bar applies |
-| L | 3 | Answer-time grounding — citation verify + abstain | Not started | Project D answer-path hardening |
-| R | 4 | Brain-as-MCP-server — Python server half of the MCP split | Not started | brain-rag Layer 3; bastion vendors the client |
-| Z | 2 | **sdlc-flow/sdlc-run → orchestrator-native nodes & workflows (HL2 graduation)** | Not started | ★ Brandon priority; needs **Project E** (ParallelNode merge) first; drives Claude Code via the shipped SDK/session providers; after Wave-0 unblock |
-| U | 4 | Eval + success-metrics engine (**absorbs Project H**) | Not started | Licenses Block X (trust); feeds Block V (Console metrics); Block Z's coding eval is its first slice |
-| W | 5 ✲ | External-intelligence loop + external-knowledge memory | Not started | `research_agent` specialization; routes candidates through Block U before adoption |
+| `OR.B` | 0 | Semantic Brain over the company-brain corpus (populate store; confirm `"brain"` Q&A) | Not started | Absorbs Project F. Retrieval shipped in Project D; population pending |
+| `OR.O` | 0 | Widen the index corpus to all sub-repo `planning/` + `CLAUDE.md` | Not started | Corpus-config change; per-repo corpora |
+| `OR.J` | 0 | Brain freshness loop — auto-reindex on commit | Not started | With the brain repo (git hook); reuses the incremental indexer |
+| `OR.C` | 1 | Multi-workspace Brain — per-repo / per-client corpora (Python half) | Not started | Shared "knowledge dir / workspace" convention with bastion's graph reader |
+| `OR.P` | 1 | Semantic code search — source as a corpus | Not started | tree-sitter function/class chunking; per-repo code corpora |
+| `OR.I` | 2 | Cost control — abort endpoint + server-side budget gate (Python half) | Not started | New D20 contract additions; bastion drives the CLI half |
+| `OR.S` | 3 | Entity / memory layer — clients as first-class entities | Not started | = Project G reframed; heavier test bar applies |
+| `OR.L` | 3 | Answer-time grounding — citation verify + abstain | Not started | Project D answer-path hardening |
+| `OR.R` | 4 | Brain-as-MCP-server — Python server half of the MCP split | Not started | brain-rag Layer 3; bastion vendors the client |
+| `OR.Z` | 2 | **sdlc-flow/sdlc-run → orchestrator-native nodes & workflows (HL2 graduation)** | Not started | ★ Brandon priority; needs **Project E** (ParallelNode merge) first; drives Claude Code via the shipped SDK/session providers; after Wave-0 unblock |
+| `OR.U` | 4 | Eval + success-metrics engine (**absorbs Project H**) | Not started | Licenses Block X (trust); feeds Block V (Console metrics); `OR.Z`'s coding eval is its first slice |
+| `OR.W` | 5 ✲ | External-intelligence loop + external-knowledge memory | Not started | `research_agent` specialization; routes candidates through `OR.U` before adoption |
 
 ### Supporting Infrastructure
 | Block | What | Status | Notes |
