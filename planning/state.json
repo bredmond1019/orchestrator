@@ -1,24 +1,53 @@
 {
   "repo": "orchestrator",
+  "kind": "project",
   "updated": "2026-06-29",
-  "now": "OR.H — Ollama local-embedding swap (mxbai-embed-large) + --rebuild; deferred to at-home Mac Mini session",
-  "next": "OR.B (semantic Brain Q&A E2E) → OR.O (widen corpus); then Wave-2: Project E → OR.Z (sdlc-as-nodes)",
-  "blocked": ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"],
+  "focus": {
+    "now": [
+      {
+        "block": "OR.H",
+        "title": "Ollama local-embedding swap (mxbai-embed-large) + --rebuild",
+        "status": "in_progress",
+        "note": "Deferred to an at-home Mac Mini session — needs the local Ollama install + model pull."
+      }
+    ],
+    "next": [
+      { "block": "OR.B", "title": "Semantic Brain Q&A end-to-end" },
+      { "block": "OR.O", "title": "Widen corpus (all sub-repo planning/ + CLAUDE.md)" }
+    ],
+    "blocked": [
+      {
+        "block": "OR.B",
+        "title": "Semantic Brain Q&A end-to-end",
+        "blocked_by": [
+          { "type": "block", "repo": "orchestrator", "id": "OR.H" },
+          { "type": "external", "what": "At-home session: install Ollama + pull mxbai-embed-large on the Mac Mini" }
+        ]
+      },
+      {
+        "block": "OR.O",
+        "title": "Widen corpus",
+        "blocked_by": [
+          { "type": "block", "repo": "orchestrator", "id": "OR.B" }
+        ]
+      }
+    ]
+  },
   "tracks": [
     {
       "title": "Wave 0 — Brain RAG foundation",
       "blocks": [
         { "id": "OR.H", "title": "Ollama local-embedding swap (mxbai-embed-large) + --rebuild", "status": "in_progress" },
-        { "id": "OR.B", "title": "semantic Brain Q&A end-to-end",                               "status": "blocked" },
-        { "id": "OR.O", "title": "widen corpus (all sub-repo planning/ + CLAUDE.md)",           "status": "blocked" }
+        { "id": "OR.B", "title": "Semantic Brain Q&A end-to-end", "status": "blocked" },
+        { "id": "OR.O", "title": "Widen corpus (all sub-repo planning/ + CLAUDE.md)", "status": "blocked" }
       ]
     },
     {
       "title": "Wave 2 — Engine evolution (north-star)",
       "blocks": [
-        { "id": "OR.E", "title": "ParallelNode merge fix (prerequisite for OR.Z)",                 "status": "open" },
-        { "id": "OR.Z", "title": "sdlc-flow/sdlc-run → orchestrator-native nodes + workflows",     "status": "open" },
-        { "id": "OR.U", "title": "automated self-improvement loop (eval gaps → OR.U)",             "status": "open" }
+        { "id": "OR.E", "title": "ParallelNode merge fix (prerequisite for OR.Z)", "status": "open" },
+        { "id": "OR.Z", "title": "sdlc-flow/sdlc-run → orchestrator-native nodes + workflows", "status": "open" },
+        { "id": "OR.U", "title": "Automated self-improvement loop (eval gaps → OR.U)", "status": "open" }
       ]
     }
   ]
