@@ -119,3 +119,7 @@ trees/
 # SDLC harness breadcrumbs (machine-local state — not committed)
 sdlc-state.json
 sdlc-block-state.json
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
