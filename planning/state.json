@@ -1,0 +1,25 @@
+{
+  "repo": "orchestrator",
+  "updated": "2026-06-29",
+  "now": "OR.H — Ollama local-embedding swap (mxbai-embed-large) + --rebuild; deferred to at-home Mac Mini session",
+  "next": "OR.B (semantic Brain Q&A E2E) → OR.O (widen corpus); then Wave-2: Project E → OR.Z (sdlc-as-nodes)",
+  "blocked": ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"],
+  "tracks": [
+    {
+      "title": "Wave 0 — Brain RAG foundation",
+      "blocks": [
+        { "id": "OR.H", "title": "Ollama local-embedding swap (mxbai-embed-large) + --rebuild", "status": "in_progress" },
+        { "id": "OR.B", "title": "semantic Brain Q&A end-to-end",                               "status": "blocked" },
+        { "id": "OR.O", "title": "widen corpus (all sub-repo planning/ + CLAUDE.md)",           "status": "blocked" }
+      ]
+    },
+    {
+      "title": "Wave 2 — Engine evolution (north-star)",
+      "blocks": [
+        { "id": "OR.E", "title": "ParallelNode merge fix (prerequisite for OR.Z)",                 "status": "open" },
+        { "id": "OR.Z", "title": "sdlc-flow/sdlc-run → orchestrator-native nodes + workflows",     "status": "open" },
+        { "id": "OR.U", "title": "automated self-improvement loop (eval gaps → OR.U)",             "status": "open" }
+      ]
+    }
+  ]
+}
