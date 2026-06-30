@@ -1,18 +1,18 @@
 ---
 type: Reference
 title: SDLC Workflow Nodes Design
-description: Structural blueprint for implementing sdlc-flow and sdlc-run workflows as Python-native Nodes and DAG configurations.
+description: Structural blueprint for implementing sdlc-flow and sdlc-run workflows as Python-native Nodes and DAG configurations, including model routing strategies.
 doc_id: sdlc-workflow-nodes-design
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [sdlc, workflows, nodes, design, flow, run]
-related: [readme, app-architecture-overview]
+keywords: [sdlc, workflows, nodes, design, flow, run, models]
+related: [readme, app-architecture-overview, node-model-comparison]
 ---
 
 # Design Specification: Python-Native Nodes for SDLC Workflows
 
-This document details the architectural design for implementing `sdlc-flow` and `sdlc-run` as native workflows under `app/workflows/` using the FastAPI/Celery orchestration system. 
+This document details the architectural design for implementing `sdlc-flow` and `sdlc-run` as native workflows under `app/workflows/` using the FastAPI/Celery orchestration system. It also outlines the strict model routing strategy (Cloud vs. Local) based on node complexity.
 
 ---
 
@@ -20,25 +20,52 @@ This document details the architectural design for implementing `sdlc-flow` and 
 
 Each stage of the SDLC pipeline maps to a concrete Python `Node` subclass. This structure enforces a clean separation of concerns, enables reuse (e.g., in other workflows), and allows per-node model routing.
 
-| Proposed Node Class | Base Class | Responsibility | AI/LLM Usage |
-| :--- | :--- | :--- | :--- |
-| `SetupWorktreeNode` | `Node` | Creates/locates sparse checkouts in `trees/` and sets up local port routing. | Deterministic (Git CLI) |
-| `GenerateTasksNode` | `AgentNode` | Generates a `tasks.md` spec if missing (planning fallback). | Yes (Frontier Model) |
-| `EnumerateTasksNode` | `Node` | Parses the `### N.` task headings from `tasks.md` and filters range. | Deterministic (Python parser) |
-| `LoadStateNode` | `Node` | Reads `sdlc-flow-state.json` to configure skips for already passed tasks. | Deterministic (JSON load) |
-| `SaveStateNode` | `Node` | Commits changes and writes the running state back to `sdlc-flow-state.json`. | Deterministic (JSON dump + Git) |
-| `UpdateTaskStatusNode` | `Node` | Surgically edits the `tasks.md` checkbox markers (`[ ]` to `[~]`, `[x]`, or `[fail]`). | Deterministic (Regex) |
-| `ImplementTaskNode` | `AgentNode` | Authors code modifications using the `ModelProvider.CLAUDE_CODE_SDK` seam. | Yes (Coding Model) |
-| `TestTaskNode` (Validate) | `Node` | Runs the test command, baseline diff, warning, and emoji gates. | Deterministic (Subprocess) |
-| `TriageTaskNode` | `RouterNode` | Analyzes test output to route to retry/fix loops or trigger a `MAJOR` bail. | Yes (Fast Classifier) |
-| `ConsolidatedReviewNode` | `AgentNode` | Performs final code review check over the complete diff vs criteria. | Yes (Frontier/Reasoning) |
-| `PatchDocsNode` | `AgentNode` | Surgically patches changed API surfaces in `docs/*.md` (Bootstrap mode if empty). | Yes (Writing Model) |
-| `WrapUpNode` | `AgentNode` | Appends log entries to `log.md` and updates `planning/status.md`. | Yes (Summarization Model) |
-| `PullRequestNode` (Merge) | `Node` | Commits remaining state, pushes branch, opens PR, and handles auto-merges. | Deterministic (Git/GitHub API) |
+| Proposed Node Class | Base Class | Responsibility | AI/LLM Usage | Target Model Tier |
+| :--- | :--- | :--- | :--- | :--- |
+| `SetupWorktreeNode` | `Node` | Creates/locates sparse checkouts in `trees/` and sets up local port routing. | Deterministic (Git CLI) | Haiku / 8B Local |
+| `GenerateTasksNode` | `AgentNode` | Generates a `tasks.md` spec if missing (planning fallback). | Yes (Frontier Model) | Opus / Pro |
+| `EnumerateTasksNode` | `Node` | Parses the `### N.` task headings from `tasks.md` and filters range. | Deterministic (Python parser) | Haiku / 8B Local |
+| `LoadStateNode` | `Node` | Reads `sdlc-flow-state.json` to configure skips for already passed tasks. | Deterministic (JSON load) | Haiku / 8B Local |
+| `SaveStateNode` | `Node` | Commits changes and writes the running state back to `sdlc-flow-state.json`. | Deterministic (JSON dump + Git) | Haiku / 8B Local |
+| `UpdateTaskStatusNode` | `Node` | Surgically edits the `tasks.md` checkbox markers (`[ ]` to `[~]`, `[x]`, or `[fail]`). | Deterministic (Regex) | Haiku / 8B Local |
+| `ImplementTaskNode` | `AgentNode` | Authors code modifications using the `ModelProvider.CLAUDE_CODE_SDK` seam. | Yes (Coding Model) | Sonnet / Pro |
+| `TestTaskNode` (Validate) | `Node` | Runs the test command, baseline diff, warning, and emoji gates. | Deterministic (Subprocess) | Haiku / 8B Local |
+| `TriageTaskNode` | `RouterNode` | Analyzes test output to route to retry/fix loops or trigger a `MAJOR` bail. | Yes (Fast Classifier) | Sonnet / 32B Local |
+| `ConsolidatedReviewNode` | `AgentNode` | Performs final code review check over the complete diff vs criteria. | Yes (Frontier/Reasoning) | Sonnet / Opus / Pro |
+| `PatchDocsNode` | `AgentNode` | Surgically patches changed API surfaces in `docs/*.md` (Bootstrap mode if empty). | Yes (Writing Model) | Sonnet / 32B Local |
+| `WrapUpNode` | `AgentNode` | Appends log entries to `log.md` and updates `planning/status.md`. | Yes (Summarization Model) | Sonnet / 32B Local |
+| `PullRequestNode` (Merge) | `Node` | Commits remaining state, pushes branch, opens PR, and handles auto-merges. | Deterministic (Git/GitHub API) | Haiku / 8B Local |
 
 ---
 
-## 2. Detailed Node Architecture
+## 2. Model Routing & Target Hardware Strategy
+
+Because SDLC operations range from highly complex software engineering to basic text parsing, the system heavily utilizes **per-node model assignment**. 
+
+### The Local Hardware Profiles
+* **M2 MacBook Pro (32GB RAM):** Capable of running models up to ~35B parameters (e.g., `Qwen2.5-32B`, ~20 GB). Do not run 70B models at 4-bit, as they will swap and degrade speed.
+* **M1 Mac Mini (16GB RAM):** Hard capped at ~12B parameters before swap (e.g., `Llama-3.1-8B-Instruct`, `Mistral-Nemo-12B`).
+
+### ✅ Safe for Mac Mini (16GB) - "The Utility Setup"
+If deploying a local worker on the Mac Mini, you can safely route the following deterministic/administrative nodes to **`Llama-3.1-8B-Instruct`**:
+* `SetupWorktreeNode`, `EnumerateTasksNode`, `TestTaskNode`, `UpdateTaskStatusNode`, `SaveStateNode`, `LoadStateNode`, `PullRequestNode`. 
+* *Why:* These nodes wrap basic CLI/Regex operations and extract JSON. An 8B model is perfectly capable and lightning fast.
+
+### ✅ Safe for MacBook Pro (32GB) - "The Contributor Setup"
+If deploying a local worker on the MBP, you unlock the ability to route mid-tier reasoning tasks to **`Qwen2.5-32B-Instruct`** (or `Command-R 35B`):
+* `TriageTaskNode` (Categorizing failures).
+* `PatchDocsNode` (Writing markdown documentation updates).
+* `WrapUpNode` (Synthesizing Git logs into human-readable prose).
+
+### ❌ ABSOLUTELY Cloud-Only (Do Not Run Locally)
+For production SDLC workflows, the following nodes **must** remain on Frontier Cloud models. Do not use local models for these:
+1. **`ImplementTaskNode` (Coding):** Writing production-grade software requires the deepest context windows and highest coding benchmarks. **Claude 3.5 Sonnet** is the absolute industry standard here. A local 32B model will struggle with complex multi-file architectural changes.
+2. **`ConsolidatedReviewNode` (LLM-as-a-judge):** Authoritative code review requires rigorous adherence to acceptance criteria and the ability to spot subtle logic bugs. Local models are prone to hallucinating a "pass". Keep this on **Claude 3.5 Sonnet** (escalating to **Opus** for final retries).
+3. **`GenerateTasksNode` (Planning):** Generating the architectural spec that drives the entire pipeline requires peak reasoning. **Claude 3 Opus** or **Gemini 1.5 Pro** should be used.
+
+---
+
+## 3. Detailed Node Architecture
 
 ### SetupWorktreeNode
 * **Inputs:** `spec_slug`, `branch_name`, `resume` flag.
@@ -131,7 +158,7 @@ Each stage of the SDLC pipeline maps to a concrete Python `Node` subclass. This 
 
 ---
 
-## 3. Workflow DAG Wiring
+## 4. Workflow DAG Wiring
 
 We can configure two main workflow classes under `app/workflows/`:
 

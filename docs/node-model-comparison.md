@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Node Model Comparison
-description: Assessment of best Cloud and Local LLMs for each orchestrator node.
+description: Assessment of best Cloud and Local LLMs for each orchestrator node, including storage requirements and hardware capabilities.
 doc_id: node-model-comparison
 layer: [engine]
 project: orchestrator
@@ -12,107 +12,89 @@ status: active
 
 This document assesses the LLM requirements for each node in the Python Orchestration System and recommends the most suitable models across three categories: **Google**, **Anthropic**, and **Local Alternatives**. 
 
-For local alternatives, we split the recommendations into two target hardware profiles:
-- **M2 MacBook Pro (32GB RAM)**: Capable of running quantized 30B-70B parameter models.
-- **M1 Mac Mini (16GB RAM)**: Limited to 7B-9B parameter models for responsive inference.
-
 *Note: Utility nodes (routers, fetchers, storage, chunking, etc.) that do not use LLMs directly are omitted from this comparison.*
 
 ---
 
-## 1. Content Pipeline Workflow
+## 1. Local Hardware Limits & The "Best Two" Models
 
-### SummarizerNode
-* **Requirement**: High-quality summarization, accurate structured output (JSON).
-* **Google**: **Gemini 1.5 Flash** (Fast, cheap, excellent at structured output).
-* **Anthropic**: **Claude 3 Haiku** (Very fast and cost-effective for basic summarization).
-* **Local (MBP 32GB)**: **Qwen2.5 32B-Instruct** (Excellent instruction following and JSON generation).
-* **Local (Mini 16GB)**: **Llama-3.1-8B-Instruct** (Fast and capable for structured extraction).
+Running local models depends heavily on Unified Memory (RAM). A model's size in GB (when using 4-bit quantization, the standard for Ollama/LM Studio) roughly dictates how much RAM it consumes. 
 
-### BlogWriterNode
-* **Requirement**: Long-form prose generation, tone/voice matching.
-* **Google**: **Gemini 1.5 Pro** (Stronger creative writing and tone adherence). *Tradeoff: Gemini 1.5 Flash is cheaper but might sound more generic.*
-* **Anthropic**: **Claude 3.5 Sonnet** (Best-in-class prose and voice matching).
-* **Local (MBP 32GB)**: **Command-R 35B** (Tuned for RAG and professional prose).
-* **Local (Mini 16GB)**: **Mistral-Nemo-12B** (Quantized to fit, punches above its weight in creative writing).
+### M2 MacBook Pro (32GB RAM)
+**Limit:** Can comfortably run models up to ~35B parameters (which take ~20-22 GB of RAM), leaving enough overhead for macOS and context windows. *Note: 70B models (like Llama-3-70B) take ~40 GB in 4-bit and will aggressively swap to disk on a 32GB machine, making them painfully slow.*
 
-### SelfCriticNode
-* **Requirement**: Analytical reasoning, critique against specific criteria.
-* **Google**: **Gemini 1.5 Pro** (Strong reasoning capabilities).
-* **Anthropic**: **Claude 3.5 Sonnet** (Excellent at nuanced critique). *Tradeoff: Claude 3 Haiku could be used for simple rule checks to save cost.*
-* **Local (MBP 32GB)**: **Llama-3-70B-Instruct** (Quantized 4-bit; best open-weight reasoning).
-* **Local (Mini 16GB)**: **Llama-3.1-8B-Instruct** (Best reasoning in the small weight class).
+**The Best Two Models (The "Go-To" Stack):**
+1. **Qwen2.5-32B-Instruct (~20 GB on disk):** Your heavy lifter. Excellent at reasoning, tool use, coding, and LLM-as-a-judge tasks.
+2. **Llama-3.1-8B-Instruct (~4.7 GB on disk):** Your fast utility model. Perfect for quick summarization, structuring JSON, and background tasks.
 
-### ReviseNode
-* **Requirement**: Precise instruction following and editing without rewriting from scratch.
-* **Google**: **Gemini 1.5 Pro** (Good at localized edits).
-* **Anthropic**: **Claude 3.5 Sonnet** (Follows revision instructions perfectly).
-* **Local (MBP 32GB)**: **Qwen2.5 32B-Instruct** (Strong at precise edits).
-* **Local (Mini 16GB)**: **Llama-3.1-8B-Instruct**.
+### M1 Mac Mini (16GB RAM)
+**Limit:** Can comfortably run models up to ~12B parameters (which take ~7-8 GB of RAM).
 
-### TranslatePtBrNode
-* **Requirement**: Translation accuracy and idiomatic Portuguese.
-* **Google**: **Gemini 1.5 Flash** (Google models are exceptionally good at translation natively).
-* **Anthropic**: **Claude 3.5 Sonnet** (Strong multilingual capabilities).
-* **Local (MBP 32GB)**: **Qwen2.5 32B-Instruct** or **Llama-3-70B-Instruct** (Both have solid multilingual training).
-* **Local (Mini 16GB)**: **Gemma-2-9B-It** (Good multilingual performance for its size).
+**The Best Two Models (The "Go-To" Stack):**
+1. **Llama-3.1-8B-Instruct (~4.7 GB on disk):** The absolute best all-rounder in the small weight class.
+2. **Mistral-Nemo-12B (~7.1 GB on disk):** A slightly heavier model that excels at long-context generation and creative prose (good for writing).
+
+*(Plus **mxbai-embed-large** which is ~670 MB for both machines to handle embeddings).*
 
 ---
 
-## 2. Proposal Generator & Research Agent Workflows
+## 2. Workflow Local Feasibility
 
-### CompanyResearchNode (ToolUseNode)
-* **Requirement**: Function calling/tool use (web search), reasoning to determine when to stop searching.
-* **Google**: **Gemini 1.5 Pro** (Excellent tool use).
-* **Anthropic**: **Claude 3.5 Sonnet** (Industry leader in agentic tool loops).
-* **Local (MBP 32GB)**: **Command-R 35B** (Explicitly trained for tool use and web search).
-* **Local (Mini 16GB)**: **Hermes-3-Llama-3.1-8B** (Fine-tuned specifically for tool calling).
+Since you can assign models on a per-node basis, you can mix and match. But if you wanted to run entirely local, here is how the hardware stacks up:
 
-### OpportunityIdentifierNode
-* **Requirement**: Analytical reasoning, synthesizing research into structured opportunities.
-* **Google**: **Gemini 1.5 Pro**. *Tradeoff: Gemini 1.5 Flash if cost is a concern, but might miss deeper insights.*
-* **Anthropic**: **Claude 3.5 Sonnet**.
-* **Local (MBP 32GB)**: **Llama-3-70B-Instruct** (Deep reasoning required here).
-* **Local (Mini 16GB)**: **Llama-3.1-8B-Instruct**.
+### ✅ Workflows Fine for Mac Mini (16GB)
+* **Document Ingest:** Doesn't require heavy reasoning, just embeddings (`mxbai`).
+* **Content Pipeline (Digest Only):** `Llama-3.1-8B` is perfectly capable of extracting bullet points, generating JSON, and summarizing articles/videos.
+* **Update Session Memory:** Background summarization of chat turns is easily handled by an 8B model.
 
-### ProposalWriterNode
-* **Requirement**: Professional business writing, strict adherence to formatting.
-* **Google**: **Gemini 1.5 Pro**.
-* **Anthropic**: **Claude 3.5 Sonnet**.
-* **Local (MBP 32GB)**: **Command-R 35B** or **Qwen2.5 32B-Instruct**.
-* **Local (Mini 16GB)**: **Mistral-Nemo-12B**.
+### ✅ Workflows Fine for MacBook Pro (32GB)
+* **Content Pipeline (Full Blog Branch):** `Qwen2.5-32B` can handle the `SelfCriticNode` and `BlogWriterNode` with excellent quality.
+* **Document Q&A (RAG):** `Qwen2.5-32B` has strong context adherence and grounding abilities for the `AnswerNode`.
+* **Research Agent:** `Qwen2.5-32B` is highly capable of driving a tool-calling loop (web search).
+* **Proposal Generator:** `Qwen2.5-32B` is smart enough to act as the `OpportunityIdentifier` and the `ProposalReviewNode`.
 
-### ProposalReviewNode & ProposalReviseNode
-* **Requirement**: Strict adherence to a rubric, structured evaluation (Pass/Revise).
-* **Google**: **Gemini 1.5 Pro** (Needs to avoid hallucinating passes).
-* **Anthropic**: **Claude 3.5 Sonnet**.
-* **Local (MBP 32GB)**: **Llama-3-70B-Instruct** (Needed for reliable LLM-as-a-judge).
-* **Local (Mini 16GB)**: **Llama-3.1-8B-Instruct** (May struggle with complex rubrics; monitor closely).
+### ❌ ABSOLUTELY Cloud-Only (Do Not Use Local)
+1. **Dream-Time Memory Consolidation (Project G):** As explicitly stated in your standing rules (*D35 named frontier-only exception*), this must stay on Claude. Weak local models will hallucinate "durable facts" with high confidence, which will silently corrupt your entire entity memory store downstream.
+2. **High-Stakes LLM-as-a-Judge (`ProposalReviewNode` for real clients):** While Qwen 32B is okay for practice, if you are gating an actual client proposal, a local model might "hallucinate a pass" on your rubric. **Claude 3.5 Sonnet** or **Gemini 1.5 Pro** should be used when the output represents your brand.
+3. **SDLC Code Generation and Review (`ImplementTaskNode`, `ConsolidatedReviewNode`):** Writing production-grade code autonomously and judging its correctness is an extremely high stakes task. While local 32B models can do basic bug fixes, full-scale feature work and authoritative reviews should remain on **Claude 3.5 Sonnet** (or Opus for escalation).
 
 ---
 
-## 3. Document Q&A (RAG) Workflow
+## 3. Node-by-Node Model Breakdown
 
-### AnswerNode
-* **Requirement**: Strict grounding in retrieved context, citation accuracy, and willingness to abstain ("I don't know").
-* **Google**: **Gemini 1.5 Pro** (Can handle massive contexts if needed, good at grounding). *Tradeoff: Gemini 1.5 Flash is excellent for RAG if the context is small and straightforward.*
-* **Anthropic**: **Claude 3.5 Sonnet** (Best at avoiding hallucinations and citing sources).
-* **Local (MBP 32GB)**: **Command-R 35B** (Explicitly trained for RAG and citations).
-* **Local (Mini 16GB)**: **Llama-3.1-8B-Instruct** (Prompt heavily to prevent hallucinations).
+### Content Pipeline Workflow
+| Node | Requirement | Google | Anthropic | Local (32GB Mac) | Local (16GB Mac) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **SummarizerNode** | Fast JSON structured output | Gemini 1.5 Flash | Claude 3 Haiku | Llama-3.1-8B (~4.7 GB) | Llama-3.1-8B (~4.7 GB) |
+| **BlogWriterNode** | Long-form prose, voice match | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Mistral-Nemo-12B (~7.1 GB) |
+| **SelfCriticNode** | Analytical reasoning, critique | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Llama-3.1-8B (~4.7 GB) |
+| **ReviseNode** | Precise instruction following | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Llama-3.1-8B (~4.7 GB) |
+| **TranslatePtBrNode** | Translation, idiomatic prose | Gemini 1.5 Flash | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Gemma-2-9B-It (~5.4 GB) |
 
-### UpdateSessionMemoryNode
-* **Requirement**: Fast summarization of conversational turns, updating structured JSON.
-* **Google**: **Gemini 1.5 Flash** (Perfect for fast background summarization).
-* **Anthropic**: **Claude 3 Haiku** (Fast and cheap).
-* **Local (MBP 32GB)**: **Llama-3.1-8B-Instruct** (Don't waste 32GB RAM on a background summarization task; use a smaller fast model).
-* **Local (Mini 16GB)**: **Llama-3.1-8B-Instruct** or **Qwen2.5-7B**.
+### Proposal Generator & Research Agent
+| Node | Requirement | Google | Anthropic | Local (32GB Mac) | Local (16GB Mac) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **CompanyResearch** | Web search tool use / loops | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Hermes-3-Llama-8B (~4.7 GB) |
+| **OpportunityIdentifier**| Synthesizing research | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Llama-3.1-8B (~4.7 GB) |
+| **ProposalWriter** | Business writing, formatting | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Mistral-Nemo-12B (~7.1 GB) |
+| **ProposalReview** | Strict rubric evaluation | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | *Cloud Recommended* |
 
----
+### Document Q&A (RAG)
+| Node | Requirement | Google | Anthropic | Local (32GB Mac) | Local (16GB Mac) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **AnswerNode** | Grounding, citation, abstain | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Llama-3.1-8B (Monitor closely) |
+| **UpdateSessionMemory**| Fast chat summarization | Gemini 1.5 Flash | Claude 3 Haiku | Llama-3.1-8B (~4.7 GB) | Llama-3.1-8B (~4.7 GB) |
 
-## 4. Services (Embeddings)
+### SDLC Workflows (sdlc-flow & sdlc-run)
+| Node | Requirement | Google | Anthropic | Local (32GB Mac) | Local (16GB Mac) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **GenerateTasksNode** | Planning, architectural layout | Gemini 1.5 Pro | Claude 3 Opus | Qwen2.5-32B (~20 GB) | *Cloud Recommended* |
+| **SetupWorktreeNode**<br>**EnumerateTasksNode**<br>**TestTaskNode** | Deterministic operations, basic JSON parsing | Gemini 1.5 Flash | Claude 3 Haiku | Llama-3.1-8B (~4.7 GB) | Llama-3.1-8B (~4.7 GB) |
+| **ImplementTaskNode**<br>**PatchDocsNode** | Autonomous coding, surgical editing | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Qwen2.5-7B-Coder (~4.2 GB) |
+| **ConsolidatedReviewNode**<br>**TriageTaskNode** | LLM-as-a-judge, complex code review | Gemini 1.5 Pro | Claude 3.5 Sonnet / Opus | Qwen2.5-32B (~20 GB) | *Cloud Recommended* |
+| **WrapUpNode** | Log writing, summary prose | Gemini 1.5 Pro | Claude 3.5 Sonnet | Qwen2.5-32B (~20 GB) | Llama-3.1-8B (~4.7 GB) |
 
-### EmbeddingService
-* **Requirement**: Vectorizing text for semantic search.
-* **Google**: **text-embedding-004** (Excellent multimodal and text embeddings).
-* **Anthropic**: *N/A* (Anthropic does not offer native embedding models. Voyage AI is the recommended partner).
-* **Local (MBP 32GB & Mini 16GB)**: **mxbai-embed-large** (1024-dim, excellent performance, runs easily via Ollama on both machines).
+### Shared Services
+| Service | Requirement | Google | Anthropic | Local (All Macs) |
+| :--- | :--- | :--- | :--- | :--- |
+| **EmbeddingService** | Semantic vectorization | text-embedding-004 | *Voyage AI* | mxbai-embed-large (~670 MB) |
