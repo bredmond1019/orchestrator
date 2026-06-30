@@ -10,6 +10,12 @@ description: Chronological log of work completed for the orchestrator.
 
 ---
 
+### 2026-06-30 (OR.Z task breakdown paused due to Opus quota)
+
+Generated task spec for OR.Z (`planning/sdlc-workflow-architecture/tasks.md`), decomposing the SDLC architectural migration into 10 incremental steps. While executing `/breakdown` on tasks 8 and 9, the Claude Opus API quota was exhausted (RESOURCE_EXHAUSTED code 429) during the subagent codebase pattern research. Pushed the environmental caveat to `planning/state.json` as a carryover. Wrote `planning/handoff.md` to pause the session and hand off to resume tomorrow when quota resets.
+
+---
+
 ### 2026-06-26 (brain-rag-improvements review PASS + pre-rebuild sweep)
 
 Independent review of brain-rag-improvements Blocks E/F/G completed with PASS verdict across all high-risk acceptance criteria: E4 header-strip guardrail (`_is_header_only_chunk()` measures body-only text correctly), F3 dual-shape keyword-search contract (graded FTS vs legacy ILIKE dispatch with full test coverage), F2 NULL-safe archived filter (explicit `include_archived` field threaded end-to-end with proper NULL-handling). Pre-rebuild sweep applied to `scripts/index_brain.py`: (1) `zip(final_chunks, embeddings, strict=True)` now fails loudly on Voyage count mismatch instead of silently truncating misaligned chunk↔embedding rows; (2) new `--limit N` flag (+test) enables Block H pre-rebuild write-path check via `--rebuild --limit 3` before the full paid pass; (3) dead `chunk_texts` variable removed — scripts/index_brain.py now ruff-clean. New implementation-report written to `../planning/brain-rag-improvements/implementation-report.md`. Validation: 791 passed / 8 skipped, ruff clean (app/ + scripts/), pylint 10.00/10, alembic single head e2f3a4b5c6d7. Next: one final independent sweep, then Block H (live `--rebuild`).
