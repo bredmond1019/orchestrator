@@ -99,7 +99,7 @@ three north-star tracks this repo owns — **U** (eval/metrics), **W** (external
 ## North-Star Alignment (umbrella view)
 
 > **Added 2026-06-27 (north-star Thread 2c).** The cross-repo program master-plan was reorganized around
-> the [north star](file:///Users/brandon/Dev/agentic-portfolio/planning/hq-restructure/north-star.md) into
+> the north star into
 > **7 capability tracks** (see `agentic-portfolio/planning/bastion-product/master-plan.md`). This section
 > maps **this repo's phases/projects onto those tracks** so the two plans read as one — **nothing here is
 > removed or renumbered**; the A–H project numbering is load-bearing (referenced across `status.md`,

@@ -1,3 +1,12 @@
+---
+type: Reference
+title: Synthesis
+description: Documentation for synthesis
+doc_id: synthesis
+layer: [meta]
+status: active
+---
+
 # Architectural Synthesis: SDLC Pipeline as Python-Native Workflow DAG
 
 This document synthesizes the transition from the legacy JavaScript-based `/sdlc-flow` execution engines and `adws` subprocess CLI wrappers into a native, high-performance Python orchestration engine. By leveraging the existing `app/core/nodes/` framework (FastAPI + Celery + DAG execution) and direct SDK integrations (`ClaudeCodeModel`), we establish a robust, state-machine-driven agentic SDLC.
