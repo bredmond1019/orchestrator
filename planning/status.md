@@ -6,8 +6,8 @@ doc_id: status
 layer: [engine]
 project: orchestrator
 status: active
-timestamp: "2026-06-27"
-now: "OR.H — local-embedding swap (Ollama mxbai-embed-large) + free --rebuild; unblocks OR.B (Wave 0)"
+timestamp: "2026-06-30"
+now: "OR.Z task breakdown (paused for quota reset) -> OR.H local-embedding swap"
 next: "OR.B semantic Brain → OR.O widen corpus; then Wave-2 priority Project E → OR.Z (sdlc-as-nodes)"
 blocked: ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
 keywords: [project status, current focus, Block H, local embeddings, Wave 0, capability tracks]

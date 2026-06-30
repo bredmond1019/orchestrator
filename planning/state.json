@@ -29,6 +29,15 @@
       }
     ]
   },
+  "carryover": [
+    {
+      "slug": "opus-quota-exhausted-breakdown",
+      "scope": "orchestrator",
+      "kind": "env",
+      "text": "The Opus quota (code 429 RESOURCE_EXHAUSTED) was reached while attempting to run a research subagent to gather patterns for the OR.Z task breakdown. Switched to Gemini to execute the handoff. The breakdown of OR.Z tasks 8 and 9 needs to be completed when quota resets.",
+      "created": "2026-06-30"
+    }
+  ],
   "tracks": [
     {
       "title": "Wave 0 — Brain RAG foundation",
