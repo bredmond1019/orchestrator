@@ -123,3 +123,8 @@ sdlc-block-state.json
 # Beads / Dolt files (added by bd init)
 .dolt/
 .beads-credential-key
+
+# Reference repositories
+reference-repos/
+reference-repos
+
