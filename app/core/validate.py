@@ -71,6 +71,18 @@ class WorkflowValidator:
     def _has_cycle(self) -> bool:
         """Detects cycles in the workflow graph using DFS.
 
+        Router nodes (``NodeConfig.is_router=True``) determine their actual
+        next node at *runtime* via ``BaseRouter.route()``, not by walking the
+        declared ``connections`` list (see ``Workflow._handle_router``). A
+        router's declared connections are therefore only the set of
+        *possible* destinations, not guaranteed structural edges, so a
+        declared back-edge through a router (e.g. a bounded retry loop) is
+        not a structural cycle and must not fail validation. This DFS skips
+        traversing a router node's own connections (its incoming edges from
+        upstream nodes are still checked normally), which is sufficient to
+        let router-mediated loops (bounded at runtime by e.g. max attempts)
+        pass while still catching any genuine cycle among non-router nodes.
+
         Returns:
             bool: True if a cycle is detected, False otherwise
         """
@@ -84,7 +96,7 @@ class WorkflowValidator:
             node_config = next(
                 (nc for nc in self.workflow_schema.nodes if nc.node == node), None
             )
-            if node_config:
+            if node_config and not node_config.is_router:
                 for neighbor in node_config.connections:
                     if neighbor not in visited:
                         if dfs(neighbor):
