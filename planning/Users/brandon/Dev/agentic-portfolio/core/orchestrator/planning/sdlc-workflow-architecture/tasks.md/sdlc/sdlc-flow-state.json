@@ -2,10 +2,10 @@
   "spec_slug": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/planning/sdlc-workflow-architecture/tasks.md",
   "branch": "tasks.md-flow",
   "started_at": "2026-07-01T14:11:25Z",
-  "updated_at": "2026-07-01T14:52:06Z",
+  "updated_at": "2026-07-01T15:04:11Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow",
   "status": "running",
-  "current_task": 7,
+  "current_task": 8,
   "tasks": {
     "1": {
       "status": "passed",
@@ -134,6 +134,34 @@
         "app/workflows/sdlc_flow_workflow_nodes/consolidated_review_node.py",
         "app/workflows/sdlc_flow_workflow_nodes/wrap_up_node.py",
         "tests/workflows/sdlc_flow/test_triage_task_node.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "8": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Implemented the four SDLC completion nodes (ConsolidatedReviewNode, ReviewRouterNode, PatchDocsNode, WrapUpNode, PullRequestNode) replacing Task 7's forward-declared placeholders, with their prompts and a full test suite.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Used model_name=\"claude-sonnet-5\" (current Sonnet-tier model per the claude-api skill's live catalog) instead of the deprecated claude-sonnet-4-20250514 that appeared literally in the breakdown doc.",
+        "ReviewRouterNode distinguishes 'minor' vs 'structural' FAIL/PARTIAL by issue count (>5 issues => structural => WrapUpNode; otherwise => ImplementTaskNode for re-implementation), since the spec only described the routing qualitatively.",
+        "PatchDocsNode collects modified_files from the single latest ImplementTaskNode entry in TaskContext.nodes (TaskContext only keeps one entry per node name, so true cross-run accumulation across retries isn't available without new state-accumulation plumbing, which is out of scope for Task 8).",
+        "Converting ConsolidatedReviewNode and WrapUpNode from Node placeholders to real AgentNode subclasses meant existing Task 7 router tests that instantiate them now need ANTHROPIC_API_KEY to construct the underlying pydantic-ai Agent even in routing-only tests; fixed via monkeypatch.setenv in the affected tests rather than changing the framework."
+      ],
+      "files_changed": [
+        "app/prompts/sdlc_review.j2",
+        "app/prompts/sdlc_patch_docs.j2",
+        "app/prompts/sdlc_wrap_up.j2",
+        "app/workflows/sdlc_flow_workflow_nodes/consolidated_review_node.py",
+        "app/workflows/sdlc_flow_workflow_nodes/review_router_node.py",
+        "app/workflows/sdlc_flow_workflow_nodes/patch_docs_node.py",
+        "app/workflows/sdlc_flow_workflow_nodes/wrap_up_node.py",
+        "app/workflows/sdlc_flow_workflow_nodes/pull_request_node.py",
+        "tests/workflows/sdlc_flow/test_completion_nodes.py",
+        "tests/workflows/sdlc_flow/test_triage_task_node.py",
+        "planning/sdlc-workflow-architecture/tasks.md"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -338,13 +366,37 @@
         "filesReadKb": null,
         "inTokEst": 1415,
         "outTok": 5356
+      },
+      {
+        "label": "update-task-8",
+        "model": "haiku",
+        "promptTokEst": 273,
+        "filesReadKb": null,
+        "inTokEst": 273,
+        "outTok": 1784
+      },
+      {
+        "label": "implement-8-1",
+        "model": "sonnet",
+        "promptTokEst": 999,
+        "filesReadKb": null,
+        "inTokEst": 999,
+        "outTok": 31629
+      },
+      {
+        "label": "test-8-1",
+        "model": "haiku",
+        "promptTokEst": 1415,
+        "filesReadKb": null,
+        "inTokEst": 1415,
+        "outTok": 4163
       }
     ],
     "total": {
-      "promptTokEst": 19983,
+      "promptTokEst": 22670,
       "filesReadKb": 0,
-      "inTokEst": 19983,
-      "outTok": 146164
+      "inTokEst": 22670,
+      "outTok": 183740
     }
   }
 }
