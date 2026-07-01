@@ -2,10 +2,10 @@
   "spec_slug": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/planning/sdlc-workflow-architecture/tasks.md",
   "branch": "tasks.md-flow",
   "started_at": "2026-07-01T14:11:25Z",
-  "updated_at": "2026-07-01T14:28:34Z",
+  "updated_at": "2026-07-01T14:34:24Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow",
   "status": "running",
-  "current_task": 4,
+  "current_task": 5,
   "tasks": {
     "1": {
       "status": "passed",
@@ -75,6 +75,24 @@
       "files_changed": [
         "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/workflows/sdlc_flow_workflow_nodes/test_task_node.py",
         "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/tests/workflows/sdlc_flow/test_test_task_node.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "5": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added UpdateTaskStatusNode, a deterministic node that reads TaskQueueRouterNode's current_task_id and TriageTaskNode's verdict, mutates the matching SDLCTask's status/attempt_count in the durable SDLCState (chaining off its own prior output across loop iterations, falling back to LoadTaskStateNode), and updates SDLCTelemetry counters — with 6 unit tests covering PASS/MAJOR_BAIL/RETRYABLE paths, task-not-found, cumulative telemetry, and unknown-verdict handling.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Contract for TriageTaskNode/TaskQueueRouterNode outputs (nodes that don't exist yet, built in later tasks 7/9) was defined here: {\"result\": {\"verdict\": \"PASS\"|\"RETRYABLE\"|\"MAJOR_BAIL\"}} and {\"result\": {\"current_task_id\": int}} respectively, matching the SDLCTriageVerdict enum values.",
+        "total_attempts telemetry counter increments on every call regardless of verdict (matches breakdown step 7 wording), while tasks_passed/tasks_failed only increment on PASS/MAJOR_BAIL and attempt_count only increments on RETRYABLE.",
+        "Left a pre-existing uncommitted change to app/core/nodes/parallel.py and a stray planning/Users/... directory (leftover from prior pipeline stages) untouched and unstaged — out of scope for Task 5."
+      ],
+      "files_changed": [
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/workflows/sdlc_flow_workflow_nodes/update_task_status_node.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/tests/workflows/sdlc_flow/test_update_task_status_node.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -207,13 +225,37 @@
         "filesReadKb": null,
         "inTokEst": 1415,
         "outTok": 4589
+      },
+      {
+        "label": "update-task-5",
+        "model": "haiku",
+        "promptTokEst": 273,
+        "filesReadKb": null,
+        "inTokEst": 273,
+        "outTok": 2305
+      },
+      {
+        "label": "implement-5-1",
+        "model": "sonnet",
+        "promptTokEst": 999,
+        "filesReadKb": null,
+        "inTokEst": 999,
+        "outTok": 9560
+      },
+      {
+        "label": "test-5-1",
+        "model": "haiku",
+        "promptTokEst": 1415,
+        "filesReadKb": null,
+        "inTokEst": 1415,
+        "outTok": 3987
       }
     ],
     "total": {
-      "promptTokEst": 11922,
+      "promptTokEst": 14609,
       "filesReadKb": 0,
-      "inTokEst": 11922,
-      "outTok": 81983
+      "inTokEst": 14609,
+      "outTok": 97835
     }
   }
 }
