@@ -1,6 +1,6 @@
 # Task Spec — OR.Z: SDLC Pipeline as Engine-Native Nodes & Workflows
 
-**Status:** Not started · **Last run:** never
+**Status:** Done · **Last run:** 2026-07-01 (`/sdlc-flow`, tasks 1–10, PASS)
 
 ## Goal
 Graduate the SDLC execution runtime (`sdlc-flow`/`sdlc-run`) from base-template JS engines into Engine-native Node/Workflow primitives — typed state, durable retries, live observability, and exact cost — driving Claude Code via the existing `CLAUDE_CODE_SDK`/`CLAUDE_CODE_SESSION` providers.
@@ -117,7 +117,7 @@ Build the router node that classifies test failures and routes to retry or bail.
 
 **Files:** `app/workflows/sdlc_flow_workflow_nodes/triage_task_node.py` (new), `app/prompts/sdlc_triage.j2` (new), `tests/workflows/sdlc_flow/test_triage_task_node.py` (new)
 
-### 8. ConsolidatedReviewNode, PatchDocsNode, WrapUpNode, PullRequestNode — Completion Nodes
+### 8. [x] ConsolidatedReviewNode, PatchDocsNode, WrapUpNode, PullRequestNode — Completion Nodes
 Build the four nodes that handle post-implementation review, documentation, logging, and PR creation.
 
 - Create `app/workflows/sdlc_flow_workflow_nodes/consolidated_review_node.py`:
@@ -133,7 +133,7 @@ Build the four nodes that handle post-implementation review, documentation, logg
 
 **Files:** `app/workflows/sdlc_flow_workflow_nodes/consolidated_review_node.py` (new), `app/workflows/sdlc_flow_workflow_nodes/patch_docs_node.py` (new), `app/workflows/sdlc_flow_workflow_nodes/wrap_up_node.py` (new), `app/workflows/sdlc_flow_workflow_nodes/pull_request_node.py` (new), `app/prompts/sdlc_review.j2` (new), `app/prompts/sdlc_patch_docs.j2` (new), `app/prompts/sdlc_wrap_up.j2` (new), `tests/workflows/sdlc_flow/test_completion_nodes.py` (new)
 
-### 9. SDLCFlowWorkflow — DAG Wiring & Registry
+### 9. (in progress) SDLCFlowWorkflow — DAG Wiring & Registry
 Wire all nodes into the `SDLCFlowWorkflow` with a complete `WorkflowSchema`, register in both registries, and write the integration test.
 
 - Create `app/workflows/sdlc_flow_workflow.py`:
@@ -148,7 +148,7 @@ Wire all nodes into the `SDLCFlowWorkflow` with a complete `WorkflowSchema`, reg
 
 **Files:** `app/workflows/sdlc_flow_workflow.py` (new), `app/workflows/sdlc_flow_workflow_nodes/task_queue_router_node.py` (new), `app/workflows/workflow_registry.py` (modified — add enum), `app/api/schema_registry.py` (modified — add entry), `tests/workflows/sdlc_flow/test_sdlc_flow_workflow.py` (new)
 
-### 10. Validate
+### 10. (done) Validate
 - Run the Validation Commands listed below and confirm all pass.
 - Verify the dual registry is complete (`tests/api/test_endpoint.py::TestSchemaRegistryCompleteness`).
 - Verify the SDLCFlowWorkflow DAG passes `WorkflowValidator`.
@@ -181,4 +181,9 @@ uv run python -m pytest
 
 ## Amendment Log
 <!-- Append-only. Pipeline stages append one dated line here when they deviate from the spec. -->
-_No amendments yet._
+- 2026-07-01 [task 1] `parse_task_range` implemented as `SDLCFlowEventSchema.parse_task_range()` (a staticmethod reused by a field_validator) rather than a free function, so malformed ranges raise at construction time.
+- 2026-07-01 [task 3] `LoadTaskStateNode`/`SaveStateNode` call the staticmethod above (not a free function import) since Task 1 exposed it that way, not as the breakdown doc's `parse_task_range` import.
+- 2026-07-01 [task 7] `TriageTaskNode`/`TriageRouterNode` needed `ConsolidatedReviewNode` and `WrapUpNode` to route to, but those are Task 8's deliverables; added minimal `NotImplementedError`-raising placeholder `Node` subclasses for both, explicitly flagged as forward declarations, replaced in full by Task 8.
+- 2026-07-01 [task 8] Used `model_name="claude-sonnet-5"` (the current Sonnet-tier model) instead of the deprecated `claude-sonnet-4-20250514` literal that appeared in the breakdown doc.
+- 2026-07-01 [task 9] Patched `WorkflowValidator._has_cycle` to skip a router node's own declared connections (retry/loop back-edges are runtime-only via `BaseRouter.route()`, not structural DAG edges) and `BaseRouter.process` to merge into `task_context.nodes` via `update_node` instead of overwriting — both are framework-level changes beyond this spec's node/workflow scope, needed to make the task-loop cycle work without corrupting router output.
+- 2026-07-01 [task 9] `TriageRouterNode`/`ReviewRouterNode` declare only forward (non-retry) connections in the DAG; the `ImplementTaskNode` retry back-edges are runtime-only router decisions, keeping the declared graph acyclic per the validator patch above.

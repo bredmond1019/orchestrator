@@ -253,7 +253,14 @@ Two checks run in sequence:
    function marks the node in both sets, recurses into each neighbor listed in
    `connections`, and removes the node from the recursion stack on the way back.
    If a neighbor is already in the recursion stack, a cycle is detected.
-   Raises `ValueError("Workflow schema contains a cycle")`.
+   Raises `ValueError("Workflow schema contains a cycle")`. Router nodes
+   (`NodeConfig.is_router=True`) determine their actual next node at *runtime* via
+   `BaseRouter.route()`, not by walking the declared `connections` list, so a
+   declared back-edge through a router (e.g. a bounded retry loop) is only a
+   *possible* destination, not a structural edge — the DFS skips traversing a
+   router node's own `connections` (its incoming edges from upstream nodes are
+   still checked normally), letting router-mediated loops pass validation while
+   still catching genuine cycles among non-router nodes.
 
 2. **Reachability check (`_get_reachable_nodes`)** — BFS starting from
    `workflow_schema.start`. Every node reachable by following `connections` edges
@@ -654,7 +661,10 @@ subclasses must define them as instance attributes.
 ```python
 def process(self, task_context: TaskContext) -> TaskContext:
     next_node = self.route(task_context)
-    task_context.nodes[self.node_name] = {"next_node": next_node.node_name if next_node else None}
+    task_context.update_node(
+        node_name=self.node_name,
+        next_node=next_node.node_name if next_node else None,
+    )
     return task_context
 ```
 
@@ -662,7 +672,12 @@ Writes the routing decision as `{"next_node": "<ClassName>"}` (or `{"next_node":
 router terminates a branch) under the router's own key in `task_context.nodes`, then returns the
 context. When `route()` returns `None` (e.g. `BlogDecisionRouterNode` on the digest-only path),
 `next_node.node_name` would crash — the guard records `None` instead and lets the workflow engine
-handle termination via `_handle_router()` returning `None`.
+handle termination via `_handle_router()` returning `None`. `process()` writes via
+`TaskContext.update_node` (a merge into the existing `{"result": ...}` dict for that node name)
+rather than a direct `task_context.nodes[self.node_name] = ...` assignment, so a
+`RouterNode.determine_next_node` implementation that stashes its own data on the router's node
+name via `update_node` (e.g. `TaskQueueRouterNode` recording the dispatched task's fields under
+its own `result` key) is preserved alongside the routing decision instead of being wiped out.
 
 #### `route(task_context: TaskContext) -> Node`
 
