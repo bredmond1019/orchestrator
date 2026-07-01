@@ -1,13 +1,11 @@
 """Unit tests for WorkflowValidator in app/core/validate.py."""
 
 import pytest
-from pydantic import BaseModel
-
 from core.nodes.base import Node
 from core.schema import NodeConfig, WorkflowSchema
 from core.task import TaskContext
 from core.validate import WorkflowValidator
-
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Stub helpers — minimal Node subclasses (satisfy the ABC only)
@@ -339,6 +337,80 @@ class TestHasCycleDirect:
         )
         validator = WorkflowValidator(schema)
         assert validator._has_cycle() is False
+
+
+# ---------------------------------------------------------------------------
+# Router-mediated back-edges — bounded runtime loops are not structural cycles
+# ---------------------------------------------------------------------------
+
+
+class TestRouterMediatedCycle:
+    def test_router_back_edge_is_not_a_structural_cycle(self):
+        """A → B → RouterC → [A, D] is not rejected: RouterC is a router.
+
+        RouterC's declared back-edge to A represents a *possible* runtime
+        route (e.g. a bounded retry loop), not a guaranteed structural edge,
+        so ``validate()`` must not raise even though the declared graph
+        contains a textual back-reference from RouterC to A.
+        """
+
+        class LoopNodeD(Node):
+            def process(self, task_context: TaskContext) -> TaskContext:
+                return task_context
+
+        schema = make_schema(
+            start=StubNodeA,
+            nodes=[
+                NodeConfig(node=StubNodeA, connections=[StubNodeB]),
+                NodeConfig(node=StubNodeB, connections=[StubRouterNode]),
+                NodeConfig(
+                    node=StubRouterNode,
+                    connections=[StubNodeA, LoopNodeD],
+                    is_router=True,
+                ),
+                NodeConfig(node=LoopNodeD),
+            ],
+        )
+        validator = WorkflowValidator(schema)
+        # Should not raise — the router's back-edge is runtime-only.
+        validator.validate()
+
+    def test_has_cycle_false_for_router_back_edge(self):
+        """_has_cycle() returns False directly for the same router back-edge graph."""
+
+        class LoopNodeE(Node):
+            def process(self, task_context: TaskContext) -> TaskContext:
+                return task_context
+
+        schema = make_schema(
+            start=StubNodeA,
+            nodes=[
+                NodeConfig(node=StubNodeA, connections=[StubNodeB]),
+                NodeConfig(node=StubNodeB, connections=[StubRouterNode]),
+                NodeConfig(
+                    node=StubRouterNode,
+                    connections=[StubNodeA, LoopNodeE],
+                    is_router=True,
+                ),
+                NodeConfig(node=LoopNodeE),
+            ],
+        )
+        validator = WorkflowValidator(schema)
+        assert validator._has_cycle() is False
+
+    def test_non_router_cycle_through_intermediate_node_still_raises(self):
+        """A genuine cycle among non-router nodes still raises, router or not."""
+        schema = make_schema(
+            start=StubNodeA,
+            nodes=[
+                NodeConfig(node=StubNodeA, connections=[StubNodeB]),
+                NodeConfig(node=StubNodeB, connections=[StubNodeC]),
+                NodeConfig(node=StubNodeC, connections=[StubNodeA], is_router=False),
+            ],
+        )
+        validator = WorkflowValidator(schema)
+        with pytest.raises(ValueError, match="cycle"):
+            validator.validate()
 
 
 # ---------------------------------------------------------------------------
