@@ -1,32 +1,30 @@
 ---
 type: Handoff
-created: 2026-06-30
+created: 2026-07-01
 ---
 
-# Handoff — OR.Z Task Generation and Breakdown (Paused)
+# Handoff — Project E (ParallelNode Fix) & Node Build Skill
 
 > **For the next agent:** Read this immediately after `/prime`. Delete this file once consumed.
 
 ## What we're doing and why
-We are generating the task breakdown for **OR.Z** (`sdlc-workflow-architecture` migration to Python-native nodes). The task generation phase completed successfully (`planning/sdlc-workflow-architecture/tasks.md` was created and committed), but the subsequent `/breakdown` of tasks 8 and 9 was paused because the Claude Opus quota was exhausted (RESOURCE_EXHAUSTED) while a subagent was researching codebase patterns to formulate precise steps. We are handing off to resume this breakdown tomorrow when quota resets.
+We paused the OR.Z task breakdown (which had stalled) and pulled forward the implementation of Project E: fixing `ParallelNode` to properly isolate and merge `TaskContext` across parallel threads. We also established a standard `.agents/skills/build-node` to enforce architectural invariants (like Static Model Tiering and correct context isolation) for all upcoming native workflow nodes.
 
 ## Completed this session
-- Initialized and gathered context on the SDLC migration plan (OR.Z block).
-- Wrote the 10-step task specification `planning/sdlc-workflow-architecture/tasks.md`.
-- Ran the self-check on the task specification and committed it (`9e69e89`).
-- Began the `/breakdown` of task 8 and task 9, but stalled on the research phase due to an Opus API quota limit.
-- Pushed the environmental caveat regarding the API quota to `state.json`.
+- Synthesized and relocated the workflow architecture docs into `planning/sdlc-workflow-architecture/synthesis.md` and `planning/sdlc-workflow-architecture/nodes-design.md`.
+- Created `.agents/skills/build-node/SKILL.md` establishing rules for building new Python-native nodes (AgentNode, RouterNode, ParallelNode).
+- Fixed `app/core/nodes/parallel.py` to deep copy the `TaskContext` per thread and cleanly merge the nested `.nodes` output array back into the parent context without race conditions.
+- Updated `tests/core/test_nodes_parallel.py` to thoroughly test thread isolation and output merging. All tests passed.
 
 ## Remaining work
-- Resume the `/breakdown` process for tasks 8 and 9 of `planning/sdlc-workflow-architecture/tasks.md`.
-- Specifically, research the existing implementation patterns for `AgentNode`, `BaseRouter`, `WorkflowSchema`, integration tests, and Prompt templates to write accurate, atomic sub-steps.
-- See `state.json` carryover `opus-quota-exhausted-breakdown`.
+- Resume the `/breakdown` of `planning/sdlc-workflow-architecture/tasks.md` (OR.Z track) now that the ParallelNode foundation is solid.
+- Alternatively, move on to Project H / Block U (Evaluation/Routing Harness) if prioritized.
 
 ## Open questions / choices
-None — clear to proceed once the model quota has reset.
+None — clear to proceed.
 
 ## Context the next agent needs
-See `state.json` carryover `opus-quota-exhausted-breakdown`.
+The `build-node` skill enforces critical standards for node development. All future node implementation should trigger or review this skill to avoid regression on thread safety and static model configurations.
 
 ## First command after `/prime`
 `/breakdown planning/sdlc-workflow-architecture/tasks.md`

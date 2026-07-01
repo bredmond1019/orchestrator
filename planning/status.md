@@ -6,9 +6,9 @@ doc_id: status
 layer: [engine]
 project: orchestrator
 status: active
-timestamp: "2026-06-30"
-now: "OR.Z task breakdown (paused for quota reset) -> OR.H local-embedding swap"
-next: "OR.B semantic Brain → OR.O widen corpus; then Wave-2 priority Project E → OR.Z (sdlc-as-nodes)"
+timestamp: "2026-07-01"
+now: "Project E (ParallelNode fix) DONE → OR.Z task breakdown resumption"
+next: "OR.H local-embedding swap → OR.B semantic Brain"
 blocked: ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
 keywords: [project status, current focus, Block H, local embeddings, Wave 0, capability tracks]
 related: [context, master-plan]
@@ -92,7 +92,7 @@ related: [context, master-plan]
 ### Phase 2 — Depth + First Paid Work
 | Item | What | Status | Notes |
 |---|---|---|---|
-| E | Specialization refactor | Not started | Fix ParallelNode merge gap here. **Bastion Wave 2 — pulled forward as `OR.Z`'s hard prerequisite** (the SDLC wave fan-out needs it); was Wave 4 ✲ |
+| E | Specialization refactor | Done | Fix ParallelNode merge gap here. **Bastion Wave 2 — pulled forward as `OR.Z`'s hard prerequisite** (the SDLC wave fan-out needs it); was Wave 4 ✲ |
 | F | Semantic search over corpus → **the Brain semantic layer** | Not started | **Reframed: F ≡ `OR.B` (D36).** Mostly D's components, pointed at the `"brain"` corpus. **Bastion Wave 0** |
 | H | Model eval & routing harness → **the Eval + success-metrics engine** | Not started | **Reframed: H ≡ `OR.U` (Thread 2c)** — elevated to the named Self-Improvement track. **Bastion Wave 4** |
 | — | First paid diagnostic | Not started | Competence checkpoint **passed 2026-06-23**; gated only by a real prospect now |
