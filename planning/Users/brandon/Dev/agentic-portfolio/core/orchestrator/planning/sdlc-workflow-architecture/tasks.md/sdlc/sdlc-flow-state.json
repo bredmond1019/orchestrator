@@ -1,0 +1,93 @@
+{
+  "spec_slug": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/planning/sdlc-workflow-architecture/tasks.md",
+  "branch": "tasks.md-flow",
+  "started_at": "2026-07-01T14:11:25Z",
+  "updated_at": "2026-07-01T14:11:25Z",
+  "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow",
+  "status": "running",
+  "current_task": 1,
+  "tasks": {
+    "1": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added app/schemas/sdlc_schema.py defining SDLCTask, SDLCFlowEventSchema (with task_range parsing/validation), SDLCState, SDLCTelemetry, and the SDLCTriageVerdict/SDLCReviewVerdict/SDLCTaskStatus enums, with 26 unit tests covering construction, validation, status transitions, task_range parsing, and round-trip serialization.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "task_range parsing implemented as a static method SDLCFlowEventSchema.parse_task_range() reused by a field_validator, so malformed ranges (e.g. 'abc' or '3-1') raise a Pydantic ValidationError at construction time rather than being silently accepted",
+        "global_status on SDLCState kept as a plain str (per spec) but defaulted to SDLCTaskStatus.PENDING.value to stay consistent with the task status vocabulary without over-constraining the field",
+        "Did not touch the pre-existing ruff W293/import-sort warnings in app/core/nodes/parallel.py — verified via git status/log they predate this task and are out of scope for Task 1"
+      ],
+      "files_changed": [
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/schemas/sdlc_schema.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/tests/schemas/test_sdlc_schema.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    }
+  },
+  "review": {
+    "verdict": null,
+    "findings": [],
+    "attempts": 0
+  },
+  "docs": {
+    "changed": [],
+    "created": []
+  },
+  "bail_reason": null,
+  "pr": {
+    "url": null,
+    "number": null
+  },
+  "tokens": {
+    "stages": [
+      {
+        "label": "worktree-setup",
+        "model": "haiku",
+        "promptTokEst": 930,
+        "filesReadKb": null,
+        "inTokEst": 930,
+        "outTok": 4296
+      },
+      {
+        "label": "enumerate",
+        "model": "haiku",
+        "promptTokEst": 244,
+        "filesReadKb": null,
+        "inTokEst": 244,
+        "outTok": 1827
+      },
+      {
+        "label": "update-task-1",
+        "model": "haiku",
+        "promptTokEst": 273,
+        "filesReadKb": null,
+        "inTokEst": 273,
+        "outTok": 1577
+      },
+      {
+        "label": "implement-1-1",
+        "model": "sonnet",
+        "promptTokEst": 999,
+        "filesReadKb": null,
+        "inTokEst": 999,
+        "outTok": 9815
+      },
+      {
+        "label": "test-1-1",
+        "model": "haiku",
+        "promptTokEst": 1415,
+        "filesReadKb": null,
+        "inTokEst": 1415,
+        "outTok": 11152
+      }
+    ],
+    "total": {
+      "promptTokEst": 3861,
+      "filesReadKb": 0,
+      "inTokEst": 3861,
+      "outTok": 28667
+    }
+  }
+}
