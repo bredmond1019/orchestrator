@@ -6,13 +6,13 @@ doc_id: workflows
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [workflow catalog, CONTENT_PIPELINE, DOCUMENT_QA, PRICE_SCOUT, event payload, curl]
+keywords: [workflow catalog, CONTENT_PIPELINE, DOCUMENT_QA, SDLC_FLOW, PRICE_SCOUT, event payload, curl]
 related: [api-reference, app-architecture-overview, data-contract]
 ---
 
 # Workflow Catalog
 
-Five production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
+Six production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
 
 **All requests require the `X-API-Key` header:**
 
@@ -331,6 +331,71 @@ curl -X POST http://localhost:8080/events/ \
     }
   }'
 ```
+
+---
+
+## 6. SDLC Flow (`SDLC_FLOW`)
+
+**What it does:** Drives a structured spec (`SDLCTask` list persisted as JSON) through a sequential implement → test → triage → review loop, task by task, in one shared git worktree — then patches docs, writes a wrap-up log, and opens a PR. Replaces markdown-based task parsing with the `SDLCState`/`SDLCTask` schema in `app/schemas/sdlc_schema.py`.
+
+**When to use:** To run an `/sdlc-flow`-style spec end to end as an orchestrated workflow rather than a manual slash-command sequence.
+
+**Node DAG:**
+
+```
+SetupWorktreeNode → LoadTaskStateNode → TaskQueueRouterNode (router)
+                                            │ (pending task)      │ (no tasks left)
+                                            v                     v
+                                      ImplementTaskNode      PatchDocsNode
+                                            │                     │
+                                            v                     v
+                                       TestTaskNode            WrapUpNode
+                                            │                     │
+                                            v                     v
+                                      TriageTaskNode        PullRequestNode
+                                            │
+                                            v
+                                 TriageRouterNode (router)
+                                  │ (PASS)      │ (MAJOR_BAIL)
+                                  v             v
+                       ConsolidatedReviewNode  WrapUpNode
+                                  │
+                                  v
+                        ReviewRouterNode (router)
+                        │ (PASS)      │ (structural FAIL)
+                        v             v
+              UpdateTaskStatusNode   WrapUpNode
+                        │
+                        v
+                  SaveStateNode
+                        │
+                        v (loops back for the next pending task)
+                TaskQueueRouterNode
+```
+
+`TriageRouterNode` also routes `RETRYABLE` back to `ImplementTaskNode`, and `ReviewRouterNode` also routes minor `FAIL`/`PARTIAL` back to `ImplementTaskNode` — both are runtime-only routing decisions (not declared `NodeConfig.connections` edges), so the declared graph stays acyclic for `WorkflowValidator` while the actual execution graph loops. See the module docstring in `app/workflows/sdlc_flow_workflow.py` for the full reasoning.
+
+**Event payload:**
+
+```json
+{
+  "workflow_type": "SDLC_FLOW",
+  "data": {
+    "spec_slug": "sdlc-workflow-architecture/tasks.md",
+    "task_range": "1-3",
+    "resume": false,
+    "auto_pr": true
+  }
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `spec_slug` | string | yes | Slug identifying the target spec directory |
+| `task_range` | string | no | e.g. `"1-3,5"` (1-indexed, inclusive); omit to run all tasks |
+| `resume` | bool | no (default: `false`) | Reattach to an existing worktree/state instead of creating a new one |
+| `auto_pr` | bool | no (default: `true`) | Whether to open a PR automatically once the run completes |
+| `branch_name` | string | no | Override for the git branch name; derived from `spec_slug` if unset |
 
 ---
 

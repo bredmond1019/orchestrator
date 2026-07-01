@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from core.nodes.base import Node
 from core.schema import NodeConfig
-from core.task import TaskContext, NodeStatus
+from core.task import NodeStatus, TaskContext
 
 
 class ParallelNode(Node, ABC):
@@ -26,18 +26,21 @@ class ParallelNode(Node, ABC):
                 future_list.append(future)
 
             results = [future.result() for future in future_list]
-            
+
         for result_context in results:
             for node_name, output in result_context.nodes.items():
                 if node_name not in task_context.nodes:
                     task_context.nodes[node_name] = output
                 else:
                     task_context.nodes[node_name].update(output)
-                    
+
             for node_name, run in result_context.node_runs.items():
-                if node_name not in task_context.node_runs or task_context.node_runs[node_name].status == NodeStatus.PENDING:
+                existing_run = task_context.node_runs.get(node_name)
+                should_update = (node_name not in task_context.node_runs or
+                                existing_run.status == NodeStatus.PENDING)
+                if should_update:
                     task_context.node_runs[node_name] = run
-                    
+
         return results
 
     @abstractmethod

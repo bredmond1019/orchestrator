@@ -27,6 +27,14 @@ class BaseRouter(Node):
     def process(self, task_context: TaskContext) -> TaskContext:
         """Processes the routing logic and updates task context.
 
+        Uses ``TaskContext.update_node`` (a merge) rather than a direct
+        ``task_context.nodes[self.node_name] = ...`` assignment, so that a
+        ``RouterNode.determine_next_node`` which stashes its own data on the
+        router's node name via ``update_node`` (e.g. ``TaskQueueRouterNode``
+        recording the dispatched task's fields under its own ``result`` key)
+        is preserved alongside the routing decision, instead of being wiped
+        out by this method running after ``route()``.
+
         Args:
             task_context: Current task execution context
 
@@ -34,9 +42,10 @@ class BaseRouter(Node):
             Updated TaskContext with routing decision recorded
         """
         next_node = self.route(task_context)
-        task_context.nodes[self.node_name] = {
-            "next_node": next_node.node_name if next_node else None
-        }
+        task_context.update_node(
+            node_name=self.node_name,
+            next_node=next_node.node_name if next_node else None,
+        )
         return task_context
 
     def route(self, task_context: TaskContext) -> Node:
