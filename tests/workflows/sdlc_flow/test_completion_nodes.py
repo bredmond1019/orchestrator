@@ -177,6 +177,14 @@ class TestReviewRouterNode:
         next_node = _ReviewVerdictRouter().determine_next_node(ctx)
         assert isinstance(next_node, WrapUpNode)
 
+    def test_routes_to_wrapup_on_fail_with_no_issues(self, monkeypatch):
+        # An empty issue list on a non-PASS verdict signals the model judged
+        # the diff fundamentally off-track — treated as structural, not minor.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        ctx = self._ctx_with_verdict("FAIL", issues=[])
+        next_node = _ReviewVerdictRouter().determine_next_node(ctx)
+        assert isinstance(next_node, WrapUpNode)
+
     def test_no_route_when_result_missing(self):
         ctx = TaskContext(event=_make_event())
         ctx.nodes["ConsolidatedReviewNode"] = {"result": None}

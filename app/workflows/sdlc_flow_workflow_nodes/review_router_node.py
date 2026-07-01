@@ -59,7 +59,8 @@ class _ReviewVerdictRouter(RouterNode):
         if verdict == SDLCReviewVerdict.PASS.value:
             return UpdateTaskStatusNode()
         if verdict in (SDLCReviewVerdict.FAIL.value, SDLCReviewVerdict.PARTIAL.value):
-            if len(issues or []) > _STRUCTURAL_ISSUE_THRESHOLD:
+            issues = issues or []
+            if not issues or len(issues) > _STRUCTURAL_ISSUE_THRESHOLD:
                 return WrapUpNode()
             return ImplementTaskNode()
         return None
