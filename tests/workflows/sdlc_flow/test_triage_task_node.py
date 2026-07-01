@@ -149,7 +149,11 @@ class TestTriageRouterNode:
         ctx.nodes["TriageTaskNode"] = {"result": {"verdict": verdict, "reason": "n/a"}}
         return ctx
 
-    def test_routes_to_review_on_pass(self):
+    def test_routes_to_review_on_pass(self, monkeypatch):
+        # ConsolidatedReviewNode is a real AgentNode (Task 8) — its
+        # constructor needs an API key to build the underlying pydantic-ai
+        # Agent, even though no model call happens in this routing test.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         ctx = self._ctx_with_verdict("PASS")
         next_node = _TriageVerdictRouter().determine_next_node(ctx)
         assert isinstance(next_node, ConsolidatedReviewNode)
@@ -159,7 +163,9 @@ class TestTriageRouterNode:
         next_node = _TriageVerdictRouter().determine_next_node(ctx)
         assert isinstance(next_node, ImplementTaskNode)
 
-    def test_routes_to_wrapup_on_major_bail(self):
+    def test_routes_to_wrapup_on_major_bail(self, monkeypatch):
+        # WrapUpNode is a real AgentNode (Task 8) — see comment above.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         ctx = self._ctx_with_verdict("MAJOR_BAIL")
         next_node = _TriageVerdictRouter().determine_next_node(ctx)
         assert isinstance(next_node, WrapUpNode)
@@ -170,7 +176,9 @@ class TestTriageRouterNode:
         next_node = _TriageVerdictRouter().determine_next_node(ctx)
         assert next_node is None
 
-    def test_router_process_records_next_node(self):
+    def test_router_process_records_next_node(self, monkeypatch):
+        # ConsolidatedReviewNode is a real AgentNode (Task 8) — see comment above.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
         ctx = self._ctx_with_verdict("PASS")
         router = TriageRouterNode()
         router.process(ctx)
