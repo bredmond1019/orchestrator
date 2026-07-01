@@ -20,6 +20,23 @@ Pulled forward Project E (ParallelNode specialization) while the OR.Z task break
 
 ---
 
+### 2026-07-01 (OR.Z shipped — sdlc-flow/sdlc-run graduated to orchestrator-native nodes & workflows)
+
+Drove `planning/sdlc-workflow-architecture/tasks.md` (OR.Z, the HL2 Coding & Delivery harness graduation) to completion via `/sdlc-flow`, all 10 tasks passing in 1 attempt each, final review verdict **PASS**. Implemented: `app/schemas/sdlc_schema.py` (SDLCTask/SDLCState/SDLCTelemetry/verdict enums, with task_range parsing); `SetupWorktreeNode` (deterministic git-worktree isolation, resume-aware); `LoadTaskStateNode`/`SaveStateNode` (JSON state persistence + git commit); `TestTaskNode` (dispatches `planning/harness.json` checks); `UpdateTaskStatusNode` (durable state mutation + telemetry); `ImplementTaskNode` (AgentNode driving Claude Code via `CLAUDE_CODE_SDK`, with a per-task rendered `sdlc_implement_task.j2` prompt); `TriageTaskNode`/`TriageRouterNode` (deterministic max-attempts short-circuit + LLM failure classification, PASS/RETRYABLE/MAJOR_BAIL routing); and the four completion nodes — `ConsolidatedReviewNode`, `ReviewRouterNode`, `PatchDocsNode`, `WrapUpNode`, `PullRequestNode` — replacing Task 7's forward-declared placeholders. `SDLCFlowWorkflow` wires all 14 nodes into one WorkflowSchema (setup → load state → task loop → triage → review → patch docs → wrap up → PR), registered in both `workflow_registry.py` and `schema_registry.py`. Notable decisions: patched `WorkflowValidator._has_cycle` to skip a router's own declared connections (retry/loop back-edges are runtime-only via `BaseRouter.route()`, not structural DAG edges) and `BaseRouter.process` to merge into `task_context.nodes` via `update_node` rather than overwrite; used current `claude-sonnet-5` instead of the deprecated model literal in the breakdown doc; deferred `SDLCBlockWorkflow` (wave fan-out via `ParallelNode`) as an explicit follow-on spec (needs Project E, already shipped, but the fan-out workflow itself is new scope). 906 tests pass / 8 skipped, ruff clean, pylint 10.00/10. Next: `OR.H` local-embedding swap (Ollama `mxbai-embed-large`) → `OR.B` semantic Brain population; `SDLCBlockWorkflow` follow-on spec whenever prioritized.
+
+```
+e7582dc chore: flow state — docs
+2b73563 docs: update docs for ./planning/sdlc-workflow-architecture/tasks.md
+8af4f64 chore: flow state — task 10 passed
+813323b feat: implement ./planning/sdlc-workflow-architecture/tasks.md-task10
+a95c01e chore: flow state — task 9 passed
+b8cb184 feat: implement ./planning/sdlc-workflow-architecture/tasks.md-task9
+2dd66c1 chore: flow state — task 8 passed
+683b167 feat: implement ./planning/sdlc-workflow-architecture/tasks.md-task8
+```
+
+---
+
 ### 2026-07-01 (Project E ParallelNode Fix & build-node Skill)
 
 Pulled forward Project E (ParallelNode specialization) while the OR.Z task breakdown was stalled. Created `.agents/skills/build-node/SKILL.md` to formalize architectural guardrails for new native nodes (Static Model Tiering, state isolation). Fixed race conditions in `app/core/nodes/parallel.py` by deep-copying `TaskContext` per thread and correctly merging the nested `.nodes` outputs in the parent context. Rewrote `tests/core/test_nodes_parallel.py` to assert thread isolation and output merging. All tests pass flawlessly. Next: resume OR.Z breakdown.
