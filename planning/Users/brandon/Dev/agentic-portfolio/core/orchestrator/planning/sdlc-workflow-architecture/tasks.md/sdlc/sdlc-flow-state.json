@@ -2,9 +2,9 @@
   "spec_slug": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/planning/sdlc-workflow-architecture/tasks.md",
   "branch": "tasks.md-flow",
   "started_at": "2026-07-01T14:11:25Z",
-  "updated_at": "2026-07-01T15:36:29Z",
+  "updated_at": "2026-07-01T15:40:48Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow",
-  "status": "docs",
+  "status": "done",
   "current_task": 10,
   "tasks": {
     "1": {
@@ -500,13 +500,21 @@
         "filesReadKb": null,
         "inTokEst": 829,
         "outTok": 12356
+      },
+      {
+        "label": "wrap-up",
+        "model": "sonnet",
+        "promptTokEst": 957,
+        "filesReadKb": null,
+        "inTokEst": 957,
+        "outTok": 10290
       }
     ],
     "total": {
-      "promptTokEst": 31304,
+      "promptTokEst": 32261,
       "filesReadKb": 0,
-      "inTokEst": 31304,
-      "outTok": 280960
+      "inTokEst": 32261,
+      "outTok": 291250
     }
   }
 }

@@ -52,3 +52,6 @@ Validated: gating checks (fast tripwire)
 
 ## Docs
 Patched: docs/api-reference.md, docs/workflows.md
+
+## Wrap-up — PASS
+Next: OR.H local-embedding swap (Ollama mxbai-embed-large) → OR.B semantic Brain population; SDLCBlockWorkflow (wave fan-out) follow-on spec whenever prioritized
