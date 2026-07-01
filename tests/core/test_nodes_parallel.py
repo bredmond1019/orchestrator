@@ -286,7 +286,7 @@ class TestExceptionPropagates:
 
 
 # ---------------------------------------------------------------------------
-# 4. Document the known gap: results list is discarded (deferred to Project E)
+# 4. Merging isolated contexts (Project E fix)
 # ---------------------------------------------------------------------------
 
 
@@ -295,21 +295,23 @@ class _ReturnsValueNode(Node):
 
     def process(self, task_context: TaskContext) -> TaskContext:
         task_context.update_node("ValueNode", result=42)
-        return task_context  # the return value is what ends up in future.result()
+        return task_context
 
 
-class TestResultsListBehavior:
-    def test_execute_nodes_in_parallel_returns_results_list(self):
+class _ModifyEventNode(Node):
+    """Modifies the event to prove isolation; the change should not leak back."""
+    
+    def process(self, task_context: TaskContext) -> TaskContext:
+        if isinstance(task_context.event, dict):
+            task_context.event["modified"] = True
+        return task_context
+
+
+class TestMergeBehavior:
+    def test_execute_nodes_in_parallel_merges_isolated_contexts(self):
         """
-        execute_nodes_in_parallel returns a list of futures' results.
-
-        NOTE (known gap — fixed in Project E):
-        The caller's process() method currently discards this return value.
-        Parallel nodes must therefore write their outputs directly into
-        task_context (shared-state mutation) rather than returning them.
-        When Project E introduces proper result aggregation, this test should
-        be updated to assert that the aggregated results are surfaced correctly
-        instead of being discarded.
+        execute_nodes_in_parallel returns a list of futures' results,
+        and aggregates the results back into the main context's nodes dictionary.
         """
         node_config = NodeConfig(
             node=_DiscardResultsParallelNode,
@@ -321,39 +323,33 @@ class TestResultsListBehavior:
         )
 
         node = _DiscardResultsParallelNode()
-        # Call execute_nodes_in_parallel directly to inspect the return value
         results = node.execute_nodes_in_parallel(ctx)
 
-        # The list is returned by execute_nodes_in_parallel …
+        # The list of isolated contexts is returned
         assert isinstance(results, list)
         assert len(results) == 1
 
-        # … but process() discards it.  The only way to observe the output is
-        # via the shared task_context — documenting the current behavior.
-        # FIXED IN PROJECT E: aggregate return values from parallel nodes
-        # instead of relying on shared-context mutation.
+        # The main task_context now has the successfully merged output
         assert ctx.nodes["ValueNode"] == {"result": 42}
 
-    def test_shared_context_mutation_is_the_only_output_channel(self):
+    def test_task_context_is_isolated_per_thread(self):
         """
-        Parallel nodes must write results to task_context directly.
-
-        This test documents that the results list returned by
-        execute_nodes_in_parallel is discarded by process(), so the shared
-        TaskContext is the only output channel available to parallel nodes.
-
-        FIXED IN PROJECT E: parallel nodes should return values that are
-        aggregated by the orchestrator rather than mutating shared state.
+        Parallel nodes operate on deep copies of TaskContext.
+        Mutations (e.g. to event) do not leak back to the main context,
+        only nodes and node_runs are explicitly merged.
         """
-        ctx = _make_context(
-            _AllThreeParallelNode,
-            [_WriteAlphaNode, _WriteBetaNode],
+        node_config = NodeConfig(
+            node=_ConcurrentParallelNode,
+            parallel_nodes=[_ModifyEventNode, _WriteAlphaNode],
         )
-        node = _AllThreeParallelNode()
-        return_value = node.process(ctx)
-
-        # process() returns task_context (not the results list)
-        assert return_value is ctx
-        # outputs are only visible via ctx.nodes
-        assert "Alpha" in ctx.nodes
-        assert "Beta" in ctx.nodes
+        ctx = TaskContext(
+            event={"original": True},
+            metadata={"nodes": {_ConcurrentParallelNode: node_config}},
+        )
+        node = _ConcurrentParallelNode()
+        node.execute_nodes_in_parallel(ctx)
+        
+        # The main context event shouldn't be touched by the parallel threads
+        assert ctx.event.get("modified") is None
+        # The explicit output (nodes) should still be merged
+        assert ctx.nodes["Alpha"] == {"ran": True}
