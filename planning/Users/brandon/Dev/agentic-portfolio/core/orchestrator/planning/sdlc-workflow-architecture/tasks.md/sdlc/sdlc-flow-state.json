@@ -2,10 +2,10 @@
   "spec_slug": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/planning/sdlc-workflow-architecture/tasks.md",
   "branch": "tasks.md-flow",
   "started_at": "2026-07-01T14:11:25Z",
-  "updated_at": "2026-07-01T15:04:11Z",
+  "updated_at": "2026-07-01T15:22:39Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow",
   "status": "running",
-  "current_task": 8,
+  "current_task": 9,
   "tasks": {
     "1": {
       "status": "passed",
@@ -162,6 +162,32 @@
         "tests/workflows/sdlc_flow/test_completion_nodes.py",
         "tests/workflows/sdlc_flow/test_triage_task_node.py",
         "planning/sdlc-workflow-architecture/tasks.md"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "9": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "SDLCFlowWorkflow now wires all 14 sdlc_flow nodes into one WorkflowSchema (setup -> load state -> task loop -> patch docs -> wrap up -> PR), registered in both WorkflowRegistry and SCHEMA_MAP, with the task-loop and retry back-edges expressed as runtime-only router decisions.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Patched WorkflowValidator._has_cycle to skip traversing a router node's own declared connections (router back-edges are runtime-only via BaseRouter.route(), not structural DAG edges) — added targeted tests in tests/core/test_validate.py rather than reworking the DAG shape.",
+        "Patched BaseRouter.process to merge into task_context.nodes via update_node instead of overwriting the router's own entry outright — required so TaskQueueRouterNode can stash the dispatched task's fields under its own 'result' key without a later 'next_node' write wiping it (all downstream sdlc_flow nodes already read TaskQueueRouterNode's 'result' per the Task 6-8 contract).",
+        "TriageRouterNode/ReviewRouterNode declare only their forward (non-retry) connections; the ImplementTaskNode retry back-edges are runtime-only, keeping the declared graph acyclic while satisfying reachability via TaskQueueRouterNode's declared connections.",
+        "Integration test patches subprocess.run at the single shared stdlib module attribute (not per-importing-module) since all sdlc_flow nodes import the same `subprocess` module object — separate per-module patches on the same underlying attribute would silently clobber each other.",
+        "Reverted an over-broad `ruff check --fix app/ tests/` run that reformatted ~40 unrelated files across the repo; kept only the fixes in files actually touched for Task 9."
+      ],
+      "files_changed": [
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/workflows/sdlc_flow_workflow.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/workflows/sdlc_flow_workflow_nodes/task_queue_router_node.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/workflows/workflow_registry.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/api/schema_registry.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/core/validate.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/core/nodes/router.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/tests/core/test_validate.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/tests/workflows/sdlc_flow/test_sdlc_flow_workflow.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -390,13 +416,37 @@
         "filesReadKb": null,
         "inTokEst": 1415,
         "outTok": 4163
+      },
+      {
+        "label": "update-task-9",
+        "model": "haiku",
+        "promptTokEst": 273,
+        "filesReadKb": null,
+        "inTokEst": 273,
+        "outTok": 1805
+      },
+      {
+        "label": "implement-9-1",
+        "model": "sonnet",
+        "promptTokEst": 999,
+        "filesReadKb": null,
+        "inTokEst": 999,
+        "outTok": 58785
+      },
+      {
+        "label": "test-9-1",
+        "model": "haiku",
+        "promptTokEst": 1415,
+        "filesReadKb": null,
+        "inTokEst": 1415,
+        "outTok": 7206
       }
     ],
     "total": {
-      "promptTokEst": 22670,
+      "promptTokEst": 25357,
       "filesReadKb": 0,
-      "inTokEst": 22670,
-      "outTok": 183740
+      "inTokEst": 25357,
+      "outTok": 251536
     }
   }
 }

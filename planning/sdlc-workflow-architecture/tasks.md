@@ -133,7 +133,7 @@ Build the four nodes that handle post-implementation review, documentation, logg
 
 **Files:** `app/workflows/sdlc_flow_workflow_nodes/consolidated_review_node.py` (new), `app/workflows/sdlc_flow_workflow_nodes/patch_docs_node.py` (new), `app/workflows/sdlc_flow_workflow_nodes/wrap_up_node.py` (new), `app/workflows/sdlc_flow_workflow_nodes/pull_request_node.py` (new), `app/prompts/sdlc_review.j2` (new), `app/prompts/sdlc_patch_docs.j2` (new), `app/prompts/sdlc_wrap_up.j2` (new), `tests/workflows/sdlc_flow/test_completion_nodes.py` (new)
 
-### 9. SDLCFlowWorkflow — DAG Wiring & Registry
+### 9. (in progress) SDLCFlowWorkflow — DAG Wiring & Registry
 Wire all nodes into the `SDLCFlowWorkflow` with a complete `WorkflowSchema`, register in both registries, and write the integration test.
 
 - Create `app/workflows/sdlc_flow_workflow.py`:
