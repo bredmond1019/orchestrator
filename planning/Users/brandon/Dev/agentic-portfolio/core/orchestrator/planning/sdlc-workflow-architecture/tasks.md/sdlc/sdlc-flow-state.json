@@ -2,10 +2,10 @@
   "spec_slug": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/planning/sdlc-workflow-architecture/tasks.md",
   "branch": "tasks.md-flow",
   "started_at": "2026-07-01T14:11:25Z",
-  "updated_at": "2026-07-01T14:42:45Z",
+  "updated_at": "2026-07-01T14:52:06Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow",
   "status": "running",
-  "current_task": 6,
+  "current_task": 7,
   "tasks": {
     "1": {
       "status": "passed",
@@ -112,6 +112,28 @@
         "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/prompts/sdlc_implement_task.j2",
         "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/app/workflows/sdlc_flow_workflow_nodes/implement_task_node.py",
         "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow/tests/workflows/sdlc_flow/test_implement_task_node.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "7": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added TriageTaskNode (AgentNode, Sonnet-tier failure classifier with deterministic max_attempts short-circuit) and TriageRouterNode (BaseRouter routing PASS/RETRYABLE/MAJOR_BAIL to ConsolidatedReviewNode/ImplementTaskNode/WrapUpNode), plus the sdlc_triage.j2 prompt and full unit test coverage.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Followed the codebase's ProposalReviewNode/ProposalReviewRouterNode split (per the breakdown.md guidance): TriageTaskNode is a plain AgentNode that emits a verdict; TriageRouterNode/_TriageVerdictRouter is a separate BaseRouter/RouterNode that reads the verdict and instantiates the next node — the BaseRouter pattern in this codebase is deterministic, not an LLM caller.",
+        "max_attempts enforcement is deterministic (no model call) inside TriageTaskNode.process(): all_passed short-circuits to PASS, attempt_count >= max_attempts short-circuits to MAJOR_BAIL; only genuine ambiguous failures go to the LLM.",
+        "Task 8's ConsolidatedReviewNode and WrapUpNode don't exist yet in this sequential worktree, but TriageRouterNode must import and instantiate them to route. Created minimal placeholder Node subclasses (raise NotImplementedError in process()) for both, clearly docstring-flagged as Task 8 forward declarations to be replaced by that task's real implementation — this was necessary for TriageRouterNode's local imports and the router unit tests (isinstance checks) to work, not an implementation of Task 8's actual logic.",
+        "Added a duplicate-code pylint disable comment (matching the existing convention in proposal_review_node.py) since TriageTaskNode's AgentConfig/run_agent_recorded boilerplate trips R0801 against ImplementTaskNode."
+      ],
+      "files_changed": [
+        "app/prompts/sdlc_triage.j2",
+        "app/workflows/sdlc_flow_workflow_nodes/triage_task_node.py",
+        "app/workflows/sdlc_flow_workflow_nodes/consolidated_review_node.py",
+        "app/workflows/sdlc_flow_workflow_nodes/wrap_up_node.py",
+        "tests/workflows/sdlc_flow/test_triage_task_node.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -292,13 +314,37 @@
         "filesReadKb": null,
         "inTokEst": 1415,
         "outTok": 6631
+      },
+      {
+        "label": "update-task-7",
+        "model": "haiku",
+        "promptTokEst": 273,
+        "filesReadKb": null,
+        "inTokEst": 273,
+        "outTok": 1877
+      },
+      {
+        "label": "implement-7-1",
+        "model": "sonnet",
+        "promptTokEst": 999,
+        "filesReadKb": null,
+        "inTokEst": 999,
+        "outTok": 19643
+      },
+      {
+        "label": "test-7-1",
+        "model": "haiku",
+        "promptTokEst": 1415,
+        "filesReadKb": null,
+        "inTokEst": 1415,
+        "outTok": 5356
       }
     ],
     "total": {
-      "promptTokEst": 17296,
+      "promptTokEst": 19983,
       "filesReadKb": 0,
-      "inTokEst": 17296,
-      "outTok": 119288
+      "inTokEst": 19983,
+      "outTok": 146164
     }
   }
 }
