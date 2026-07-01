@@ -117,7 +117,7 @@ Build the router node that classifies test failures and routes to retry or bail.
 
 **Files:** `app/workflows/sdlc_flow_workflow_nodes/triage_task_node.py` (new), `app/prompts/sdlc_triage.j2` (new), `tests/workflows/sdlc_flow/test_triage_task_node.py` (new)
 
-### 8. ConsolidatedReviewNode, PatchDocsNode, WrapUpNode, PullRequestNode — Completion Nodes
+### 8. [x] ConsolidatedReviewNode, PatchDocsNode, WrapUpNode, PullRequestNode — Completion Nodes
 Build the four nodes that handle post-implementation review, documentation, logging, and PR creation.
 
 - Create `app/workflows/sdlc_flow_workflow_nodes/consolidated_review_node.py`:
