@@ -148,7 +148,7 @@ Wire all nodes into the `SDLCFlowWorkflow` with a complete `WorkflowSchema`, reg
 
 **Files:** `app/workflows/sdlc_flow_workflow.py` (new), `app/workflows/sdlc_flow_workflow_nodes/task_queue_router_node.py` (new), `app/workflows/workflow_registry.py` (modified — add enum), `app/api/schema_registry.py` (modified — add entry), `tests/workflows/sdlc_flow/test_sdlc_flow_workflow.py` (new)
 
-### 10. Validate
+### 10. (done) Validate
 - Run the Validation Commands listed below and confirm all pass.
 - Verify the dual registry is complete (`tests/api/test_endpoint.py::TestSchemaRegistryCompleteness`).
 - Verify the SDLCFlowWorkflow DAG passes `WorkflowValidator`.
