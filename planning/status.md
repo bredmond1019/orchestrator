@@ -7,7 +7,7 @@ layer: [engine]
 project: orchestrator
 status: active
 timestamp: "2026-07-01"
-now: "Project E (ParallelNode fix) DONE → OR.Z task breakdown resumption"
+now: "OR.Z (sdlc-flow → orchestrator-native nodes & workflows) DONE — all 10 tasks, reviewed PASS"
 next: "OR.H local-embedding swap → OR.B semantic Brain"
 blocked: ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
 keywords: [project status, current focus, Block H, local embeddings, Wave 0, capability tracks]
@@ -19,8 +19,8 @@ related: [context, master-plan]
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-06-26 — `OR.H` attempted against live Postgres: schema confirmed migrated, `--dry-run` (109 files, zero warnings) + `--rebuild --limit 3` write-path check both passed; full `--rebuild` blocked by Voyage free-tier rate limit (3 RPM, no payment method). **Decision: switch to local `mxbai-embed-large` via Ollama** (1024-dim → no migration, free, repeatable). `OR.H` paused pending that local-embedding swap — **not blocking** other work.
-**Current focus (demand-first, per the brain wave table):** Wave 0 — (1) finish the private Tailscale face, then (2) **`OR.H` — now a local-embedding swap + free `--rebuild`** (Voyage free-tier rate-limited the pass on 2026-06-26; schema already migrated and write-path verified): install Ollama on the Mini → `ollama pull mxbai-embed-large` → repoint `EmbeddingService` (1024-dim = no migration) at the Ollama embeddings endpoint → `--rebuild` (now free, repeatable) → smoke tests. **Blocks C + D + E/F/G are complete and REVIEWED PASS — prerequisite work for `OR.B`.** **Project E (specialization / ParallelNode merge) is now pulled forward to Wave 2** as the hard prerequisite for the new **`OR.Z`** (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows). **Plan reorganized 2026-06-27 (north-star Thread 2c):** see `master-plan.md` "North-Star Alignment (umbrella view)" + the new `OR.U`/`OR.W`/`OR.Z` — the three north-star tracks this repo now owns.
+**Last updated:** 2026-07-01 — `OR.Z` (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows, the HL2 graduation) shipped via `/sdlc-flow`: all 10 tasks passed, 1 attempt each, final review verdict **PASS**. `SDLCFlowWorkflow` now composes 14 nodes into one WorkflowSchema (setup worktree → load/save state → task loop → triage → consolidated review → patch docs → wrap up → PR), registered in both `workflow_registry.py` and `schema_registry.py`, driving Claude Code via the existing `CLAUDE_CODE_SDK`/`CLAUDE_CODE_SESSION` providers. `SDLCBlockWorkflow` (wave fan-out via `ParallelNode`) remains an explicit follow-on spec, per the original out-of-scope note.
+**Current focus (demand-first, per the brain wave table):** `OR.Z` is done — next up is Wave 0: (1) finish the private Tailscale face, then (2) **`OR.H` — a local-embedding swap + free `--rebuild`** (Voyage free-tier rate-limited the pass on 2026-06-26; schema already migrated and write-path verified): install Ollama on the Mini → `ollama pull mxbai-embed-large` → repoint `EmbeddingService` (1024-dim = no migration) at the Ollama embeddings endpoint → `--rebuild` (now free, repeatable) → smoke tests. **Blocks C + D + E/F/G are complete and REVIEWED PASS — prerequisite work for `OR.B`.** **Plan reorganized 2026-06-27 (north-star Thread 2c):** see `master-plan.md` "North-Star Alignment (umbrella view)" + the new `OR.U`/`OR.W`/`OR.Z` — the three north-star tracks this repo now owns.
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
@@ -35,8 +35,9 @@ related: [context, master-plan]
   migration) and run the free, repeatable `--rebuild` to populate the Brain vector store. Deferred to an
   at-home session; **not blocking** other work.
 - **next** — `OR.B` (confirm `"brain"`-corpus semantic Q&A end-to-end) → `OR.O` (widen corpus to all
-  sub-repo `planning/` + `CLAUDE.md`). Then the **Wave-2 priority**: Project E (`ParallelNode` merge fix)
-  → **`OR.Z`** (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows — the HL2 graduation).
+  sub-repo `planning/` + `CLAUDE.md`). **`OR.Z`** (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes &
+  workflows — the HL2 graduation) is now **Done**; a follow-on `SDLCBlockWorkflow` (wave fan-out) spec
+  is the next step in that track whenever it's prioritized.
 - **blocked** — `OR.B`'s `--rebuild` waits on the at-home session (install Ollama + pull
   `mxbai-embed-large` on the Mini). The FTS/`content_tsv` half is model-independent and already shipped.
 - **improve** — Project A follow-ups (the 5 items above) · harden Project B's `research_agent` (feeds
@@ -116,7 +117,7 @@ related: [context, master-plan]
 | `OR.S` | 3 | Entity / memory layer — clients as first-class entities | Not started | = Project G reframed; heavier test bar applies |
 | `OR.L` | 3 | Answer-time grounding — citation verify + abstain | Not started | Project D answer-path hardening |
 | `OR.R` | 4 | Brain-as-MCP-server — Python server half of the MCP split | Not started | brain-rag Layer 3; bastion vendors the client |
-| `OR.Z` | 2 | **sdlc-flow/sdlc-run → orchestrator-native nodes & workflows (HL2 graduation)** | Not started | ★ Brandon priority; needs **Project E** (ParallelNode merge) first; drives Claude Code via the shipped SDK/session providers; after Wave-0 unblock |
+| `OR.Z` | 2 | **sdlc-flow/sdlc-run → orchestrator-native nodes & workflows (HL2 graduation)** | Done | All 10 tasks shipped via `/sdlc-flow`, reviewed PASS in 1 attempt. `SDLCFlowWorkflow` (14 nodes: setup worktree → load/save state → task loop → triage → consolidated review → patch docs → wrap up → PR) registered in both registries, driving Claude Code via the shipped SDK/session providers. `SDLCBlockWorkflow` (wave fan-out) remains a follow-on spec |
 | `OR.U` | 4 | Eval + success-metrics engine (**absorbs Project H**) | Not started | Licenses Block X (trust); feeds Block V (Console metrics); `OR.Z`'s coding eval is its first slice |
 | `OR.W` | 5 ✲ | External-intelligence loop + external-knowledge memory | Not started | `research_agent` specialization; routes candidates through `OR.U` before adoption |
 
