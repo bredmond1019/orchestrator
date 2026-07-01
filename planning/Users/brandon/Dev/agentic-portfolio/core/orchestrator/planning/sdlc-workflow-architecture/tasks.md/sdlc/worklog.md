@@ -14,3 +14,8 @@ Validated: gating checks (fast tripwire)
 What: Added LoadTaskStateNode (reads/bootstraps SDLCState from planning/{spec_slug}/sdlc-flow-state.json or tasks.json, applies task_range filter) and SaveStateNode (serializes SDLCState to disk and commits via git) with full unit test coverage.
 Decisions: The breakdown.md referenced a free function `parse_task_range` imported from schemas.sdlc_schema, but Task 1's actual implementation exposes it as the staticmethod `SDLCFlowEventSchema.parse_task_range`; used that instead of inventing a duplicate free function.; Left an unrelated pre-existing unstaged whitespace/formatting diff in app/core/nodes/parallel.py untouched and unstaged since it predates this task and is out of Task 3 scope.; SaveStateNode checks `task_context.nodes` membership (not get_node_output) to decide between UpdateTaskStatusNode and LoadTaskStateNode as its state source, since on the very first save UpdateTaskStatusNode legitimately has not run yet (not an error condition).
 Validated: gating checks (fast tripwire)
+
+## Task 4 — PASSED (1 attempt)
+What: Added TestTaskNode, a deterministic node that reads planning/harness.json in a worktree and dispatches command/forbidden-pattern-scan/baseline-diff/count-delta/warning-scan checks, producing a structured TestTaskResult (all_passed, check_results, failure_summary).
+Decisions: count-delta checks read their baseline from an optional check['baseline'] key (defaulting to 0) since harness.json's own count-delta check carries no explicit baseline field and the spec left the storage mechanism unspecified; Extracted a _run_checks helper to keep TestTaskNode.process() under pylint's too-many-locals (R0914) limit
+Validated: gating checks (fast tripwire)
