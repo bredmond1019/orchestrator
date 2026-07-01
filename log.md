@@ -1,12 +1,28 @@
 ---
+
+### 2026-07-01 (Project E ParallelNode Fix & build-node Skill)
+
+Pulled forward Project E (ParallelNode specialization) while the OR.Z task breakdown was stalled. Created `.agents/skills/build-node/SKILL.md` to formalize architectural guardrails for new native nodes (Static Model Tiering, state isolation). Fixed race conditions in `app/core/nodes/parallel.py` by deep-copying `TaskContext` per thread and correctly merging the nested `.nodes` outputs in the parent context. Rewrote `tests/core/test_nodes_parallel.py` to assert thread isolation and output merging. All tests pass flawlessly. Next: resume OR.Z breakdown.
+
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
 ---
 
+### 2026-07-01 (Project E ParallelNode Fix & build-node Skill)
+
+Pulled forward Project E (ParallelNode specialization) while the OR.Z task breakdown was stalled. Created `.agents/skills/build-node/SKILL.md` to formalize architectural guardrails for new native nodes (Static Model Tiering, state isolation). Fixed race conditions in `app/core/nodes/parallel.py` by deep-copying `TaskContext` per thread and correctly merging the nested `.nodes` outputs in the parent context. Rewrote `tests/core/test_nodes_parallel.py` to assert thread isolation and output merging. All tests pass flawlessly. Next: resume OR.Z breakdown.
+
+
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+### 2026-07-01 (Project E ParallelNode Fix & build-node Skill)
+
+Pulled forward Project E (ParallelNode specialization) while the OR.Z task breakdown was stalled. Created `.agents/skills/build-node/SKILL.md` to formalize architectural guardrails for new native nodes (Static Model Tiering, state isolation). Fixed race conditions in `app/core/nodes/parallel.py` by deep-copying `TaskContext` per thread and correctly merging the nested `.nodes` outputs in the parent context. Rewrote `tests/core/test_nodes_parallel.py` to assert thread isolation and output merging. All tests pass flawlessly. Next: resume OR.Z breakdown.
 
 ---
 
