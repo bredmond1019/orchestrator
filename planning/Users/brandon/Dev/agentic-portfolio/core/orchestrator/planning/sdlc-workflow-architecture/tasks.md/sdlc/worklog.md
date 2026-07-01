@@ -49,3 +49,6 @@ Validated: gating checks (fast tripwire)
 What: Validated the full SDLCFlowWorkflow implementation: ruff clean, pylint 10.00/10, full pytest suite (906 passed/8 skipped), schema-registry completeness test, and the sdlc_flow DAG/WorkflowValidator test suite (73 passed) all pass; new .j2 prompts load via PromptManager.
 Decisions: No new code was needed for this validation-only task; all acceptance criteria were already satisfied by tasks 1-9.; Included a pre-existing ruff-fix whitespace/import-order cleanup in app/core/nodes/parallel.py picked up while running the validation ruff check, since it was a no-op formatting fix caught by the same command.
 Validated: gating checks (fast tripwire)
+
+## Docs
+Patched: docs/api-reference.md, docs/workflows.md

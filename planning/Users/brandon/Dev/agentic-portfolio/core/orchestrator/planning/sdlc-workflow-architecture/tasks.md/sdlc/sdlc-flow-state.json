@@ -2,9 +2,9 @@
   "spec_slug": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/planning/sdlc-workflow-architecture/tasks.md",
   "branch": "tasks.md-flow",
   "started_at": "2026-07-01T14:11:25Z",
-  "updated_at": "2026-07-01T15:28:42Z",
+  "updated_at": "2026-07-01T15:36:29Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/tasks.md-flow",
-  "status": "running",
+  "status": "docs",
   "current_task": 10,
   "tasks": {
     "1": {
@@ -211,12 +211,15 @@
     }
   },
   "review": {
-    "verdict": null,
+    "verdict": "PASS",
     "findings": [],
-    "attempts": 0
+    "attempts": 1
   },
   "docs": {
-    "changed": [],
+    "changed": [
+      "docs/api-reference.md",
+      "docs/workflows.md"
+    ],
     "created": []
   },
   "bail_reason": null,
@@ -457,13 +460,53 @@
         "filesReadKb": null,
         "inTokEst": 1415,
         "outTok": 7206
+      },
+      {
+        "label": "update-task-10",
+        "model": "haiku",
+        "promptTokEst": 273,
+        "filesReadKb": null,
+        "inTokEst": 273,
+        "outTok": 1305
+      },
+      {
+        "label": "implement-10-1",
+        "model": "sonnet",
+        "promptTokEst": 1001,
+        "filesReadKb": null,
+        "inTokEst": 1001,
+        "outTok": 4529
+      },
+      {
+        "label": "test-10-1",
+        "model": "haiku",
+        "promptTokEst": 1415,
+        "filesReadKb": null,
+        "inTokEst": 1415,
+        "outTok": 3717
+      },
+      {
+        "label": "review-1",
+        "model": "sonnet",
+        "promptTokEst": 2429,
+        "filesReadKb": null,
+        "inTokEst": 2429,
+        "outTok": 7517
+      },
+      {
+        "label": "docs",
+        "model": "sonnet",
+        "promptTokEst": 829,
+        "filesReadKb": null,
+        "inTokEst": 829,
+        "outTok": 12356
       }
     ],
     "total": {
-      "promptTokEst": 25357,
+      "promptTokEst": 31304,
       "filesReadKb": 0,
-      "inTokEst": 25357,
-      "outTok": 251536
+      "inTokEst": 31304,
+      "outTok": 280960
     }
   }
 }
