@@ -175,5 +175,15 @@
   "cross_repo": [],
   "tiers": [],
   "note": null,
-  "backlog": []
+  "backlog": [],
+  "carryover": [
+    {
+      "slug": "mev-emit-state-bug",
+      "scope": "orchestrator",
+      "kind": "env",
+      "text": "Do NOT run `mev emit-state --write`. mev's emit-state has a bug under active fix; skip the emit-state step in /log-work and /handoff until the fix lands. state.json carryover/tasks edits are hand-made meanwhile and will need a manual emit-state sync once mev is fixed.",
+      "created": "2026-07-02",
+      "clears_when": "mev emit-state bug fixed and verified"
+    }
+  ]
 }

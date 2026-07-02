@@ -1,30 +1,36 @@
 ---
 type: Handoff
-created: 2026-07-01
+created: 2026-07-02
 ---
 
-# Handoff — Project E (ParallelNode Fix) & Node Build Skill
+# Handoff — SDLCFlowWorkflow node-tier refactor (shipped)
 
 > **For the next agent:** Read this immediately after `/prime`. Delete this file once consumed.
 
 ## What we're doing and why
-We paused the OR.Z task breakdown (which had stalled) and pulled forward the implementation of Project E: fixing `ParallelNode` to properly isolate and merge `TaskContext` across parallel threads. We also established a standard `.agents/skills/build-node` to enforce architectural invariants (like Static Model Tiering and correct context isolation) for all upcoming native workflow nodes.
+We reviewed every node in `SDLCFlowWorkflow` against `planning/sdlc-workflow-architecture/nodes-design.md` to find nodes that were using an LLM but didn't need one, and to close a design gap (no task-generation fallback). Brandon's four calls drove the work: (1) all AI nodes ride the `CLAUDE_CODE_SDK` seam; (2) `WrapUpNode` becomes deterministic; (3) `TriageTaskNode` defaults to deterministic with an opt-in LLM path (good future home for an OSS model); (4) add a `GenerateTasksNode` on Opus. All four are implemented, tested, and committed at `1fc5768`.
 
 ## Completed this session
-- Synthesized and relocated the workflow architecture docs into `planning/sdlc-workflow-architecture/synthesis.md` and `planning/sdlc-workflow-architecture/nodes-design.md`.
-- Created `.agents/skills/build-node/SKILL.md` establishing rules for building new Python-native nodes (AgentNode, RouterNode, ParallelNode).
-- Fixed `app/core/nodes/parallel.py` to deep copy the `TaskContext` per thread and cleanly merge the nested `.nodes` output array back into the parent context without race conditions.
-- Updated `tests/core/test_nodes_parallel.py` to thoroughly test thread isolation and output merging. All tests passed.
+- **Uniform provider:** `consolidated_review_node.py` + `patch_docs_node.py` moved from `ANTHROPIC`/`claude-sonnet-5` → `CLAUDE_CODE_SDK`/`sonnet`. Every LLM node now uses the SDK seam.
+- **`WrapUpNode` → deterministic `Node`:** renders `log_entry`/`report`/`status_suggestion` from three new Jinja templates (`app/prompts/sdlc_wrap_up_{log,report,status}.j2`) over run telemetry; deleted the old `sdlc_wrap_up.j2` system prompt.
+- **`TriageTaskNode` deterministic-default:** new `llm_triage: bool = False` on `SDLCFlowEventSchema` (`app/schemas/sdlc_schema.py`); failing-under-budget → `RETRYABLE` with no model call unless `llm_triage=True`.
+- **New `GenerateTasksNode` (Opus) + `SpecExistsRouterNode`:** `app/workflows/sdlc_flow_workflow_nodes/generate_tasks_node.py` + `spec_exists_router_node.py` + prompt `sdlc_generate_tasks.j2`. Router sits after `SetupWorktreeNode`: routes to `LoadTaskStateNode` when `tasks.json`/state exists, else to `GenerateTasksNode`, which writes `tasks.md` + `tasks.json` then hands off. Wired in `sdlc_flow_workflow.py` (now 16 nodes).
+- **Tests:** deterministic-triage, template WrapUp, GenerateTasks + SpecExistsRouter units, and a **full-DAG integration test for the generate-spec path** (`test_sdlc_flow_workflow.py::TestSDLCFlowWorkflowGeneratesSpec`). Gate: **917 passed / 8 skipped**, `ruff check app/` clean, `pylint app/` 10.00/10.
 
 ## Remaining work
-- Resume the `/breakdown` of `planning/sdlc-workflow-architecture/tasks.md` (OR.Z track) now that the ParallelNode foundation is solid.
-- Alternatively, move on to Project H / Block U (Evaluation/Routing Harness) if prioritized.
+- **Optional:** update `planning/sdlc-workflow-architecture/nodes-design.md` to record the as-built decisions (it still shows the old ANTHROPIC tiering, no `GenerateTasksNode`/`SpecExistsRouterNode`, and the LLM-always triage). It was the source of the discrepancy that kicked off this session.
+- **`SDLCBlockWorkflow`** (wave fan-out via `ParallelNode`) remains the standing OR.Z follow-on spec whenever prioritized.
+- **Wave 0 `OR.H`** (Ollama local-embedding swap + `--rebuild`) is still the demand-first next block, gated on an at-home Mini session.
+
+## Durable State Updates
+- Added `carryover[]` entry `mev-emit-state-bug` (kind `env`) to `planning/state.json`: do not run `mev emit-state --write` until mev's emit-state bug is fixed; state.json edits are hand-made and will need a manual emit-state sync afterward.
 
 ## Open questions / choices
-None — clear to proceed.
+None — clear to proceed. The four refactor decisions are settled and shipped.
 
 ## Context the next agent needs
-The `build-node` skill enforces critical standards for node development. All future node implementation should trigger or review this skill to avoid regression on thread safety and static model configurations.
+- **`mev emit-state` is intentionally NOT run this session** (its bug is being fixed) — see the `mev-emit-state-bug` carryover slug. Keep skipping the emit-state step in `/log-work` / `/handoff` until told otherwise.
+- The prior `handoff.md` (Project E ParallelNode) was stale; this replaces it.
 
 ## First command after `/prime`
-`/breakdown planning/sdlc-workflow-architecture/tasks.md`
+`/document planning/sdlc-workflow-architecture/nodes-design.md` (or just resume with `OR.H` if docs aren't a priority)
