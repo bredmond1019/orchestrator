@@ -7,7 +7,7 @@ layer: [engine]
 project: orchestrator
 status: active
 keywords: [workflow catalog, CONTENT_PIPELINE, DOCUMENT_QA, SDLC_FLOW, PRICE_SCOUT, event payload, curl]
-related: [api-reference, app-architecture-overview, data-contract]
+related: [api-reference, app-architecture-overview, data-contract, sdlc-flow-workflow]
 ---
 
 # Workflow Catalog
@@ -339,6 +339,8 @@ curl -X POST http://localhost:8080/events/ \
 **What it does:** Drives a structured spec (`SDLCTask` list persisted as JSON) through a sequential implement → test → triage → review loop, task by task, in one shared git worktree — then patches docs, writes a wrap-up log, and opens a PR. Replaces markdown-based task parsing with the `SDLCState`/`SDLCTask` schema in `app/schemas/sdlc_schema.py`.
 
 **When to use:** To run an `/sdlc-flow`-style spec end to end as an orchestrated workflow rather than a manual slash-command sequence.
+
+**Setup, task-loop mechanics, the state file, resuming, and debugging:** see [sdlc-flow-workflow.md](sdlc-flow-workflow.md) — this section only covers the DAG and the trigger payload.
 
 **Node DAG:**
 

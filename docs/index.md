@@ -7,7 +7,7 @@ layer: [engine]
 project: orchestrator
 status: active
 keywords: [docs index, developer reference, orchestration framework, getting-started, API reference]
-related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract]
+related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, sdlc-flow-workflow]
 ---
 
 # Documentation Index
@@ -28,7 +28,7 @@ Developer reference for the orchestration framework. Start here, then open the d
 | Doc | Contents |
 |---|---|
 | [api-reference.md](api-reference.md) | Class-level reference for every public abstraction in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/` that you subclass when writing a new workflow. |
-| sdlc-workflow-nodes-design.md | Python-native design specification for implementing `sdlc-flow` and `sdlc-run` workflows and node execution blocks. |
+| [sdlc-flow-workflow.md](sdlc-flow-workflow.md) | `SDLC_FLOW` workflow — setup (task list, harness.json, auth), triggering, the task-loop node-by-node, the state file / resuming, and a debugging checklist. |
 | [data-contract.md](data-contract.md) | **Versioned** canonical contract for how external consumers (e.g. the `bastion` CLI) read execution state — the `events` table, `task_context`/`node_runs` JSON, and HTTP surface. Bump the version when any shape changes. |
 | [configuration.md](configuration.md) | Every environment variable, connection-string assembly, and Docker service topology — configure the stack for local or Docker deployment without guessing. |
 | [app-architecture-overview.md](app-architecture-overview.md) | Codebase analysis of the FastAPI → Celery → Workflow DAG → TaskContext architecture. |
