@@ -5,6 +5,7 @@ description: Documentation for architect-prompt
 doc_id: architect-prompt
 layer: [meta]
 status: active
+related: [synthesis, sdlc-workflow-nodes-design]
 ---
 
 You are a Principal Software Architect specializing in code analysis, systems integration, and
