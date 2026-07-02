@@ -1,4 +1,4 @@
 template: base-template
-commit: b8ebbf71c20445de65195037aa24bfe00bbf080b
+commit: c7c904a8618339ce560190adb78fb9c224dd3c86
 generated: (pre-dates provenance stamping)
-synced: 2026-06-24 — harness pull (D14–D35 + /sdlc-flow)
+synced: 2026-07-02 — D44-D47 tasks.json/state-pointer fix + skills cleanup
