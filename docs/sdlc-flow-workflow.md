@@ -38,6 +38,15 @@ Both consume the same kind of task list and both write the same
 a bug in one does not fix the other. `SDLCBlockWorkflow` (a wave-parallel variant
 using `ParallelNode`, mirroring `/sdlc-block`) is deferred future scope, not yet built.
 
+> **Keeping the two in sync.** `SDLCTask` (`app/schemas/sdlc_schema.py`) is the schema
+> `/sdlc-flow`'s `tasks.json` contract was deliberately aligned *to* (base-template
+> `planning/decisions/D44-tasks-json-task-list.md` / `D45-tasks-json-orchestrator-schema-
+> alignment.md`) — this doc's shape is the one being matched, not the other way around. If
+> base-template's `.claude/workflows/sdlc-flow.js` or `generate-tasks.md` changes again,
+> check this file and `SDLCTask` still agree; see the `verify-sdlc-flow-schema-vs-base-
+> template-d44-d48` entry in this repo's `planning/state.json` `carryover[]` for the current
+> status of that check.
+
 ## Setup
 
 ### 1. Task list input
