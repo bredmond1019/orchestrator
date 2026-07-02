@@ -1,0 +1,9 @@
+---
+description: Deterministic status.md suggestion template for WrapUpNode (no LLM).
+author: Brandon Redmond
+---
+{% if tasks_failed == 0 -%}
+Mark `{{ spec_slug }}` **Done** in `planning/status.md` ({{ tasks_passed }}/{{ tasks_passed }} tasks passed).
+{%- else -%}
+Keep `{{ spec_slug }}` **In progress** in `planning/status.md` — {{ tasks_failed }} task(s) failed and need follow-up.
+{%- endif %}

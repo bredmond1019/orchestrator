@@ -9,7 +9,12 @@ and open a PR.
 Graph::
 
     SetupWorktreeNode
-        -> LoadTaskStateNode
+        -> SpecExistsRouterNode (router)
+            │ (spec missing)          (spec present)
+            v                              │
+        GenerateTasksNode ────────────────>┤
+                                           v
+            -> LoadTaskStateNode
             -> TaskQueueRouterNode (router) ────────────────────┐
                     │ (pending task found)          (no tasks left)
                     v                                            v
@@ -67,6 +72,7 @@ from schemas.sdlc_schema import SDLCFlowEventSchema
 from workflows.sdlc_flow_workflow_nodes.consolidated_review_node import (
     ConsolidatedReviewNode,
 )
+from workflows.sdlc_flow_workflow_nodes.generate_tasks_node import GenerateTasksNode
 from workflows.sdlc_flow_workflow_nodes.implement_task_node import ImplementTaskNode
 from workflows.sdlc_flow_workflow_nodes.load_task_state_node import LoadTaskStateNode
 from workflows.sdlc_flow_workflow_nodes.patch_docs_node import PatchDocsNode
@@ -74,6 +80,9 @@ from workflows.sdlc_flow_workflow_nodes.pull_request_node import PullRequestNode
 from workflows.sdlc_flow_workflow_nodes.review_router_node import ReviewRouterNode
 from workflows.sdlc_flow_workflow_nodes.save_state_node import SaveStateNode
 from workflows.sdlc_flow_workflow_nodes.setup_worktree_node import SetupWorktreeNode
+from workflows.sdlc_flow_workflow_nodes.spec_exists_router_node import (
+    SpecExistsRouterNode,
+)
 from workflows.sdlc_flow_workflow_nodes.task_queue_router_node import (
     TaskQueueRouterNode,
 )
@@ -101,8 +110,22 @@ class SDLCFlowWorkflow(Workflow):
         nodes=[
             NodeConfig(
                 node=SetupWorktreeNode,
-                connections=[LoadTaskStateNode],
+                connections=[SpecExistsRouterNode],
                 description="Create or reattach to the isolated git worktree.",
+            ),
+            NodeConfig(
+                node=SpecExistsRouterNode,
+                connections=[GenerateTasksNode, LoadTaskStateNode],
+                description=(
+                    "Route to LoadTaskStateNode when a task spec already exists, "
+                    "else to GenerateTasksNode (planning fallback)."
+                ),
+                is_router=True,
+            ),
+            NodeConfig(
+                node=GenerateTasksNode,
+                connections=[LoadTaskStateNode],
+                description="Author tasks.md + tasks.json (Opus) when the spec has none.",
             ),
             NodeConfig(
                 node=LoadTaskStateNode,

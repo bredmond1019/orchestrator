@@ -1,7 +1,7 @@
 """ConsolidatedReviewNode — reviews the full task diff against acceptance criteria.
 
-Agent node (extends ``AgentNode``, Sonnet-tier model via the ``ANTHROPIC``
-provider). Reads the full ``git diff main..HEAD`` from the task's isolated
+Agent node (extends ``AgentNode``, Sonnet-tier model via the
+``CLAUDE_CODE_SDK`` provider). Reads the full ``git diff main..HEAD`` from the task's isolated
 worktree, builds a prompt from that diff plus the current task's
 ``acceptance_criteria``, and asks the model to issue an ``SDLCReviewVerdict``
 (``PASS`` / ``FAIL`` / ``PARTIAL``) with a summary and a list of issues.
@@ -47,8 +47,8 @@ class ConsolidatedReviewNode(AgentNode):
             ),
             output_type=self.OutputType,
             deps_type=None,
-            model_provider=ModelProvider.ANTHROPIC,
-            model_name="claude-sonnet-5",
+            model_provider=ModelProvider.CLAUDE_CODE_SDK,
+            model_name="sonnet",
         )
 
     def process(self, task_context: TaskContext) -> TaskContext:

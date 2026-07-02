@@ -254,15 +254,10 @@ class TestPatchDocsNode:
 
 
 class TestWrapUpNode:
-    def test_produces_log_entry_and_report(self):
-        node = _make_agent_node(WrapUpNode)
-        output = WrapUpNode.OutputType(
-            log_entry="## 2026-07-01\nCompleted test-spec.",
-            report="# Report\nAll tasks passed.",
-            status_suggestion="Mark Block 8 done.",
-        )
-        node.agent.run_sync.return_value = _result_for(output)
+    """WrapUpNode is a deterministic node (no LLM) — it renders the three
+    wrap-up artifacts from Jinja document templates over the run telemetry."""
 
+    def test_produces_log_entry_and_report_from_templates(self):
         state = SDLCState(
             spec_slug="test-spec",
             tasks=[SDLCTask(task_id=1, title="t", description="d")],
@@ -272,34 +267,50 @@ class TestWrapUpNode:
 
         ctx = TaskContext(event=_make_event())
         ctx.nodes["LoadTaskStateNode"] = {"result": state.model_dump()}
+        node = WrapUpNode()
         _seed_run(ctx, node)
 
         node.process(ctx)
 
         stored = ctx.nodes["WrapUpNode"]["result"]
-        assert stored["log_entry"] == "## 2026-07-01\nCompleted test-spec."
-        assert stored["report"] == "# Report\nAll tasks passed."
-        assert stored["status_suggestion"] == "Mark Block 8 done."
+        # No LLM was involved — the rendered artifacts carry the real telemetry.
+        assert "test-spec" in stored["log_entry"]
+        assert "1 task(s) passed" in stored["log_entry"]
+        assert "PASS" in stored["report"]
+        assert "**Done**" in stored["status_suggestion"]
+
+    def test_status_suggestion_reflects_failures(self):
+        state = SDLCState(spec_slug="test-spec", tasks=[])
+        state.telemetry.tasks_passed = 1
+        state.telemetry.tasks_failed = 2
+
+        ctx = TaskContext(event=_make_event())
+        ctx.nodes["LoadTaskStateNode"] = {"result": state.model_dump()}
+        node = WrapUpNode()
+        _seed_run(ctx, node)
+
+        node.process(ctx)
+
+        stored = ctx.nodes["WrapUpNode"]["result"]
+        assert "In progress" in stored["status_suggestion"]
+        assert "PARTIAL/FAIL" in stored["report"]
 
     def test_prefers_update_task_status_state_over_load(self):
-        node = _make_agent_node(WrapUpNode)
-        output = WrapUpNode.OutputType(
-            log_entry="entry", report="report", status_suggestion="suggestion"
-        )
-        node.agent.run_sync.return_value = _result_for(output)
-
         stale_state = SDLCState(spec_slug="stale-spec", tasks=[])
         fresh_state = SDLCState(spec_slug="test-spec", tasks=[])
 
         ctx = TaskContext(event=_make_event())
         ctx.nodes["LoadTaskStateNode"] = {"result": stale_state.model_dump()}
         ctx.nodes["UpdateTaskStatusNode"] = {"result": fresh_state.model_dump()}
+        node = WrapUpNode()
         _seed_run(ctx, node)
 
         node.process(ctx)
 
-        # The rendered prompt should reference the fresher spec_slug.
-        assert "test-spec" in str(node.agent.run_sync.call_args)
+        stored = ctx.nodes["WrapUpNode"]["result"]
+        # The fresher (UpdateTaskStatusNode) spec_slug wins over the stale load.
+        assert "test-spec" in stored["log_entry"]
+        assert "stale-spec" not in stored["log_entry"]
 
 
 # ---------------------------------------------------------------------------

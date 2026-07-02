@@ -1,7 +1,7 @@
 """PatchDocsNode — patches documentation references to changed symbols.
 
-Agent node (extends ``AgentNode``, Sonnet-tier model via the ``ANTHROPIC``
-provider). Reads the list of files ``ImplementTaskNode`` reports it modified,
+Agent node (extends ``AgentNode``, Sonnet-tier model via the
+``CLAUDE_CODE_SDK`` provider). Reads the list of files ``ImplementTaskNode`` reports it modified,
 builds a prompt asking the model to search ``docs/`` for stale references to
 those files/symbols and patch them, and stores a summary plus the list of
 files the model reports having patched.
@@ -38,8 +38,8 @@ class PatchDocsNode(AgentNode):
             ),
             output_type=self.OutputType,
             deps_type=None,
-            model_provider=ModelProvider.ANTHROPIC,
-            model_name="claude-sonnet-5",
+            model_provider=ModelProvider.CLAUDE_CODE_SDK,
+            model_name="sonnet",
         )
 
     def process(self, task_context: TaskContext) -> TaskContext:

@@ -4,12 +4,22 @@ Split into two nodes following the ``ProposalReviewNode`` /
 ``ProposalReviewRouterNode`` pattern already used in this codebase (the
 ``BaseRouter``/``RouterNode`` pair is deterministic routing, not an LLM call):
 
-- ``TriageTaskNode`` (``AgentNode``): uses a mid-tier model (Sonnet, via the
-  ``CLAUDE_CODE_SDK`` provider) to classify the ``TestTaskNode`` failure output
-  into ``PASS`` / ``RETRYABLE`` / ``MAJOR_BAIL`` with a one-line reason. Before
-  invoking the model, ``max_attempts`` is enforced deterministically: if the
-  current task has already reached its attempt budget, the verdict is forced
-  to ``MAJOR_BAIL`` without a model call.
+- ``TriageTaskNode`` (``AgentNode``): classifies the ``TestTaskNode`` failure
+  output into ``PASS`` / ``RETRYABLE`` / ``MAJOR_BAIL`` with a one-line reason.
+  Two verdicts are always decided deterministically without a model call:
+  a passing ``TestTaskNode`` result forces ``PASS``, and a task that has
+  reached its attempt budget forces ``MAJOR_BAIL``. For the remaining case —
+  a failing task still under budget — the behaviour depends on the event's
+  ``llm_triage`` flag:
+
+    * ``llm_triage=False`` (**default**): the verdict is deterministically
+      ``RETRYABLE``. The attempt counter stays the sole bail gate, so no model
+      is invoked. This is the cheap, reproducible path and a natural fit for a
+      local/OSS classifier later.
+    * ``llm_triage=True``: a mid-tier model (Sonnet, via the
+      ``CLAUDE_CODE_SDK`` provider) decides ``RETRYABLE`` vs ``MAJOR_BAIL`` as
+      an early-bail heuristic (abandon a hopeless task before exhausting its
+      attempts).
 - ``TriageRouterNode`` (``BaseRouter``): reads ``TriageTaskNode``'s stored
   verdict and routes:
     ``PASS``        → ``ConsolidatedReviewNode``
@@ -93,6 +103,23 @@ class TriageTaskNode(AgentNode):
                 result={
                     "verdict": SDLCTriageVerdict.MAJOR_BAIL.value,
                     "reason": f"Max attempts ({max_attempts}) reached without a passing run.",
+                },
+            )
+            return task_context
+
+        # Deterministic default: a failing-but-under-budget task retries, with
+        # the attempt counter as the sole bail gate. The LLM classifier is only
+        # consulted when explicitly opted into via the event's ``llm_triage``
+        # flag (an early-bail heuristic).
+        if not getattr(task_context.event, "llm_triage", False):
+            task_context.update_node(
+                node_name=self.node_name,
+                result={
+                    "verdict": SDLCTriageVerdict.RETRYABLE.value,
+                    "reason": (
+                        "Checks failed; retrying (attempt "
+                        f"{attempt_count + 1} of {max_attempts})."
+                    ),
                 },
             )
             return task_context
