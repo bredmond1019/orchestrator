@@ -4,7 +4,7 @@ Two layers:
 
 * **Structure** — ``WorkflowValidator`` accepts the schema (acyclic declared
   graph despite the runtime retry/next-task loops), the start node and full
-  14-node set are correct, and every router carries ``is_router=True``.
+  16-node set are correct, and every router carries ``is_router=True``.
   Registration in both ``WorkflowRegistry`` and ``SCHEMA_MAP`` is verified
   (standing rule 6).
 * **E2E smoke test** — the full DAG is run end-to-end with every ``AgentNode``
@@ -33,6 +33,10 @@ from workflows.sdlc_flow_workflow import SDLCFlowWorkflow
 from workflows.sdlc_flow_workflow_nodes.consolidated_review_node import (
     ConsolidatedReviewNode,
 )
+from workflows.sdlc_flow_workflow_nodes.generate_tasks_node import (
+    GeneratedTask,
+    GenerateTasksNode,
+)
 from workflows.sdlc_flow_workflow_nodes.implement_task_node import ImplementTaskNode
 from workflows.sdlc_flow_workflow_nodes.load_task_state_node import LoadTaskStateNode
 from workflows.sdlc_flow_workflow_nodes.patch_docs_node import PatchDocsNode
@@ -40,6 +44,9 @@ from workflows.sdlc_flow_workflow_nodes.pull_request_node import PullRequestNode
 from workflows.sdlc_flow_workflow_nodes.review_router_node import ReviewRouterNode
 from workflows.sdlc_flow_workflow_nodes.save_state_node import SaveStateNode
 from workflows.sdlc_flow_workflow_nodes.setup_worktree_node import SetupWorktreeNode
+from workflows.sdlc_flow_workflow_nodes.spec_exists_router_node import (
+    SpecExistsRouterNode,
+)
 from workflows.sdlc_flow_workflow_nodes.task_queue_router_node import (
     TaskQueueRouterNode,
 )
@@ -56,6 +63,8 @@ from workflows.workflow_registry import WorkflowRegistry
 
 _EXPECTED_NODES = {
     SetupWorktreeNode,
+    SpecExistsRouterNode,
+    GenerateTasksNode,
     LoadTaskStateNode,
     TaskQueueRouterNode,
     ImplementTaskNode,
@@ -91,9 +100,15 @@ class TestSDLCFlowWorkflowSchema:
 
     def test_routers_marked_is_router(self):
         configs = {nc.node: nc for nc in SDLCFlowWorkflow.workflow_schema.nodes}
-        for router_cls in (TaskQueueRouterNode, TriageRouterNode, ReviewRouterNode):
+        for router_cls in (
+            SpecExistsRouterNode,
+            TaskQueueRouterNode,
+            TriageRouterNode,
+            ReviewRouterNode,
+        ):
             assert configs[router_cls].is_router is True
         for non_router_cls in _EXPECTED_NODES - {
+            SpecExistsRouterNode,
             TaskQueueRouterNode,
             TriageRouterNode,
             ReviewRouterNode,
@@ -159,7 +174,19 @@ def _fake_run_agent_recorded_factory(triage_verdict="PASS", review_verdict="PASS
 
     def _fake_run_agent_recorded(self, task_context, user_prompt):  # noqa: ARG001
         name = type(self).__name__
-        if name == "ImplementTaskNode":
+        if name == "GenerateTasksNode":
+            output = GenerateTasksNode.OutputType(
+                tasks=[
+                    GeneratedTask(
+                        task_id=1,
+                        title="Add health check endpoint",
+                        description="Add a /healthz endpoint returning 200.",
+                        acceptance_criteria=["GET /healthz returns 200"],
+                    )
+                ],
+                tasks_markdown="### 1. Add health check endpoint\n\nAdd a /healthz endpoint.",
+            )
+        elif name == "ImplementTaskNode":
             output = ImplementTaskNode.OutputType(
                 summary="Implemented the health check endpoint.",
                 modified_files=["app/routes/healthz.py"],
@@ -177,12 +204,6 @@ def _fake_run_agent_recorded_factory(triage_verdict="PASS", review_verdict="PASS
             output = PatchDocsNode.OutputType(
                 summary="Patched docs referencing healthz.",
                 files_patched=["docs/api-reference.md"],
-            )
-        elif name == "WrapUpNode":
-            output = WrapUpNode.OutputType(
-                log_entry="### 2026-07-01\nRan sdlc-flow for demo-spec.",
-                report="All tasks processed.",
-                status_suggestion="Advance status.md to the next block.",
             )
         else:
             raise AssertionError(f"unexpected agent node: {name}")
@@ -204,6 +225,7 @@ def _run_workflow(
     review_verdict: str = "PASS",
     test_task_results: list[dict] | None = None,
     subprocess_calls: list[list[str]] | None = None,
+    seed_tasks: bool = True,
 ) -> TaskContext:
     """Run the full workflow with every agent and subprocess boundary mocked.
 
@@ -214,7 +236,8 @@ def _run_workflow(
     ``_fake_subprocess_run`` docstring below).
     """
     monkeypatch.chdir(tmp_path)
-    _seed_worktree(tmp_path, spec_slug, tasks)
+    if seed_tasks:
+        _seed_worktree(tmp_path, spec_slug, tasks)
 
     fake_run_agent_recorded = _fake_run_agent_recorded_factory(
         triage_verdict=triage_verdict, review_verdict=review_verdict
@@ -290,6 +313,7 @@ class TestSDLCFlowWorkflowRunHappyPath:
 
         expected_order = [
             "SetupWorktreeNode",
+            "SpecExistsRouterNode",
             "LoadTaskStateNode",
             "TaskQueueRouterNode",
             "ImplementTaskNode",
@@ -384,3 +408,32 @@ class TestSDLCFlowWorkflowRunAutoPrFalse:
 
         pr_output = ctx.get_node_output("PullRequestNode")["result"]
         assert pr_output == {"pr_url": None, "skipped": True}
+
+
+class TestSDLCFlowWorkflowGeneratesSpec:
+    def test_generates_spec_when_missing_then_runs_it(self, tmp_path, monkeypatch):
+        """No tasks.json on disk: SpecExistsRouterNode -> GenerateTasksNode
+        (which writes tasks.json + tasks.md) -> LoadTaskStateNode picks up the
+        generated spec, and the run completes end-to-end to a PR."""
+        ctx = _run_workflow(tmp_path, monkeypatch, [_make_task()], seed_tasks=False)
+
+        # The planning fallback fired.
+        assert ctx.nodes["SpecExistsRouterNode"]["next_node"] == "GenerateTasksNode"
+        assert "GenerateTasksNode" in ctx.nodes
+        gen = ctx.get_node_output("GenerateTasksNode")["result"]
+        assert gen["task_count"] == 1
+
+        # GenerateTasksNode wrote a real tasks.json into the worktree spec dir,
+        # which LoadTaskStateNode then bootstrapped into SDLCState.
+        tasks_json = (
+            tmp_path / "trees" / "sdlc/demo-spec" / "planning" / "demo-spec" / "tasks.json"
+        )
+        assert tasks_json.exists()
+
+        # The generated task ran the full loop through to a PR.
+        for node_name in ("LoadTaskStateNode", "ImplementTaskNode", "PullRequestNode"):
+            assert node_name in ctx.nodes
+            assert ctx.node_runs[node_name].status == NodeStatus.SUCCESS
+
+        final_state = ctx.get_node_output("UpdateTaskStatusNode")["result"]
+        assert final_state["tasks"][0]["status"] == "done"

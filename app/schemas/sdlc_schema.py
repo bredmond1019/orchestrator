@@ -80,6 +80,16 @@ class SDLCFlowEventSchema(BaseModel):
         default=None,
         description="Override for the git branch name; derived from spec_slug if unset",
     )
+    llm_triage: bool = Field(
+        default=False,
+        description=(
+            "Whether TriageTaskNode should invoke the LLM classifier for a "
+            "failing-but-under-budget task. When False (default), such a task "
+            "is deterministically classified RETRYABLE and the attempt counter "
+            "remains the sole bail gate; when True, the model decides "
+            "RETRYABLE vs MAJOR_BAIL (early-bail heuristic)."
+        ),
+    )
 
     @staticmethod
     def parse_task_range(task_range: str | None) -> list[int] | None:
