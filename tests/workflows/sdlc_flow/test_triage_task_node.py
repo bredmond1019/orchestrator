@@ -42,8 +42,10 @@ def _result_for(output) -> MagicMock:
 
 
 def _make_ctx(all_passed: bool, failure_summary: str = "", attempt_count: int = 0,
-              max_attempts: int = 3) -> TaskContext:
-    ctx = TaskContext(event=SDLCFlowEventSchema(spec_slug="test-spec"))
+              max_attempts: int = 3, llm_triage: bool = False) -> TaskContext:
+    ctx = TaskContext(
+        event=SDLCFlowEventSchema(spec_slug="test-spec", llm_triage=llm_triage)
+    )
     ctx.nodes["TestTaskNode"] = {
         "result": {"all_passed": all_passed, "check_results": [], "failure_summary": failure_summary}
     }
@@ -97,6 +99,25 @@ class TestTriageTaskNode:
         assert "Max attempts" in stored["reason"]
         node.agent.run_sync.assert_not_called()
 
+    def test_retryable_by_default_without_llm(self):
+        """Default (llm_triage=False): a failing-under-budget task retries
+        deterministically, with no model call."""
+        node = _make_agent_node(TriageTaskNode)
+        ctx = _make_ctx(
+            all_passed=False,
+            failure_summary="Failed checks: pytest",
+            attempt_count=1,
+            max_attempts=3,
+            llm_triage=False,
+        )
+        _seed_run(ctx, node)
+
+        node.process(ctx)
+
+        stored = ctx.nodes["TriageTaskNode"]["result"]
+        assert stored["verdict"] == "RETRYABLE"
+        node.agent.run_sync.assert_not_called()
+
     def test_classifies_retryable_via_agent(self):
         node = _make_agent_node(TriageTaskNode)
         output = TriageTaskNode.OutputType(verdict="RETRYABLE", reason="Failing unit test.")
@@ -107,6 +128,7 @@ class TestTriageTaskNode:
             failure_summary="Failed checks: pytest",
             attempt_count=1,
             max_attempts=3,
+            llm_triage=True,
         )
         _seed_run(ctx, node)
 
@@ -129,6 +151,7 @@ class TestTriageTaskNode:
             failure_summary="ModuleNotFoundError",
             attempt_count=0,
             max_attempts=3,
+            llm_triage=True,
         )
         _seed_run(ctx, node)
 
