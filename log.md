@@ -1,22 +1,21 @@
 ---
-
-### 2026-07-01 (Project E ParallelNode Fix & build-node Skill)
-
-Pulled forward Project E (ParallelNode specialization) while the OR.Z task breakdown was stalled. Created `.agents/skills/build-node/SKILL.md` to formalize architectural guardrails for new native nodes (Static Model Tiering, state isolation). Fixed race conditions in `app/core/nodes/parallel.py` by deep-copying `TaskContext` per thread and correctly merging the nested `.nodes` outputs in the parent context. Rewrote `tests/core/test_nodes_parallel.py` to assert thread isolation and output merging. All tests pass flawlessly. Next: resume OR.Z breakdown.
-
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
+timestamp: "2026-07-02T00:03:18-03:00"
 ---
-
-### 2026-07-01 (Project E ParallelNode Fix & build-node Skill)
-
-Pulled forward Project E (ParallelNode specialization) while the OR.Z task breakdown was stalled. Created `.agents/skills/build-node/SKILL.md` to formalize architectural guardrails for new native nodes (Static Model Tiering, state isolation). Fixed race conditions in `app/core/nodes/parallel.py` by deep-copying `TaskContext` per thread and correctly merging the nested `.nodes` outputs in the parent context. Rewrote `tests/core/test_nodes_parallel.py` to assert thread isolation and output merging. All tests pass flawlessly. Next: resume OR.Z breakdown.
-
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+### 2026-07-02 (SDLCFlowWorkflow node-tier refactor — deterministic WrapUp/Triage, all-SDK, GenerateTasksNode)
+
+- **What:** Reviewed every `SDLCFlowWorkflow` node against `planning/sdlc-workflow-architecture/nodes-design.md` and acted on four calls from Brandon. (1) **Uniform provider** — `ConsolidatedReviewNode` + `PatchDocsNode` moved off `ANTHROPIC`/`claude-sonnet-5` onto `CLAUDE_CODE_SDK`/`sonnet`; every LLM node now rides the subscription seam. (2) **`WrapUpNode` → deterministic `Node`** — renders `log_entry`/`report`/`status_suggestion` from three new Jinja document templates (`sdlc_wrap_up_{log,report,status}.j2`) over run telemetry; deleted the old `sdlc_wrap_up.j2` system prompt. (3) **`TriageTaskNode` deterministic-default** — new `llm_triage: bool = False` on `SDLCFlowEventSchema`; a failing-under-budget task is `RETRYABLE` with no model call unless `llm_triage=True` (a natural future home for a local/OSS classifier). (4) **New `GenerateTasksNode` (Opus via `CLAUDE_CODE_SDK`) + `SpecExistsRouterNode`** — the router sits after `SetupWorktreeNode` and routes to `LoadTaskStateNode` when a spec exists, else to the planning fallback, which writes `tasks.md` + `tasks.json` then hands off. `SDLCFlowWorkflow` now wires 16 nodes. Added unit tests for all four changes plus a full-DAG integration test for the generate-spec path (`TestSDLCFlowWorkflowGeneratesSpec`). **917 tests pass / 8 skipped**, `ruff check app/` clean, `pylint app/` 10.00/10. Committed `1fc5768`.
+- **Why:** `nodes-design.md` flagged several nodes as deterministic-by-design, but two AI nodes (WrapUp, Triage) were doing work that needed no model, and the designed task-generation fallback was never built (the flow hard-failed on a spec with no task list). This closes the gap and standardizes the model seam.
+- **Refs:** `planning/sdlc-workflow-architecture/nodes-design.md`; commit `1fc5768`. **Note:** `mev emit-state` intentionally skipped this session — mev's emit-state has a bug under active fix (see `state.json` carryover `mev-emit-state-bug`).
 
 ---
 
