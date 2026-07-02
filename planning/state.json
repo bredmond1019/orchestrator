@@ -176,5 +176,17 @@
   "tiers": [],
   "note": null,
   "backlog": [],
-  "carryover": []
+  "carryover": [
+    {
+      "slug": "verify-sdlc-flow-schema-vs-base-template-d44-d48",
+      "scope": { "repo": "orchestrator" },
+      "kind": "deferred",
+      "text": "base-template's sdlc-flow.js / tasks.json contract changed (D44-D48, 2026-07-02): task list moved from markdown ### N. headings to a bare-array tasks.json; the schema was deliberately aligned to match SDLC_FLOW's already-shipped SDLCTask (app/schemas/sdlc_schema.py) rather than the other way around, so nothing here should be broken. Still worth a verification pass next time SDLC_FLOW is touched: confirm LoadTaskStateNode's bare-array assumption, SDLCTask's field set, and docs/sdlc-flow-workflow.md still match base-template's current .claude/workflows/sdlc-flow.js and .claude/commands/generate-tasks.md (both now pulled into this repo). No code change identified as needed at time of writing.",
+      "related": [
+        { "type": "external", "what": "base-template planning/decisions/D44-D48 (tasks.json contract + downstream sync)" }
+      ],
+      "clears_when": "SDLC_FLOW's schema/docs reviewed against base-template's current contract and confirmed aligned (or updated to match), or this repo's own generate-tasks.md/sdlc-*.js next diverges enough that the comparison needs redoing anyway.",
+      "created": "2026-07-02"
+    }
+  ]
 }
