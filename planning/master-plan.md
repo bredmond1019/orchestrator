@@ -92,6 +92,7 @@ three north-star tracks this repo owns — **U** (eval/metrics), **W** (external
 | **Z** | 2 | **`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows** (HL2 graduation into the Engine) | Not started |
 | **U** | 4 | Eval + success-metrics engine (**absorbs Project H** — model eval & routing) | Not started |
 | **W** | 5 ✲ | External-intelligence loop + external-knowledge memory | Not started |
+| **MV.3B.S** | 5 | Graph-aware RAG — ingest Cortex/mev graph edges; two-stage structural+semantic retrieval (mev-numbered, **orchestrator-owned**) | Not started |
 | — (Project **E**) | 2 | ParallelNode merge fix (Project E core) — **pulled forward as Block Z's prerequisite** | Not started |
 
 ---
@@ -485,11 +486,42 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
   enriched, frontmatter-stripped docs). Project D already shipped the retrieval; runs in parallel with
   bastion's `knowledge_graph` block (graph reads files; this reads/writes Postgres).
 - **Out of scope:** MCP exposure of the Brain (Block R). Brain portability / multi-workspace (Block C).
-  Any change to the retrieval algorithm. Answer-time grounding (Block L).
+  Any change to the retrieval algorithm. Answer-time grounding (Block L). Graph-edge ingestion /
+  structural retrieval (Block MV.3B.S).
 - **Acceptance criteria:** `index_brain.py` populates the store over the live brain corpus; a known
   brain question returns a correctly cited answer over the `"brain"` corpus; the orchestrator gate
   holds (`uv run python -m pytest` all pass, `ruff` clean, `pylint app/` 10.00/10); a brain-corpus
   retrieval smoke test passes.
+
+---
+
+### MV.3B.S — Graph-aware RAG (edge ingestion; mev-numbered, orchestrator-owned)
+
+- **What:** Ingest Cortex/mev's emitted graph (`mev emit-graph` — nodes/edges/leaves JSON, shipped in
+  mev MV.3B.R) into the Brain store, and extend the `"brain"` retrieval path to **two-stage
+  retrieval**: a structural stage expands the candidate set through the `related:`/link neighborhood
+  of the top semantic hits, then the existing semantic + keyword re-rank orders the union. Persist the
+  edges Postgres-side (a `brain_edges` table or equivalent keyed by `doc_id`, loaded from the emit-graph
+  payload — the `BrainDocument.related` column from Block T holds the raw list; this block makes it
+  traversable and pays it rent at query time).
+- **Why:** Wave 5 — the second half of Dual-Graph Memory. The brain corpus's link structure (OKF
+  `related:` edges, now validated clean by mev) is invisible to pure semantic retrieval; neighborhood
+  expansion surfaces the decision/plan/status docs that *surround* a hit. Keeps the brain-program
+  promise that mev's edge model is the contract.
+- **Repo:** orchestrator (retrieval + ingestion), consuming mev's graph-emit format (read-only
+  contract; mev owns the emitter).
+- **Interfaces / contracts:** Consumes `mev emit-graph` JSON (mev's edge model is the contract) and
+  the Block T `BrainDocument` columns. Produces the edge store + the two-stage retriever the Console
+  and agents query. No data-contract version bump (read path only).
+- **Depends on:** Block B (a populated, queryable semantic store to expand from). mev MV.3B.R (done —
+  the emitter exists).
+- **Out of scope:** Relatedness *suggestion* (brain-program HQ.R2). Changes to mev's emit format.
+  Structural-only queries with no semantic stage (the Console's `bastion brain` graph reader covers
+  those file-side).
+- **Acceptance criteria:** edges load from a live `mev emit-graph` run; a query whose answer lives in
+  a `related:`-neighbor of the top semantic hit retrieves that neighbor; measurable retrieval-quality
+  improvement (or parity + explainability) vs semantic-only on the Block B eval set; the orchestrator
+  gate holds (`uv run python -m pytest`, `ruff`, `pylint app/` 10.00/10).
 
 ---
 
