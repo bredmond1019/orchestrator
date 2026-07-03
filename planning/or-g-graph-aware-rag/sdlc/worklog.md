@@ -7,3 +7,6 @@ Decisions: Migration revision id e5f6a7b8c9d0 chosen to follow the repo's existi
 
 ## Wrap-up — BAILED
 Next: Triage the Pylint R0801 duplicate-code warning in pre-existing sdlc_flow_workflow_nodes code (decide extract-shared-helper vs. suppress-with-justification), then resume or-g-graph-aware-rag from Task 1's completed state through Tasks 2-5.
+
+## PR
+Draft https://github.com/bredmond1019/python-orchestration-system/pull/2
