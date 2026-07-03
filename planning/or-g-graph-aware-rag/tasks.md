@@ -12,7 +12,7 @@ related: [master-plan, retrieve-chunks-node, brain-document]
 
 # Task Spec — Phase Wave 5, Block OR.G
 
-**Status:** Not started · **Last run:** never
+**Status:** Done · **Last run:** 2026-07-03 — sdlc-flow PASS across Tasks 1–5 (review verdict PASS, docs patched)
 
 ## Goal
 Ingest mev's `emit-graph` JSON (`related:` edges) into a Postgres `brain_edges` table and extend the `"brain"` retrieval path to a two-stage structural+semantic pipeline that expands the candidate set through the `related:`-neighborhood of the top semantic hits before the existing keyword re-rank.
@@ -52,4 +52,6 @@ uv run python -m pytest
 
 ## Amendment Log
 <!-- Append-only. Pipeline stages append one dated line here when they deviate from the spec. -->
-_No amendments yet._
+- 2026-07-03 [task 1] Discovered `app/alembic/versions/` is gitignored with an explicit per-filename allowlist; added an allowlist line for the new `*_create_brain_edges_table.py` migration and restored a pre-existing missing entry for `*_add_frontmatter_columns_to_brain_documents.py` so both migrations are actually tracked in git. Not called out in the spec but required for the migration to land at all.
+- 2026-07-03 [task 1] Run BAILED after Task 1: `pylint` flagged an R0801 duplicate-code warning in pre-existing `sdlc_flow_workflow_nodes` code, unrelated to this task's changes. Out-of-scope fix — deferred to a human triage/refactor decision rather than retried blind. Tasks 2–5 not started.
+- 2026-07-02 [task 2] `scripts/` is gitignored with an explicit per-filename allowlist (mirroring the Task 1 `alembic/versions/` finding); added `!/scripts/load_brain_edges.py` so the new loader is actually tracked in git.

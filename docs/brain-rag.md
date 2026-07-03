@@ -35,7 +35,7 @@ agentic-portfolio/ markdown files
 
 There are three layers:
 - **Layer 1 (shipped):** `BrainDocument` model + `index_brain.py` CLI — index the corpus
-- **Layer 2 (shipped):** `RetrieveChunksNode` `corpus` parameter — query the corpus via `DOCUMENT_QA`
+- **Layer 2 (shipped):** `RetrieveChunksNode` `corpus` parameter — query the corpus via `DOCUMENT_QA`, including a structural graph-expansion stage (`BrainEdge` model + `load_brain_edges.py` CLI, OR.G — see below)
 - **Layer 3 (planned — Block R):** Brain-as-MCP-server exposing brain retrieval to external clients (the Python server half of the MCP split; the Console vendors the Rust client). Was scoped as "Project F" before the Bastion reframe; see D36.
 
 The indexer's own roadmap sits in the demand-first program blocks: **Block B** populates the vector store over the brain corpus, **Block O** widens it to every sub-repo's `planning/` + `CLAUDE.md`, and **Block J** makes re-indexing automatic on commit (today it is the manual CLI below).
@@ -149,6 +149,40 @@ curl -X POST http://localhost:8080/events/ \
     }
   }'
 ```
+
+### Structural graph expansion (OR.G)
+
+The brain corpus also supports a **structural** retrieval widening on top of semantic search:
+after Stage 1 (semantic) hits are found, the top 5 are used to walk `brain_edges` — a table of
+resolved `related:` frontmatter edges, loaded from mev's `emit-graph` output by
+`scripts/load_brain_edges.py` — and pull in their neighbor documents as extra candidates before
+keyword re-rank. Each structurally-added chunk is flagged `"via": "structural"` in the response
+(semantic hits carry `"via": "semantic"`) so callers can distinguish provenance.
+
+This is **on by default** and controlled by the optional `expand_structural` field (default
+`true`); set it to `false` to fall back to semantic-only retrieval:
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "DOCUMENT_QA",
+    "data": {
+      "doc_id": "00000000-0000-0000-0000-000000000000",
+      "question": "What decisions relate to the Bastion Engine role?",
+      "corpus": "brain",
+      "expand_structural": false
+    }
+  }'
+```
+
+**Prerequisite:** `brain_edges` must be populated by running mev's `emit-graph` over the brain
+repo and piping it into the loader (`mev emit-graph ~/Dev/agentic-portfolio | python
+scripts/load_brain_edges.py`) — see `docs/scripts.md` § `load_brain_edges.py`. An edge whose
+target doesn't resolve is kept as a dangling row rather than dropped, so structural expansion is
+a no-op for that neighbor rather than an error. See `docs/api-reference.md` § `RetrieveChunksNode`
+and § `BrainEdge SQLAlchemy Model` for the full mechanics.
 
 **Scoping retrieval with filters** — pass an optional `filters` dict to restrict Stage 1 semantic search to documents matching the specified OKF metadata fields:
 

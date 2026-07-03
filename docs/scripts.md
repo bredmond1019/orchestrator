@@ -162,3 +162,42 @@ Out-of-vocabulary `layer`/`project`/`status` values are logged as warnings and s
 - Before using the brain RAG layer for the first time
 
 See `docs/brain-rag.md` for the full brain RAG architecture.
+
+---
+
+## `scripts/load_brain_edges.py` — Load structural graph edges (OR.G)
+
+Reads a `mev emit-graph` JSON payload (`nodes[]` + `edges[]`, one edge per authored
+`related:` frontmatter entry) and loads it into the `brain_edges` table, resolving each
+edge's raw `to_ref` against the payload's `nodes[]` list. This is the traversal layer that
+makes `BrainDocument.related` queryable as a graph — `RetrieveChunksNode`'s structural
+neighborhood-expansion stage walks these rows at query time.
+
+```bash
+# Pipe mev's output directly (recommended)
+mev emit-graph ~/Dev/agentic-portfolio | python scripts/load_brain_edges.py
+
+# Or read from a file
+python scripts/load_brain_edges.py --input graph.json
+```
+
+| Argument | Description |
+|---|---|
+| `--input` | Path to an emit-graph JSON payload. Defaults to reading the payload from stdin. |
+
+**Resolution:** a bare `doc_id` or already-scoped `scope:doc_id` `to_ref` is resolved against
+`nodes[]`; an edge whose target doesn't resolve is kept as a **dangling row** (`target_node_id`/
+`target_doc_id` `NULL`) rather than dropped, preserving authoring intent. An edge whose *source*
+doesn't resolve is skipped and logged (`source_doc_id` is a required non-null column).
+
+**Idempotency:** the loader clear-then-reloads the whole `brain_edges` table inside one
+transaction on every run, rather than upserting per-row — `brain_edges` is a read-only derived
+index, not a source of truth, so a full reload is simpler and safe to re-run.
+
+**Use this when:**
+- You've run `mev emit-graph` over the brain repo and want the resulting graph queryable via
+  `RetrieveChunksNode`'s structural expansion stage (`corpus="brain"`, `expand_structural=True`)
+- After any brain document's `related:` frontmatter changes
+
+See `docs/brain-rag.md` and `docs/api-reference.md` § `BrainEdge SQLAlchemy Model` for the full
+structural retrieval architecture.
