@@ -12,7 +12,7 @@ related: [status, master-plan]
 
 # Task Spec — OR.V: One graph resolver
 
-**Status:** Not started · **Last run:** never
+**Status:** Blocked (bailed after Task 1) · **Last run:** 2026-07-03
 
 ## Goal
 Make `scripts/load_brain_edges.py` read mev `emit-graph` v2's already-resolved `target_node_id`/`target_doc_id` edge fields directly, deleting its duplicate local resolution (`build_node_maps()` + `resolve_ref()`), so edge resolution lives in exactly one place (mev).
@@ -53,4 +53,4 @@ uv run python -m pytest
 
 ## Amendment Log
 <!-- Append-only. Pipeline stages append one dated line here when they deviate from the spec. -->
-_No amendments yet._
+2026-07-03 [task 1] Ran only the targeted refactor (deleted `build_node_maps()`/`resolve_ref()`, added the `version == "2"` guard) and deliberately deferred running `tests/test_load_brain_edges.py`/full pytest, since updating those tests is Task 2's scope; the run then bailed before reaching Task 2 because the still-unmodified test file imports the now-deleted `build_node_maps()` symbol, so the AC "`tests/test_load_brain_edges.py` uses a v2 fixture... imports no deleted symbols" is not yet met and needs a human decision on the rewrite strategy before resuming.
