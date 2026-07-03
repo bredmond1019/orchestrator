@@ -2,10 +2,10 @@
   "spec_slug": "or-g-graph-aware-rag",
   "branch": "or-g-graph-aware-rag-flow",
   "started_at": "2026-07-03T01:01:19Z",
-  "updated_at": "2026-07-03T01:34:12Z",
+  "updated_at": "2026-07-03T01:39:59Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-g-graph-aware-rag-flow",
   "status": "running",
-  "current_task": 3,
+  "current_task": 4,
   "tasks": {
     "1": {
       "status": "passed",
@@ -65,6 +65,23 @@
         "app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py",
         "app/schemas/document_qa_schema.py",
         "tests/workflows/test_retrieve_chunks_node.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "4": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added an end-to-end acceptance test suite (test_brain_graph_retrieval.py) proving OR.G's headline acceptance: a related:-neighbor answer is retrieved and flagged via=\"structural\" with expand_structural=True but absent from the semantic-only path, structural-on/off results are identical when no useful neighbor exists (dangling edge), and the content corpus is unaffected — all driven by the Task 2 loader's build_edge_rows() resolving a small emit-graph fixture and a mocked db_session (no live DB / no mev binary).",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Used a mocked db_session (MagicMock query chain scripted from the real loader's resolved edge rows) rather than an in-memory SQLite DB, since BrainDocument uses Postgres-only column types (pgvector Vector, ARRAY, TSVECTOR) that SQLite can't compile — mirrors the existing project convention in tests/conftest.py (db_engine fixture excludes brain_documents from SQLite) and tests/workflows/test_retrieve_chunks_node.py::TestStructuralExpand's mocking pattern.",
+        "Exercised the Task 2 loader for real (build_edge_rows(payload) -> BrainEdge(**row)) so edge resolution (bare-ref -> canonical doc_id, dangling-ref -> NULL target) is proven end-to-end rather than hand-authored, then fed the loader's resolved target_doc_id(s) into the mocked session's query results so _structural_expand (Task 3) runs unmocked/for-real against that data.",
+        "Parity fixture uses a dangling (unresolvable) related: ref rather than 'no edges at all', since that's a closer match to the spec's 'no useful neighbor' wording and additionally exercises the loader's dangling-edge contract."
+      ],
+      "files_changed": [
+        "tests/workflows/test_brain_graph_retrieval.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -181,13 +198,29 @@
         "filesReadKb": null,
         "inTokEst": 1398,
         "outTok": 3777
+      },
+      {
+        "label": "implement-4-1",
+        "model": "sonnet",
+        "promptTokEst": 990,
+        "filesReadKb": null,
+        "inTokEst": 990,
+        "outTok": 13440
+      },
+      {
+        "label": "test-4-1",
+        "model": "haiku",
+        "promptTokEst": 1398,
+        "filesReadKb": null,
+        "inTokEst": 1398,
+        "outTok": 4565
       }
     ],
     "total": {
-      "promptTokEst": 11469,
+      "promptTokEst": 13857,
       "filesReadKb": 0,
-      "inTokEst": 11469,
-      "outTok": 86226
+      "inTokEst": 13857,
+      "outTok": 104231
     }
   }
 }
