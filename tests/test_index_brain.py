@@ -963,7 +963,7 @@ class TestCorpusDerivation:
         (tmp_path / "CLAUDE.md").write_text("# c", encoding="utf-8")
 
         rels = {
-            p.relative_to(tmp_path).as_posix() for p, _ in _collect_files(tmp_path, TEST_CONFIG)
+            p.relative_to(tmp_path).as_posix() for p, _, _ in _collect_files(tmp_path, TEST_CONFIG)
         }
         assert "docs/diagnostic/plan.md" in rels
         assert "docs/okf-frontmatter.md" in rels
@@ -978,7 +978,7 @@ class TestCorpusDerivation:
         (tmp_path / "log.md").write_text("# l", encoding="utf-8")
 
         rels = {
-            p.relative_to(tmp_path).as_posix() for p, _ in _collect_files(tmp_path, TEST_CONFIG)
+            p.relative_to(tmp_path).as_posix() for p, _, _ in _collect_files(tmp_path, TEST_CONFIG)
         }
         assert "planning/archive/old.md" not in rels  # [crawl].skip_dirs
         assert "planning/handoff.md" not in rels  # ephemeral
@@ -997,7 +997,7 @@ class TestCorpusDerivation:
 
         by_rel = {
             p.relative_to(tmp_path).as_posix(): dt
-            for p, dt in _collect_files(tmp_path, TEST_CONFIG)
+            for p, dt, _ in _collect_files(tmp_path, TEST_CONFIG)
         }
         assert by_rel.get("core/docs/projects/bastion.md") == "project"
         assert by_rel.get("docs/career.md") == "career"
@@ -1010,6 +1010,136 @@ class TestCorpusDerivation:
         assert _classify_doc_type("docs/index.md") == "meta"
         assert _classify_doc_type("README.md") == "meta"
         assert _classify_doc_type("unknown/thing.md") == "content"
+
+
+# ---------------------------------------------------------------------------
+# OR.O — sub-repo planning/ + CLAUDE.md corpus widening
+# ---------------------------------------------------------------------------
+
+
+class TestSubRepoFiles:
+    """_collect_files widens the corpus to each sub-repo's planning/ + CLAUDE.md.
+
+    Per Bastion program Block OR.O: manifest ``[[repos]]`` entries with
+    ``repo_path != "."`` contribute their own ``planning/**/*.md`` + root
+    ``CLAUDE.md`` — stamped with that repo's slug as a project override — while
+    their ``docs/`` and source trees stay out of the corpus, and the pre-OR.O
+    brain-root/sub-brain-tier crawl is unchanged.
+    """
+
+    def _config_with_repo(self, repo_path: str = "core/orchestrator", slug: str = "orchestrator"):
+        return BrainConfig(
+            valid_layers=TEST_CONFIG.valid_layers,
+            valid_projects=frozenset({*TEST_CONFIG.valid_projects, slug}),
+            valid_statuses=TEST_CONFIG.valid_statuses,
+            skip_dirs=TEST_CONFIG.skip_dirs,
+            repos=(
+                {"slug": "brain", "repo_path": ".", "tier": "_root"},
+                {"slug": slug, "repo_path": repo_path, "tier": "core"},
+            ),
+        )
+
+    def _make_sub_repo(self, tmp_path, repo_path="core/orchestrator"):
+        repo_root = tmp_path / repo_path
+        (repo_root / "planning").mkdir(parents=True)
+        (repo_root / "planning" / "status.md").write_text("# Status", encoding="utf-8")
+        (repo_root / "docs").mkdir(parents=True)
+        (repo_root / "docs" / "api-reference.md").write_text("# API", encoding="utf-8")
+        (repo_root / "app").mkdir(parents=True)
+        (repo_root / "app" / "main.py").write_text("x = 1\n", encoding="utf-8")
+        (repo_root / "CLAUDE.md").write_text("# Claude context", encoding="utf-8")
+        return repo_root
+
+    def test_sub_repo_planning_and_claude_md_are_collected(self, tmp_path):
+        config = self._config_with_repo()
+        self._make_sub_repo(tmp_path)
+
+        rels = {
+            p.relative_to(tmp_path).as_posix()
+            for p, _, _ in _collect_files(tmp_path, config)
+        }
+        assert "core/orchestrator/planning/status.md" in rels
+        assert "core/orchestrator/CLAUDE.md" in rels
+
+    def test_sub_repo_docs_and_source_are_not_collected(self, tmp_path):
+        config = self._config_with_repo()
+        self._make_sub_repo(tmp_path)
+
+        rels = {
+            p.relative_to(tmp_path).as_posix()
+            for p, _, _ in _collect_files(tmp_path, config)
+        }
+        assert "core/orchestrator/docs/api-reference.md" not in rels
+        assert "core/orchestrator/app/main.py" not in rels
+
+    def test_sub_repo_chunks_are_stamped_with_manifest_slug(self, tmp_path):
+        config = self._config_with_repo(slug="orchestrator")
+        self._make_sub_repo(tmp_path)
+
+        by_rel = {
+            p.relative_to(tmp_path).as_posix(): project
+            for p, _, project in _collect_files(tmp_path, config)
+        }
+        assert by_rel["core/orchestrator/planning/status.md"] == "orchestrator"
+        assert by_rel["core/orchestrator/CLAUDE.md"] == "orchestrator"
+
+    def test_sub_repo_planning_frontmatter_project_is_overridden(self, tmp_path):
+        # status.md may carry its own (or no) project: value in frontmatter —
+        # the manifest slug always wins since it is the workspace identity.
+        config = self._config_with_repo(repo_path="core/mev", slug="mev")
+        repo_root = tmp_path / "core" / "mev"
+        (repo_root / "planning").mkdir(parents=True)
+        (repo_root / "planning" / "status.md").write_text(
+            "---\nproject: some-other-value\n---\n\n# Status\n", encoding="utf-8"
+        )
+
+        norm_meta, body = parse_document(
+            (repo_root / "planning" / "status.md").read_text(encoding="utf-8")
+        )
+        assert norm_meta.get("project") == "some-other-value"  # sanity: frontmatter had a value
+
+        by_rel = {
+            p.relative_to(tmp_path).as_posix(): project
+            for p, _, project in _collect_files(tmp_path, config)
+        }
+        assert by_rel["core/mev/planning/status.md"] == "mev"
+
+    def test_sub_repo_planning_archive_and_ephemeral_still_skipped(self, tmp_path):
+        config = self._config_with_repo()
+        repo_root = self._make_sub_repo(tmp_path)
+        (repo_root / "planning" / "archive").mkdir(parents=True)
+        (repo_root / "planning" / "archive" / "old.md").write_text("# o", encoding="utf-8")
+        (repo_root / "planning" / "handoff.md").write_text("# h", encoding="utf-8")
+
+        rels = {
+            p.relative_to(tmp_path).as_posix()
+            for p, _, _ in _collect_files(tmp_path, config)
+        }
+        assert "core/orchestrator/planning/archive/old.md" not in rels
+        assert "core/orchestrator/planning/handoff.md" not in rels
+
+    def test_brain_root_crawl_output_is_unchanged_by_or_o(self, tmp_path):
+        # Adding a sub-repo entry to the manifest must not alter what is
+        # collected from the brain root / sub-brain tiers themselves.
+        (tmp_path / "docs" / "diagnostic").mkdir(parents=True)
+        (tmp_path / "docs" / "diagnostic" / "plan.md").write_text("# x", encoding="utf-8")
+        (tmp_path / "planning").mkdir()
+        (tmp_path / "planning" / "status.md").write_text("# s", encoding="utf-8")
+        (tmp_path / "CLAUDE.md").write_text("# c", encoding="utf-8")
+
+        rels_before = {
+            p.relative_to(tmp_path).as_posix()
+            for p, _, _ in _collect_files(tmp_path, TEST_CONFIG)
+        }
+
+        config_with_repo = self._config_with_repo()
+        self._make_sub_repo(tmp_path)
+        rels_after_root_only = {
+            p.relative_to(tmp_path).as_posix()
+            for p, _, project in _collect_files(tmp_path, config_with_repo)
+            if project is None
+        }
+        assert rels_before == rels_after_root_only
 
 
 class TestNewColumnPopulation:

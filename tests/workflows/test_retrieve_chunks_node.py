@@ -613,6 +613,150 @@ class TestSemanticSearchFilters:
 
 
 # ---------------------------------------------------------------------------
+# OR.O — cross-repo retrieval scoping via the existing "brain"-corpus project filter
+# ---------------------------------------------------------------------------
+
+
+def _apply_binary_eq(expr, row) -> bool:
+    """Evaluate a ``Column == literal`` SQLAlchemy BinaryExpression against a fixture row.
+
+    ``_apply_metadata_filters`` builds real ``BrainDocument.project == value``
+    expressions (SQLAlchemy expression construction needs no DB connection).
+    This lets the fake query below apply the *actual* production filter
+    predicate to in-memory fixture rows, rather than re-implementing the
+    scoping logic by hand — so the test exercises the real WHERE-clause
+    contract, not a stand-in.
+    """
+    field = expr.left.key
+    value = expr.right.value
+    return getattr(row, field, None) == value
+
+
+class _FakeSemanticQuery:
+    """Minimal chainable stand-in for the SQLAlchemy query used in _semantic_search.
+
+    Wraps a fixed list of ``(row, distance)`` pairs and applies real
+    ``BinaryExpression`` filters (built by ``_apply_metadata_filters``)
+    against each row's attributes, so ``filters={"project": ...}`` scopes the
+    fixture set exactly as the real ``project == value`` WHERE clause would.
+    """
+
+    def __init__(self, rows_with_distance):
+        self._rows = rows_with_distance
+
+    def filter(self, *exprs):
+        rows = self._rows
+        for expr in exprs:
+            rows = [(row, dist) for row, dist in rows if _apply_binary_eq(expr, row)]
+        return _FakeSemanticQuery(rows)
+
+    def order_by(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, n):
+        return _FakeSemanticQuery(self._rows[:n])
+
+    def all(self):
+        return self._rows
+
+
+class TestCrossRepoProjectScoping:
+    """Proves the existing "brain"-corpus ``project`` filter scopes sub-repo corpora.
+
+    OR.O ships no new retrieval code — it relies on ``RetrieveChunksNode``'s
+    existing ``filter_fields["project"] = "scalar"`` declaration. This drives
+    the *real* ``_semantic_search`` method (not a patched seam) against two
+    fixture ``BrainDocument`` rows tagged with different manifest slugs
+    (simulating two sub-repos' widened corpora) and proves a project-scoped
+    query never returns the other repo's chunk.
+    """
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def _make_fixture_row(self, project: str, content: str):
+        row = MagicMock()
+        row.id = uuid.uuid4()
+        row.content = content
+        row.section = "## Status"
+        row.is_section_title = False
+        row.file_path = f"core/{project}/planning/status.md"
+        row.doc_id = f"{project}-status"
+        row.title = None
+        row.project = project
+        row.status = None
+        return row
+
+    def _run_semantic_search_scoped(self, project_filter: str) -> list[dict]:
+        repo_a_row = self._make_fixture_row("repo-a", "repo-a status content")
+        repo_b_row = self._make_fixture_row("repo-b", "repo-b status content")
+        fake_query = _FakeSemanticQuery(
+            [(repo_a_row, 0.1), (repo_b_row, 0.1)]
+        )
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            # Call the unbound method directly so this helper still exercises
+            # the real _semantic_search even when the instance's
+            # _semantic_search attribute is itself patched (as it is in the
+            # end-to-end retrieve() test below).
+            return RetrieveChunksNode._semantic_search(
+                self.node,
+                [0.1] * 1024,
+                "brain",
+                limit=20,
+                filters={"project": project_filter},
+                include_archived=True,  # skip the unrelated default-status filter
+            )
+
+    def test_project_scoped_query_returns_only_that_repos_chunks(self):
+        """filters={"project": "repo-a"} returns only repo-a's chunk."""
+        results = self._run_semantic_search_scoped("repo-a")
+        assert len(results) == 1
+        assert results[0]["file_path"] == "core/repo-a/planning/status.md"
+
+    def test_symmetric_project_scoped_query_does_not_leak(self):
+        """filters={"project": "repo-b"} returns only repo-b's chunk — no leakage from repo-a."""
+        results = self._run_semantic_search_scoped("repo-b")
+        assert len(results) == 1
+        assert results[0]["file_path"] == "core/repo-b/planning/status.md"
+
+    def test_retrieve_end_to_end_scopes_by_project_per_repo(self):
+        """retrieve() end-to-end: two project-scoped queries never cross-contaminate."""
+
+        def _fake_semantic_search(_vector, _corpus, limit, filters=None, include_archived=False):
+            return self._run_semantic_search_scoped(filters["project"])
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", side_effect=_fake_semantic_search
+        ), patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ), patch.object(
+            self.node, "_structural_expand", return_value=[]
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result_a = self.node.retrieve(
+                "q", corpus="brain", filters={"project": "repo-a"}, include_archived=True
+            )
+            result_b = self.node.retrieve(
+                "q", corpus="brain", filters={"project": "repo-b"}, include_archived=True
+            )
+
+        assert {r["file_path"] for r in result_a} == {"core/repo-a/planning/status.md"}
+        assert {r["file_path"] for r in result_b} == {"core/repo-b/planning/status.md"}
+
+
+# ---------------------------------------------------------------------------
 # Graded keyword fusion (FTS dict path) + provenance fields
 # ---------------------------------------------------------------------------
 
