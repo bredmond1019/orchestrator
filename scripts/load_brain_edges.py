@@ -1,8 +1,10 @@
 """load_brain_edges.py — mev `emit-graph` JSON -> `brain_edges` table loader.
 
-Reads a `mev emit-graph` payload (see `../mev/docs/cli.md` "Output shape") and
-loads its `edges[]` into the `brain_edges` table, resolving each edge's raw
-`to_ref` against the payload's `nodes[]` list.
+Reads a `mev emit-graph` v2 payload (see `../mev/docs/cli.md` "Output shape")
+and loads its `edges[]` into the `brain_edges` table, reading each edge's
+already-resolved `target_node_id`/`target_doc_id` fields directly — mev's
+`resolve_edge()` is the single source of truth for edge resolution; this
+loader no longer re-resolves `to_ref` itself.
 
 This script runs from the CLI — it is NOT a workflow node and is NOT run by
 Celery. Persistence is injected via `database.session.db_session` (CLAUDE.md
@@ -31,21 +33,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _REQUIRED_KEYS: tuple[str, ...] = ("version", "nodes", "edges")
+_EXPECTED_VERSION = "2"
 
 
 def validate_payload(payload: dict) -> None:
     """Validate the top-level shape of an emit-graph payload.
 
-    Checks only structural shape (required keys present, `nodes`/`edges` are
-    lists) — it does not validate `version` against a specific value, so a
-    future schema-version bump on mev's side does not break this loader.
+    Checks structural shape (required keys present, `nodes`/`edges` are
+    lists) and that `version` is the exact schema this loader depends on.
+    The loader reads mev's already-resolved `target_node_id`/`target_doc_id`
+    edge fields directly (introduced in v2) rather than resolving them
+    itself, so a pre-v2 payload — which carries no target fields — would
+    otherwise silently load every edge as dangling.
 
     Args:
         payload: The parsed emit-graph JSON document.
 
     Raises:
-        ValueError: If a required top-level key is missing, or if `nodes`/
-            `edges` are not lists.
+        ValueError: If a required top-level key is missing, if `nodes`/
+            `edges` are not lists, or if `version` is not `"2"`.
     """
     missing = [key for key in _REQUIRED_KEYS if key not in payload]
     if missing:
@@ -54,71 +60,27 @@ def validate_payload(payload: dict) -> None:
         raise ValueError("emit-graph payload 'nodes' must be a list")
     if not isinstance(payload["edges"], list):
         raise ValueError("emit-graph payload 'edges' must be a list")
-
-
-def build_node_maps(nodes: list[dict]) -> tuple[dict[str, dict], dict[str, dict]]:
-    """Build the two resolution maps used to resolve `edges[].to_ref` entries.
-
-    Args:
-        nodes: The payload's `nodes[]` list — each a
-            `{id, scope, doc_id, rel}` dict.
-
-    Returns:
-        A `(id_map, doc_id_map)` pair: `id_map` keys nodes by their canonical
-        `scope:doc_id` id; `doc_id_map` keys nodes by their bare `doc_id`. If
-        two nodes share a bare `doc_id` across different scopes, the later
-        node (in payload walk order) wins in `doc_id_map` — a documented
-        last-write-wins choice, not a silent one, since bare-ref collisions
-        across scopes are expected to be rare and `id_map` remains
-        unambiguous for already-scoped refs.
-    """
-    id_map: dict[str, dict] = {}
-    doc_id_map: dict[str, dict] = {}
-    for node in nodes:
-        node_id = node.get("id")
-        doc_id = node.get("doc_id")
-        if node_id:
-            id_map[node_id] = node
-        if doc_id:
-            doc_id_map[doc_id] = node
-    return id_map, doc_id_map
-
-
-def resolve_ref(
-    to_ref: str, id_map: dict[str, dict], doc_id_map: dict[str, dict]
-) -> dict | None:
-    """Resolve a raw `edges[].to_ref` entry against the node maps.
-
-    An already-scoped ref (contains `:`) matches by canonical id; a bare ref
-    matches by `doc_id`. Never raises — an unresolvable ref returns `None`
-    so the caller can store the edge as dangling instead of dropping it.
-
-    Args:
-        to_ref: The raw authored `related:` entry (bare `doc_id` or
-            already-scoped `scope:doc_id`).
-        id_map: Canonical-id -> node map from `build_node_maps`.
-        doc_id_map: Bare-doc_id -> node map from `build_node_maps`.
-
-    Returns:
-        The matching node dict, or `None` if `to_ref` resolves to nothing.
-    """
-    if ":" in to_ref:
-        return id_map.get(to_ref)
-    return doc_id_map.get(to_ref)
+    if payload["version"] != _EXPECTED_VERSION:
+        raise ValueError(
+            f"emit-graph payload has version {payload['version']!r}; "
+            f"this loader requires version {_EXPECTED_VERSION!r} "
+            "(resolved target_node_id/target_doc_id edge fields)"
+        )
 
 
 def build_edge_rows(payload: dict) -> list[dict]:
-    """Resolve every `edges[]` entry in an emit-graph payload into a row dict.
+    """Convert every `edges[]` entry in an emit-graph payload into a row dict.
 
     Each returned dict matches the `BrainEdge` column set and is ready to
     pass as `BrainEdge(**row)`.
 
     An edge whose `from` does not resolve against `nodes[]` is skipped (and
     logged) — `source_doc_id` is a required column and there is no
-    document-shaped data to fall back on. An edge whose `to_ref` does not
-    resolve is *kept* with `target_node_id`/`target_doc_id` left `None`
-    (dangling) — per the ingestion contract, unresolved refs are never
-    dropped or treated as an error.
+    document-shaped data to fall back on. An edge's `target_node_id`/
+    `target_doc_id` are read straight off the payload (mev's `emit-graph` v2
+    already resolved them via its own `resolve_edge()`); an edge with a
+    `null` target is *kept* with those columns `None` (dangling or leaf) —
+    per the ingestion contract, unresolved refs are never dropped.
 
     Args:
         payload: The parsed, already-validated emit-graph JSON document.
@@ -126,27 +88,24 @@ def build_edge_rows(payload: dict) -> list[dict]:
     Returns:
         One row dict per resolvable-source edge.
     """
-    id_map, doc_id_map = build_node_maps(payload["nodes"])
+    source_nodes = {node["id"]: node for node in payload["nodes"] if node.get("id")}
     rows: list[dict] = []
     for edge in payload["edges"]:
         from_id = edge.get("from")
-        to_ref = edge.get("to_ref")
         kind = edge.get("kind", "related")
 
-        source_node = id_map.get(from_id)
+        source_node = source_nodes.get(from_id)
         if source_node is None:
             logger.warning("Skipping edge with unresolvable source node: %s", from_id)
             continue
-
-        target_node = resolve_ref(to_ref, id_map, doc_id_map) if to_ref else None
 
         rows.append(
             {
                 "source_node_id": from_id,
                 "source_doc_id": source_node.get("doc_id"),
-                "to_ref": to_ref,
-                "target_node_id": target_node.get("id") if target_node else None,
-                "target_doc_id": target_node.get("doc_id") if target_node else None,
+                "to_ref": edge.get("to_ref"),
+                "target_node_id": edge.get("target_node_id"),
+                "target_doc_id": edge.get("target_doc_id"),
                 "kind": kind,
                 "scope": source_node.get("scope"),
             }
