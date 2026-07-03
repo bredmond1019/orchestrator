@@ -205,3 +205,44 @@ index, not a source of truth, so a full reload is simpler and safe to re-run.
 
 See `docs/brain-rag.md` and `docs/api-reference.md` § `BrainEdge SQLAlchemy Model` for the full
 structural retrieval architecture.
+
+---
+
+## `scripts/query_brain.py` — Manual semantic-search smoke test (OR.B)
+
+Embeds a natural-language query via the configured `EmbeddingService` (local Ollama
+`mxbai-embed-large` by default) and prints the nearest `brain_documents` rows by cosine
+distance. This is **raw retrieval only** — no keyword fusion, no structural graph expansion,
+no LLM answer synthesis — so you can eyeball indexing/retrieval quality right after a
+`scripts/index_brain.py --rebuild` without standing up the API/Celery stack and driving the
+full `DOCUMENT_QA` workflow.
+
+```bash
+python scripts/query_brain.py "What is the Bastion program and its five layers?"
+
+# More results, with a content snippet per row
+python scripts/query_brain.py "How does structural graph retrieval work?" --limit 10 --show-content
+
+# Longer snippets
+python scripts/query_brain.py "some question" --show-content --content-chars 400
+```
+
+| Argument | Description |
+|---|---|
+| `query` | (positional) Natural-language question to embed and search for. |
+| `--limit` | Number of results to show (default: `5`). |
+| `--show-content` | Print a content snippet for each result. |
+| `--content-chars` | Snippet length in characters when `--show-content` is set (default: `200`). |
+
+Each result line shows the cosine distance (`0.0` = identical, larger = less similar), the
+source file path, the OKF `title`, and the section header if the chunk falls under one.
+
+**Use this when:**
+- You just ran `scripts/index_brain.py --rebuild` and want a fast sanity check that
+  retrieval surfaces the right documents before wiring up the full `DOCUMENT_QA` path
+- You're debugging a `"brain"`-corpus retrieval quality issue and want to isolate whether the
+  problem is in embedding/ranking (this script) vs. keyword fusion or structural expansion
+  (`RetrieveChunksNode`)
+
+See `docs/brain-rag.md` § "Testing retrieval manually" for a walkthrough and for how this
+compares to the full `DOCUMENT_QA` answer path.
