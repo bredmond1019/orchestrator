@@ -4,8 +4,8 @@
   "started_at": "2026-07-03T19:18:46Z",
   "updated_at": "2026-07-03T19:22:21Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-v-graph-resolver-cleanup-flow",
-  "status": "blocked",
-  "current_task": 1,
+  "status": "completed",
+  "current_task": 4,
   "tasks": {
     "1": {
       "status": "failed",
@@ -23,8 +23,49 @@
       "files_changed": [
         "scripts/load_brain_edges.py"
       ],
+      "commit": "419643b",
+      "validated": ""
+    },
+    "2": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Rewrote tests/test_load_brain_edges.py for the v2 emit-graph shape: fixture bumped to version '2' with edges carrying resolved target_node_id/target_doc_id; removed build_node_maps/resolve_ref imports and their tests; added a version-guard test; kept dangling-target, unresolvable-source-skip, idempotent-reload, malformed-payload, and both main() path tests.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Also fixed tests/workflows/test_brain_graph_retrieval.py (out of the task's declared files[] but a real regression from task 1 — it drives build_edge_rows directly with v1 payloads and asserted the deleted local-resolution behavior)."
+      ],
+      "files_changed": [
+        "tests/test_load_brain_edges.py",
+        "tests/workflows/test_brain_graph_retrieval.py"
+      ],
+      "commit": "",
+      "validated": "uv run python -m pytest tests/test_load_brain_edges.py — 15 passed"
+    },
+    "3": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Updated docs/scripts.md load_brain_edges.py section and docs/api-reference.md BrainEdge loader/column/test-coverage descriptions to describe reading mev's resolved target_node_id/target_doc_id fields instead of local to_ref resolution; test count corrected to 15.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [],
+      "files_changed": [
+        "docs/scripts.md",
+        "docs/api-reference.md"
+      ],
       "commit": "",
       "validated": ""
+    },
+    "4": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "All gated validation commands pass: targeted loader tests (15 passed), ruff check app/ (clean), pylint app/ (10.00/10), full pytest (969 passed, 8 skipped, no collection-count decrease).",
+      "issues": [],
+      "fixes": [],
+      "decisions": [],
+      "files_changed": [],
+      "commit": "",
+      "validated": "uv run python -m pytest — 969 passed, 8 skipped"
     }
   },
   "review": {
@@ -33,10 +74,13 @@
     "attempts": 0
   },
   "docs": {
-    "changed": [],
+    "changed": [
+      "docs/scripts.md",
+      "docs/api-reference.md"
+    ],
     "created": []
   },
-  "bail_reason": "tests/test_load_brain_edges.py imports build_node_maps, which was intentionally removed from load_brain_edges.py during the emit-graph v2 refactor (commit 419643b) — the test suite is stale against the new resolved-fields architecture and needs a human decision on how to update/rewrite it, not a code fix.",
+  "bail_reason": null,
   "pr": {
     "url": "https://github.com/bredmond1019/python-orchestration-system/pull/3",
     "number": 3

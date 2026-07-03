@@ -2342,8 +2342,8 @@ the semantic candidate set with a query's neighboring documents (OR.G).
 | `source_node_id` | `String(512)` | No | — | Canonical `scope:doc_id` of the edge source (mev `emit-graph` `edges[].from`). |
 | `source_doc_id` | `String(256)` | No | — | The source node's authored `doc_id`, for joining to `brain_documents.doc_id`. Indexed (`ix_brain_edges_source_doc_id`). |
 | `to_ref` | `String(512)` | No | — | The raw authored `related:` entry (bare `doc_id` or already-scoped `scope:doc_id`). |
-| `target_node_id` | `String(512)` | Yes | `NULL` | Resolved canonical `scope:doc_id` of the edge target; `NULL` when dangling (unresolvable against the payload's `nodes[]`). |
-| `target_doc_id` | `String(256)` | Yes | `NULL` | Resolved target `doc_id`, for joining to `brain_documents.doc_id`; `NULL` when dangling. Indexed (`ix_brain_edges_target_doc_id`). |
+| `target_node_id` | `String(512)` | Yes | `NULL` | Resolved canonical `scope:doc_id` of the edge target, read from mev emit-graph v2's already-resolved `target_node_id` field; `NULL` when dangling (unresolvable on mev's side). |
+| `target_doc_id` | `String(256)` | Yes | `NULL` | Resolved target `doc_id`, for joining to `brain_documents.doc_id`, read from mev's `target_doc_id` field; `NULL` when dangling. Indexed (`ix_brain_edges_target_doc_id`). |
 | `kind` | `String(64)` | No | `"related"` | Edge kind as emitted by mev (currently always `"related"`). |
 | `scope` | `String(128)` | Yes | `NULL` | Optional scope of the source node (mev `emit-graph` `nodes[].scope`). |
 | `indexed_at` | `DateTime` | Yes | `datetime.now` | Timestamp when this edge row was last (re)loaded. |
@@ -2351,10 +2351,10 @@ the semantic candidate set with a query's neighboring documents (OR.G).
 A `UniqueConstraint` on `(source_node_id, to_ref)` (`uq_brain_edges_source_node_id_to_ref`) keeps
 one row per authored edge — reloads replace rather than duplicate.
 
-**On dangling edges:** an edge whose `to_ref` doesn't resolve against the payload's `nodes[]` is
-kept as a row with `target_node_id`/`target_doc_id` `NULL` rather than dropped, preserving
-authoring intent for later resolution. An edge whose *source* doesn't resolve is skipped entirely
-(`source_doc_id` is a required non-null column with no fallback).
+**On dangling edges:** an edge whose mev-resolved `target_node_id`/`target_doc_id` are `NULL` is
+kept as a row rather than dropped, preserving authoring intent for later resolution. An edge whose
+*source* doesn't resolve against the payload's `nodes[]` is skipped entirely (`source_doc_id` is a
+required non-null column with no fallback).
 
 ### Migration
 
@@ -2382,17 +2382,18 @@ from database import BrainDocument, BrainEdge, ChatSession, ContentChunk, Learni
 ### Loader CLI
 
 The `brain_edges` table is populated by `scripts/load_brain_edges.py`, an idempotent loader that
-reads mev's `emit-graph` JSON output (`nodes[]` + `edges[]`), resolves each edge's `to_ref`
-against `nodes[]` (bare `doc_id` or scoped `scope:doc_id`), and clear-then-reloads the whole
-table in one transaction so repeated runs stay consistent (`brain_edges` is a read-only derived
-index, not a source of truth — see `docs/scripts.md` § `load_brain_edges.py`).
+reads mev's `emit-graph` v2 JSON output (`nodes[]` + `edges[]`) and its already-resolved
+`target_node_id`/`target_doc_id` edge fields directly — mev's `resolve_edge()` is the single
+source of truth for edge resolution — then clear-then-reloads the whole table in one transaction
+so repeated runs stay consistent (`brain_edges` is a read-only derived index, not a source of
+truth — see `docs/scripts.md` § `load_brain_edges.py`).
 
 ### Test coverage
 
 `tests/database/test_brain_edge.py` — model/schema tests (columns, constraints, migration).
-`tests/test_load_brain_edges.py` — 19 tests covering the loader: bare/scoped `to_ref` resolution,
-dangling-edge preservation, unresolvable-source skip, and clear-then-reload idempotency, mocking
-the session/repository seam (no live DB).
+`tests/test_load_brain_edges.py` — 15 tests covering the loader: the version=='2' guard,
+resolved-target read-through, dangling-edge preservation, unresolvable-source skip, and
+clear-then-reload idempotency, mocking the session/repository seam (no live DB).
 
 ---
 

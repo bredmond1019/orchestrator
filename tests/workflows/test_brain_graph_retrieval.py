@@ -1,8 +1,9 @@
 """End-to-end acceptance test for OR.G — neighbor retrieval + parity/explainability.
 
-Seeds a small `mev emit-graph` payload, resolves it into `BrainEdge` rows via
-the Task 2 loader (``scripts/load_brain_edges.py::build_edge_rows``), and
-drives ``RetrieveChunksNode.retrieve()`` (Task 3) against a mocked DB session
+Seeds a small `mev emit-graph` v2 payload (already-resolved `target_node_id`/
+`target_doc_id` edge fields), converts it into `BrainEdge` rows via the Task 2
+loader (``scripts/load_brain_edges.py::build_edge_rows``), and drives
+``RetrieveChunksNode.retrieve()`` (Task 3) against a mocked DB session
 built from those rows plus stand-in ``BrainDocument``-shaped rows. This is the
 block's headline acceptance test (see ``planning/or-g-graph-aware-rag/tasks.md``
 "Acceptance Criteria"):
@@ -97,7 +98,7 @@ class TestBrainGraphRetrievalAcceptance:
         flagged via='structural'. With expand_structural=False (semantic-only
         path), beta never appears on the same fixture."""
         payload = {
-            "version": "1",
+            "version": "2",
             "root": "/path/to/brain",
             "nodes": [
                 {
@@ -114,16 +115,22 @@ class TestBrainGraphRetrievalAcceptance:
                 },
             ],
             "edges": [
-                {"from": "brain:alpha", "to_ref": "beta", "kind": "related"},
+                {
+                    "from": "brain:alpha",
+                    "to_ref": "beta",
+                    "kind": "related",
+                    "target_node_id": "brain:beta",
+                    "target_doc_id": "beta",
+                },
             ],
             "leaves": [],
         }
 
-        # Task 2 loader resolves the raw payload into BrainEdge-ready rows.
+        # Task 2 loader reads mev's already-resolved target fields into BrainEdge-ready rows.
         edge_rows = build_edge_rows(payload)
         assert len(edge_rows) == 1
         edges = [BrainEdge(**row) for row in edge_rows]
-        assert edges[0].target_doc_id == "beta"  # bare ref resolved via nodes[]
+        assert edges[0].target_doc_id == "beta"  # resolved target read through from mev
 
         alpha_candidate = {
             "id": uuid.uuid4(),
@@ -176,12 +183,13 @@ class TestBrainGraphRetrievalAcceptance:
         mock_db_session.assert_not_called()
 
     def test_parity_when_no_useful_neighbor(self):
-        """Fixture: alpha's only related: edge is dangling (unresolvable
-        to_ref). The loader keeps the edge row but leaves target_doc_id NULL
-        per the ingestion contract, so there is no traversable neighbor.
-        structural-on and structural-off top results must be identical."""
+        """Fixture: alpha's only related: edge is dangling (mev couldn't
+        resolve to_ref). The loader keeps the edge row but leaves
+        target_doc_id NULL per the ingestion contract, so there is no
+        traversable neighbor. structural-on and structural-off top results
+        must be identical."""
         payload = {
-            "version": "1",
+            "version": "2",
             "root": "/path/to/brain",
             "nodes": [
                 {
@@ -192,7 +200,13 @@ class TestBrainGraphRetrievalAcceptance:
                 },
             ],
             "edges": [
-                {"from": "brain:alpha", "to_ref": "nonexistent-doc", "kind": "related"},
+                {
+                    "from": "brain:alpha",
+                    "to_ref": "nonexistent-doc",
+                    "kind": "related",
+                    "target_node_id": None,
+                    "target_doc_id": None,
+                },
             ],
             "leaves": [],
         }
