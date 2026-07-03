@@ -117,6 +117,7 @@ trees/
 # regenerated on demand by tooling, never committed — except committed CLI tools)
 /scripts/*
 !/scripts/index_brain.py
+!/scripts/load_brain_edges.py
 # SDLC harness breadcrumbs (machine-local state — not committed)
 sdlc-state.json
 sdlc-block-state.json
