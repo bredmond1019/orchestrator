@@ -1,0 +1,100 @@
+{
+  "spec_slug": "or-g-graph-aware-rag",
+  "branch": "or-g-graph-aware-rag-flow",
+  "started_at": "2026-07-03T01:01:19Z",
+  "updated_at": "2026-07-03T01:01:19Z",
+  "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-g-graph-aware-rag-flow",
+  "status": "blocked",
+  "current_task": 1,
+  "tasks": {
+    "1": {
+      "status": "failed",
+      "attempts": 1,
+      "summary": "Added the BrainEdge SQLAlchemy model (brain_edges table) with source/target node+doc id columns, dangling-edge support, a unique (source_node_id, to_ref) constraint for idempotent reloads, traversal indexes on source_doc_id/target_doc_id, a hand-authored alembic migration on top of head d1e2f3a4b5c6, registration in database/__init__.py and alembic/env.py, and full model tests.",
+      "issues": [
+        "pylint"
+      ],
+      "fixes": [],
+      "decisions": [
+        "Migration revision id e5f6a7b8c9d0 chosen to follow the repo's existing hex-hash naming convention.",
+        "app/alembic/versions/ is gitignored with an explicit allowlist per migration filename pattern — added a new allowlist line for *_create_brain_edges_table.py (and restored a pre-existing *_add_frontmatter_columns_to_brain_documents.py entry that was missing) so the new migration is actually tracked in git.",
+        "kind column has both a Python-level default='related' (for ORM-level convenience) and a matching server_default='related' in the migration; tests assert the default only after a repo.create() flush since instance-level defaults aren't applied until flush time.",
+        "Test used SQLite in-memory (no ARRAY/pgvector columns on this model, so no skip-guard needed, unlike test_brain_document.py)."
+      ],
+      "files_changed": [
+        "app/database/brain_edge.py",
+        "app/database/__init__.py",
+        "app/alembic/env.py",
+        "app/alembic/versions/e5f6a7b8c9d0_create_brain_edges_table.py",
+        "tests/database/test_brain_edge.py",
+        ".gitignore"
+      ],
+      "commit": "",
+      "validated": ""
+    }
+  },
+  "review": {
+    "verdict": null,
+    "findings": [],
+    "attempts": 0
+  },
+  "docs": {
+    "changed": [],
+    "created": []
+  },
+  "bail_reason": "Pylint R0801 duplicate-code warning flagged in pre-existing code (sdlc_flow_workflow_nodes), unrelated to this task's changes — out-of-scope fix, needs human triage/refactor decision rather than a retry.",
+  "pr": {
+    "url": null,
+    "number": null
+  },
+  "tokens": {
+    "stages": [
+      {
+        "label": "worktree-setup",
+        "model": "haiku",
+        "promptTokEst": 772,
+        "filesReadKb": null,
+        "inTokEst": 772,
+        "outTok": 4804
+      },
+      {
+        "label": "enumerate",
+        "model": "haiku",
+        "promptTokEst": 254,
+        "filesReadKb": null,
+        "inTokEst": 254,
+        "outTok": 560
+      },
+      {
+        "label": "implement-1-1",
+        "model": "sonnet",
+        "promptTokEst": 990,
+        "filesReadKb": null,
+        "inTokEst": 990,
+        "outTok": 14877
+      },
+      {
+        "label": "test-1-1",
+        "model": "haiku",
+        "promptTokEst": 1398,
+        "filesReadKb": null,
+        "inTokEst": 1398,
+        "outTok": 10792
+      },
+      {
+        "label": "triage:task 1 test:1",
+        "model": "sonnet",
+        "promptTokEst": 347,
+        "filesReadKb": null,
+        "inTokEst": 347,
+        "outTok": 388
+      }
+    ],
+    "total": {
+      "promptTokEst": 3761,
+      "filesReadKb": 0,
+      "inTokEst": 3761,
+      "outTok": 31421
+    }
+  }
+}
