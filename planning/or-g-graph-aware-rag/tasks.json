@@ -1,0 +1,67 @@
+[
+  {
+    "task_id": 1,
+    "title": "brain_edges table — model, migration, registration",
+    "description": "- Add `app/database/brain_edge.py` defining a `BrainEdge` SQLAlchemy model (`Base` subclass, `__tablename__ = 'brain_edges'`) with: `id` UUID pk (default uuid4); `source_node_id` String (canonical `scope:doc_id` of the edge source, non-null); `source_doc_id` String (the source node's authored `doc_id`, for joining to `brain_documents.doc_id`); `to_ref` String (the raw authored `related:` entry, non-null); `target_node_id` String nullable (resolved `scope:doc_id`, NULL when dangling); `target_doc_id` String nullable (resolved target `doc_id`, NULL when dangling); `kind` String default 'related'; `scope` String nullable; `indexed_at` DateTime default now.\n- Add non-unique indexes on `source_doc_id` and `target_doc_id` (traversal keys) and a unique constraint on `(source_node_id, to_ref)` so reloads upsert instead of duplicating.\n- Export `BrainEdge` from `app/database/__init__.py` (add to the import list and `__all__`).\n- Add `from database.brain_edge import *` to `app/alembic/env.py` (alembic autogenerate discovery, alongside the existing model imports).\n- Add `app/alembic/versions/<hash>_create_brain_edges_table.py` hand-authored against the current head (create table + indexes + unique constraint; `downgrade` drops the table).\n- Tests in `tests/database/test_brain_edge.py`: model instantiates with expected columns/defaults; `kind` defaults to 'related'; nullable target columns accept None (dangling edge).",
+    "acceptance_criteria": [],
+    "validation_commands": [],
+    "max_attempts": 3,
+    "files": [
+      "app/database/brain_edge.py",
+      "app/alembic/versions/",
+      "app/database/__init__.py",
+      "app/alembic/env.py",
+      "tests/database/test_brain_edge.py"
+    ],
+    "dependsOn": []
+  },
+  {
+    "task_id": 2,
+    "title": "Edge ingestion loader — mev emit-graph JSON → brain_edges",
+    "description": "- Add `scripts/load_brain_edges.py`: read a `mev emit-graph` payload (default from a `--input <path>` file or stdin) and load it into `brain_edges` via `GenericRepository`/`db_session` (no hardcoded connection — persistence is injected, CLAUDE.md rule 7).\n- Validate the payload shape (`version`, `nodes`, `edges`); build a resolution map from the `nodes[]` list keyed by both canonical `id` (`scope:doc_id`) and bare `doc_id`.\n- For each edge: `source_node_id = edge.from`; resolve the source node's `doc_id`/`scope` from the map; `to_ref = edge.to_ref`; resolve `to_ref` to a target node — an already-scoped `scope:doc_id` ref matches by `id`, a bare ref matches by `doc_id`; on a match set `target_node_id`/`target_doc_id`, on no match leave both NULL (dangling — never drop or raise); carry `kind`.\n- Idempotent load: upsert on the `(source_node_id, to_ref)` unique key (or clear-then-reload the whole edge set) so a re-run over an unchanged payload produces no duplicate rows.\n- Tests in `tests/test_load_brain_edges.py` (mock the repository/session seam — no live DB): bare `to_ref` resolves to the matching node's canonical id; already-scoped `to_ref` passes through; unresolvable `to_ref` yields a dangling row (NULL targets); a second load of the same payload adds no new rows.",
+    "acceptance_criteria": [],
+    "validation_commands": [],
+    "max_attempts": 3,
+    "files": [
+      "scripts/load_brain_edges.py",
+      "tests/test_load_brain_edges.py"
+    ],
+    "dependsOn": [1]
+  },
+  {
+    "task_id": 3,
+    "title": "Structural neighborhood-expansion stage in brain retrieval",
+    "description": "- Extend `app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py` so the `\"brain\"` corpus runs a structural stage between semantic Stage 1 and the keyword re-rank: take the top-N semantic hits, query `brain_edges` for their `related:`-neighbors (match on `source_doc_id`), fetch the neighbor chunks from `brain_documents` (join by `doc_id`, respecting the existing archived/status filter), embed-distance them against the query vector, and UNION them into the candidate set before `_keyword_search` + `_fuse_and_rank`.\n- Isolate the new DB work in a mockable seam `_structural_expand(candidates, corpus, ...)` returning extra candidate dicts in the same normalized shape as `_row_to_candidate` (so `_fuse_and_rank` stays pure and untouched in its scoring contract).\n- Mark structurally-surfaced candidates with a provenance flag (e.g. `via=\"structural\"`) carried through `_fuse_and_rank` into the result dicts, for explainability and test assertions.\n- Add an `expand_structural: bool = True` field to `app/schemas/document_qa_schema.py` (brain corpus only; ignored for `content`). When False, or when the corpus is `content`, or when no edges exist, the stage is a no-op and behaviour is identical to today.\n- Extend `tests/workflows/test_retrieve_chunks_node.py`: `_structural_expand` unit test (mock edges + neighbor rows); a fused-result test where a neighbor of the top hit appears in the output and is flagged `via=\"structural\"`; a regression test that the `content` corpus path and the toggle-off brain path are byte-for-byte unchanged.",
+    "acceptance_criteria": [],
+    "validation_commands": [],
+    "max_attempts": 3,
+    "files": [
+      "app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py",
+      "app/schemas/document_qa_schema.py",
+      "tests/workflows/test_retrieve_chunks_node.py"
+    ],
+    "dependsOn": [1]
+  },
+  {
+    "task_id": 4,
+    "title": "End-to-end acceptance test — neighbor retrieval + parity/explainability",
+    "description": "- Add `tests/workflows/test_brain_graph_retrieval.py`: an integration test seeding `brain_documents` + `brain_edges` fixtures (using the loader from Task 2 to build the edge rows from a small emit-graph payload, and the retrieval node from Task 3).\n- Assert the block's headline acceptance: a query whose answer lives in a `related:`-neighbor of the top semantic hit retrieves that neighbor with `expand_structural=True`, and that neighbor is NOT in the semantic-only (`expand_structural=False`) result on the same fixture — proving measurable improvement + explainability (the neighbor is flagged `via=\"structural\"`).\n- Assert parity: on a query with no useful neighbor, the structural-on top results equal the semantic-only top results (no regression / no noise injection).\n- Keep the fixture self-contained (mock or transactional DB per the repo's existing retrieval-test pattern in `tests/workflows/test_retrieve_chunks_node.py`); do not depend on a live brain corpus or a real `mev` binary.",
+    "acceptance_criteria": [],
+    "validation_commands": [],
+    "max_attempts": 3,
+    "files": [
+      "tests/workflows/test_brain_graph_retrieval.py"
+    ],
+    "dependsOn": [1, 2, 3]
+  },
+  {
+    "task_id": 5,
+    "title": "Validate",
+    "description": "Run the Validation Commands listed in tasks.md and confirm all pass (migration applies, ruff clean, pylint app/ 10.00/10, pytest green).",
+    "acceptance_criteria": [],
+    "validation_commands": [],
+    "max_attempts": 3,
+    "files": [],
+    "dependsOn": [1, 2, 3, 4]
+  }
+]
