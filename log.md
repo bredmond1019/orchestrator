@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-02T23:01:06-03:00"
+timestamp: "2026-07-03T15:45:27-03:00"
 ---
 
 # log — Orchestration Repo
@@ -11,20 +11,19 @@ timestamp: "2026-07-02T23:01:06-03:00"
 
 ---
 
-## [run: 2026-07-03]
+### 2026-07-03 (Claude Agent SDK node — subscription-auth smoke test verified)
 
-`or-v-graph-resolver-cleanup` (`OR.V`) ran Task 1 of 4 and BAILED. Task 1 refactored `scripts/load_brain_edges.py` to read mev `emit-graph` v2's already-resolved `target_node_id`/`target_doc_id` edge fields directly, deleting the duplicate local resolution chain (`build_node_maps()`/`resolve_ref()`) and adding a `version == "2"` guard in `validate_payload()`; the source-node lookup for `source_doc_id`/`scope` was inlined as a plain dict comprehension (`{node["id"]: node for node in payload["nodes"] if node.get("id")}`) rather than kept as a named helper, per the spec's explicit intent to delete `build_node_maps()`. Tasks 2–4 (updating `tests/test_load_brain_edges.py` to the v2 fixture shape, docs, and validation) were never reached: the run BAILED because `tests/test_load_brain_edges.py` imports `build_node_maps`, which was intentionally removed from `load_brain_edges.py` during this refactor (commit `419643b`) — the existing test suite is stale against the new resolved-fields architecture and needs a human decision on how to update/rewrite it (rather than a mechanical code fix), since it spans 19 tests, several targeting the now-deleted helpers directly. Next: a human should decide the rewrite strategy for `tests/test_load_brain_edges.py` (full rewrite against v2 fixtures vs. targeted edits) and resume `or-v-graph-resolver-cleanup` from Task 2.
+- **What:** Verified the Claude Code SDK node uses the real `claude-agent-sdk` package (github.com/anthropics/claude-agent-sdk-python), confirmed via `pyproject.toml`/`uv.lock` and the import in `app/services/claude_code/sdk_backend.py`. Ran live smoke tests: the first attempt with the `.env.local` `ANTHROPIC_API_KEY` failed ("Credit balance is too low") because that key has insufficient credit. Root-caused that `ClaudeAgentSdkBackend` deliberately blanks `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` to force subscription auth, not metered API credits. Confirmed via `claude auth status` that the local CLI is already logged into the claude.ai Max subscription, and a real end-to-end call through `ClaudeAgentSdkBackend.run()` (with those env vars unset) succeeded, returning an actual model response with real token usage and cost accounting. Documented `CLAUDE_CODE_OAUTH_TOKEN` as the equivalent mechanism for headless/CI environments. Added a new Gotchas entry to `planning/knowledge.md` capturing this so future sessions don't retest with a metered API key expecting it to be used.
+- **Why:** Diagnostic/verification session to confirm the Claude Code SDK node actually works end-to-end and to root-cause a confusing "Credit balance is too low" failure that could otherwise be mistaken for a real integration bug on future sessions.
+- **Refs:** `planning/knowledge.md` (Gotchas entry, already updated this session).
 
-```
-542c6ff chore: flow state — task 1 failed
-419643b feat: implement or-v-graph-resolver-cleanup-task1
-107e1c1 chore: init worktree or-v-graph-resolver-cleanup-flow
-4801985 chore: add spec for or-v-graph-resolver-cleanup
-727a800 chore(harness): pull base-template - sync wrap-up cross-repo constraints rule
-bf2c7f2 chore(state): inject OR.V block and wire into OR.H
-10bf7c0 chore(harness): pull base-template 03fd949 — commit after breakdown.md creation
-94ff2fa docs: log or-g-graph-aware-rag merge (PR #2, 1c33f61)
-```
+---
+
+### 2026-07-03 (or-v-graph-resolver-cleanup merged — resumed past bail, PR #3)
+
+- **What:** `or-v-graph-resolver-cleanup` (`OR.V`) Task 1 refactored `scripts/load_brain_edges.py` to read mev `emit-graph` v2's already-resolved `target_node_id`/`target_doc_id` edge fields directly, deleting the duplicate local resolution chain (`build_node_maps()`/`resolve_ref()`) and adding a `version == "2"` guard in `validate_payload()`. The automated `/sdlc-flow` run BAILED after Task 1 because its per-task test gate ran against the still-unmodified `tests/test_load_brain_edges.py` (which imports the now-deleted `build_node_maps`) — updating that file was Task 2's own declared scope, so the bail was a sequencing gap, not a code defect. Resumed manually: Task 2 rewrote `tests/test_load_brain_edges.py` for the v2 fixture shape (version `"2"`, edges carrying resolved `target_node_id`/`target_doc_id`, removed `build_node_maps`/`resolve_ref` coverage, added a version-guard test) and also fixed `tests/workflows/test_brain_graph_retrieval.py`, an out-of-scope file that drove `build_edge_rows()` directly with stale v1 payloads and had regressed from Task 1. Task 3 updated `docs/scripts.md` and `docs/api-reference.md` to match. Task 4 validated: targeted loader tests (15 passed), `ruff check app/` (clean), `pylint app/` (10.00/10), full `pytest` (969 passed, 8 skipped, no collection-count decrease). Ran `/code-review low` on the diff — no findings. Merged PR #3 (`gh pr merge 3 --merge --delete-branch`, https://github.com/bredmond1019/python-orchestration-system/pull/3) and ran `/clean-worktree or-v-graph-resolver-cleanup-flow`.
+- **Why:** Closes out `OR.V`, the loader-side half of the emit-graph v2 migration — edge resolution now lives in exactly one place (mev), matching the seam OR.G already assumed.
+- **Refs:** PR #3; `planning/or-v-graph-resolver-cleanup/sdlc/worklog.md`.
 
 ---
 
