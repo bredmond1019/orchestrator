@@ -2,9 +2,9 @@
   "spec_slug": "or-g-graph-aware-rag",
   "branch": "or-g-graph-aware-rag-flow",
   "started_at": "2026-07-03T01:01:19Z",
-  "updated_at": "2026-07-03T01:50:21Z",
+  "updated_at": "2026-07-03T01:53:20Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-g-graph-aware-rag-flow",
-  "status": "docs",
+  "status": "done",
   "current_task": 5,
   "tasks": {
     "1": {
@@ -265,13 +265,21 @@
         "filesReadKb": null,
         "inTokEst": 817,
         "outTok": 20329
+      },
+      {
+        "label": "wrap-up",
+        "model": "sonnet",
+        "promptTokEst": 839,
+        "filesReadKb": null,
+        "inTokEst": 839,
+        "outTok": 6664
       }
     ],
     "total": {
-      "promptTokEst": 19324,
+      "promptTokEst": 20163,
       "filesReadKb": 0,
-      "inTokEst": 19324,
-      "outTok": 135432
+      "inTokEst": 20163,
+      "outTok": 142096
     }
   }
 }

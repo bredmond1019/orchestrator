@@ -40,3 +40,6 @@ Validated: gating checks (fast tripwire)
 
 ## Docs
 Patched: docs/api-reference.md, docs/brain-rag.md, docs/index.md, docs/scripts.md, docs/workflows.md
+
+## Wrap-up — PASS
+Next: OR.H — swap embedding provider to local Ollama mxbai-embed-large, then OR.B rebuild
