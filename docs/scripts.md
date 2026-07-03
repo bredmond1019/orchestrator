@@ -148,6 +148,18 @@ hook (see `hooks/README.md` in the brain repo), which prunes automatically on de
 | `memory/` | `memory` |
 | `MEMORY.md` | `memory` |
 
+**Sub-repo widening (OR.O):** for every `brain.toml` `[[repos]]` entry with
+`repo_path != "."`, the indexer also crawls that sub-repo's `planning/**/*.md`
+subtree and its root `CLAUDE.md` — honouring the same `skip_dirs` / underscore /
+ephemeral-filename rules as the brain-root crawl above. It never reaches a
+sub-repo's `docs/` or source. Every chunk collected this way is unconditionally
+stamped with the manifest's `project` slug (the workspace identity), overriding
+any frontmatter `project:` value the file might carry — `CLAUDE.md` files have
+no frontmatter at all. `--dry-run` annotates these entries with `(project=<slug>)`
+so you can confirm the widened corpus before writing to the DB. Brain-root and
+sub-brain-tier crawling above are unaffected — `project` there still comes from
+each file's own frontmatter.
+
 Chunking is section-header-based (H2/H3 splits) so each chunk maps to a named section.
 
 **Frontmatter handling:** When a document contains an OKF YAML frontmatter block (delimited by `---`), the indexer:
