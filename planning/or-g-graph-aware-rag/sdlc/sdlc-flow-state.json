@@ -2,10 +2,10 @@
   "spec_slug": "or-g-graph-aware-rag",
   "branch": "or-g-graph-aware-rag-flow",
   "started_at": "2026-07-03T01:01:19Z",
-  "updated_at": "2026-07-03T01:13:25Z",
+  "updated_at": "2026-07-03T01:20:30Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-g-graph-aware-rag-flow",
   "status": "running",
-  "current_task": 1,
+  "current_task": 2,
   "tasks": {
     "1": {
       "status": "passed",
@@ -18,6 +18,26 @@
         "The previously-blocking unrelated pylint R0801 warning (noted in the spec's Amendment Log) is no longer present; it was fixed by commit f43c0fd ('extract shared spec_dir helper to clear pylint R0801'), which is already on this branch ahead of the task-1 commit."
       ],
       "files_changed": [],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "2": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added scripts/load_brain_edges.py, an idempotent mev emit-graph -> brain_edges loader (resolves bare/scoped to_ref against nodes[], leaves unresolvable refs dangling, clear-then-reload for idempotency), with 19 new tests mocking the session/repository seam.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Idempotency implemented as clear-then-reload of the whole brain_edges table inside one transaction, rather than a per-row upsert on (source_node_id, to_ref) — simpler and acceptable since brain_edges is a read-only derived index, not a source of truth (documented in load_edges docstring).",
+        "An edge whose 'from' does not resolve against nodes[] is skipped and logged (source_doc_id is a required non-null column with no fallback), whereas an unresolvable to_ref is kept as a dangling row per the spec's explicit contract.",
+        "scripts/ is gitignored with a per-filename allowlist (like alembic/versions/ was for Task 1); added '!/scripts/load_brain_edges.py' so the new script is actually tracked in git — logged in the tasks.md Amendment Log."
+      ],
+      "files_changed": [
+        "scripts/load_brain_edges.py",
+        "tests/test_load_brain_edges.py",
+        ".gitignore",
+        "planning/or-g-graph-aware-rag/tasks.md"
+      ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
     }
@@ -77,13 +97,29 @@
         "filesReadKb": null,
         "inTokEst": 1398,
         "outTok": 3595
+      },
+      {
+        "label": "implement-2-1",
+        "model": "sonnet",
+        "promptTokEst": 990,
+        "filesReadKb": null,
+        "inTokEst": 990,
+        "outTok": 20611
+      },
+      {
+        "label": "test-2-1",
+        "model": "haiku",
+        "promptTokEst": 1398,
+        "filesReadKb": null,
+        "inTokEst": 1398,
+        "outTok": 5856
       }
     ],
     "total": {
-      "promptTokEst": 3942,
+      "promptTokEst": 6330,
       "filesReadKb": 0,
-      "inTokEst": 3942,
-      "outTok": 10529
+      "inTokEst": 6330,
+      "outTok": 36996
     }
   }
 }
