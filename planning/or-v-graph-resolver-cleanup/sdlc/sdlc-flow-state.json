@@ -2,7 +2,7 @@
   "spec_slug": "or-v-graph-resolver-cleanup",
   "branch": "or-v-graph-resolver-cleanup-flow",
   "started_at": "2026-07-03T19:18:46Z",
-  "updated_at": "2026-07-03T19:20:40Z",
+  "updated_at": "2026-07-03T19:22:21Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-v-graph-resolver-cleanup-flow",
   "status": "blocked",
   "current_task": 1,
@@ -38,8 +38,8 @@
   },
   "bail_reason": "tests/test_load_brain_edges.py imports build_node_maps, which was intentionally removed from load_brain_edges.py during the emit-graph v2 refactor (commit 419643b) — the test suite is stale against the new resolved-fields architecture and needs a human decision on how to update/rewrite it, not a code fix.",
   "pr": {
-    "url": null,
-    "number": null
+    "url": "https://github.com/bredmond1019/python-orchestration-system/pull/3",
+    "number": 3
   },
   "tokens": {
     "stages": [
@@ -90,13 +90,21 @@
         "filesReadKb": null,
         "inTokEst": 1115,
         "outTok": 5584
+      },
+      {
+        "label": "pr-create",
+        "model": "sonnet",
+        "promptTokEst": 884,
+        "filesReadKb": null,
+        "inTokEst": 884,
+        "outTok": 2267
       }
     ],
     "total": {
-      "promptTokEst": 4994,
+      "promptTokEst": 5878,
       "filesReadKb": 0,
-      "inTokEst": 4994,
-      "outTok": 27282
+      "inTokEst": 5878,
+      "outTok": 29549
     }
   }
 }

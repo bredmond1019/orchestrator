@@ -7,3 +7,6 @@ Decisions: Inlined the source-node lookup as a plain dict comprehension ({node['
 
 ## Wrap-up — BAILED
 Next: or-v-graph-resolver-cleanup — BLOCKED: tests/test_load_brain_edges.py imports build_node_maps, which was intentionally removed from load_brain_edges.py during the emit-graph v2 refactor (commit 419643b) — the test suite is stale against the new resolved-fields architecture and needs a human decision on how to update/rewrite it, not a code fix.
+
+## PR
+Draft https://github.com/bredmond1019/python-orchestration-system/pull/3
