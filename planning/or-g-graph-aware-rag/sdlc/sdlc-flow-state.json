@@ -2,10 +2,10 @@
   "spec_slug": "or-g-graph-aware-rag",
   "branch": "or-g-graph-aware-rag-flow",
   "started_at": "2026-07-03T01:01:19Z",
-  "updated_at": "2026-07-03T01:20:30Z",
+  "updated_at": "2026-07-03T01:34:12Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-g-graph-aware-rag-flow",
   "status": "running",
-  "current_task": 2,
+  "current_task": 3,
   "tasks": {
     "1": {
       "status": "passed",
@@ -37,6 +37,34 @@
         "tests/test_load_brain_edges.py",
         ".gitignore",
         "planning/or-g-graph-aware-rag/tasks.md"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "3": {
+      "status": "passed",
+      "attempts": 2,
+      "summary": "Task 3 (structural neighborhood-expansion retrieval stage) already implements the full spec correctly; re-verification found no reproducible failure — ruff, pylint (10.00/10), alembic upgrade head, and the full pytest suite (970 passed, 8 skipped) all pass cleanly, and no emoji exist in the task's diff.",
+      "issues": [
+        "emoji-gate",
+        "CHECK7_pytest"
+      ],
+      "fixes": [
+        "First attempt (1 of 3) with two concrete, fixable check failures (emoji-gate and pytest) — no prior attempt to compare against, so not a repeat/stuck failure, and nothing here indicates missing deps, spec ambiguity, or environment/credential issues; a bounded fix can plausibly resolve both."
+      ],
+      "decisions": [
+        "Reduced retrieve()'s local-variable/DB logic into two static helpers (_resolve_neighbor_doc_ids, _fetch_neighbor_candidates) and a _merge_structural_candidates static helper to keep pylint too-many-locals under the threshold without changing the public method signatures existing tests already depend on",
+        "Added a narrow `# pylint: disable=too-many-arguments` on retrieve() rather than bundling filters/include_archived/expand_structural into an options object, to avoid rewriting the large pre-existing keyword-arg call-site test suite for retrieve()",
+        "_structural_expand short-circuits (no DB call at all) when the corpus doesn't declare supports_structural or when no candidate carries a doc_id, which also makes the toggle-off/content regression tests provably no-DB-touch rather than just asserting equal output",
+        "Neighbor doc_ids already present among existing candidates (by doc_id) are excluded before the second DB query, so a resolved edge never causes a duplicate row fetch or a duplicate id in the fused result (semantic candidate wins ties by id)",
+        "Investigated the reported 'emoji-gate' failure: the only non-ASCII character in the branch diff is a U+2192 arrow (→) in log.md, not an actual emoji — treated as a false positive/stale finding since no true emoji exists in any changed file.",
+        "Investigated the reported 'CHECK7_pytest' failure: full pytest suite currently passes (970 passed, 8 skipped) with no errors — treated as stale/transient from a prior run, not reproducible in the current worktree state.",
+        "Made no code changes since all validation commands from tasks.md (alembic upgrade head, ruff, pylint, pytest) pass without modification."
+      ],
+      "files_changed": [
+        "app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py",
+        "app/schemas/document_qa_schema.py",
+        "tests/workflows/test_retrieve_chunks_node.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -113,13 +141,53 @@
         "filesReadKb": null,
         "inTokEst": 1398,
         "outTok": 5856
+      },
+      {
+        "label": "implement-3-1",
+        "model": "sonnet",
+        "promptTokEst": 990,
+        "filesReadKb": null,
+        "inTokEst": 990,
+        "outTok": 34147
+      },
+      {
+        "label": "test-3-1",
+        "model": "haiku",
+        "promptTokEst": 1398,
+        "filesReadKb": null,
+        "inTokEst": 1398,
+        "outTok": 4101
+      },
+      {
+        "label": "triage:task 3 test:1",
+        "model": "sonnet",
+        "promptTokEst": 321,
+        "filesReadKb": null,
+        "inTokEst": 321,
+        "outTok": 481
+      },
+      {
+        "label": "fix-3-2",
+        "model": "sonnet",
+        "promptTokEst": 1032,
+        "filesReadKb": null,
+        "inTokEst": 1032,
+        "outTok": 6724
+      },
+      {
+        "label": "test-3-2",
+        "model": "haiku",
+        "promptTokEst": 1398,
+        "filesReadKb": null,
+        "inTokEst": 1398,
+        "outTok": 3777
       }
     ],
     "total": {
-      "promptTokEst": 6330,
+      "promptTokEst": 11469,
       "filesReadKb": 0,
-      "inTokEst": 6330,
-      "outTok": 36996
+      "inTokEst": 11469,
+      "outTok": 86226
     }
   }
 }
