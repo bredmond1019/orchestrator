@@ -41,9 +41,16 @@ import frontmatter
 # The corpus is no longer a hand-maintained list. It is derived from the brain
 # structure described by ``brain.toml``: the ``docs/`` and ``planning/`` subtrees
 # of the brain root and each sub-brain tier (``core/``, ``portfolio/`` …), plus
-# each scope's ``README.md`` + ``CLAUDE.md``. Sub-repo internals (the gitignored
-# project repos named in the manifest) are excluded — indexing per-repo planning
-# or source is Block O/P of the Bastion program, out of scope here.
+# each scope's ``README.md`` + ``CLAUDE.md``.
+#
+# Per Bastion program Block OR.O, each gitignored project repo named in the
+# manifest (``repo_path != "."``) additionally contributes its OWN
+# ``planning/`` subtree + root ``CLAUDE.md`` as its own workspace-scoped
+# corpus, keyed by that repo's manifest ``slug`` (stamped into the
+# ``BrainDocument.project`` column, overriding any frontmatter ``project:``
+# value — the slug is the workspace identity, not the file's own metadata).
+# Their ``docs/`` and source trees remain out of scope (that is Block O/P
+# territory respectively) — only ``planning/`` + root ``CLAUDE.md`` are added.
 #
 # ``doc_type`` is a soft categorisation column (retrieval filters on ``status`` and
 # ``corpus``, never on ``doc_type``); it is assigned by a path classifier applied
@@ -372,15 +379,64 @@ def _corpus_roots(brain_path: Path, config: BrainConfig) -> list[Path]:
     return roots
 
 
-def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, str]]:
-    """Return (absolute_path, doc_type) pairs for the whole brain corpus.
+def _sub_repo_files(
+    brain_path: Path, config: BrainConfig, seen: set[Path]
+) -> list[tuple[Path, str, str]]:
+    """Return (absolute_path, doc_type, project_slug) triples for sub-repo corpora.
+
+    Per Bastion program Block OR.O: every manifest ``[[repos]]`` entry with
+    ``repo_path != "."`` (the gitignored project repos) contributes its own
+    ``planning/**/*.md`` subtree **and** its root ``CLAUDE.md`` as its own
+    workspace-scoped corpus — never its ``docs/`` or source trees. Every triple
+    returned here carries that repo's manifest ``slug`` as the project override,
+    since sub-repo ``planning/status.md`` carries no ``project:`` frontmatter
+    field and ``CLAUDE.md`` has no frontmatter at all; the slug is stamped
+    regardless (it is the workspace identity, not a per-file property).
+    """
+    result: list[tuple[Path, str, str]] = []
+    for repo in config.repos:
+        repo_path = repo.get("repo_path")
+        slug = repo.get("slug")
+        if not repo_path or repo_path == "." or not slug:
+            continue
+        repo_root = (brain_path / repo_path).resolve()
+        if not repo_root.is_dir():
+            continue
+
+        planning_dir = repo_root / "planning"
+        if planning_dir.is_dir():
+            for md_file in sorted(planning_dir.rglob("*.md")):
+                if md_file.name.startswith("_") or md_file.name in _EPHEMERAL_FILENAMES:
+                    continue
+                rel_to_repo = md_file.relative_to(repo_root).as_posix()
+                if _is_skipped(rel_to_repo, config.skip_dirs):
+                    continue
+                if md_file in seen:
+                    continue
+                seen.add(md_file)
+                result.append((md_file, _classify_doc_type(rel_to_repo), slug))
+
+        claude_file = repo_root / "CLAUDE.md"
+        if claude_file.is_file() and claude_file not in seen:
+            seen.add(claude_file)
+            result.append((claude_file, _classify_doc_type("CLAUDE.md"), slug))
+
+    return result
+
+
+def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, str, str | None]]:
+    """Return (absolute_path, doc_type, project_override) triples for the corpus.
 
     Crawls the ``docs/`` and ``planning/`` subtrees plus the README/CLAUDE of the
     brain root and each sub-brain tier, honouring ``[crawl].skip_dirs`` and
-    skipping underscore-prefixed and ephemeral files. Sub-repo internals are never
-    reached because only those subtrees (not the tier roots wholesale) are walked.
+    skipping underscore-prefixed and ephemeral files — these entries carry no
+    project override (``None``; ``project`` is read from each file's own
+    frontmatter as before). It then adds each gitignored sub-repo's own
+    ``planning/`` subtree + root ``CLAUDE.md`` (Block OR.O), each stamped with
+    that repo's manifest slug as the project override — sub-repo ``docs/`` and
+    source are never reached.
     """
-    result: list[tuple[Path, str]] = []
+    result: list[tuple[Path, str, str | None]] = []
     seen: set[Path] = set()
     for root in _corpus_roots(brain_path, config):
         for subtree in _CORPUS_SUBTREES:
@@ -396,12 +452,14 @@ def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, st
                 if md_file in seen:
                     continue
                 seen.add(md_file)
-                result.append((md_file, _classify_doc_type(rel_to_root)))
+                result.append((md_file, _classify_doc_type(rel_to_root), None))
         for fname in _CORPUS_ROOT_FILES:
             root_file = root / fname
             if root_file.is_file() and root_file not in seen:
                 seen.add(root_file)
-                result.append((root_file, _classify_doc_type(fname)))
+                result.append((root_file, _classify_doc_type(fname), None))
+
+    result.extend(_sub_repo_files(brain_path, config, seen))
     return result
 
 
@@ -624,9 +682,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.dry_run:
         logger.info("Dry run — no DB writes, no API calls.")
         logger.info("Files that would be indexed:")
-        for fp, doc_type in files:
+        for fp, doc_type, project_override in files:
             rel = fp.relative_to(brain_path)
-            logger.info("  [%s] %s", doc_type, rel)
+            if project_override:
+                logger.info("  [%s] %s (project=%s)", doc_type, rel, project_override)
+            else:
+                logger.info("  [%s] %s", doc_type, rel)
         logger.info("Total: %d files", len(files))
         return
 
@@ -654,7 +715,7 @@ def main(argv: list[str] | None = None) -> None:
             session.commit()
             logger.info("--rebuild: deleted %d existing rows", deleted)
 
-    for file_path, doc_type in files:
+    for file_path, doc_type, project_override in files:
         rel_str = str(file_path.relative_to(brain_path))
         total_files += 1
 
@@ -678,6 +739,13 @@ def main(argv: list[str] | None = None) -> None:
             raw_content = file_path.read_text(encoding="utf-8")
             meta, body = parse_document(raw_content)
             norm = normalize_metadata(meta, file_path, brain_path, config)
+            if project_override:
+                # Sub-repo files (Block OR.O): the manifest slug is the
+                # workspace identity and always wins over any frontmatter
+                # project: value (sub-repo status.md has none; CLAUDE.md has
+                # no frontmatter at all).
+                norm["project"] = project_override
+                meta = {**meta, "project": project_override}
             context_prefix = build_context_prefix(meta)
             section_chunks = chunk_by_section(body)
 
