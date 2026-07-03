@@ -1,0 +1,64 @@
+[
+  {
+    "task_id": 1,
+    "title": "Refactor load_brain_edges.py to read mev's resolved edge fields",
+    "description": "Delete build_node_maps() and resolve_ref() from scripts/load_brain_edges.py. In build_edge_rows(), inline a source-node lookup map ({node['id']: node for node in payload['nodes'] if node.get('id')}) used only to populate source_doc_id and scope; set each row's target_node_id/target_doc_id directly from edge.get('target_node_id')/edge.get('target_doc_id') (mev emit-graph v2's already-resolved fields) instead of resolving to_ref locally. Keep the skip-unresolvable-source behavior (log + continue when edge['from'] isn't in nodes[]) and the keep-dangling behavior (null target columns, never dropped). Add a version guard in validate_payload: raise a clear ValueError naming the expected schema when payload['version'] is not '2' (the loader now depends on v2's resolved fields; a pre-v2 payload would silently load every edge as dangling). Update the module docstring and build_edge_rows()/validate_payload() docstrings to describe reading mev's resolved fields rather than resolving to_ref. Preserve CLAUDE.md code-style rules (module docstring on line 1, raise ... from e where applicable, no f-string logging).",
+    "acceptance_criteria": [
+      "Neither build_node_maps nor resolve_ref is defined or referenced in scripts/load_brain_edges.py.",
+      "build_edge_rows() reads target_node_id/target_doc_id from the edge dict, not from local resolution.",
+      "validate_payload raises ValueError with a message naming version '2' when the payload version differs.",
+      "Unresolvable-source edges are still skipped and logged; null-target edges still produce dangling rows."
+    ],
+    "validation_commands": [],
+    "max_attempts": 3,
+    "files": ["scripts/load_brain_edges.py"],
+    "dependsOn": []
+  },
+  {
+    "task_id": 2,
+    "title": "Update load_brain_edges tests to the v2 emit-graph shape",
+    "description": "Update tests/test_load_brain_edges.py to match the refactor. Change the _payload() fixture to version '2' and add resolved target_node_id/target_doc_id to its edges (e.g. the beta edge carries target_node_id 'brain:beta', target_doc_id 'beta'). Remove the import of and tests for the deleted build_node_maps and resolve_ref (test_build_node_maps_*, test_resolve_ref_*). Keep and adapt the behavior coverage so it is now driven by mev's fields: bare/scoped target read-through (build_edge_rows copies edge target fields onto the row), dangling-target retention (an edge with target_node_id null yields None target columns, not dropped), unresolvable-source skip, load_edges idempotent reload, load_edges raises on malformed payload, and both main() paths (--input file and stdin). Add a test asserting validate_payload raises on a non-'2' version. Ensure the module docstring's test-coverage summary comment stays accurate.",
+    "acceptance_criteria": [
+      "tests/test_load_brain_edges.py imports no deleted symbols and references neither build_node_maps nor resolve_ref.",
+      "The fixture is version '2' with edges carrying target_node_id/target_doc_id.",
+      "Coverage remains for dangling retention, unresolvable-source skip, idempotent reload, malformed-payload error, both main() paths, and the new version guard.",
+      "uv run python -m pytest tests/test_load_brain_edges.py passes."
+    ],
+    "validation_commands": ["uv run python -m pytest tests/test_load_brain_edges.py"],
+    "max_attempts": 3,
+    "files": ["tests/test_load_brain_edges.py"],
+    "dependsOn": [1]
+  },
+  {
+    "task_id": 3,
+    "title": "Update docs to describe reading mev's resolved edges",
+    "description": "Update docs/scripts.md § load_brain_edges.py: rewrite the intro and 'Resolution:' paragraph so they describe the loader reading mev emit-graph v2's already-resolved target_node_id/target_doc_id fields (edge resolution now lives in mev, not the loader); keep the dangling-row and skip-unresolvable-source explanations. Update docs/api-reference.md's BrainEdge loader description to match (no longer 'resolves each edge's to_ref against nodes[]' — instead 'reads mev's resolved target fields'), and update the tests/test_load_brain_edges.py test count to the new number after Task 2. Do not touch other doc sections.",
+    "acceptance_criteria": [
+      "docs/scripts.md no longer says the loader resolves to_ref against nodes[]; it describes reading mev's resolved fields.",
+      "docs/api-reference.md's loader description matches the refactor and its test count is accurate.",
+      "No unrelated doc sections changed."
+    ],
+    "validation_commands": [],
+    "max_attempts": 3,
+    "files": ["docs/scripts.md", "docs/api-reference.md"],
+    "dependsOn": [1]
+  },
+  {
+    "task_id": 4,
+    "title": "Validate",
+    "description": "Run the Validation Commands listed in tasks.md and confirm all pass (targeted loader tests, ruff on app/, pylint app/ 10.00/10, full pytest suite with no collection-count decrease).",
+    "acceptance_criteria": [
+      "All gated checks in planning/harness.json pass.",
+      "uv run python -m pytest is green."
+    ],
+    "validation_commands": [
+      "uv run python -m pytest tests/test_load_brain_edges.py",
+      "uv run python -m ruff check app/",
+      "uv run python -m pylint app/",
+      "uv run python -m pytest"
+    ],
+    "max_attempts": 3,
+    "files": [],
+    "dependsOn": [1, 2, 3]
+  }
+]
