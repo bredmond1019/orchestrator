@@ -6,7 +6,7 @@ doc_id: node-model-comparison
 layer: [engine]
 project: orchestrator
 status: active
-related: [sdlc-workflow-nodes-design]
+related: [app-architecture-overview]
 ---
 
 # Node Model Comparison
