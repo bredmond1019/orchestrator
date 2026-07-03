@@ -2,12 +2,20 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-02T00:03:18-03:00"
+timestamp: "2026-07-02T23:01:06-03:00"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+### 2026-07-02 (or-g-graph-aware-rag merged — R0801 fix, resume, code-review, PR #2)
+
+- **What:** Fixed the pre-existing pylint R0801 duplicate-code warning between `generate_tasks_node.py` and `spec_exists_router_node.py` in `app/workflows/sdlc_flow_workflow_nodes/` by extracting a shared `get_spec_dir()` helper into a new `app/workflows/sdlc_flow_workflow_nodes/_shared.py`. Rebased the `or-g-graph-aware-rag-flow` worktree branch onto the fix and resumed `/sdlc-flow or-g-graph-aware-rag --resume`; all 5 tasks passed, review verdict PASS, docs patched. Ran `/code-review low` on the branch diff — one candidate finding (the `next(db_session())` pattern in `scripts/load_brain_edges.py`) was investigated and retracted as matching existing convention (`scripts/index_brain.py`) and safe (SQLAlchemy `Session` implements the context-manager protocol itself); final verdict: no findings. Merged PR #2 (`gh pr merge 2 --squash`, https://github.com/bredmond1019/python-orchestration-system/pull/2); local `main` reset to origin's squash commit `1c33f61`. Ran `/clean-worktree or-g-graph-aware-rag-flow` — worktree removed, branch deleted.
+- **Why:** `or-g-graph-aware-rag` had bailed after Task 1 on an unrelated pylint gate failure; this session cleared that blocker (a genuine pre-existing lint debt, not a task-scope issue), let the spec run to completion, and closed it out through review and merge.
+- **Refs:** `planning/handoff.md` (full session detail); PR #2.
 
 ---
 
