@@ -11,6 +11,23 @@ timestamp: "2026-07-02T23:01:06-03:00"
 
 ---
 
+## [run: 2026-07-03]
+
+`or-v-graph-resolver-cleanup` (`OR.V`) ran Task 1 of 4 and BAILED. Task 1 refactored `scripts/load_brain_edges.py` to read mev `emit-graph` v2's already-resolved `target_node_id`/`target_doc_id` edge fields directly, deleting the duplicate local resolution chain (`build_node_maps()`/`resolve_ref()`) and adding a `version == "2"` guard in `validate_payload()`; the source-node lookup for `source_doc_id`/`scope` was inlined as a plain dict comprehension (`{node["id"]: node for node in payload["nodes"] if node.get("id")}`) rather than kept as a named helper, per the spec's explicit intent to delete `build_node_maps()`. Tasks 2–4 (updating `tests/test_load_brain_edges.py` to the v2 fixture shape, docs, and validation) were never reached: the run BAILED because `tests/test_load_brain_edges.py` imports `build_node_maps`, which was intentionally removed from `load_brain_edges.py` during this refactor (commit `419643b`) — the existing test suite is stale against the new resolved-fields architecture and needs a human decision on how to update/rewrite it (rather than a mechanical code fix), since it spans 19 tests, several targeting the now-deleted helpers directly. Next: a human should decide the rewrite strategy for `tests/test_load_brain_edges.py` (full rewrite against v2 fixtures vs. targeted edits) and resume `or-v-graph-resolver-cleanup` from Task 2.
+
+```
+542c6ff chore: flow state — task 1 failed
+419643b feat: implement or-v-graph-resolver-cleanup-task1
+107e1c1 chore: init worktree or-v-graph-resolver-cleanup-flow
+4801985 chore: add spec for or-v-graph-resolver-cleanup
+727a800 chore(harness): pull base-template - sync wrap-up cross-repo constraints rule
+bf2c7f2 chore(state): inject OR.V block and wire into OR.H
+10bf7c0 chore(harness): pull base-template 03fd949 — commit after breakdown.md creation
+94ff2fa docs: log or-g-graph-aware-rag merge (PR #2, 1c33f61)
+```
+
+---
+
 ### 2026-07-02 (or-g-graph-aware-rag merged — R0801 fix, resume, code-review, PR #2)
 
 - **What:** Fixed the pre-existing pylint R0801 duplicate-code warning between `generate_tasks_node.py` and `spec_exists_router_node.py` in `app/workflows/sdlc_flow_workflow_nodes/` by extracting a shared `get_spec_dir()` helper into a new `app/workflows/sdlc_flow_workflow_nodes/_shared.py`. Rebased the `or-g-graph-aware-rag-flow` worktree branch onto the fix and resumed `/sdlc-flow or-g-graph-aware-rag --resume`; all 5 tasks passed, review verdict PASS, docs patched. Ran `/code-review low` on the branch diff — one candidate finding (the `next(db_session())` pattern in `scripts/load_brain_edges.py`) was investigated and retracted as matching existing convention (`scripts/index_brain.py`) and safe (SQLAlchemy `Session` implements the context-manager protocol itself); final verdict: no findings. Merged PR #2 (`gh pr merge 2 --squash`, https://github.com/bredmond1019/python-orchestration-system/pull/2); local `main` reset to origin's squash commit `1c33f61`. Ran `/clean-worktree or-g-graph-aware-rag-flow` — worktree removed, branch deleted.
