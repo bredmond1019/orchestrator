@@ -2,12 +2,20 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-03T15:45:27-03:00"
+timestamp: "2026-07-03T16:42:00-03:00"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+### 2026-07-03 (or-v-graph-resolver-cleanup resumed past bail, merged, worktree cleaned)
+
+- **What:** Resumed `or-v-graph-resolver-cleanup` (`OR.V`) past its `/sdlc-flow` bail and completed Tasks 2–4: rewrote `tests/test_load_brain_edges.py` for mev emit-graph v2's resolved-field shape (removed `build_node_maps`/`resolve_ref` coverage, added a version-guard test) and fixed an out-of-scope regression in `tests/workflows/test_brain_graph_retrieval.py`; updated `docs/scripts.md`/`docs/api-reference.md` to match; validated (969 passed / 8 skipped, ruff clean, pylint 10.00/10). Ran `/code-review low` (no findings), merged PR #3 (`gh pr merge --merge --delete-branch`, merge commit `1637d3c`), and ran `/clean-worktree` — resolving a stash conflict against unrelated pre-existing local changes along the way. Updated `planning/state.json` (`OR.V` block `status` → `closed`, authored edit) and regenerated derived `focus` via `mev emit-state --write`; `mev validate-brain --state` clean (0 errors). Wrote `planning/handoff.md` for the next session.
+- **Why:** The automated `/sdlc-flow` run bailed after Task 1 because its per-task test gate ran against `tests/test_load_brain_edges.py` before Task 2 (which was explicitly scoped to update that stale test file) — a sequencing gap in the flow, not a code defect. Task 2 was already fully specified in `tasks.json`, so completing it manually and closing out the spec was the right call rather than re-planning.
+- **Refs:** PR #3 (https://github.com/bredmond1019/python-orchestration-system/pull/3); `planning/or-v-graph-resolver-cleanup/sdlc/worklog.md`; `planning/handoff.md`.
 
 ---
 
