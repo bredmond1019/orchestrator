@@ -15,6 +15,14 @@
     ],
     "next": [
       {
+        "id": "OR.V",
+        "title": "One graph resolver — load_brain_edges.py cleanup (consumes MV.3B.V)",
+        "status": null,
+        "note": null,
+        "repo": null,
+        "blocked_by": []
+      },
+      {
         "id": "OR.E",
         "title": "ParallelNode merge fix (prerequisite for OR.Z)",
         "status": null,
@@ -97,11 +105,30 @@
             {
               "type": "external",
               "what": "At-home session: install Ollama + pull mxbai-embed-large on the Mac Mini"
+            },
+            {
+              "type": "block",
+              "repo": "orchestrator",
+              "id": "OR.V",
+              "what": "Loader must consume mev's resolved edges (MV.3B.V output) before first run"
             }
           ],
           "wave": 1,
           "origin": null
         },
+        {
+          "id": "OR.V",
+          "title": "One graph resolver — load_brain_edges.py cleanup (consumes MV.3B.V)",
+          "status": "open",
+          "depends_on": [
+            {
+              "type": "block",
+              "repo": "mev",
+              "id": "MV.3B.V",
+              "what": "Requires the v2 emit-graph output with target_node_id/target_doc_id"
+            }
+          ],
+          "wave": 1,
         {
           "id": "OR.B",
           "title": "Semantic Brain Q&A end-to-end",
