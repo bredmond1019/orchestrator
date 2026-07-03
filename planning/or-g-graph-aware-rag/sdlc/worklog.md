@@ -37,3 +37,6 @@ Validated: gating checks (fast tripwire)
 What: Ran full validation suite for OR.G graph-aware RAG spec: alembic upgrade head applies cleanly, ruff clean, pylint app/ 10.00/10, pytest 973 passed / 8 skipped — all Task 5 acceptance criteria confirmed with no code changes needed.
 Decisions: Task 5 is validation-only per tasks.json (no files listed); confirmed no source/test changes were required and made no commit since nothing changed
 Validated: gating checks (fast tripwire)
+
+## Docs
+Patched: docs/api-reference.md, docs/brain-rag.md, docs/index.md, docs/scripts.md, docs/workflows.md
