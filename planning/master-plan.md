@@ -92,7 +92,7 @@ three north-star tracks this repo owns — **U** (eval/metrics), **W** (external
 | **Z** | 2 | **`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows** (HL2 graduation into the Engine) | Not started |
 | **U** | 4 | Eval + success-metrics engine (**absorbs Project H** — model eval & routing) | Not started |
 | **W** | 5 ✲ | External-intelligence loop + external-knowledge memory | Not started |
-| **MV.3B.S** | 5 | Graph-aware RAG — ingest Cortex/mev graph edges; two-stage structural+semantic retrieval (mev-numbered, **orchestrator-owned**) | Not started |
+| **OR.G** | 5 | Graph-aware RAG — ingest Cortex/mev graph edges; two-stage structural+semantic retrieval (formerly tracked as MV.3B.S) | Not started |
 | — (Project **E**) | 2 | ParallelNode merge fix (Project E core) — **pulled forward as Block Z's prerequisite** | Not started |
 
 ---
@@ -487,7 +487,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
   bastion's `knowledge_graph` block (graph reads files; this reads/writes Postgres).
 - **Out of scope:** MCP exposure of the Brain (Block R). Brain portability / multi-workspace (Block C).
   Any change to the retrieval algorithm. Answer-time grounding (Block L). Graph-edge ingestion /
-  structural retrieval (Block MV.3B.S).
+  structural retrieval (Block OR.G).
 - **Acceptance criteria:** `index_brain.py` populates the store over the live brain corpus; a known
   brain question returns a correctly cited answer over the `"brain"` corpus; the orchestrator gate
   holds (`uv run python -m pytest` all pass, `ruff` clean, `pylint app/` 10.00/10); a brain-corpus
@@ -495,7 +495,7 @@ here so this repo is self-sufficient to execute against. "Brain-program Block X"
 
 ---
 
-### MV.3B.S — Graph-aware RAG (edge ingestion; mev-numbered, orchestrator-owned)
+### OR.G — Graph-aware RAG (edge ingestion; formerly tracked as MV.3B.S)
 
 - **What:** Ingest Cortex/mev's emitted graph (`mev emit-graph` — nodes/edges/leaves JSON, shipped in
   mev MV.3B.R) into the Brain store, and extend the `"brain"` retrieval path to **two-stage
