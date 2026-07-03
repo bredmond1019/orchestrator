@@ -21,6 +21,8 @@ from core.task import TaskContext
 from pydantic import BaseModel, Field
 from services.prompt_loader import PromptManager
 
+from workflows.sdlc_flow_workflow_nodes._shared import get_spec_dir
+
 # Filenames under planning/{spec_slug}/ that are NOT source material — the
 # task list itself and the flow's own state.
 _NON_CONTEXT_FILES = {"tasks.md", "tasks.json", "sdlc-flow-state.json"}
@@ -73,11 +75,7 @@ class GenerateTasksNode(AgentNode):
         """
         event = task_context.event
         spec_slug: str = event.spec_slug
-        worktree_path = task_context.get_node_output("SetupWorktreeNode")["result"][
-            "worktree_path"
-        ]
-
-        spec_dir = Path(worktree_path) / "planning" / spec_slug
+        spec_dir = get_spec_dir(task_context, spec_slug)
         context = self._gather_context(spec_dir)
 
         rendered_system_prompt = PromptManager.get_prompt(
