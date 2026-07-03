@@ -167,11 +167,13 @@ See `docs/brain-rag.md` for the full brain RAG architecture.
 
 ## `scripts/load_brain_edges.py` — Load structural graph edges (OR.G)
 
-Reads a `mev emit-graph` JSON payload (`nodes[]` + `edges[]`, one edge per authored
-`related:` frontmatter entry) and loads it into the `brain_edges` table, resolving each
-edge's raw `to_ref` against the payload's `nodes[]` list. This is the traversal layer that
-makes `BrainDocument.related` queryable as a graph — `RetrieveChunksNode`'s structural
-neighborhood-expansion stage walks these rows at query time.
+Reads a `mev emit-graph` v2 JSON payload (`nodes[]` + `edges[]`, one edge per authored
+`related:` frontmatter entry) and loads it into the `brain_edges` table, reading each
+edge's already-resolved `target_node_id`/`target_doc_id` fields directly — mev's own
+`resolve_edge()` is the single source of truth for edge resolution; the loader no longer
+re-resolves `to_ref` itself. This is the traversal layer that makes `BrainDocument.related`
+queryable as a graph — `RetrieveChunksNode`'s structural neighborhood-expansion stage walks
+these rows at query time.
 
 ```bash
 # Pipe mev's output directly (recommended)
@@ -185,10 +187,12 @@ python scripts/load_brain_edges.py --input graph.json
 |---|---|
 | `--input` | Path to an emit-graph JSON payload. Defaults to reading the payload from stdin. |
 
-**Resolution:** a bare `doc_id` or already-scoped `scope:doc_id` `to_ref` is resolved against
-`nodes[]`; an edge whose target doesn't resolve is kept as a **dangling row** (`target_node_id`/
-`target_doc_id` `NULL`) rather than dropped, preserving authoring intent. An edge whose *source*
-doesn't resolve is skipped and logged (`source_doc_id` is a required non-null column).
+**Resolution:** the loader reads mev emit-graph v2's already-resolved `target_node_id`/
+`target_doc_id` edge fields directly; an edge with a `null` target is kept as a **dangling
+row** rather than dropped, preserving authoring intent. `validate_payload` requires
+`version == "2"` — a pre-v2 payload carries no resolved target fields and would otherwise
+silently load every edge as dangling. An edge whose *source* doesn't resolve against
+`nodes[]` is skipped and logged (`source_doc_id` is a required non-null column).
 
 **Idempotency:** the loader clear-then-reloads the whole `brain_edges` table inside one
 transaction on every run, rather than upserting per-row — `brain_edges` is a read-only derived
