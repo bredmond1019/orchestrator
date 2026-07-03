@@ -1,11 +1,10 @@
 """Unit tests for scripts/load_brain_edges.py.
 
 Tests cover:
-- validate_payload: required-key shape checks
-- build_node_maps / resolve_ref: bare vs already-scoped to_ref resolution
-- build_edge_rows: bare ref resolves to canonical id, already-scoped ref
-  passes through, unresolvable ref yields a dangling row, unresolvable
-  source is skipped
+- validate_payload: required-key shape checks and the version=='2' guard
+- build_edge_rows: target_node_id/target_doc_id read straight through from
+  mev's already-resolved edge fields, dangling-target retention,
+  unresolvable-source skip
 - load_edges: idempotent — a second load of an unchanged payload produces
   no duplicate rows (mocked session/repository seam, no live DB)
 - main(): reads --input file and stdin, delegates to load_edges
@@ -27,30 +26,34 @@ for path in (SCRIPTS_DIR, APP_DIR):
 
 from load_brain_edges import (  # noqa: E402
     build_edge_rows,
-    build_node_maps,
     load_edges,
     main,
-    resolve_ref,
     validate_payload,
 )
 
 # ---------------------------------------------------------------------------
-# Fixture payload — mirrors the mev emit-graph "Output shape" example
-# (../mev/docs/cli.md), extended with a dangling-ref edge and a second scope
-# for bare-doc_id collision coverage.
+# Fixture payload — mirrors the mev emit-graph v2 "Output shape" example
+# (../mev/docs/cli.md), with edges carrying mev's already-resolved
+# target_node_id/target_doc_id fields, extended with a dangling-ref edge.
 # ---------------------------------------------------------------------------
 
 
 def _payload(**overrides) -> dict:
     base = {
-        "version": "1",
+        "version": "2",
         "root": "/path/to/brain",
         "nodes": [
             {"id": "brain:alpha", "scope": "brain", "doc_id": "alpha", "rel": "docs/alpha.md"},
             {"id": "brain:beta", "scope": "brain", "doc_id": "beta", "rel": "docs/beta.md"},
         ],
         "edges": [
-            {"from": "brain:alpha", "to_ref": "beta", "kind": "related"},
+            {
+                "from": "brain:alpha",
+                "to_ref": "beta",
+                "kind": "related",
+                "target_node_id": "brain:beta",
+                "target_doc_id": "beta",
+            },
         ],
         "leaves": [],
     }
@@ -87,35 +90,10 @@ def test_validate_payload_raises_when_edges_not_a_list():
         validate_payload(payload)
 
 
-# ---------------------------------------------------------------------------
-# build_node_maps / resolve_ref
-# ---------------------------------------------------------------------------
-
-
-def test_build_node_maps_keys_by_canonical_id_and_bare_doc_id():
-    id_map, doc_id_map = build_node_maps(_payload()["nodes"])
-    assert id_map["brain:alpha"]["doc_id"] == "alpha"
-    assert doc_id_map["beta"]["id"] == "brain:beta"
-
-
-def test_resolve_ref_bare_matches_by_doc_id():
-    id_map, doc_id_map = build_node_maps(_payload()["nodes"])
-    resolved = resolve_ref("beta", id_map, doc_id_map)
-    assert resolved is not None
-    assert resolved["id"] == "brain:beta"
-
-
-def test_resolve_ref_scoped_matches_by_canonical_id():
-    id_map, doc_id_map = build_node_maps(_payload()["nodes"])
-    resolved = resolve_ref("brain:beta", id_map, doc_id_map)
-    assert resolved is not None
-    assert resolved["doc_id"] == "beta"
-
-
-def test_resolve_ref_unresolvable_returns_none():
-    id_map, doc_id_map = build_node_maps(_payload()["nodes"])
-    assert resolve_ref("nonexistent", id_map, doc_id_map) is None
-    assert resolve_ref("other-scope:nonexistent", id_map, doc_id_map) is None
+def test_validate_payload_raises_on_non_v2_version():
+    payload = _payload(version="1")
+    with pytest.raises(ValueError, match="2"):
+        validate_payload(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +101,7 @@ def test_resolve_ref_unresolvable_returns_none():
 # ---------------------------------------------------------------------------
 
 
-def test_build_edge_rows_bare_ref_resolves_to_canonical_target_id():
+def test_build_edge_rows_reads_resolved_target_fields_through():
     rows = build_edge_rows(_payload())
     assert len(rows) == 1
     row = rows[0]
@@ -136,19 +114,17 @@ def test_build_edge_rows_bare_ref_resolves_to_canonical_target_id():
     assert row["scope"] == "brain"
 
 
-def test_build_edge_rows_already_scoped_ref_passes_through():
+def test_build_edge_rows_dangling_target_is_kept_not_dropped():
     payload = _payload(
-        edges=[{"from": "brain:alpha", "to_ref": "brain:beta", "kind": "related"}]
-    )
-    rows = build_edge_rows(payload)
-    assert rows[0]["to_ref"] == "brain:beta"
-    assert rows[0]["target_node_id"] == "brain:beta"
-    assert rows[0]["target_doc_id"] == "beta"
-
-
-def test_build_edge_rows_unresolvable_ref_is_dangling_not_dropped():
-    payload = _payload(
-        edges=[{"from": "brain:alpha", "to_ref": "ghost", "kind": "related"}]
+        edges=[
+            {
+                "from": "brain:alpha",
+                "to_ref": "ghost",
+                "kind": "related",
+                "target_node_id": None,
+                "target_doc_id": None,
+            }
+        ]
     )
     rows = build_edge_rows(payload)
     assert len(rows) == 1
@@ -160,7 +136,15 @@ def test_build_edge_rows_unresolvable_ref_is_dangling_not_dropped():
 
 def test_build_edge_rows_unresolvable_source_is_skipped():
     payload = _payload(
-        edges=[{"from": "brain:nonexistent", "to_ref": "beta", "kind": "related"}]
+        edges=[
+            {
+                "from": "brain:nonexistent",
+                "to_ref": "beta",
+                "kind": "related",
+                "target_node_id": "brain:beta",
+                "target_doc_id": "beta",
+            }
+        ]
     )
     rows = build_edge_rows(payload)
     assert rows == []
@@ -232,7 +216,7 @@ def test_load_edges_is_idempotent_second_load_adds_no_new_rows():
 def test_load_edges_raises_on_malformed_payload():
     session = _FakeSession()
     with pytest.raises(ValueError):
-        load_edges({"version": "1"}, session)
+        load_edges({"version": "2"}, session)
 
 
 # ---------------------------------------------------------------------------
