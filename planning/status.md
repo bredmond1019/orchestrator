@@ -6,7 +6,7 @@ doc_id: status
 layer: [engine]
 project: orchestrator
 status: active
-timestamp: "2026-07-02T00:00:00-03:00"
+timestamp: "2026-07-02T23:01:06-03:00"
 now: "or-g-graph-aware-rag (OR.G) DONE — brain_edges ingestion + two-stage structural retrieval landed, sdlc-flow PASS"
 next: "OR.H — swap embedding provider to local Ollama mxbai-embed-large, then OR.B rebuild"
 blocked: ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
@@ -19,7 +19,7 @@ related: [context, master-plan]
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-07-02 — `or-g-graph-aware-rag` (`OR.G`) sdlc-flow run PASSED across Tasks 1–5: `brain_edges` table + idempotent `mev emit-graph` loader (`scripts/load_brain_edges.py`) and a two-stage structural+semantic retrieval pipeline for the `"brain"` corpus (`_structural_expand` in `retrieve_chunks_node.py`), proven end-to-end by a new acceptance suite (`test_brain_graph_retrieval.py`). Review verdict PASS, docs patched. *(Prior `OR.Z` milestone below.)*
+**Last updated:** 2026-07-02 — `or-g-graph-aware-rag` (`OR.G`) merged (PR #2, squash `1c33f61`): `brain_edges` table + idempotent `mev emit-graph` loader (`scripts/load_brain_edges.py`) and a two-stage structural+semantic retrieval pipeline for the `"brain"` corpus (`_structural_expand` in `retrieve_chunks_node.py`), proven end-to-end by a new acceptance suite (`test_brain_graph_retrieval.py`). Along the way, fixed a pre-existing pylint R0801 duplicate-code warning in `sdlc_flow_workflow_nodes` (extracted shared `get_spec_dir()` helper into `_shared.py`) that had bailed the run after Task 1; resumed to a PASS across Tasks 1–5, `/code-review low` found no issues, worktree cleaned up. *(Prior `OR.Z` milestone below.)*
 **Prior (2026-07-02):** Node-tier refactor of `SDLCFlowWorkflow` (follow-on to `OR.Z`): all AI nodes now ride the `CLAUDE_CODE_SDK` seam; `WrapUpNode` is deterministic (Jinja templates over telemetry); `TriageTaskNode` defaults to deterministic `RETRYABLE` with an opt-in `llm_triage` flag; and a new `GenerateTasksNode` (Opus) + `SpecExistsRouterNode` planning fallback authors `tasks.md`/`tasks.json` when a spec has none. 917 tests pass / 8 skipped, ruff clean, pylint 10.00/10 (commit `1fc5768`).
 **Current focus:** or-g-graph-aware-rag is Done. Next up: `OR.H` (swap embedding provider to local Ollama `mxbai-embed-large`) → `OR.B` rebuild.
 
@@ -52,7 +52,7 @@ related: [context, master-plan]
 
 > Pragmatic D30 subset, hand-maintained. Period = since the last milestone (brain-rag-improvements, 2026-06-26).
 
-- **Tests:** 917 pass / 8 skipped; `ruff` clean; `pylint app/` 10.00/10.
+- **Tests:** 973 pass / 8 skipped; `ruff` clean; `pylint app/` 10.00/10.
 - **Blocks shipped this period:** brain-rag-improvements C + D (FTS + ANN infra) and E + F + G
   (pre-rebuild corpus/retrieval/indexer hardening).
 - **Intervention / retry rate:** recent specs PASS in 1 review attempt (E/F/G reviewed PASS, sweep applied).
