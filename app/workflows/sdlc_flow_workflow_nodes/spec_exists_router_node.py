@@ -14,11 +14,11 @@ This keeps the (Opus) planning step out of the common path: it only fires when
 a spec genuinely has no task list.
 """
 
-from pathlib import Path
-
 from core.nodes.base import Node
 from core.nodes.router import BaseRouter, RouterNode
 from core.task import TaskContext
+
+from workflows.sdlc_flow_workflow_nodes._shared import get_spec_dir
 
 
 class SpecExistsRouterNode(BaseRouter):
@@ -43,11 +43,7 @@ class _SpecExistsRouter(RouterNode):
 
         event = task_context.event
         spec_slug: str = event.spec_slug
-        worktree_path = task_context.get_node_output("SetupWorktreeNode")["result"][
-            "worktree_path"
-        ]
-
-        spec_dir = Path(worktree_path) / "planning" / spec_slug
+        spec_dir = get_spec_dir(task_context, spec_slug)
         state_path = spec_dir / "sdlc-flow-state.json"
         tasks_path = spec_dir / "tasks.json"
 
