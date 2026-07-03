@@ -10,3 +10,8 @@ Next: Triage the Pylint R0801 duplicate-code warning in pre-existing sdlc_flow_w
 
 ## PR
 Draft https://github.com/bredmond1019/python-orchestration-system/pull/2
+
+## Task 1 — PASSED (1 attempt)
+What: brain_edges table (model, migration, registration) already implemented and committed at 5e17720; re-verified it in full: alembic upgrade head applies cleanly, ruff clean, pylint app/ 10.00/10, full pytest suite (938 passed, 8 skipped) green.
+Decisions: Task 1 was found already complete on this branch from a prior attempt (commit 5e17720); no new implementation was needed — this run only re-validated it end-to-end.; The previously-blocking unrelated pylint R0801 warning (noted in the spec's Amendment Log) is no longer present; it was fixed by commit f43c0fd ('extract shared spec_dir helper to clear pylint R0801'), which is already on this branch ahead of the task-1 commit.
+Validated: gating checks (fast tripwire)
