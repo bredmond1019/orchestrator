@@ -11,6 +11,43 @@ timestamp: "2026-07-02T00:03:18-03:00"
 
 ---
 
+### 2026-07-02 (or-g-graph-aware-rag — sdlc-flow PASS, Tasks 1–5)
+
+`or-g-graph-aware-rag` (`OR.G`, graph-aware RAG edge ingestion + two-stage structural retrieval) completed all five tasks with a final review verdict of **PASS**. Task 1 added the `brain_edges` table (model, migration, registration in `database/__init__.py` and `alembic/env.py`). Task 2 added `scripts/load_brain_edges.py`, an idempotent loader that consumes mev's `emit-graph` JSON, resolves each edge's `to_ref` against the payload's `nodes[]` (bare/scoped refs resolve, unresolvable refs are kept dangling with a NULL target), and does a clear-then-reload of the whole table per run for idempotency. Task 3 extended `retrieve_chunks_node.py`'s `"brain"` corpus path with a `_structural_expand` stage that walks the `related:`-neighborhood of the top semantic hits before the existing keyword re-rank, keeping DB calls in mockable static helpers and marking structurally-surfaced candidates as such; a same-day re-verification found the task already spec-complete (the reported emoji-gate/pytest failures from a prior attempt were stale/false positives). Task 4 added an end-to-end acceptance suite (`test_brain_graph_retrieval.py`) proving the headline behavior: a `related:`-neighbor answer is retrieved and flagged `via="structural"` when the toggle is on, absent from the semantic-only path, and structural-on/off results are identical when no useful neighbor exists — exercised through the real Task 2 loader against a mocked `db_session` (BrainDocument's pgvector/ARRAY/TSVECTOR columns aren't SQLite-compatible, matching the existing test convention). Task 5 was validation-only and confirmed the full gate (alembic upgrade head, ruff, pylint 10.00/10, pytest 973 passed / 8 skipped) with no further changes. Docs were patched (`docs/api-reference.md`, `docs/brain-rag.md`, `docs/index.md`, `docs/scripts.md`, `docs/workflows.md`). Notable decisions: idempotency via clear-then-reload rather than per-row upsert (acceptable since `brain_edges` is a read-only derived index); `scripts/` and `app/alembic/versions/` both needed per-filename allowlist entries added to `.gitignore` for the new tracked files. Next: `OR.H` (swap embedding provider to local Ollama `mxbai-embed-large`) → `OR.B` rebuild.
+
+```
+3aca13d chore: flow state — docs
+5611acd docs: update docs for or-g-graph-aware-rag
+ab2a324 chore: flow state — task 5 passed
+8bf5297 chore: flow state — task 4 passed
+c7751f4 feat: implement or-g-graph-aware-rag-task4
+5bd974e chore: flow state — task 3 passed
+a411a3f feat: implement or-g-graph-aware-rag-task3
+9be95fe chore: flow state — task 2 passed
+```
+
+---
+
+### 2026-07-03 (or-g-graph-aware-rag — sdlc-flow BAILED after Task 1)
+
+- **What:** Ran `/sdlc-flow or-g-graph-aware-rag` (OR.G — graph-aware RAG: ingest mev's `emit-graph` edges into a Postgres `brain_edges` table and extend the `"brain"` retrieval path with structural neighborhood expansion). Task 1 implemented the `BrainEdge` SQLAlchemy model (`app/database/brain_edge.py`): source/target node+doc id columns, dangling-edge support for unresolved `to_ref`s, a unique `(source_node_id, to_ref)` constraint for idempotent reloads, traversal indexes on `source_doc_id`/`target_doc_id`, a hand-authored alembic migration (`e5f6a7b8c9d0_create_brain_edges_table.py`) on top of head `d1e2f3a4b5c6`, registration in `database/__init__.py` and `alembic/env.py`, and full model tests (`tests/database/test_brain_edge.py`). Also fixed a pre-existing `.gitignore` gap in `app/alembic/versions/` (missing allowlist entries for the new migration filename pattern and a prior `*_add_frontmatter_columns_to_brain_documents.py` migration). Tasks 2–5 (retrieval-node structural expansion, event-schema toggle, fixture-based eval comparison, docs) were never reached.
+- **Why it BAILED:** the pipeline's pylint gate flagged an R0801 duplicate-code warning in pre-existing `sdlc_flow_workflow_nodes` code — unrelated to this task's changes. This is an out-of-scope fix requiring a human triage/refactor decision (e.g. extract shared logic vs. suppress) rather than a blind retry, so the run stopped after Task 1 rather than attempting an unscoped fix.
+- **Decisions:** migration revision id `e5f6a7b8c9d0` follows the repo's existing hex-hash naming convention; the model's `kind` column carries both a Python-level `default='related'` and a matching `server_default='related'` in the migration; tests use SQLite in-memory (no ARRAY/pgvector columns on this model, unlike `test_brain_document.py`).
+- **Next:** a human needs to triage the R0801 duplicate-code warning in `sdlc_flow_workflow_nodes` (decide extract-shared-helper vs. suppress-with-justification), then resume `or-g-graph-aware-rag` from Task 1's completed state through Tasks 2–5.
+
+```
+956b6a5 chore: flow state — task 1 failed
+9ff06e0 feat: implement or-g-graph-aware-rag-task1
+794bffe chore: init worktree or-g-graph-aware-rag-flow
+1497bb3 Created slash commands
+bf23678 chore: add spec for or-g-graph-aware-rag
+22e7ed5 docs(master-plan): rename graph-aware RAG block MV.3B.S → OR.G
+71e5473 docs(master-plan): add MV.3B.S block contract — graph-aware RAG (edge ingestion)
+6789a44 docs: repoint node-model-comparison related edge to app-architecture-overview (target archived)
+```
+
+---
+
 ### 2026-07-02 (SDLCFlowWorkflow node-tier refactor — deterministic WrapUp/Triage, all-SDK, GenerateTasksNode)
 
 - **What:** Reviewed every `SDLCFlowWorkflow` node against `planning/sdlc-workflow-architecture/nodes-design.md` and acted on four calls from Brandon. (1) **Uniform provider** — `ConsolidatedReviewNode` + `PatchDocsNode` moved off `ANTHROPIC`/`claude-sonnet-5` onto `CLAUDE_CODE_SDK`/`sonnet`; every LLM node now rides the subscription seam. (2) **`WrapUpNode` → deterministic `Node`** — renders `log_entry`/`report`/`status_suggestion` from three new Jinja document templates (`sdlc_wrap_up_{log,report,status}.j2`) over run telemetry; deleted the old `sdlc_wrap_up.j2` system prompt. (3) **`TriageTaskNode` deterministic-default** — new `llm_triage: bool = False` on `SDLCFlowEventSchema`; a failing-under-budget task is `RETRYABLE` with no model call unless `llm_triage=True` (a natural future home for a local/OSS classifier). (4) **New `GenerateTasksNode` (Opus via `CLAUDE_CODE_SDK`) + `SpecExistsRouterNode`** — the router sits after `SetupWorktreeNode` and routes to `LoadTaskStateNode` when a spec exists, else to the planning fallback, which writes `tasks.md` + `tasks.json` then hands off. `SDLCFlowWorkflow` now wires 16 nodes. Added unit tests for all four changes plus a full-DAG integration test for the generate-spec path (`TestSDLCFlowWorkflowGeneratesSpec`). **917 tests pass / 8 skipped**, `ruff check app/` clean, `pylint app/` 10.00/10. Committed `1fc5768`.

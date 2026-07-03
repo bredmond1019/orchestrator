@@ -51,27 +51,28 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 29. [ProposalWriterNode](#proposalwriternode)
 30. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
 31. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
-32. [ContentChunk SQLAlchemy Model](#contentchunk-sqlalchemy-model)
-33. [ChatSession SQLAlchemy Model](#chatsession-sqlalchemy-model)
-34. [StorageNode](#storagenode)
-35. [ProposalGenerator StorageNode](#proposalgenerator-storagenode)
-36. [digest_renderer](#digest_renderer)
-37. [createworkflow CLI](#createworkflow-cli)
-38. [API Security and CORS](#api-security-and-cors)
-39. [API Layer](#api-layer)
-40. [DocumentIngestEventSchema](#documentingesteventschemae)
-41. [ParseDocumentNode](#parsedocumentnode)
-42. [ChunkDocumentNode](#chunkdocumentnode)
-43. [EmbedChunksNode](#embedchunksnode)
-44. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
-45. [DocumentIngestWorkflow](#documentingestworkflow)
-46. [RetrieveChunksNode](#retrievechunksnode)
-47. [DocumentQAEventSchema](#documentqaeventschemae)
-48. [EmbedQuestionNode](#embedquestionnode)
-49. [AssembleContextNode](#assemblecontextnode)
-50. [AnswerNode](#answernode)
-51. [UpdateSessionMemoryNode](#updatesessionmemorynode)
-52. [DocumentQAWorkflow](#documentqaworkflow)
+32. [BrainEdge SQLAlchemy Model](#brainedge-sqlalchemy-model)
+33. [ContentChunk SQLAlchemy Model](#contentchunk-sqlalchemy-model)
+34. [ChatSession SQLAlchemy Model](#chatsession-sqlalchemy-model)
+35. [StorageNode](#storagenode)
+36. [ProposalGenerator StorageNode](#proposalgenerator-storagenode)
+37. [digest_renderer](#digest_renderer)
+38. [createworkflow CLI](#createworkflow-cli)
+39. [API Security and CORS](#api-security-and-cors)
+40. [API Layer](#api-layer)
+41. [DocumentIngestEventSchema](#documentingesteventschemae)
+42. [ParseDocumentNode](#parsedocumentnode)
+43. [ChunkDocumentNode](#chunkdocumentnode)
+44. [EmbedChunksNode](#embedchunksnode)
+45. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
+46. [DocumentIngestWorkflow](#documentingestworkflow)
+47. [RetrieveChunksNode](#retrievechunksnode)
+48. [DocumentQAEventSchema](#documentqaeventschemae)
+49. [EmbedQuestionNode](#embedquestionnode)
+50. [AssembleContextNode](#assemblecontextnode)
+51. [AnswerNode](#answernode)
+52. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+53. [DocumentQAWorkflow](#documentqaworkflow)
 
 ---
 
@@ -2262,7 +2263,7 @@ similarity search from `RetrieveChunksNode` corpus `"brain"`) is available as of
 | `project` | `String(128)` | Yes | `NULL` | OKF `project` (e.g. `'orchestrator'`). Case-normalized to lowercase; supports `project`-filter scalar match. |
 | `status` | `String(32)` | Yes | `NULL` | OKF `status` (e.g. `'active'`, `'draft'`, `'archived'`). Case-normalized to lowercase; `'archived'` rows are excluded from default brain retrieval. |
 | `keywords` | `ARRAY(String)` | Yes | `NULL` | OKF `keywords` tags; folded into `content_tsv` at FTS weight `'A'`. |
-| `related` | `ARRAY(String)` | Yes | `NULL` | OKF `related` paths to related docs (stored; not yet traversed at query time). |
+| `related` | `ARRAY(String)` | Yes | `NULL` | OKF `related` paths to related docs (stored on the document row; the traversable graph index is `BrainEdge`, populated from this field by mev's `emit-graph` + `scripts/load_brain_edges.py`, and walked at query time by `RetrieveChunksNode`'s structural expansion stage). |
 | `is_section_title` | `Boolean` | No | `False` | `True` when the chunk is a header-only section (header-stripped body empty or `< 40` chars); drives the 2x section-title weight in `RetrieveChunksNode._fuse_and_rank`. |
 | `title` | `String(512)` | Yes | `NULL` | OKF frontmatter `title`; stored for FTS (weight `'A'`) and citation display. |
 | `description` | `Text` | Yes | `NULL` | OKF frontmatter `description`; stored for FTS (weight `'B'`) and citation display. |
@@ -2315,6 +2316,83 @@ uv run python scripts/index_brain.py --brain-path ../agentic-portfolio --rebuild
 | `--brain-path` | Root of the brain repo to walk (default: `../agentic-portfolio`). |
 | `--rebuild` | Force re-index all files regardless of `indexed_at` vs `mtime`. |
 | `--dry-run` | Print files that would be indexed; no DB writes or API calls. |
+
+---
+
+## BrainEdge SQLAlchemy Model
+
+**Source:** `app/database/brain_edge.py`
+
+```python
+class BrainEdge(Base):
+    __tablename__ = "brain_edges"
+```
+
+Persistence record for one directed `related:` edge between company-brain documents, as
+emitted by mev's `emit-graph` command over the OKF `related` frontmatter field. This is the
+**traversal layer** that makes `BrainDocument.related` queryable as a graph: `RetrieveChunksNode`'s
+structural neighborhood-expansion stage (Stage 1b, brain corpus only) walks these rows to widen
+the semantic candidate set with a query's neighboring documents (OR.G).
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key, UUID v4 generated at insert time. |
+| `source_node_id` | `String(512)` | No | — | Canonical `scope:doc_id` of the edge source (mev `emit-graph` `edges[].from`). |
+| `source_doc_id` | `String(256)` | No | — | The source node's authored `doc_id`, for joining to `brain_documents.doc_id`. Indexed (`ix_brain_edges_source_doc_id`). |
+| `to_ref` | `String(512)` | No | — | The raw authored `related:` entry (bare `doc_id` or already-scoped `scope:doc_id`). |
+| `target_node_id` | `String(512)` | Yes | `NULL` | Resolved canonical `scope:doc_id` of the edge target; `NULL` when dangling (unresolvable against the payload's `nodes[]`). |
+| `target_doc_id` | `String(256)` | Yes | `NULL` | Resolved target `doc_id`, for joining to `brain_documents.doc_id`; `NULL` when dangling. Indexed (`ix_brain_edges_target_doc_id`). |
+| `kind` | `String(64)` | No | `"related"` | Edge kind as emitted by mev (currently always `"related"`). |
+| `scope` | `String(128)` | Yes | `NULL` | Optional scope of the source node (mev `emit-graph` `nodes[].scope`). |
+| `indexed_at` | `DateTime` | Yes | `datetime.now` | Timestamp when this edge row was last (re)loaded. |
+
+A `UniqueConstraint` on `(source_node_id, to_ref)` (`uq_brain_edges_source_node_id_to_ref`) keeps
+one row per authored edge — reloads replace rather than duplicate.
+
+**On dangling edges:** an edge whose `to_ref` doesn't resolve against the payload's `nodes[]` is
+kept as a row with `target_node_id`/`target_doc_id` `NULL` rather than dropped, preserving
+authoring intent for later resolution. An edge whose *source* doesn't resolve is skipped entirely
+(`source_doc_id` is a required non-null column with no fallback).
+
+### Migration
+
+The `brain_edges` table is created by migration `e5f6a7b8c9d0`
+(`app/alembic/versions/e5f6a7b8c9d0_create_brain_edges_table.py`).
+
+**SQLite note:** all columns are plain `String`/`DateTime`/`UUID` types (no `ARRAY`, `Vector`, or
+`TSVECTOR`), so unlike `BrainDocument` this model is SQLite-compatible and not excluded from
+`create_all` in test fixtures.
+
+### Session and Base
+
+`BrainEdge` inherits from `Base = declarative_base()` defined in `app/database/session.py`. The
+model is imported in `app/alembic/env.py` (`from database.brain_edge import *`) so Alembic
+autogenerate sees its metadata.
+
+### Package Export
+
+`BrainEdge` is exported from `app/database/__init__.py` alongside the other models:
+
+```python
+from database import BrainDocument, BrainEdge, ChatSession, ContentChunk, LearningArtifact
+```
+
+### Loader CLI
+
+The `brain_edges` table is populated by `scripts/load_brain_edges.py`, an idempotent loader that
+reads mev's `emit-graph` JSON output (`nodes[]` + `edges[]`), resolves each edge's `to_ref`
+against `nodes[]` (bare `doc_id` or scoped `scope:doc_id`), and clear-then-reloads the whole
+table in one transaction so repeated runs stay consistent (`brain_edges` is a read-only derived
+index, not a source of truth — see `docs/scripts.md` § `load_brain_edges.py`).
+
+### Test coverage
+
+`tests/database/test_brain_edge.py` — model/schema tests (columns, constraints, migration).
+`tests/test_load_brain_edges.py` — 19 tests covering the loader: bare/scoped `to_ref` resolution,
+dangling-edge preservation, unresolvable-source skip, and clear-then-reload idempotency, mocking
+the session/repository seam (no live DB).
 
 ---
 
@@ -2444,6 +2522,13 @@ Implements the semantic-then-keyword re-rank pattern ported from the rag-engine-
    - **Content corpus** (no `tsv_field`): the legacy binary ILIKE match (each whitespace-separated
      query term, punctuation-stripped, matched case-insensitively against the content field),
      returning a `set` of matched IDs.
+2b. **Stage 1b — structural neighborhood expansion** (brain corpus only, `supports_structural`):
+   when `expand_structural=True` (default), the top `_STRUCTURAL_SEED_COUNT` (5) Stage-1 semantic
+   hits are used to walk `brain_edges` (loaded by `scripts/load_brain_edges.py` from mev's
+   `emit-graph` output) for their resolved `related:`-neighbors. Neighbor docs not already present
+   among the semantic candidates are fetched and merged in, each flagged `via="structural"` for
+   explainability (OR.G). No-op for corpora that don't declare `supports_structural` or when no
+   candidate carries a `doc_id`.
 3. **Additive score fusion:** `score = (1.0 − distance) × title_weight + keyword_contribution`,
    where `title_weight = 2.0` for `is_section_title=True` chunks (section-title 2x weight). The
    keyword contribution is graded for FTS corpora (`_KW_WEIGHT × ts_rank`) and a flat `_KW_BOOST`
@@ -2461,10 +2546,10 @@ Adding a third corpus requires one entry in the module-level `_CORPUS_CONFIG` di
 
 ### `process(task_context: TaskContext) -> TaskContext`
 
-Reads `event.question`, `event.corpus` (defaults to `"content"`), `event.filters`, and
-`event.include_archived` (all via `getattr` defensive read — defaulting to `None`/`False`) from
-the task context, calls `retrieve()` with `k=5`, `filters`, and `include_archived`, and writes
-the result:
+Reads `event.question`, `event.corpus` (defaults to `"content"`), `event.filters`,
+`event.include_archived`, and `event.expand_structural` (all via `getattr` defensive read —
+defaulting to `None`/`False`/`True` respectively) from the task context, calls `retrieve()` with
+`k=5`, `filters`, `include_archived`, and `expand_structural`, and writes the result:
 
 ```python
 task_context.update_node(node_name=self.node_name, result={"chunks": chunks})
@@ -2477,10 +2562,11 @@ output = task_context.get_node_output("RetrieveChunksNode")
 chunks = output["result"]["chunks"]
 ```
 
-### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None, include_archived=False) -> list[dict]`
+### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None, include_archived=False, expand_structural=True) -> list[dict]`
 
-Public retrieval method. Embeds `query` via `EmbeddingService`, runs the two-stage pipeline,
-and returns up to `k` normalized chunk dicts sorted by fused score descending.
+Public retrieval method. Embeds `query` via `EmbeddingService`, runs the two-stage (plus optional
+structural) pipeline, and returns up to `k` normalized chunk dicts sorted by fused score
+descending.
 
 **Parameters:**
 
@@ -2492,6 +2578,7 @@ and returns up to `k` normalized chunk dicts sorted by fused score descending.
 | `threshold` | `float` | `0.0` | Minimum fused score; chunks below are excluded. |
 | `filters` | `dict \| None` | `None` | Optional metadata filters (keyword-only). Applied only when the corpus declares `filter_fields`. See `DocumentQAEventSchema` for accepted keys. |
 | `include_archived` | `bool` | `False` | Keyword-only. When `False`, brain-corpus results exclude `status='archived'` docs. No effect on the content corpus. |
+| `expand_structural` | `bool` | `True` | Keyword-only. When `True` and the corpus declares `supports_structural` (currently `"brain"` only), widens the Stage-1 semantic candidate set through the `related:`-neighborhood of the top hits before keyword re-rank. No-op for `"content"` or when `False`. |
 
 **Return schema** — each element of the returned list contains:
 
@@ -2504,28 +2591,37 @@ and returns up to `k` normalized chunk dicts sorted by fused score descending.
 | `file_path` | `str \| None` | Provenance: source file path (brain corpus; `None` when the row lacks it). |
 | `doc_id` | `str \| None` | Provenance: OKF `doc_id` of the source doc. |
 | `title` | `str \| None` | Provenance: OKF `title` of the source doc, for citation display. |
+| `via` | `str` | Provenance: `"semantic"` (Stage 1) or `"structural"` (Stage 1b neighborhood expansion). |
 
 ### Internal methods (mockable test seams)
 
 | Method | Description |
 |---|---|
 | `_semantic_search(vector, corpus, limit, filters=None, include_archived=False)` | Stage 1: pgvector cosine-distance query. Accepts optional `filters` dict; when present and the corpus declares `filter_fields`, delegates to `_apply_metadata_filters` before executing. When the corpus declares `default_status_exclude` and `include_archived` is `False`, also filters out that status (NULL status kept). Isolated for unit-test patching without a live DB. |
+| `_structural_expand(candidates, corpus, vector, filters=None, include_archived=False)` | Stage 1b: when the corpus declares `supports_structural`, resolves the `related:`-neighborhood of the top `_STRUCTURAL_SEED_COUNT` (5) semantic candidates via `_resolve_neighbor_doc_ids` (queries `brain_edges` by `source_doc_id`) and `_fetch_neighbor_candidates` (fetches the resolved `target_doc_id` rows, respecting `filters`/`include_archived`), tagging results `via="structural"`. Short-circuits with no DB call when the corpus doesn't support structural expansion or no candidate carries a `doc_id`. |
+| `_merge_structural_candidates(candidates, structural)` | Static helper: unions structural candidates into the semantic set, deduped by `id` — a structural candidate whose id already appears among `candidates` is dropped so the semantic candidate wins ties rather than duplicating the row. |
 | `_keyword_search(query, candidate_ids, corpus)` | Stage 2 dispatcher. Returns a `dict[id -> ts_rank]` for corpora declaring a `tsv_field` (graded FTS) or a `set[id]` for the legacy ILIKE path; returns the matching empty shape when `candidate_ids` is empty. Delegates to one of the two helpers below. |
 | `_keyword_search_fts(query, candidate_ids, config, tsv_field)` | Graded full-text search (brain corpus). Builds `ts_rank(content_tsv, plainto_tsquery('english', query))` scoped to candidate IDs, returns `dict[id -> float ts_rank]`. Stop-word removal and stemming come from `plainto_tsquery`. |
 | `_keyword_search_ilike(query, candidate_ids, config)` | Legacy binary ILIKE (content corpus). Query terms are stripped of non-word characters before matching (e.g. `"RAG?"` → `"RAG"`); ORs in any `keyword_extra_fields` columns. Returns a `set` of matched IDs. |
 | `_apply_metadata_filters(query, model, filters, filter_fields)` | Module-level helper. Translates `{field: value}` pairs to SQLAlchemy WHERE clauses: scalar fields use `col == value`; array fields (e.g. `layer`) use `.overlap([value])`. Applied inside `_semantic_search`; extracted to keep `_semantic_search` under the pylint locals limit and to make filter logic independently testable. |
-| `_fuse_and_rank(candidates, keyword_matches, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. Grades the keyword contribution when `keyword_matches` is a `dict` (`_KW_WEIGHT × ts_rank`) and applies a flat `_KW_BOOST` when it is a `set`. Carries `file_path`/`doc_id`/`title` provenance through to each result. No DB calls. |
+| `_fuse_and_rank(candidates, keyword_matches, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. Grades the keyword contribution when `keyword_matches` is a `dict` (`_KW_WEIGHT × ts_rank`) and applies a flat `_KW_BOOST` when it is a `set`. Carries `file_path`/`doc_id`/`title`/`via` provenance through to each result. No DB calls. |
 
 ### Test coverage
 
-`tests/workflows/test_retrieve_chunks_node.py` — 32 tests covering: score ordering,
+`tests/workflows/test_retrieve_chunks_node.py` — 60 tests covering: score ordering,
 keyword boost, section-title 2x weight, threshold filtering, top-k, NaN safety,
 corpus `"brain"` threading, TaskContext output contract (`{"result": {"chunks": [...]}}` shape),
 exact score formula verification, punctuation stripping in keyword terms, `filters` forwarding
 from event through `process()` → `retrieve()` → `_semantic_search()`, defensive `getattr`
 fallback when event has no `filters` attribute, brain corpus ORing the `keywords` column in
-keyword search, content corpus query unchanged by new config, and scalar-filter exclusion of
-non-matching rows.
+keyword search, content corpus query unchanged by new config, scalar-filter exclusion of
+non-matching rows, and the structural neighborhood-expansion stage (`_structural_expand`,
+`_merge_structural_candidates`, `expand_structural` toggle on/off, `via="structural"` tagging,
+no-DB-call short-circuit for corpora without `supports_structural`). An additional end-to-end
+suite, `tests/workflows/test_brain_graph_retrieval.py`, proves the headline OR.G acceptance: a
+`related:`-neighbor answer is retrieved and flagged `via="structural"` when absent from the
+semantic-only path, and structural-on/off results are identical when no useful neighbor exists
+(dangling edge).
 
 ---
 
@@ -3224,15 +3320,16 @@ session without generating an id client-side.
 | `corpus` | `str` | No | `"content"` | Corpus to retrieve from: `"content"` (content_chunks) or `"brain"` (brain_documents). |
 | `filters` | `dict \| None` | No | `None` | Optional metadata filters for `"brain"` corpus retrieval. Accepted keys: `"project"` (scalar), `"layer"` (array overlap), `"status"` (scalar). Omitting or passing `None` reproduces current behavior exactly; ignored for `"content"` corpus. |
 | `include_archived` | `bool` | No | `False` | When `False`, the `"brain"` corpus excludes `status='archived'` docs from retrieval. Set `True` to surface archived historical context. No effect on the `"content"` corpus. |
+| `expand_structural` | `bool` | No | `True` | When `True`, the `"brain"` corpus retrieval widens the Stage-1 semantic candidate set through the `related:`-neighborhood (from `brain_edges`) of the top hits before keyword re-rank. Set `False` to disable the structural expansion stage. No effect on the `"content"` corpus. |
 
 ### Validation
 
-All six fields accept their Python-native types; Pydantic coerces UUID strings automatically.
+All seven fields accept their Python-native types; Pydantic coerces UUID strings automatically.
 A missing `doc_id` or `question` raises a `ValidationError`. `corpus` is not constrained by the
 schema — the `RetrieveChunksNode` corpus dispatch handles unknown values. `filters` keys that are
-not declared in `filter_fields` for the target corpus are silently ignored. `include_archived` is
-an explicit boolean field (not a `filters` key) so the archived-override is type-checked and
-self-documenting.
+not declared in `filter_fields` for the target corpus are silently ignored. `include_archived` and
+`expand_structural` are explicit boolean fields (not `filters` keys) so both overrides are
+type-checked and self-documenting.
 
 ---
 

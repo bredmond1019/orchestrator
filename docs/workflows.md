@@ -301,6 +301,7 @@ The retrieval uses hybrid scoring: semantic similarity (Voyage embeddings) combi
 | `corpus` | `"content"` or `"brain"` | no (default: `"content"`) | `"brain"` queries the brain_documents corpus |
 | `filters` | dict | no | Optional metadata filters for `"brain"` corpus only. Accepted keys: `"layer"` (array overlap), `"project"` (scalar `==`), `"status"` (scalar `==`). Ignored for `"content"` corpus. |
 | `include_archived` | bool | no (default: `false`) | `"brain"` corpus only. When `false`, excludes `status='archived'` docs; set `true` for historical queries. No effect on `"content"`. |
+| `expand_structural` | bool | no (default: `true`) | `"brain"` corpus only. When `true`, widens retrieval through the `related:`-neighborhood of the top semantic hits (`brain_edges`, OR.G); results added this way are flagged `"via": "structural"`. Set `false` for semantic-only retrieval. No effect on `"content"`. |
 
 **Trigger (two-shot conversation):**
 

@@ -18,11 +18,16 @@ Supports two corpora:
 - ``"content"`` — queries the ``content_chunks`` table (documents ingested by
   this project, the default Q&A path).
 - ``"brain"`` — queries the ``brain_documents`` table (the agentic-portfolio
-  company brain corpus, for brain-RAG integration).
+  company brain corpus, for brain-RAG integration). Adds a Stage 1b
+  structural neighborhood-expansion: the ``related:``-neighbors (from
+  ``brain_edges``, mev's ``emit-graph`` output) of the top Stage-1 semantic
+  hits are pulled in as extra candidates before keyword re-rank, flagged
+  ``via="structural"`` for explainability (OR.G).
 
 The corpus dispatch is a small mapping so adding a third corpus is a one-line
-addition. DB calls are isolated in ``_semantic_search`` and ``_keyword_search``
-(mockable seams); ``_fuse_and_rank`` is pure and unit-testable without a DB.
+addition. DB calls are isolated in ``_semantic_search``, ``_structural_expand``,
+and ``_keyword_search`` (mockable seams); ``_fuse_and_rank`` is pure and
+unit-testable without a DB.
 """
 
 import math
@@ -32,6 +37,7 @@ from contextlib import contextmanager
 from core.nodes.base import Node
 from core.task import TaskContext
 from database.brain_document import BrainDocument
+from database.brain_edge import BrainEdge
 from database.content_chunk import ContentChunk
 from database.session import db_session
 from services.embedding_service import EmbeddingService
@@ -65,8 +71,16 @@ _CORPUS_CONFIG: dict[str, dict] = {
         # Exclude archived docs from default retrieval; override with
         # include_archived=True (an explicit DocumentQAEventSchema field).
         "default_status_exclude": "archived",
+        # Enables the structural neighborhood-expansion stage (Stage 1b):
+        # brain_edges traversal from the top semantic hits. No-op for
+        # corpora that don't declare this (e.g. "content").
+        "supports_structural": True,
     },
 }
+
+# Number of top Stage-1 semantic hits whose related:-neighborhood is walked
+# by the structural expansion stage (_structural_expand).
+_STRUCTURAL_SEED_COUNT: int = 5
 
 # Keyword fusion weights (tune against the Block H smoke queries):
 # - _KW_WEIGHT scales the graded FTS ts_rank contribution (ts_rank values are
@@ -100,8 +114,12 @@ def _apply_metadata_filters(query, model, filters: dict, filter_fields: dict):
     return query
 
 
-def _row_to_candidate(row, distance: float, config: dict) -> dict:
-    """Convert one ORM row + its cosine distance into a normalized candidate dict."""
+def _row_to_candidate(row, distance: float, config: dict, via: str = "semantic") -> dict:
+    """Convert one ORM row + its cosine distance into a normalized candidate dict.
+
+    ``via`` is a provenance tag ("semantic" or "structural") carried through
+    ``_fuse_and_rank`` into the final result dicts for explainability.
+    """
     stf = config["section_title_field"]
     istf = config["is_section_title_field"]
     return {
@@ -114,6 +132,7 @@ def _row_to_candidate(row, distance: float, config: dict) -> dict:
         "file_path": getattr(row, "file_path", None),
         "doc_id": getattr(row, "doc_id", None),
         "title": getattr(row, "title", None),
+        "via": via,
     }
 
 
@@ -134,12 +153,14 @@ class RetrieveChunksNode(Node):
         corpus = getattr(event, "corpus", "content")
         filters = getattr(event, "filters", None)
         include_archived = getattr(event, "include_archived", False)
+        expand_structural = getattr(event, "expand_structural", True)
         chunks = self.retrieve(
             query,
             corpus=corpus,
             k=5,
             filters=filters,
             include_archived=include_archived,
+            expand_structural=expand_structural,
         )
         task_context.update_node(
             node_name=self.node_name,
@@ -147,7 +168,7 @@ class RetrieveChunksNode(Node):
         )
         return task_context
 
-    def retrieve(
+    def retrieve(  # pylint: disable=too-many-arguments
         self,
         query: str,
         corpus: str = "content",
@@ -156,6 +177,7 @@ class RetrieveChunksNode(Node):
         *,
         filters: dict | None = None,
         include_archived: bool = False,
+        expand_structural: bool = True,
     ) -> list[dict]:
         """Run the two-stage hybrid retrieval pipeline.
 
@@ -168,19 +190,46 @@ class RetrieveChunksNode(Node):
             filters: Optional metadata WHERE clauses (brain corpus only).
             include_archived: When False (default), brain-corpus results exclude
                 docs with ``status="archived"``.
+            expand_structural: When True (default) and the corpus supports it
+                (currently "brain" only), widens the Stage-1 semantic candidate
+                set through the ``related:``-neighborhood of the top hits
+                before keyword re-rank. No-op for "content" or when False.
 
         Returns:
             List of up to ``k`` normalized chunk dicts, each containing
             ``{"content", "section_title", "score", "source", "file_path",
-            "doc_id", "title"}``, sorted by fused score descending.
+            "doc_id", "title", "via"}``, sorted by fused score descending.
         """
         vector = EmbeddingService().embed_text(query)
         candidates = self._semantic_search(
             vector, corpus, limit=20, filters=filters, include_archived=include_archived
         )
+        if expand_structural:
+            structural = self._structural_expand(
+                candidates,
+                corpus,
+                vector,
+                filters=filters,
+                include_archived=include_archived,
+            )
+            candidates = self._merge_structural_candidates(candidates, structural)
         candidate_ids = [c["id"] for c in candidates]
         keyword_matches = self._keyword_search(query, candidate_ids, corpus)
         return self._fuse_and_rank(candidates, keyword_matches, k, threshold)
+
+    @staticmethod
+    def _merge_structural_candidates(
+        candidates: list[dict], structural: list[dict]
+    ) -> list[dict]:
+        """Union structural candidates into the semantic set, deduped by id.
+
+        A structural candidate whose id already appears in ``candidates`` is
+        dropped (the semantic candidate wins) rather than duplicated.
+        """
+        if not structural:
+            return candidates
+        existing_ids = {c["id"] for c in candidates}
+        return candidates + [c for c in structural if c["id"] not in existing_ids]
 
     def _semantic_search(
         self,
@@ -225,6 +274,106 @@ class RetrieveChunksNode(Node):
                     )
             rows = q.order_by(distance_expr).limit(limit).all()
             return [_row_to_candidate(row, distance, config) for row, distance in rows]
+
+    def _structural_expand(
+        self,
+        candidates: list[dict],
+        corpus: str,
+        vector: list[float],
+        *,
+        filters: dict | None = None,
+        include_archived: bool = False,
+    ) -> list[dict]:
+        """Stage 1b: widen the candidate set through the related:-neighborhood.
+
+        Takes the top ``_STRUCTURAL_SEED_COUNT`` Stage-1 semantic candidates
+        (``candidates`` is already ordered by ascending distance from
+        ``_semantic_search``), looks up their ``brain_edges`` neighbors
+        (matched on ``source_doc_id``), and fetches those neighbor chunks from
+        ``brain_documents`` (joined by ``doc_id``, respecting the existing
+        archived/status filter and any metadata ``filters``). Each neighbor is
+        embed-distanced against the query ``vector`` and returned as a
+        normalized candidate dict flagged ``via="structural"`` — the same
+        shape ``_row_to_candidate`` produces, so ``_fuse_and_rank`` stays pure
+        and untouched in its scoring contract.
+
+        No-op (returns ``[]``, no DB touched) when the corpus doesn't declare
+        ``supports_structural`` or when there are no seed doc ids / no
+        resolved neighbors.
+
+        This method is isolated so tests can patch it without a live DB.
+        """
+        config = _CORPUS_CONFIG[corpus]
+        if not config.get("supports_structural"):
+            return []
+
+        seed_doc_ids = [
+            c["doc_id"] for c in candidates[:_STRUCTURAL_SEED_COUNT] if c.get("doc_id")
+        ]
+        if not seed_doc_ids:
+            return []
+
+        existing_doc_ids = {c.get("doc_id") for c in candidates}
+
+        with contextmanager(db_session)() as session:
+            neighbor_doc_ids = self._resolve_neighbor_doc_ids(
+                session, seed_doc_ids, existing_doc_ids
+            )
+            if not neighbor_doc_ids:
+                return []
+            return self._fetch_neighbor_candidates(
+                session,
+                config,
+                vector,
+                neighbor_doc_ids,
+                filters=filters,
+                include_archived=include_archived,
+            )
+
+    @staticmethod
+    def _resolve_neighbor_doc_ids(session, seed_doc_ids: list, existing_doc_ids: set) -> set:
+        """Query brain_edges for resolved (non-dangling) neighbors of the seed
+        doc ids, excluding any doc_id already present in the candidate set."""
+        edge_rows = (
+            session.query(BrainEdge.target_doc_id)
+            .filter(BrainEdge.source_doc_id.in_(seed_doc_ids))
+            .filter(BrainEdge.target_doc_id.isnot(None))
+            .all()
+        )
+        return {
+            row.target_doc_id
+            for row in edge_rows
+            if row.target_doc_id not in existing_doc_ids
+        }
+
+    @staticmethod
+    def _fetch_neighbor_candidates(
+        session,
+        config: dict,
+        vector: list[float],
+        neighbor_doc_ids: set,
+        *,
+        filters: dict | None,
+        include_archived: bool,
+    ) -> list[dict]:
+        """Fetch + distance-score the resolved neighbor rows as candidate dicts."""
+        model = config["model"]
+        distance_expr = model.embedding.cosine_distance(vector)
+        q = session.query(model, distance_expr.label("_distance")).filter(
+            model.doc_id.in_(neighbor_doc_ids)
+        )
+        if filters and config.get("filter_fields"):
+            q = _apply_metadata_filters(q, model, filters, config["filter_fields"])
+        exclude = config.get("default_status_exclude")
+        if exclude and not include_archived:
+            status_col = getattr(model, "status", None)
+            if status_col is not None:
+                q = q.filter((status_col != exclude) | (status_col.is_(None)))
+        rows = q.all()
+        return [
+            _row_to_candidate(row, distance, config, via="structural")
+            for row, distance in rows
+        ]
 
     def _keyword_search(
         self,
@@ -335,7 +484,7 @@ class RetrieveChunksNode(Node):
 
         Returns:
             List of normalized dicts ``{"content", "section_title", "score",
-            "source", "file_path", "doc_id", "title"}`` sorted by score
+            "source", "file_path", "doc_id", "title", "via"}`` sorted by score
             descending, length <= ``k``.
         """
         graded = isinstance(keyword_matches, dict)
@@ -365,6 +514,9 @@ class RetrieveChunksNode(Node):
                     "file_path": c.get("file_path"),
                     "doc_id": c.get("doc_id"),
                     "title": c.get("title"),
+                    # Provenance flag: "semantic" (Stage 1) or "structural"
+                    # (Stage 1b, related:-neighborhood expansion).
+                    "via": c.get("via", "semantic"),
                 }
             )
 

@@ -791,3 +791,324 @@ class TestIncludeArchivedThreading:
         with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         assert mock_ret.call_args[1].get("include_archived") is False
+
+
+# ---------------------------------------------------------------------------
+# _structural_expand — Stage 1b structural neighborhood expansion (OR.G Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestStructuralExpand:
+    """Unit tests for _structural_expand — mocked brain_edges + neighbor rows."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    @staticmethod
+    def _make_session(edge_target_doc_ids, neighbor_rows):
+        """Fake session whose .query() returns, in order: the edge lookup
+        query (BrainEdge.target_doc_id), then the neighbor row/distance query."""
+        edge_query = MagicMock()
+        edge_query.filter.return_value = edge_query
+        edge_query.all.return_value = [
+            MagicMock(target_doc_id=t) for t in edge_target_doc_ids
+        ]
+
+        neighbor_query = MagicMock()
+        neighbor_query.filter.return_value = neighbor_query
+        neighbor_query.all.return_value = neighbor_rows
+
+        fake_session = MagicMock()
+        fake_session.query.side_effect = [edge_query, neighbor_query]
+        return fake_session
+
+    def test_content_corpus_is_noop(self):
+        """The content corpus doesn't declare supports_structural — always []."""
+        candidate = _make_candidate()
+        candidate["doc_id"] = "alpha"
+        result = self.node._structural_expand([candidate], "content", [0.1] * 1024)
+        assert result == []
+
+    def test_no_seed_doc_ids_returns_empty_without_touching_db(self):
+        """Candidates with no doc_id produce no seeds; the DB is never opened."""
+        candidates = [_make_candidate()]  # no "doc_id" key
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session"
+        ) as mock_db_session:
+            result = self.node._structural_expand(candidates, "brain", [0.1] * 1024)
+        assert result == []
+        mock_db_session.assert_not_called()
+
+    def test_returns_neighbor_flagged_structural(self):
+        """A resolved brain_edges neighbor is returned as a candidate dict
+        with via='structural' and the neighbor's own doc_id/content."""
+        seed = _make_candidate(dist=0.1)
+        seed["doc_id"] = "alpha"
+
+        neighbor_id = uuid.uuid4()
+        fake_row = MagicMock()
+        fake_row.id = neighbor_id
+        fake_row.content = "neighbor content"
+        fake_row.section = "Neighbor Section"
+        fake_row.is_section_title = False
+        fake_row.file_path = "docs/beta.md"
+        fake_row.doc_id = "beta"
+        fake_row.title = "Beta"
+
+        fake_session = self._make_session(["beta"], [(fake_row, 0.15)])
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._structural_expand([seed], "brain", [0.1] * 1024)
+
+        assert len(result) == 1
+        assert result[0]["via"] == "structural"
+        assert result[0]["doc_id"] == "beta"
+        assert result[0]["id"] == neighbor_id
+        assert result[0]["distance"] == 0.15
+
+    def test_neighbor_already_a_candidate_is_excluded(self):
+        """A resolved neighbor whose doc_id already appears among the input
+        candidates is not re-fetched (no duplicate row query)."""
+        seed = _make_candidate(dist=0.1)
+        seed["doc_id"] = "alpha"
+        already_present = _make_candidate(dist=0.2)
+        already_present["doc_id"] = "beta"
+
+        fake_session = self._make_session(["beta"], [])
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._structural_expand(
+                [seed, already_present], "brain", [0.1] * 1024
+            )
+
+        assert result == []
+
+    def test_dangling_edges_are_ignored(self):
+        """Edges with a NULL target_doc_id are filtered at the SQL layer, but
+        even if a None slips through, it never becomes a neighbor doc id."""
+        seed = _make_candidate(dist=0.1)
+        seed["doc_id"] = "alpha"
+
+        fake_session = self._make_session([], [])
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._structural_expand([seed], "brain", [0.1] * 1024)
+
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# retrieve() — structural expansion merged into the fused candidate set
+# ---------------------------------------------------------------------------
+
+
+class TestRetrieveStructuralExpansion:
+    """Integration tests for retrieve() merging _structural_expand output."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_structural_neighbor_appears_in_fused_result_flagged(self):
+        """A structural candidate is unioned into the candidate set and its
+        via='structural' provenance survives _fuse_and_rank."""
+        semantic_id = uuid.uuid4()
+        structural_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=semantic_id)
+        semantic_candidate["doc_id"] = "alpha"
+        structural_candidate = _make_candidate(
+            dist=0.2, candidate_id=structural_id, content="neighbor content"
+        )
+        structural_candidate["doc_id"] = "beta"
+        structural_candidate["via"] = "structural"
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            self.node, "_structural_expand", return_value=[structural_candidate]
+        ) as mock_struct, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve("q", corpus="brain", k=5)
+
+        mock_struct.assert_called_once()
+        result_by_id = {r["id"]: r for r in result}
+        assert structural_id in result_by_id
+        assert result_by_id[structural_id]["via"] == "structural"
+        assert result_by_id[semantic_id]["via"] == "semantic"
+
+    def test_neighbor_absent_from_semantic_only_path(self):
+        """With expand_structural=False, _structural_expand never runs and its
+        candidate never appears — demonstrating the neighbor is genuinely
+        surfaced only by the structural stage on the same fixture."""
+        semantic_id = uuid.uuid4()
+        structural_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=semantic_id)
+        structural_candidate = _make_candidate(dist=0.2, candidate_id=structural_id)
+        structural_candidate["via"] = "structural"
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            self.node, "_structural_expand", return_value=[structural_candidate]
+        ) as mock_struct, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve(
+                "q", corpus="brain", k=5, expand_structural=False
+            )
+
+        mock_struct.assert_not_called()
+        result_ids = {r["id"] for r in result}
+        assert structural_id not in result_ids
+        assert semantic_id in result_ids
+
+    def test_dedup_prefers_existing_semantic_candidate(self):
+        """A structural candidate sharing an id with an existing semantic
+        candidate is not duplicated in the fused result."""
+        dup_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=dup_id)
+        dup_structural = _make_candidate(dist=0.2, candidate_id=dup_id)
+        dup_structural["via"] = "structural"
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            self.node, "_structural_expand", return_value=[dup_structural]
+        ), patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve("q", corpus="brain", k=5)
+
+        assert len(result) == 1
+        assert result[0]["via"] == "semantic"
+
+    def test_structural_expand_receives_query_vector_and_corpus(self):
+        """_structural_expand is called with the embedded vector and corpus."""
+        expected_vector = [0.3] * 1024
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[]
+        ), patch.object(
+            self.node, "_structural_expand", return_value=[]
+        ) as mock_struct, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = expected_vector
+            self.node.retrieve("q", corpus="brain", k=5)
+
+        args = mock_struct.call_args[0]
+        assert args[1] == "brain"
+        assert args[2] == expected_vector
+
+
+# ---------------------------------------------------------------------------
+# Regression: content corpus + toggle-off brain path unchanged (OR.G Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestStructuralExpansionRegression:
+    """The content corpus and the toggle-off brain path must behave exactly
+    as before the structural expansion stage was added, using the REAL
+    (unmocked) _structural_expand so its no-op guards are exercised."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_content_corpus_result_unaffected(self):
+        """content corpus: real _structural_expand never touches the DB, and
+        every result is flagged via='semantic' (unchanged behaviour)."""
+        candidates = [_make_candidate(dist=0.1), _make_candidate(dist=0.3)]
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=candidates
+        ), patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve("q", corpus="content", k=5)
+
+        assert len(result) == 2
+        assert all(r["via"] == "semantic" for r in result)
+
+    def test_brain_path_identical_with_toggle_on_or_off_when_no_edges(self):
+        """When candidates carry no doc_id (no traversable seeds — mirrors
+        'no edges exist' per the acceptance criteria), expand_structural=True
+        and False produce byte-for-byte identical results."""
+        candidates = [_make_candidate(dist=0.1)]  # no "doc_id" key
+
+        def _run(expand: bool):
+            with patch(
+                "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            ) as MockEmb, patch.object(
+                self.node, "_semantic_search", return_value=candidates
+            ), patch.object(
+                self.node, "_keyword_search", return_value=set()
+            ):
+                MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+                return self.node.retrieve(
+                    "q", corpus="brain", k=5, expand_structural=expand
+                )
+
+        assert _run(True) == _run(False)
+
+
+# ---------------------------------------------------------------------------
+# expand_structural threading — process() → retrieve()
+# ---------------------------------------------------------------------------
+
+
+class TestExpandStructuralThreading:
+    """expand_structural threads from the event through process() to retrieve()."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_process_reads_expand_structural_from_event(self):
+        event = MagicMock()
+        event.question = "brain question"
+        event.corpus = "brain"
+        event.filters = None
+        event.include_archived = False
+        event.expand_structural = False
+        ctx = TaskContext(event=event)
+        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+            self.node.process(ctx)
+        assert mock_ret.call_args[1].get("expand_structural") is False
+
+    def test_process_defaults_expand_structural_true_when_absent(self):
+        event = MagicMock(spec=["question", "corpus"])
+        event.question = "What is chunking?"
+        event.corpus = "content"
+        ctx = TaskContext(event=event)
+        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+            self.node.process(ctx)
+        assert mock_ret.call_args[1].get("expand_structural") is True
