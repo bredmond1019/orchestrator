@@ -48,3 +48,12 @@ class DocumentQAEventSchema(BaseModel):
             "historical context. No effect on the 'content' corpus."
         ),
     )
+    expand_structural: bool = Field(
+        default=True,
+        description=(
+            "When True (default), the 'brain' corpus retrieval widens the "
+            "Stage-1 semantic candidate set through the 'related:'-neighborhood "
+            "of the top hits before keyword re-rank. Set False to disable the "
+            "structural expansion stage. No effect on the 'content' corpus."
+        ),
+    )
