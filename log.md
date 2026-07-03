@@ -2,12 +2,20 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-03T16:42:00-03:00"
+timestamp: "2026-07-03T17:56:14-03:00"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+### 2026-07-03 (Shipped OR.H local embeddings + OR.B semantic Brain Q&A)
+
+- **What:** Shipped OR.H (local Ollama mxbai-embed-large embedding swap) and OR.B (Semantic Brain Q&A end-to-end) — ran the full brain corpus rebuild (176 files, 1243 chunks, 1243 embeddings, ~87s, $0 cost) and verified semantic retrieval works. Built scripts/query_brain.py (a manual semantic-search CLI, 6 tests) plus docs (docs/scripts.md, docs/brain-rag.md "Testing retrieval manually" section). Ran a 13-query test batch through it and wrote planning/test-runs/or-b-brain-retrieval-test-run1.md — 7 pass / 1 partial / 6 fail, 4 root-cause findings, 6 ranked improvement recommendations with why/what's-lacking/expected-outcome detail. Updated planning/state.json (OR.H/OR.B closed, OR.O gained a note, new carryover entry for the retrieval-improvement recommendations) and planning/status.md. 975 tests pass / 8 skipped, ruff clean, pylint app/ 10.00/10.
+- **Why:** This closes out the local-embedding migration (OR.H) and validates the semantic Brain Q&A retrieval pipeline end-to-end (OR.B), producing a documented test run with concrete improvement recommendations to carry forward.
+- **Refs:** planning/test-runs/or-b-brain-retrieval-test-run1.md; planning/handoff.md
 
 ---
 

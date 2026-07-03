@@ -53,7 +53,7 @@ Each row is one section-level chunk of a brain document. The brain is indexed by
 | `doc_type` | string | Corpus category: `decision`, `project`, `career`, `brand`, `business`, `content`, `diagnostic`, `memory` |
 | `section` | string | H2/H3 header this chunk falls under |
 | `content` | text | Raw chunk text (up to ~500 tokens) — YAML frontmatter block is stripped before storage |
-| `embedding` | vector(1024) | Voyage AI `voyage-2` embedding |
+| `embedding` | vector(1024) | Embedding vector — local Ollama `mxbai-embed-large` by default (see `EmbeddingService`), or Voyage `voyage-2` if `EMBEDDING_PROVIDER=voyage` |
 | `indexed_at` | datetime | When this chunk was last indexed |
 | `client_slug` | string (nullable) | Diagnostic client id — only for `doc_type="diagnostic"` |
 | `workflow_patterns` | ARRAY(string) (nullable) | Pattern tags from diagnostic docs |
@@ -205,6 +205,41 @@ Supported filter keys: `"layer"` (array overlap — matches if the document's la
 
 ---
 
+## Testing retrieval manually
+
+Two ways to check that indexing actually produced good, queryable results, from lightest to
+heaviest:
+
+### 1. Raw semantic search — `scripts/query_brain.py`
+
+The fastest sanity check. Embeds your query and prints the nearest `brain_documents` rows —
+**no** keyword fusion, no structural expansion, no LLM answer. Good for isolating whether
+retrieval quality problems are in embedding/ranking versus the fuller pipeline, and for
+checking a fresh `--rebuild` without starting the API/Celery stack:
+
+```bash
+python scripts/query_brain.py "What is the Bastion program and its five layers?"
+
+# More results, with a content snippet
+python scripts/query_brain.py "How does structural graph retrieval work?" --limit 10 --show-content
+```
+
+Each line shows cosine distance (`0.0` = identical, larger = less similar), the source file,
+its OKF `title`, and the section header. See `docs/scripts.md` § `query_brain.py` for the full
+flag reference. Requires only Postgres + Ollama running (no API server, no Celery worker).
+
+### 2. Full answer path — `DOCUMENT_QA` over HTTP
+
+Exercises the real pipeline an end user gets: two-stage hybrid retrieval (semantic + graded
+keyword re-rank) + structural graph expansion + LLM-grounded answer synthesis. Requires the
+API (`uvicorn`) and a Celery worker running (see `docs/getting-started.md`) — use the `curl`
+examples under "Querying the brain" above (`corpus: "brain"`).
+
+Use (1) first to confirm the corpus is populated and retrieval is sane, then (2) to confirm
+the end-to-end answer quality once (1) looks right.
+
+---
+
 ## When to re-index
 
 Re-run `index_brain.py` after:
@@ -246,6 +281,6 @@ There are three levels of reset, from softest to hardest:
 ## Notes
 
 - The `brain_documents` table uses PostgreSQL `ARRAY` for `workflow_patterns`, which is not compatible with SQLite. Tests that touch this model are marked `@pytest.mark.skip(reason="requires PostgreSQL")` — this is intentional (see decision D31).
-- Embeddings use `voyage-2` (1024 dimensions). If you switch models, run `--rebuild` to avoid mixing vector spaces.
-- **Embedding provider is switching from Voyage to a local model (planned, 2026-06-26).** The first live `--rebuild` was blocked by Voyage's free-tier rate limit (3 RPM / 10K TPM, no payment method). Rather than add billing, the plan is to use **`mxbai-embed-large` via Ollama** — it is **1024-dim** (matches `EMBEDDING_DIM`, so **no migration**), free, and ~670 MB / ~1–2 GB resident (runs comfortably on the M1 16 GB Mac Mini that hosts Postgres). The provider seam already exists: `EmbeddingService(model, dims)` takes both as constructor params, so the swap is a `voyageai.Client` → Ollama embeddings call in `embed_text`/`embed_batch`, no schema or retrieval changes. Going local also makes `--rebuild` free and repeatable (the FTS/`content_tsv` half is model-independent). Governed by **D37**. Implementation pending; until then the brain vector store is empty (schema migrated, write-path verified). See `planning/decisions/D37-local-embeddings-mxbai.md` and `agentic-portfolio/planning/brain-rag-improvements/implementation-report.md`.
+- Embeddings are 1024 dimensions regardless of provider. If you switch models or providers, run `--rebuild` to avoid mixing vector spaces.
+- **Embedding provider is local Ollama `mxbai-embed-large` (shipped, D37, OR.H/OR.B — 2026-07-03).** `EmbeddingService` defaults to `provider="ollama"`, `model="mxbai-embed-large"` — **1024-dim** (matches `EMBEDDING_DIM`, no migration), free, and ~670 MB / ~1–2 GB resident (runs comfortably on the M1 16 GB Mac Mini that also hosts Postgres, and on a MacBook Pro). This replaced Voyage as the default after Voyage's free-tier rate limit (3 RPM / 10K TPM, no payment method) blocked the first live `--rebuild`. Voyage remains available via `EMBEDDING_PROVIDER=voyage` (requires `VOYAGE_API_KEY`) for anyone who wants hosted embeddings instead. The vector store is now populated: the first full `--rebuild` indexed 176 corpus files / 1243 chunks in ~87 seconds at zero API cost. See `planning/decisions/D37-local-embeddings-mxbai.md`.
 - Diagnostic rows (`doc_type="diagnostic"`) are protected from `--rebuild` deletion — they carry client-specific pattern data that is expensive to regenerate.
