@@ -6,9 +6,9 @@ doc_id: status
 layer: [engine]
 project: orchestrator
 status: active
-timestamp: "2026-07-02T00:03:18-03:00"
-now: "OR.Z (sdlc-flow → orchestrator-native nodes & workflows) DONE — all 10 tasks, reviewed PASS"
-next: "OR.H local-embedding swap → OR.B semantic Brain"
+timestamp: "2026-07-03T00:00:00-03:00"
+now: "or-g-graph-aware-rag (OR.G) BLOCKED — Pylint R0801 in pre-existing sdlc_flow_workflow_nodes code, needs human triage"
+next: "Triage/refactor the R0801 duplicate-code warning, then resume or-g-graph-aware-rag from Task 1"
 blocked: ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
 keywords: [project status, current focus, Block H, local embeddings, Wave 0, capability tracks]
 related: [context, master-plan]
@@ -19,9 +19,9 @@ related: [context, master-plan]
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-07-02 — Node-tier refactor of `SDLCFlowWorkflow` (follow-on to `OR.Z`): all AI nodes now ride the `CLAUDE_CODE_SDK` seam; `WrapUpNode` is deterministic (Jinja templates over telemetry); `TriageTaskNode` defaults to deterministic `RETRYABLE` with an opt-in `llm_triage` flag; and a new `GenerateTasksNode` (Opus) + `SpecExistsRouterNode` planning fallback authors `tasks.md`/`tasks.json` when a spec has none. 917 tests pass / 8 skipped, ruff clean, pylint 10.00/10 (commit `1fc5768`). *(Prior `OR.Z` milestone below.)*
-**Prior (2026-07-01):** `OR.Z` (`sdlc-flow`/`sdlc-run` → orchestrator-native nodes & workflows, the HL2 graduation) shipped via `/sdlc-flow`: all 10 tasks passed, 1 attempt each, final review verdict **PASS**. `SDLCFlowWorkflow` now composes 14 nodes into one WorkflowSchema (setup worktree → load/save state → task loop → triage → consolidated review → patch docs → wrap up → PR), registered in both `workflow_registry.py` and `schema_registry.py`, driving Claude Code via the existing `CLAUDE_CODE_SDK`/`CLAUDE_CODE_SESSION` providers. `SDLCBlockWorkflow` (wave fan-out via `ParallelNode`) remains an explicit follow-on spec, per the original out-of-scope note.
-**Current focus (demand-first, per the brain wave table):** `OR.Z` is done — next up is Wave 0: (1) finish the private Tailscale face, then (2) **`OR.H` — a local-embedding swap + free `--rebuild`** (Voyage free-tier rate-limited the pass on 2026-06-26; schema already migrated and write-path verified): install Ollama on the Mini → `ollama pull mxbai-embed-large` → repoint `EmbeddingService` (1024-dim = no migration) at the Ollama embeddings endpoint → `--rebuild` (now free, repeatable) → smoke tests. **Blocks C + D + E/F/G are complete and REVIEWED PASS — prerequisite work for `OR.B`.** **Plan reorganized 2026-06-27 (north-star Thread 2c):** see `master-plan.md` "North-Star Alignment (umbrella view)" + the new `OR.U`/`OR.W`/`OR.Z` — the three north-star tracks this repo now owns.
+**Last updated:** 2026-07-03 — `or-g-graph-aware-rag` (`OR.G`) sdlc-flow run BAILED after Task 1 (BrainEdge model + migration + tests landed, `pylint` flagged an R0801 duplicate-code warning in pre-existing `sdlc_flow_workflow_nodes` unrelated to the change). *(Prior `OR.Z` milestone below.)*
+**Prior (2026-07-02):** Node-tier refactor of `SDLCFlowWorkflow` (follow-on to `OR.Z`): all AI nodes now ride the `CLAUDE_CODE_SDK` seam; `WrapUpNode` is deterministic (Jinja templates over telemetry); `TriageTaskNode` defaults to deterministic `RETRYABLE` with an opt-in `llm_triage` flag; and a new `GenerateTasksNode` (Opus) + `SpecExistsRouterNode` planning fallback authors `tasks.md`/`tasks.json` when a spec has none. 917 tests pass / 8 skipped, ruff clean, pylint 10.00/10 (commit `1fc5768`).
+**Current focus:** or-g-graph-aware-rag — BLOCKED: Pylint R0801 duplicate-code warning flagged in pre-existing code (sdlc_flow_workflow_nodes), unrelated to this task's changes — out-of-scope fix, needs human triage/refactor decision rather than a retry.
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
