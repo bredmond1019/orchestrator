@@ -105,6 +105,7 @@ app/alembic/versions/*
 !app/alembic/versions/*_merge_brain_documents_and_events_heads.py
 !app/alembic/versions/*_create_content_chunks_and_chat_sessions.py
 !app/alembic/versions/*_add_frontmatter_columns_to_brain_documents.py
+!app/alembic/versions/*_create_brain_edges_table.py
 
 # Playground
 playground/*.png
@@ -116,6 +117,7 @@ trees/
 # regenerated on demand by tooling, never committed — except committed CLI tools)
 /scripts/*
 !/scripts/index_brain.py
+!/scripts/load_brain_edges.py
 # SDLC harness breadcrumbs (machine-local state — not committed)
 sdlc-state.json
 sdlc-block-state.json
