@@ -18,12 +18,12 @@ The planning and context documents for becoming an expert AI / agentic / harness
 
 | File | What it is | Open it when… |
 |---|---|---|
-| **context.md** | Orientation + router (read first) | You need to understand the project or find the right file |
-| **status.md** | Current progress (updated as work happens) | You need to know what's done / what's next |
-| **knowledge.md** | Distilled, durable project knowledge — architecture digest, conventions, gotchas (semantic memory) | You need to understand how the project works |
-| **memory.md** | Repo-scoped durable memory — episodic notes, operator preferences, superseded facts (committed + portable) | You need project facts worth remembering across sessions |
+| [**context.md**](context.md) | Orientation + router (read first) | You need to understand the project or find the right file |
+| [**status.md**](status.md) | Current progress (updated as work happens) | You need to know what's done / what's next |
+| [**knowledge.md**](knowledge.md) | Distilled, durable project knowledge — architecture digest, conventions, gotchas (semantic memory) | You need to understand how the project works |
+| [**memory.md**](memory.md) | Repo-scoped durable memory — episodic notes, operator preferences, superseded facts (committed + portable) | You need project facts worth remembering across sessions |
 | **artifacts/** | Scratch outputs and generated artifacts from work sessions | You're stashing a generated artifact |
-| **master-plan.md** | Strategy + technical: phase sequence, full project library (A–H), the **Role in Bastion** section + program-block crosswalk, the **Bastion Program Blocks** (Engine + Brain work) | You need the *what & when* and the *how* of a project or block |
+| [**master-plan.md**](master-plan.md) | Strategy + technical: phase sequence, full project library (A–H), the **Role in Bastion** section + program-block crosswalk, the **Bastion Program Blocks** (Engine + Brain work) | You need the *what & when* and the *how* of a project or block |
 | **harness.json** | SDLC pipeline validation suite (the checks `/test` runs) | You're wiring or changing what the pipeline validates |
 | **decisions/** | Why settled choices were made — one atomic file per decision + `index.md` registry (append-only) | You're tempted to relitigate a settled question |
 | **diagnostic-alignment/** | Constraint doc governing Projects B+C output schemas — ties them to The Diagnostic artifact schemas in the brain | You're speccing or reviewing Projects B or C |

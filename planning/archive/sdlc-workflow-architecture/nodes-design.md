@@ -5,7 +5,7 @@ description: Structural blueprint for implementing sdlc-flow and sdlc-run workfl
 doc_id: sdlc-workflow-nodes-design
 layer: [engine]
 project: orchestrator
-status: active
+status: archived
 keywords: [sdlc, workflows, nodes, design, flow, run, models]
 related: [readme, app-architecture-overview, node-model-comparison]
 ---

@@ -8,7 +8,7 @@ created: 2026-07-02
 > **For the next agent:** Read this immediately after `/prime`. Delete this file once consumed.
 
 ## What we're doing and why
-We reviewed every node in `SDLCFlowWorkflow` against `planning/sdlc-workflow-architecture/nodes-design.md` to find nodes that were using an LLM but didn't need one, and to close a design gap (no task-generation fallback). Brandon's four calls drove the work: (1) all AI nodes ride the `CLAUDE_CODE_SDK` seam; (2) `WrapUpNode` becomes deterministic; (3) `TriageTaskNode` defaults to deterministic with an opt-in LLM path (good future home for an OSS model); (4) add a `GenerateTasksNode` on Opus. All four are implemented, tested, and committed at `1fc5768`.
+We reviewed every node in `SDLCFlowWorkflow` against `planning/archive/sdlc-workflow-architecture/nodes-design.md` to find nodes that were using an LLM but didn't need one, and to close a design gap (no task-generation fallback). Brandon's four calls drove the work: (1) all AI nodes ride the `CLAUDE_CODE_SDK` seam; (2) `WrapUpNode` becomes deterministic; (3) `TriageTaskNode` defaults to deterministic with an opt-in LLM path (good future home for an OSS model); (4) add a `GenerateTasksNode` on Opus. All four are implemented, tested, and committed at `1fc5768`.
 
 ## Completed this session
 - **Uniform provider:** `consolidated_review_node.py` + `patch_docs_node.py` moved from `ANTHROPIC`/`claude-sonnet-5` → `CLAUDE_CODE_SDK`/`sonnet`. Every LLM node now uses the SDK seam.
@@ -18,7 +18,7 @@ We reviewed every node in `SDLCFlowWorkflow` against `planning/sdlc-workflow-arc
 - **Tests:** deterministic-triage, template WrapUp, GenerateTasks + SpecExistsRouter units, and a **full-DAG integration test for the generate-spec path** (`test_sdlc_flow_workflow.py::TestSDLCFlowWorkflowGeneratesSpec`). Gate: **917 passed / 8 skipped**, `ruff check app/` clean, `pylint app/` 10.00/10.
 
 ## Remaining work
-- **Optional:** update `planning/sdlc-workflow-architecture/nodes-design.md` to record the as-built decisions (it still shows the old ANTHROPIC tiering, no `GenerateTasksNode`/`SpecExistsRouterNode`, and the LLM-always triage). It was the source of the discrepancy that kicked off this session.
+- **Optional:** update `planning/archive/sdlc-workflow-architecture/nodes-design.md` to record the as-built decisions (it still shows the old ANTHROPIC tiering, no `GenerateTasksNode`/`SpecExistsRouterNode`, and the LLM-always triage). It was the source of the discrepancy that kicked off this session.
 - **`SDLCBlockWorkflow`** (wave fan-out via `ParallelNode`) remains the standing OR.Z follow-on spec whenever prioritized.
 - **Wave 0 `OR.H`** (Ollama local-embedding swap + `--rebuild`) is still the demand-first next block, gated on an at-home Mini session.
 
@@ -33,4 +33,4 @@ None — clear to proceed. The four refactor decisions are settled and shipped.
 - The prior `handoff.md` (Project E ParallelNode) was stale; this replaces it.
 
 ## First command after `/prime`
-`/document planning/sdlc-workflow-architecture/nodes-design.md` (or just resume with `OR.H` if docs aren't a priority)
+`/document planning/archive/sdlc-workflow-architecture/nodes-design.md` (or just resume with `OR.H` if docs aren't a priority)

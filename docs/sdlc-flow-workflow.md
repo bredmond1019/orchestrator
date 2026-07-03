@@ -6,7 +6,7 @@ doc_id: sdlc-flow-workflow
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [SDLC_FLOW, sdlc-flow, worktree, harness.json, triage, review, PR, Claude Code, resume]
+keywords: [SDLC_FLOW, sdlc-flow, worktree, harness.json, triage, review, PR]
 related: [workflows, api-reference, configuration, data-contract]
 ---
 

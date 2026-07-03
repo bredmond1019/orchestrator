@@ -4,9 +4,11 @@ title: Synthesis
 description: Documentation for synthesis
 doc_id: synthesis
 layer: [meta]
-status: active
+status: archived
 related: [sdlc-workflow-nodes-design, architect-prompt]
 ---
+
+> Archived 2026-07-02 — residue distilled into planning/knowledge.md + planning/memory.md.
 
 # Architectural Synthesis: SDLC Pipeline as Python-Native Workflow DAG
 

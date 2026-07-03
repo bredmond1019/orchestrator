@@ -4,7 +4,7 @@ title: Architect Prompt
 description: Documentation for architect-prompt
 doc_id: architect-prompt
 layer: [meta]
-status: active
+status: archived
 related: [synthesis, sdlc-workflow-nodes-design]
 ---
 

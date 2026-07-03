@@ -69,6 +69,14 @@ _Architecture digest — the main components and how they fit together._
   Project B must produce `DiagnosticIntakeOutput` (with `WorkflowCandidate` list). Project C produces a deliverable matching the Diagnostic template (Situation + Ranked Candidates + Top 3 Profiles + First Engagement). Composite scoring formula embedded in the j2 prompt: `composite = (frequency × 0.35) + (time_cost × 0.40) + (buildability × 0.25)`. This is a client-revenue constraint, not a portfolio constraint.
   source: planning/archive/diagnostic-alignment/notes.md · date: 2026-06-22 · supersedes: — · freshness: 2026-06-27
 
+- **SDLC runtime is an Engine-native workflow (OR.Z): `SDLCFlowWorkflow` in `app/workflows/sdlc_flow_workflow.py`**
+  The `sdlc-flow` execution loop graduated from base-template JS engines into a native Node/Workflow DAG. Flow: `SetupWorktreeNode` (git worktree isolation) → `LoadTaskStateNode` → `TaskQueueRouterNode` (task loop) → `ImplementTaskNode` (Claude Code via `CLAUDE_CODE_SDK`) → `TestTaskNode` (harness.json executor) → `TriageTaskNode`+`TriageRouterNode` → `ConsolidatedReviewNode`+`ReviewRouterNode` → `UpdateTaskStatusNode` → `SaveStateNode` → (loop) → `PatchDocsNode` → `WrapUpNode` → `PullRequestNode`. Registered as `WorkflowRegistry.SDLC_FLOW` + `SDLCFlowEventSchema` in both registries. `PullRequestNode` opens a PR but never auto-merges (D25 human gate). Only the sequential flow shipped; `SDLCBlockWorkflow` wave fan-out (needs Project E) and `sdlc-run` are not built.
+  source: planning/archive/sdlc-workflow-architecture/tasks.md · date: 2026-07-01 · supersedes: — · freshness: 2026-07-02
+
+- **SDLC task state is structured JSON (`sdlc-flow-state.json`), not markdown**
+  The SDLC pipeline persists a Pydantic `SDLCState` (in `app/schemas/sdlc_schema.py`: `SDLCTask`, `SDLCTelemetry`, `SDLCState`, `SDLCFlowEventSchema`, verdict StrEnums) to `planning/{spec_slug}/sdlc-flow-state.json`, replacing regex parsing of `### N.` headings in `tasks.md`. `LoadTaskStateNode` seeds initial state from `tasks.json` if no state file exists; `SaveStateNode` dumps + git-commits after each task. This makes routing/telemetry machine-parsable end-to-end.
+  source: planning/archive/sdlc-workflow-architecture/tasks.md · date: 2026-07-01 · supersedes: — · freshness: 2026-07-02
+
 ## Conventions
 
 _Naming, patterns, and standing choices specific to this project._
@@ -113,6 +121,14 @@ _Naming, patterns, and standing choices specific to this project._
   Required fields: `type`, `title`, `description`. Strongly encouraged: `doc_id`, `layer`, `project`, `status`, `keywords`, `related`. Adding a file to a directory requires updating that directory's `index.md`; propagate scope changes up the tree.
   source: CLAUDE.md (Standing Rule 10) · date: 2026-06-25 · supersedes: — · freshness: 2026-06-27
 
+- **Cyclic task loops are modeled with a router, and back-edges are runtime-only (not declared DAG edges)**
+  The `Workflow.run()` engine walks a linear chain + routing; iteration over N tasks (or a bounded retry loop) is expressed by a `BaseRouter` node (`TaskQueueRouterNode` finds the next pending task → `ImplementTaskNode`, else → `PatchDocsNode`). Retry back-edges (`TriageRouterNode`/`ReviewRouterNode` → `ImplementTaskNode`) are decided at runtime inside `BaseRouter.route()` and are **deliberately not listed** as declared `NodeConfig.connections`, so the graph stays structurally acyclic. This is the reusable pattern for loops in this engine — don't try to declare the cycle in the schema.
+  source: planning/archive/sdlc-workflow-architecture/tasks.md · date: 2026-07-01 · supersedes: — · freshness: 2026-07-02
+
+- **Use model aliases (`"sonnet"`, `"opus"`) in node `AgentConfig`, not dated model literals**
+  SDLC nodes set `model_name="sonnet"`/`"opus"` rather than dated identifiers like `claude-sonnet-4-20250514`. Aliases avoid churn when the underlying tier rolls forward and keep per-node model choice injected/config-driven (D33/D35).
+  source: planning/archive/sdlc-workflow-architecture/tasks.md · date: 2026-07-01 · supersedes: — · freshness: 2026-07-02
+
 ## Gotchas
 
 _Non-obvious constraints, sharp edges, and hard-won lessons._
@@ -136,6 +152,10 @@ _Non-obvious constraints, sharp edges, and hard-won lessons._
 - **Alembic dual-head conflict when two migrations branch from the same parent**
   BrainDocument and events table migrations both branched from `learning_artifacts`, creating a dual Alembic head. Required a manual merge migration (`alembic merge heads`). Always verify `alembic heads` shows a single head after every migration; add the new migration's `revision` to `.gitignore` whitelist if needed.
   source: log.md (2026-06-22 brain-rag Layer 1) · date: 2026-06-22 · supersedes: — · freshness: 2026-06-27
+
+- **`WorkflowValidator._has_cycle` intentionally skips router-node connections — and `BaseRouter.process` must merge, not overwrite**
+  Two framework-level changes landed with OR.Z to make router-mediated loops work: (1) `app/core/validate.py` `_has_cycle()` does not traverse a node's connections when `NodeConfig.is_router=True` — a router's declared connections are its runtime-selectable targets, so bounded loops through a router pass validation while genuine non-router cycles are still caught. (2) `BaseRouter.process()` stores its own output (e.g. `TaskQueueRouterNode`'s `current_task_id`) via `TaskContext.update_node` (a merge) rather than overwriting `task_context.nodes[name]`, so the router's data payload coexists with its routing decision. Preserve both when touching `core/validate.py` or `core/nodes/router.py`.
+  source: planning/archive/sdlc-workflow-architecture/tasks.md · date: 2026-07-01 · supersedes: — · freshness: 2026-07-02
 
 ---
 

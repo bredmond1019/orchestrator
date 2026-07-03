@@ -12,6 +12,14 @@ related: [master-plan, app-architecture-overview, brain-rag]
 
 # D36 — This repo is Bastion's Engine + Python-half-of-Brain; adopt the program plan
 
+> **Narrowed by brain D42 (2026-07-02).** The Engine layer now gains a Rust implementation: a fresh
+> `engine-rs` (core tier) is built as a parallel pilot and is the graduation target for workflow
+> execution. This repo keeps its **Python half of the Brain** role and stays the prototyping-Engine +
+> production path until `engine-rs` reaches data-contract parity; the D20/D30 data contract is the seam
+> both engines write. `engine-rs` embeds in `bastion serve`. The "Console never shares engine code" framing
+> is superseded only for the *language of the Engine* — the read-only-observer relationship over the data
+> contract still holds. See brain `docs/decisions/D42-rust-engine-parallel-pilot.md` and D41.
+
 **Decided:** This repo plays **two of Bastion's five layers** — the **Engine** (the LLM/agent
 workflow runtime) and the **Python half of the Brain** (`brain-rag`: semantic retrieval, indexing, the
 memory/entity store). The brain's Bastion program plan

@@ -60,6 +60,18 @@ _Dated episodic entries — what was tried, what was decided in-flight, what to 
   D35 committed to "top-tier first, then local via Project H." The Voyage rate limit wall (3 RPM / 10K TPM, no payment path) forced the local embedding step forward narrowly for embeddings only — not for chat models. D37 records this as an explicit pull-forward of the Project H local-embedding step. The D35 posture (prefer strong models for reasoning) is unchanged.
   source: planning/decisions/D37-local-embeddings-mxbai.md · date: 2026-06-26 · supersedes: Voyage AI as default embedder · freshness: 2026-06-27
 
+- **SDLC architecture (OR.Z) deferred several designed nodes — proposed, not built**
+  The synthesis/nodes-design docs specced more than shipped. Deferred and explicitly out of scope in the OR.Z contract: `CoverageScanNode` (test-coverage gap-check, nice-to-have hardening pass), `UITestNode` (`harness.json` has `uiTest.enabled=false` for this repo), `SDLCBlockWorkflow` wave fan-out via ParallelNode (depends on Project E; sequential `SDLCFlowWorkflow` only shipped), the `sdlc-run` in-place/report-based workflow, and auto-merge (D25 human gate stays). When resuming SDLC work, these are the known next candidates — the archived design docs (`planning/archive/sdlc-workflow-architecture/`) hold their specs.
+  source: planning/archive/sdlc-workflow-architecture/synthesis.md · date: 2026-07-02 · supersedes: — · freshness: 2026-07-02
+
+- **Per-node LOCAL-model tiering map for SDLC is a Project H design input, not shipped behavior**
+  `nodes-design.md` proposed a detailed local-hardware routing map (M1 Mac Mini 16GB → `Llama-3.1-8B` for deterministic nodes; M2 MBP 32GB → `Qwen2.5-32B` for triage/docs/wrap-up; cloud-only for implement/review/plan). The shipped nodes ignore this and all use cloud aliases (`"sonnet"`/`"opus"`) per D35 (top-tier first). Preserve this map as the *routing hypothesis* to feed Project H's offline eval when local routing is actually built — do not treat it as current behavior.
+  source: planning/archive/sdlc-workflow-architecture/nodes-design.md · date: 2026-06-30 · supersedes: — · freshness: 2026-07-02
+
+- **`parse_task_range` shipped as a staticmethod on `SDLCFlowEventSchema`, not a free function**
+  The synthesis/breakdown docs described `parse_task_range(...)` as a module-level free function. In the shipped code it is a `SDLCFlowEventSchema` staticmethod reused by a field_validator, so malformed ranges (e.g. `"1-3,5"`) raise at construction time rather than during node execution. Noted so a reader of the archived design docs isn't misled by the older shape.
+  source: planning/archive/sdlc-workflow-architecture/tasks.md · date: 2026-07-01 · supersedes: design-doc free-function `parse_task_range` · freshness: 2026-07-02
+
 - **Competence checkpoint passed 2026-06-23: Projects A–D complete, 712 tests**
   Phase 1 competence checkpoint: ingest SMB documents, answer questions over them, maintain conversation history — confirmed. Projects A (content pipeline), B (research agent thin cut), C (proposal generator), D (document Q&A + RAG) all shipped. Telegram bot + public API exposure also shipped. Total test count at checkpoint: 712 passing, ruff clean, pylint 10.00/10.
   source: log.md (2026-06-23 post-merge cleanup) · date: 2026-06-23 · supersedes: — · freshness: 2026-06-27
