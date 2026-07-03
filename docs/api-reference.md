@@ -2260,7 +2260,7 @@ similarity search from `RetrieveChunksNode` corpus `"brain"`) is available as of
 | `workflow_patterns` | `ARRAY(String)` | Yes | `NULL` | Workflow pattern tags from diagnostic docs (e.g. `['WhatsApp order tracking']`); `NULL` for other doc types. |
 | `doc_id` | `String(256)` | Yes | `NULL` | OKF `doc_id`; derived from the filename stem when absent. |
 | `layer` | `ARRAY(String)` | Yes | `NULL` | OKF `layer` (e.g. `['brain', 'engine']`). Case-normalized to lowercase by the indexer; supports `layer`-filter array overlap. |
-| `project` | `String(128)` | Yes | `NULL` | OKF `project` (e.g. `'orchestrator'`). Case-normalized to lowercase; supports `project`-filter scalar match. |
+| `project` | `String(128)` | Yes | `NULL` | OKF `project` (e.g. `'orchestrator'`). Case-normalized to lowercase; supports `project`-filter scalar match. For chunks collected from a sub-repo's `planning/**/*.md` + root `CLAUDE.md` (OR.O widening — see `docs/brain-rag.md`), the indexer unconditionally stamps this with the manifest `brain.toml` slug, overriding any frontmatter `project:` value the file carries. |
 | `status` | `String(32)` | Yes | `NULL` | OKF `status` (e.g. `'active'`, `'draft'`, `'archived'`). Case-normalized to lowercase; `'archived'` rows are excluded from default brain retrieval. |
 | `keywords` | `ARRAY(String)` | Yes | `NULL` | OKF `keywords` tags; folded into `content_tsv` at FTS weight `'A'`. |
 | `related` | `ARRAY(String)` | Yes | `NULL` | OKF `related` paths to related docs (stored on the document row; the traversable graph index is `BrainEdge`, populated from this field by mev's `emit-graph` + `scripts/load_brain_edges.py`, and walked at query time by `RetrieveChunksNode`'s structural expansion stage). |
