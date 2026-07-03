@@ -11,6 +11,22 @@ timestamp: "2026-07-03T17:56:14-03:00"
 
 ---
 
+### 2026-07-03 (Shipped OR.O — widened index corpus to all sub-repo planning/ + CLAUDE.md)
+
+- **What:** Shipped `or-o-widen-index-corpus` (`OR.O`) via the SDLC pipeline (implement → test → review → document, all in 1 pass). `scripts/index_brain.py` gained `_sub_repo_files()`, which crawls each `brain.toml` sub-repo's (`repo_path != "."`) `planning/**/*.md` + root `CLAUDE.md` — never `docs/` or source — honouring the existing skip/ephemeral/underscore rules. `_collect_files()` now returns `(path, doc_type, project_override)` triples; `main()` unconditionally stamps the manifest slug onto every sub-repo chunk's `project` field, overriding any frontmatter `project:` value, while brain-root/sub-brain-tier files keep reading `project` from frontmatter as before (byte-identical crawl output confirmed). No retrieval-algorithm change was needed — the `"brain"` corpus already declares `filter_fields["project"] = "scalar"`; a new `TestCrossRepoProjectScoping` suite drives the real `_semantic_search`/`_apply_metadata_filters` path (not a pre-filtered mock) to prove a `filters={"project": "<slug>"}` query never leaks another repo's chunks. `--dry-run` grew from 176 to 510+ files. Review verdict: **PASS** in 1 attempt — all 6 acceptance criteria MET, every fresh gating check passed (standing-rules, db-session/db-repository imports, net-new-lint, pylint, pytest-count, pytest). 984 tests pass / 8 skipped, ruff clean, pylint 10.00/10. Docs patched: `docs/scripts.md` (sub-repo widening paragraph), `docs/api-reference.md` (`project` column note); `docs/brain-rag.md` already matched the shipped behavior. Updated `planning/status.md` (`OR.O` → Done, current focus → `OR.E`).
+- **Why:** Closes out the Wave-0 Bastion program block that lets the Brain answer "where am I in repo X" questions scoped to a specific sub-repo, using the existing `project` filter rather than new retrieval machinery.
+- **Refs:** `planning/or-o-widen-index-corpus/tasks.md`; `planning/or-o-widen-index-corpus/sdlc/reports/{implement,test,review,document,workflow}.md`.
+
+```
+1a67732 docs: update docs for or-o-widen-index-corpus
+54bf968 feat: implement or-o-widen-index-corpus
+71a89da chore: add spec for or-o-widen-index-corpus
+8556bbe docs: restore planning/handoff.md (accidentally deleted by prior commit)
+df55ac3 docs: OR.H/OR.B closeout, query_brain.py docs, retrieval test run
+```
+
+---
+
 ### 2026-07-03 (Shipped OR.H local embeddings + OR.B semantic Brain Q&A)
 
 - **What:** Shipped OR.H (local Ollama mxbai-embed-large embedding swap) and OR.B (Semantic Brain Q&A end-to-end) — ran the full brain corpus rebuild (176 files, 1243 chunks, 1243 embeddings, ~87s, $0 cost) and verified semantic retrieval works. Built scripts/query_brain.py (a manual semantic-search CLI, 6 tests) plus docs (docs/scripts.md, docs/brain-rag.md "Testing retrieval manually" section). Ran a 13-query test batch through it and wrote planning/test-runs/or-b-brain-retrieval-test-run1.md — 7 pass / 1 partial / 6 fail, 4 root-cause findings, 6 ranked improvement recommendations with why/what's-lacking/expected-outcome detail. Updated planning/state.json (OR.H/OR.B closed, OR.O gained a note, new carryover entry for the retrieval-improvement recommendations) and planning/status.md. 975 tests pass / 8 skipped, ruff clean, pylint app/ 10.00/10.
