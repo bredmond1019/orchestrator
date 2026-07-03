@@ -12,7 +12,7 @@ related: [master-plan, retrieve-chunks-node, brain-document]
 
 # Task Spec — Phase Wave 5, Block OR.G
 
-**Status:** In progress (blocked) · **Last run:** 2026-07-03 — BAILED after Task 1 (Pylint R0801 duplicate-code warning in pre-existing `sdlc_flow_workflow_nodes`, out of scope)
+**Status:** Done · **Last run:** 2026-07-03 — sdlc-flow PASS across Tasks 1–5 (review verdict PASS, docs patched)
 
 ## Goal
 Ingest mev's `emit-graph` JSON (`related:` edges) into a Postgres `brain_edges` table and extend the `"brain"` retrieval path to a two-stage structural+semantic pipeline that expands the candidate set through the `related:`-neighborhood of the top semantic hits before the existing keyword re-rank.

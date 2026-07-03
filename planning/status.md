@@ -6,9 +6,9 @@ doc_id: status
 layer: [engine]
 project: orchestrator
 status: active
-timestamp: "2026-07-03T00:00:00-03:00"
-now: "or-g-graph-aware-rag (OR.G) BLOCKED — Pylint R0801 in pre-existing sdlc_flow_workflow_nodes code, needs human triage"
-next: "Triage/refactor the R0801 duplicate-code warning, then resume or-g-graph-aware-rag from Task 1"
+timestamp: "2026-07-02T00:00:00-03:00"
+now: "or-g-graph-aware-rag (OR.G) DONE — brain_edges ingestion + two-stage structural retrieval landed, sdlc-flow PASS"
+next: "OR.H — swap embedding provider to local Ollama mxbai-embed-large, then OR.B rebuild"
 blocked: ["OR.B --rebuild — needs at-home session: install Ollama + pull mxbai-embed-large on the Mini"]
 keywords: [project status, current focus, Block H, local embeddings, Wave 0, capability tracks]
 related: [context, master-plan]
@@ -19,9 +19,9 @@ related: [context, master-plan]
 *The volatile companion to `context.md`. Update this file as you go; leave the plans clean.*
 *Pass this alongside CONTEXT + the relevant plan section when you want "what's next" or "tasks this week."*
 
-**Last updated:** 2026-07-03 — `or-g-graph-aware-rag` (`OR.G`) sdlc-flow run BAILED after Task 1 (BrainEdge model + migration + tests landed, `pylint` flagged an R0801 duplicate-code warning in pre-existing `sdlc_flow_workflow_nodes` unrelated to the change). *(Prior `OR.Z` milestone below.)*
+**Last updated:** 2026-07-02 — `or-g-graph-aware-rag` (`OR.G`) sdlc-flow run PASSED across Tasks 1–5: `brain_edges` table + idempotent `mev emit-graph` loader (`scripts/load_brain_edges.py`) and a two-stage structural+semantic retrieval pipeline for the `"brain"` corpus (`_structural_expand` in `retrieve_chunks_node.py`), proven end-to-end by a new acceptance suite (`test_brain_graph_retrieval.py`). Review verdict PASS, docs patched. *(Prior `OR.Z` milestone below.)*
 **Prior (2026-07-02):** Node-tier refactor of `SDLCFlowWorkflow` (follow-on to `OR.Z`): all AI nodes now ride the `CLAUDE_CODE_SDK` seam; `WrapUpNode` is deterministic (Jinja templates over telemetry); `TriageTaskNode` defaults to deterministic `RETRYABLE` with an opt-in `llm_triage` flag; and a new `GenerateTasksNode` (Opus) + `SpecExistsRouterNode` planning fallback authors `tasks.md`/`tasks.json` when a spec has none. 917 tests pass / 8 skipped, ruff clean, pylint 10.00/10 (commit `1fc5768`).
-**Current focus:** or-g-graph-aware-rag — BLOCKED: Pylint R0801 duplicate-code warning flagged in pre-existing code (sdlc_flow_workflow_nodes), unrelated to this task's changes — out-of-scope fix, needs human triage/refactor decision rather than a retry.
+**Current focus:** or-g-graph-aware-rag is Done. Next up: `OR.H` (swap embedding provider to local Ollama `mxbai-embed-large`) → `OR.B` rebuild.
 
 > **Project A open follow-ups (non-blocking):** see `planning/phase1-projectA/follow-ups.md` — 2 deferred tests (youtube-url anti-spoof cases; document that `SelfCriticNode.approved` is intentionally inert), 2 reuse carryovers (transcript-corpus golden fixtures; cross-check `SummaryOutput` vs the site summary template), and 1 scope decision (PT-BR translation prompt — was never built; decide if it's Project A's or content-publishing's before scheduling).
 
