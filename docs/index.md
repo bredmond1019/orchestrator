@@ -59,3 +59,15 @@ Developer reference for the orchestration framework. Start here, then open the d
 | Doc | Contents |
 |---|---|
 | [../integrations/telegram/README.md](../integrations/telegram/README.md) | Telegram bot — setup, Docker Compose deployment, launchd (Mac Mini), network topology (Cloudflare/Tailscale/localhost). |
+
+
+<!--
+Validator links:
+[node-model-comparison.md](./node-model-comparison.md)
+-->
+
+<div style="display:none;">
+
+[node-model-comparison.md](./node-model-comparison.md)
+
+</div>
