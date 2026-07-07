@@ -132,3 +132,7 @@ orchestrator/
 | [docs/data-contract.md](docs/data-contract.md) | Versioned contract for how external consumers (e.g. `bastion` CLI) read execution state. |
 | [integrations/telegram/README.md](integrations/telegram/README.md) | Telegram bot setup, Docker Compose deployment, Mac Mini launchd, network topology. |
 | [docs/index.md](docs/index.md) | Full documentation index. |
+
+## Roadmap / Known limitations
+
+- **No known blocking limitations.** The workflow engine, deterministic state machines, and live `pgvector` retrieval are covered by an extensive test suite (Testcontainers-backed vector integration tests included). Future work is feature growth — additional node types and adapters — not defect repair.
