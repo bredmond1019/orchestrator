@@ -144,13 +144,13 @@ Drove `planning/sdlc-workflow-architecture/tasks.md` (OR.Z, the HL2 Coding & Del
 
 ```
 e7582dc chore: flow state — docs
-2b73563 docs: update docs for ./planning/sdlc-workflow-architecture/tasks.md
+2b73563 docs: update docs for planning/sdlc-workflow-architecture/tasks.md
 8af4f64 chore: flow state — task 10 passed
-813323b feat: implement ./planning/sdlc-workflow-architecture/tasks.md-task10
+813323b feat: implement planning/sdlc-workflow-architecture/tasks.md-task10
 a95c01e chore: flow state — task 9 passed
-b8cb184 feat: implement ./planning/sdlc-workflow-architecture/tasks.md-task9
+b8cb184 feat: implement planning/sdlc-workflow-architecture/tasks.md-task9
 2dd66c1 chore: flow state — task 8 passed
-683b167 feat: implement ./planning/sdlc-workflow-architecture/tasks.md-task8
+683b167 feat: implement planning/sdlc-workflow-architecture/tasks.md-task8
 ```
 
 ---
