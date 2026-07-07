@@ -45,6 +45,7 @@ dev = [
     "pytest-env>=1.1",
     "pytest-mock>=3.14",
     "pytest-asyncio>=1.4.0",
+    "testcontainers[postgres]>=4.9",
 ]
 
 [tool.ruff]
