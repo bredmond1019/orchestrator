@@ -195,7 +195,16 @@ This prints the per-node execution envelope (status, timing, token usage) and th
 
 ```bash
 uv run python -m pytest
-# 712 tests; all should pass
+# ~998 tests; all should pass
+```
+
+<!-- updated by /update-docs -->
+A subset is marked `integration` — Docker-gated Testcontainers tests (e.g. live pgvector
+similarity checks) that spin up real containers. They run automatically above if Docker is
+available and are skipped cleanly if not. To run only the fast in-memory suite:
+
+```bash
+uv run python -m pytest -m "not integration"
 ```
 
 ---
