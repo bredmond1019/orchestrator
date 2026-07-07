@@ -2,12 +2,22 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-03T20:52:16-03:00"
+timestamp: "2026-07-07T08:23:12-03:00"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-07-07]
+
+### Shipped OR.ticket.pgvector-integration-tests — live pgvector integration suite via /sdlc-task
+
+- **What:** Added a Docker-gated Testcontainers pgvector integration suite: a session-scoped `tests/database/conftest.py` fixture spins a real `pgvector/pgvector` Postgres container, applies the `brain_documents`/`content_chunks` schema, and yields a live `postgresql://` engine (skips cleanly when Docker is unavailable); `tests/database/test_pgvector_integration.py` seeds a fixed set of embeddings and asserts real cosine-similarity nearest-neighbor ordering via `embedding <=> query`, round-trips a `brain_documents` row (the ARRAY/PG-typed columns SQLite skips), and verifies the DB-level `vector(N)` column dimension via introspection. Registered the `integration` pytest marker in `pytest.ini` and added `testcontainers[postgres]` as a dev dependency. All 4 tasks passed; the legacy in-memory SQLite suite is unaffected (984 passed / 8 skipped / 6 deselected with `-m "not integration"`), and the new suite passes with Docker running (6 passed / 1 skipped with `-m integration`). No production code changes were needed — this proves the existing schema/retrieval math is correct rather than fixing a bug.
+- **Why:** The in-memory SQLite test suite (`tests/conftest.py`) can't compile PG-specific types and explicitly excludes `brain_documents`, so nothing previously proved the headline "hybrid RAG on pgvector" claim end-to-end with real vector similarity — this ticket is portfolio-release item A1 (`business/docs/interview-prep/portfolio-review/plan.md` Part II), closing that gap with a live, correctness-focused suite.
+- **Refs:** `planning/ticket-pgvector-integration-tests/tasks.md`; `tests/database/conftest.py`; `tests/database/test_pgvector_integration.py`.
 
 ---
 
