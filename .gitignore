@@ -131,3 +131,7 @@ sdlc-block-state.json
 reference-repos/
 reference-repos
 
+*.sqlite
+state.json
+planning/
+node_modules/

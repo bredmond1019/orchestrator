@@ -12,14 +12,9 @@ related: [docs-index, app-architecture-overview, getting-started]
 
 # AI Event System — Orchestration Framework
 
-An event-driven AI pipeline framework. FastAPI accepts events,
-persists them to PostgreSQL, and queues them via Celery (Redis broker). A worker
-picks up each job and runs it through a **Workflow** — a validated DAG of
-**Nodes** — passing a shared `TaskContext` through each step. New workflows are
-added as sibling directories alongside the reference `customer_care` workflow.
+**Business Value:** This production-grade framework provides the technical spine for custom AI pipelines. It eliminates the need to rewrite retry logic, state management, and provider abstractions for every new project. It guarantees predictable execution, testable nodes, and a codebase that remains maintainable after handoff.
 
-The framework core is complete and tested (712 passing tests); it is the delivery
-vehicle each new automation ships into, not a hardened, deployed product.
+An event-driven AI pipeline framework. FastAPI accepts events, persists them to PostgreSQL, and queues them via Celery (Redis broker). A worker picks up each job and runs it through a **Workflow** — a validated DAG of **Nodes** — passing a shared `TaskContext` through each step. New workflows are added as sibling directories.
 
 ## Prerequisites
 
@@ -97,7 +92,7 @@ See `docs/workflows.md` for all workflow types and example payloads.
 ## Directory map
 
 ```
-orchestration/
+orchestrator/
 ├── app/
 │   ├── api/                  FastAPI router + endpoint
 │   ├── core/
