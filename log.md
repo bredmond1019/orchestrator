@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-07T08:23:12-03:00"
+timestamp: "2026-07-07T09:39:33-03:00"
 ---
 
 # log — Orchestration Repo
@@ -18,6 +18,14 @@ timestamp: "2026-07-07T08:23:12-03:00"
 - **What:** Added a Docker-gated Testcontainers pgvector integration suite: a session-scoped `tests/database/conftest.py` fixture spins a real `pgvector/pgvector` Postgres container, applies the `brain_documents`/`content_chunks` schema, and yields a live `postgresql://` engine (skips cleanly when Docker is unavailable); `tests/database/test_pgvector_integration.py` seeds a fixed set of embeddings and asserts real cosine-similarity nearest-neighbor ordering via `embedding <=> query`, round-trips a `brain_documents` row (the ARRAY/PG-typed columns SQLite skips), and verifies the DB-level `vector(N)` column dimension via introspection. Registered the `integration` pytest marker in `pytest.ini` and added `testcontainers[postgres]` as a dev dependency. All 4 tasks passed; the legacy in-memory SQLite suite is unaffected (984 passed / 8 skipped / 6 deselected with `-m "not integration"`), and the new suite passes with Docker running (6 passed / 1 skipped with `-m integration`). No production code changes were needed — this proves the existing schema/retrieval math is correct rather than fixing a bug.
 - **Why:** The in-memory SQLite test suite (`tests/conftest.py`) can't compile PG-specific types and explicitly excludes `brain_documents`, so nothing previously proved the headline "hybrid RAG on pgvector" claim end-to-end with real vector similarity — this ticket is portfolio-release item A1 (`business/docs/interview-prep/portfolio-review/plan.md` Part II), closing that gap with a live, correctness-focused suite.
 - **Refs:** `planning/ticket-pgvector-integration-tests/tasks.md`; `tests/database/conftest.py`; `tests/database/test_pgvector_integration.py`.
+
+---
+
+### Close-out pass: OR.ticket.pgvector-integration-tests validated, docs patched, handoff written
+
+- **What:** Full gating suite re-verified fresh (standing-rules scan, db-session/db-repository imports, ruff net-new-lint 0 violations, pylint 10.00/10, pytest-count, full pytest suite: 984 passed / 8 skipped with `-m "not integration"`, 6 passed / 1 skipped with `-m integration` against live Docker, 990 passed / 8 skipped unfiltered); ran `/code-review low` (no issues — only non-test diff was dependency/config additions, trivially correct); ran a coverage-gap scan (no blocking gaps — no `app/` source changed, the new test files are themselves the coverage); patched `docs/getting-started.md`'s "Run tests" section (stale count "712 tests" -> "~998 tests", added a note about the new Docker-gated `integration` pytest marker and how to skip it); wrote `planning/handoff.md` pointing the next agent at `OR.U` (unchanged focus, since this was a standalone ticket not a Bastion Program block on the critical path).
+- **Why:** `/close-out` verifies a completed spec's test coverage and docs before wrap-up/handoff, closing the quality loop on the pgvector ticket before moving to the next focus.
+- **Refs:** `planning/ticket-pgvector-integration-tests/tasks.md`; `docs/getting-started.md`; `planning/handoff.md`.
 
 ---
 
