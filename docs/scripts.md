@@ -6,8 +6,8 @@ doc_id: scripts
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, developer scripts]
-related: [getting-started, brain-rag, configuration]
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, developer scripts, run_eval]
+related: [getting-started, brain-rag, configuration, evals]
 ---
 
 # Developer Scripts
@@ -258,3 +258,35 @@ source file path, the OKF `title`, and the section header if the chunk falls und
 
 See `docs/brain-rag.md` § "Testing retrieval manually" for a walkthrough and for how this
 compares to the full `DOCUMENT_QA` answer path.
+
+---
+
+## `scripts/run_eval.py` — Offline eval CLI (OR.U)
+
+Drives an `evals.slice.EvalSlice` end to end: loads already-recorded domain data (e.g. the
+coding domain's SDLC run telemetry), builds the slice, executes + persists it via
+`evals.runner.run_slice`, prints a by-domain/by-model pass-rate table, and optionally gates a
+change (`evals.gate.gate_change`) or emits a routing config file. See `docs/evals.md` for the
+full `app/evals/` library reference.
+
+```bash
+python scripts/run_eval.py --slice coding [--models MODEL ...] [--dry-run]
+python scripts/run_eval.py --slice coding --gate [--baseline RUN_ID] [--min-delta F]
+python scripts/run_eval.py --slice coding --emit-routing PATH [--quality-floor F]
+```
+
+| Argument | Description |
+|---|---|
+| `--slice NAME` | Registered eval slice to run (currently: `coding`). |
+| `--models MODEL ...` | Models under test; defaults to the slice builder's own default. |
+| `--dry-run` | List the slice's cases without executing or persisting anything. |
+| `--gate` | After running, invoke the one-change self-improvement gate for each model under test; exits `0` if every model's decision is `keep`, `1` if any is `revert`. |
+| `--baseline RUN_ID` | Explicit baseline run id for `--gate` (else the previous run in history is used). |
+| `--min-delta F` | Minimum pass-rate improvement required to keep a candidate under `--gate` (default: `0.0`). |
+| `--emit-routing PATH` | Write a per-model routing config JSON (quality vs. cost per model, plus the cheapest model meeting `--quality-floor`) to `PATH`. Produce only — nothing reads this file at runtime. |
+| `--quality-floor F` | Minimum pass-rate a model must meet to be eligible for `--emit-routing`'s cheapest-model selection (default: `0.0`). |
+
+This script runs from the CLI only — it is **not** a workflow node and is **not** run by Celery.
+Per the block's design principle (D33 / local D8), it is an offline eval harness, not a runtime
+router: `--emit-routing` only ever produces a routing config file; nothing in `app/core/` or
+`app/workflows/` reads it.
