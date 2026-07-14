@@ -2,10 +2,10 @@
   "spec_slug": "or-u-eval-engine",
   "branch": "or-u-eval-engine-flow-2",
   "started_at": "2026-07-14T18:16:33Z",
-  "updated_at": "2026-07-14T18:16:33Z",
+  "updated_at": "2026-07-14T18:21:41Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
   "status": "running",
-  "current_task": 1,
+  "current_task": 2,
   "tasks": {
     "1": {
       "status": "passed",
@@ -25,6 +25,26 @@
         "app/alembic/versions/f6a7b8c9d0e1_create_eval_runs_and_results_tables.py",
         "tests/database/test_eval_record.py",
         ".gitignore"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "2": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added the scorer library (ScoreResult, deterministic/structural scorer, reference-based scorer) in app/evals/scorers.py with app/evals/__init__.py as the docstring-only module marker, plus full unit test coverage.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Scorers accept `case` as a duck-typed object (via getattr) rather than importing evals.slice.EvalCase directly, since EvalCase is created in Task 4 — keeps Task 2 standalone/testable with SimpleNamespace fixtures and avoids a forward dependency.",
+        "reference_scorer treats an empty/absent reference mapping as a trivial pass (score=1.0) rather than an error, since not every case need supply reference data.",
+        "deterministic_scorer treats schema/required-fields/value-ranges checks as independently optional — a check not declared on the case is skipped rather than failed, so a bare case with no constraints always passes."
+      ],
+      "files_changed": [
+        "app/evals/__init__.py",
+        "app/evals/scorers.py",
+        "tests/evals/__init__.py",
+        "tests/evals/test_scorers.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -77,13 +97,29 @@
         "filesReadKb": null,
         "inTokEst": 1388,
         "outTok": 3557
+      },
+      {
+        "label": "implement-2-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 9434
+      },
+      {
+        "label": "test-2-1",
+        "model": "haiku",
+        "promptTokEst": 1388,
+        "filesReadKb": null,
+        "inTokEst": 1388,
+        "outTok": 3853
       }
     ],
     "total": {
-      "promptTokEst": 3382,
+      "promptTokEst": 5748,
       "filesReadKb": 0,
-      "inTokEst": 3382,
-      "outTok": 24457
+      "inTokEst": 5748,
+      "outTok": 37744
     }
   }
 }
