@@ -2,10 +2,10 @@
   "spec_slug": "or-u-eval-engine",
   "branch": "or-u-eval-engine-flow-2",
   "started_at": "2026-07-14T18:16:33Z",
-  "updated_at": "2026-07-14T18:44:55Z",
+  "updated_at": "2026-07-14T18:50:27Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
   "status": "running",
-  "current_task": 5,
+  "current_task": 6,
   "tasks": {
     "1": {
       "status": "passed",
@@ -105,6 +105,24 @@
         "app/evals/slices/__init__.py",
         "app/evals/slices/coding.py",
         "tests/evals/test_coding_slice.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "6": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added evals.gate.gate_change (keep-if-better/revert-if-worse one-change self-improvement gate) with GateDecision pydantic model, and 8 passing unit tests covering better/worse/tie/min_delta/no-baseline/explicit-baseline/error cases.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "gate_change resolves the default baseline as the second-to-last run in get_run_history (previous run before the latest/candidate), not an explicit fixed index, so it composes naturally with repeated run_slice calls",
+        "Raise ValueError (not a silent None decision) when there is no run at all for the slice/model, or when an explicit baseline_run_id doesn't match any run in history — fail loudly per repo convention (mirrors TaskContext.get_node_output style)",
+        "GateDecision fields baseline_run_id/candidate_run_id typed as `object`/`object | None` since EvalRun.id is a Postgres UUID column type not reflected as a plain Python type import in gate.py; pydantic model_config sets arbitrary_types_allowed to accommodate this"
+      ],
+      "files_changed": [
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2/app/evals/gate.py",
+        "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2/tests/evals/test_gate.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -221,13 +239,29 @@
         "filesReadKb": null,
         "inTokEst": 1388,
         "outTok": 3716
+      },
+      {
+        "label": "implement-6-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 7757
+      },
+      {
+        "label": "test-6-1",
+        "model": "haiku",
+        "promptTokEst": 1388,
+        "filesReadKb": null,
+        "inTokEst": 1388,
+        "outTok": 3689
       }
     ],
     "total": {
-      "promptTokEst": 12846,
+      "promptTokEst": 15212,
       "filesReadKb": 0,
-      "inTokEst": 12846,
-      "outTok": 104184
+      "inTokEst": 15212,
+      "outTok": 115630
     }
   }
 }
