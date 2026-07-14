@@ -106,6 +106,7 @@ app/alembic/versions/*
 !app/alembic/versions/*_create_content_chunks_and_chat_sessions.py
 !app/alembic/versions/*_add_frontmatter_columns_to_brain_documents.py
 !app/alembic/versions/*_create_brain_edges_table.py
+!app/alembic/versions/*_create_eval_runs_and_results_tables.py
 
 # Playground
 playground/*.png
