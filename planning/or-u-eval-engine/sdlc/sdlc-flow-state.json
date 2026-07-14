@@ -2,10 +2,10 @@
   "spec_slug": "or-u-eval-engine",
   "branch": "or-u-eval-engine-flow-2",
   "started_at": "2026-07-14T18:16:33Z",
-  "updated_at": "2026-07-14T18:29:06Z",
+  "updated_at": "2026-07-14T18:37:26Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
   "status": "running",
-  "current_task": 3,
+  "current_task": 4,
   "tasks": {
     "1": {
       "status": "passed",
@@ -65,6 +65,26 @@
         "app/evals/judge.py",
         "app/prompts/eval_judge.j2",
         "tests/evals/test_judge.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "4": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added EvalCase/EvalSlice pydantic models and a run_slice/get_run_history/compare_runs runner that executes an eval slice per model-under-test, persists EvalRun+EvalResult rows via GenericRepository, and exposes chronological regression history and signed pass-rate deltas.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "run_slice returns list[EvalRun] (one per model in eval_slice.models) rather than a single EvalRun, since the task's own aggregation requirement ('aggregates pass-rate by (domain, model)... persists one EvalRun per (slice, model)') implies multiple models per slice; the tasks.md signature 'run_slice(slice, session) -> EvalRun' is read as shorthand.",
+        "run_slice takes an injectable `executor: Executor` callable (case, model_name) -> output, since nothing in tasks.json Task 4 specifies how model outputs are produced — this keeps the runner offline/unit-testable and matches the CLI's future real-executor injection (Task 7).",
+        "EvalCase/EvalSlice use pydantic BaseModel with arbitrary_types_allowed to hold callables (scorer) and pydantic model classes (schema_cls) as fields.",
+        "Discovered tests/conftest.py's db_session fixture shares a session-scoped in-memory engine across tests (commits persist across tests in the same run), so all fixture slices use uuid-suffixed slice names to avoid cross-test row collisions in get_run_history/compare_runs assertions."
+      ],
+      "files_changed": [
+        "app/evals/slice.py",
+        "app/evals/runner.py",
+        "tests/evals/test_runner.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -149,13 +169,29 @@
         "filesReadKb": null,
         "inTokEst": 1388,
         "outTok": 3910
+      },
+      {
+        "label": "implement-4-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 18483
+      },
+      {
+        "label": "test-4-1",
+        "model": "haiku",
+        "promptTokEst": 1388,
+        "filesReadKb": null,
+        "inTokEst": 1388,
+        "outTok": 4496
       }
     ],
     "total": {
-      "promptTokEst": 8114,
+      "promptTokEst": 10480,
       "filesReadKb": 0,
-      "inTokEst": 8114,
-      "outTok": 57577
+      "inTokEst": 10480,
+      "outTok": 80556
     }
   }
 }
