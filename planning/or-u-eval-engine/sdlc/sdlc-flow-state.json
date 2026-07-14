@@ -2,9 +2,9 @@
   "spec_slug": "or-u-eval-engine",
   "branch": "or-u-eval-engine-flow-2",
   "started_at": "2026-07-14T18:16:33Z",
-  "updated_at": "2026-07-14T19:07:06Z",
+  "updated_at": "2026-07-14T19:13:39Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
-  "status": "running",
+  "status": "docs",
   "current_task": 8,
   "tasks": {
     "1": {
@@ -164,13 +164,18 @@
     }
   },
   "review": {
-    "verdict": null,
+    "verdict": "PASS",
     "findings": [],
-    "attempts": 0
+    "attempts": 1
   },
   "docs": {
-    "changed": [],
-    "created": []
+    "changed": [
+      "docs/index.md",
+      "docs/scripts.md"
+    ],
+    "created": [
+      "docs/evals.md"
+    ]
   },
   "bail_reason": null,
   "pr": {
@@ -322,13 +327,29 @@
         "filesReadKb": null,
         "inTokEst": 1388,
         "outTok": 4617
+      },
+      {
+        "label": "review-1",
+        "model": "sonnet",
+        "promptTokEst": 2244,
+        "filesReadKb": null,
+        "inTokEst": 2244,
+        "outTok": 5365
+      },
+      {
+        "label": "docs",
+        "model": "sonnet",
+        "promptTokEst": 810,
+        "filesReadKb": null,
+        "inTokEst": 810,
+        "outTok": 10871
       }
     ],
     "total": {
-      "promptTokEst": 19944,
+      "promptTokEst": 22998,
       "filesReadKb": 0,
-      "inTokEst": 19944,
-      "outTok": 156578
+      "inTokEst": 22998,
+      "outTok": 172814
     }
   }
 }
