@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-07T09:39:33-03:00"
+timestamp: "2026-07-14T16:35:20-03:00"
 ---
 
 # log — Orchestration Repo
@@ -25,6 +25,14 @@ f330231 chore: flow state — task 7 passed
 a9c1f01 feat: implement or-u-eval-engine-task6
 afd45fc chore: flow state — task 5 passed
 ```
+
+---
+
+### Close-out: or-u-eval-engine (OR.U)
+
+- **What:** Ran a full close-out validation pass on the already-shipped `or-u-eval-engine` (`OR.U`) spec: re-verified the gating suite fresh (1063 passed / 8 skipped, ruff clean, pylint `app/` 10.00/10). Ran `/code-review low`, which surfaced one non-blocking issue — a falsy-`__dict__` fallback edge case in `deterministic_scorer` (`app/evals/scorers.py:71`) — left unfixed as non-blocking. Coverage-gap scan found nothing missing. Docs needed no patching — `docs/evals.md`/`docs/index.md`/`docs/scripts.md` were already brought current during the flow's own docs stage. Flipped `OR.U` closed in `state.json` (done earlier this session, both in this worktree and the brain-vaulted main-checkout copy); `mev emit-state --write` (run from the main checkout, not this worktree) confirmed `focus.next` now points solely at `OR.ticket.brain-retrieval-improvements`. Rewrote `planning/handoff.md` for the next agent.
+- **Why:** `/close-out` verifies a completed spec's test coverage, review status, and docs before wrap-up, so the next session starts on `OR.ticket.brain-retrieval-improvements` with no ambiguity about what's done.
+- **Refs:** `planning/handoff.md`; `app/evals/scorers.py`.
 
 ---
 
