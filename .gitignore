@@ -120,6 +120,7 @@ trees/
 !/scripts/index_brain.py
 !/scripts/load_brain_edges.py
 !/scripts/query_brain.py
+!/scripts/run_eval.py
 # SDLC harness breadcrumbs (machine-local state — not committed)
 sdlc-state.json
 sdlc-block-state.json
