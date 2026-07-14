@@ -39,3 +39,6 @@ Validated: gating checks (fast tripwire)
 What: Validated the full OR.U eval-engine spec: pytest (1063 passed, 8 skipped, no failures), ruff clean, pylint 10.00/10, database.session/database.repository import cleanly, and alembic heads shows a single head (f6a7b8c9d0e1).
 Decisions: No code changes were needed — Task 8 is a pure validation gate over the work already committed in tasks 1-7; working tree was clean so nothing was staged or committed.
 Validated: gating checks (fast tripwire)
+
+## Docs
+Patched: docs/index.md, docs/scripts.md | Created: docs/evals.md
