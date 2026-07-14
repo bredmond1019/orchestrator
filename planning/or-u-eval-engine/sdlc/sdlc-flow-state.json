@@ -2,9 +2,9 @@
   "spec_slug": "or-u-eval-engine",
   "branch": "or-u-eval-engine-flow-2",
   "started_at": "2026-07-14T18:16:33Z",
-  "updated_at": "2026-07-14T19:13:39Z",
+  "updated_at": "2026-07-14T19:18:48Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
-  "status": "docs",
+  "status": "done",
   "current_task": 8,
   "tasks": {
     "1": {
@@ -343,13 +343,21 @@
         "filesReadKb": null,
         "inTokEst": 810,
         "outTok": 10871
+      },
+      {
+        "label": "wrap-up",
+        "model": "sonnet",
+        "promptTokEst": 834,
+        "filesReadKb": null,
+        "inTokEst": 834,
+        "outTok": 12753
       }
     ],
     "total": {
-      "promptTokEst": 22998,
+      "promptTokEst": 23832,
       "filesReadKb": 0,
-      "inTokEst": 22998,
-      "outTok": 172814
+      "inTokEst": 23832,
+      "outTok": 185567
     }
   }
 }
