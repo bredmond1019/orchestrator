@@ -11,6 +11,7 @@ from database.session import Base
 # This import is required for autogenerate support
 from database.brain_document import *
 from database.brain_edge import *
+from database.eval_record import *
 from database.event import *
 from database.learning_artifact import *
 
