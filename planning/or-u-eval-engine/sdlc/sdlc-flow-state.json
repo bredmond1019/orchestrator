@@ -1,0 +1,89 @@
+{
+  "spec_slug": "or-u-eval-engine",
+  "branch": "or-u-eval-engine-flow-2",
+  "started_at": "2026-07-14T18:16:33Z",
+  "updated_at": "2026-07-14T18:16:33Z",
+  "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
+  "status": "running",
+  "current_task": 1,
+  "tasks": {
+    "1": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added EvalRun/EvalResult SQLAlchemy models (SQLite-compilable), a chained Alembic migration creating eval_runs/eval_results, database __init__/env.py exports, and a 20-test GenericRepository round-trip + FK-linkage suite.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Followed learning_artifact.py/event.py column style (postgresql.dialects UUID + JSON/Float/Integer/Boolean, no ARRAY) so tests/conftest.py's in-memory SQLite suite can create these tables without exclusion",
+        "Added a new .gitignore whitelist line for the eval migration filename pattern, matching the existing per-migration allowlist convention (app/alembic/versions/* is otherwise ignored)",
+        "GenericRepository has no dedicated 'filter' method; FK-linkage test queries the session directly via filter_by(run_id=...), consistent with how the repository's own exists() works internally"
+      ],
+      "files_changed": [
+        "app/database/eval_record.py",
+        "app/database/__init__.py",
+        "app/alembic/env.py",
+        "app/alembic/versions/f6a7b8c9d0e1_create_eval_runs_and_results_tables.py",
+        "tests/database/test_eval_record.py",
+        ".gitignore"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    }
+  },
+  "review": {
+    "verdict": null,
+    "findings": [],
+    "attempts": 0
+  },
+  "docs": {
+    "changed": [],
+    "created": []
+  },
+  "bail_reason": null,
+  "pr": {
+    "url": null,
+    "number": null
+  },
+  "tokens": {
+    "stages": [
+      {
+        "label": "worktree-setup",
+        "model": "haiku",
+        "promptTokEst": 764,
+        "filesReadKb": null,
+        "inTokEst": 764,
+        "outTok": 5505
+      },
+      {
+        "label": "enumerate",
+        "model": "haiku",
+        "promptTokEst": 252,
+        "filesReadKb": null,
+        "inTokEst": 252,
+        "outTok": 582
+      },
+      {
+        "label": "implement-1-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 14813
+      },
+      {
+        "label": "test-1-1",
+        "model": "haiku",
+        "promptTokEst": 1388,
+        "filesReadKb": null,
+        "inTokEst": 1388,
+        "outTok": 3557
+      }
+    ],
+    "total": {
+      "promptTokEst": 3382,
+      "filesReadKb": 0,
+      "inTokEst": 3382,
+      "outTok": 24457
+    }
+  }
+}
