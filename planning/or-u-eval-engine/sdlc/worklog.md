@@ -45,3 +45,6 @@ Patched: docs/index.md, docs/scripts.md | Created: docs/evals.md
 
 ## Wrap-up — PASS
 Next: OR.U (or-u-eval-engine) is Done — all 8 tasks passed, review PASS in 1 attempt. Next tracked focus per status.md frontmatter: OR.ticket.brain-retrieval-improvements (Brain retrieval architecture improvements — exact-ID short-circuit, --hybrid flag, diversity cap), or a fresh Wave 1+ Bastion Program block (OR.J/OR.C/OR.P) if reprioritized.
+
+## PR
+https://github.com/bredmond1019/orchestrator/pull/4
