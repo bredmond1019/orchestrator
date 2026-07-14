@@ -2,10 +2,10 @@
   "spec_slug": "or-u-eval-engine",
   "branch": "or-u-eval-engine-flow-2",
   "started_at": "2026-07-14T18:16:33Z",
-  "updated_at": "2026-07-14T18:37:26Z",
+  "updated_at": "2026-07-14T18:44:55Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
   "status": "running",
-  "current_task": 4,
+  "current_task": 5,
   "tasks": {
     "1": {
       "status": "passed",
@@ -85,6 +85,26 @@
         "app/evals/slice.py",
         "app/evals/runner.py",
         "tests/evals/test_runner.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "5": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added the coding-domain eval slice (build_coding_slice + coding_scorer/spec_shipped_pass_rate_scorer/retry_rate_scorer/review_pass_rate_scorer + load_coding_records) scoring SDLCFlowWorkflow run telemetry, with fixture-backed tests covering clean, bailed, and review-fail records.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Run record shape mirrors the real TaskContext.nodes storage ({'nodes': {'UpdateTaskStatusNode': {'result': SDLCState.model_dump()}, 'ConsolidatedReviewNode': {'result': {...}}}}) per standing rule 9, falling back to LoadTaskStateNode when a run bailed before any task mutation.",
+        "EvalSlice binds exactly one scorer, so the three Block-Z metrics (pass-rate, retry rate, review-pass rate) are computed by three standalone scorer functions and composed into one coding_scorer whose overall `passed` follows the primary block-contract criterion (all tasks DONE, none FAILED); the other two metrics are informational in `detail` for Task 7's CLI table.",
+        "review_pass_rate_scorer returns score=None (not a fabricated pass/fail) when a run bailed before ConsolidatedReviewNode ran, since the task loop only retains the last-reached task's review verdict in a single run record — documented as a real telemetry limitation, not an invented layout.",
+        "build_coding_slice stays offline/pure (takes already-loaded records); load_coding_records is a separate, thin live-query helper against the events table for future (Task 7) wiring, keeping the slice builder itself DB-free and unit-testable."
+      ],
+      "files_changed": [
+        "app/evals/slices/__init__.py",
+        "app/evals/slices/coding.py",
+        "tests/evals/test_coding_slice.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -185,13 +205,29 @@
         "filesReadKb": null,
         "inTokEst": 1388,
         "outTok": 4496
+      },
+      {
+        "label": "implement-5-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 19912
+      },
+      {
+        "label": "test-5-1",
+        "model": "haiku",
+        "promptTokEst": 1388,
+        "filesReadKb": null,
+        "inTokEst": 1388,
+        "outTok": 3716
       }
     ],
     "total": {
-      "promptTokEst": 10480,
+      "promptTokEst": 12846,
       "filesReadKb": 0,
-      "inTokEst": 10480,
-      "outTok": 80556
+      "inTokEst": 12846,
+      "outTok": 104184
     }
   }
 }
