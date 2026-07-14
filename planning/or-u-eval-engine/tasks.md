@@ -12,7 +12,7 @@ related: [master-plan, status]
 
 # Task Spec — Bastion Program, Block OR.U (Eval + success-metrics engine)
 
-**Status:** Not started · **Last run:** never
+**Status:** Done · **Last run:** 2026-07-14 (all 8 tasks passed; review PASS in 1 attempt)
 
 ## Goal
 Stand up an evaluation + success-metrics engine: an offline eval harness with a scorer library
@@ -84,4 +84,5 @@ cd app && uv run python -c 'import database.repository'
 
 ## Amendment Log
 <!-- Append-only. Pipeline stages append one dated line here when they deviate from the spec. -->
-_No amendments yet._
+- 2026-07-14 [task 4] `run_slice(slice, session)` returns `list[EvalRun]` (one per model in `eval_slice.models`) rather than a single `EvalRun` as the literal signature reads — the slice's own aggregation requirement ("aggregates pass-rate by (domain, model)... persists one EvalRun per (slice, model)") implies multiple models per slice, so the tasks.md signature is read as shorthand for the per-model loop.
+- 2026-07-14 [task 5] `review_pass_rate_scorer` returns `score=None` (not a fabricated pass/fail) when a coding run bailed before `ConsolidatedReviewNode` executed, since a single run record only retains the last-reached task's review verdict — documented as a real telemetry limitation rather than an invented data shape; downstream consumers must treat `None` as "not yet measurable," not a failing score.

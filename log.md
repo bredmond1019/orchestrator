@@ -11,6 +11,23 @@ timestamp: "2026-07-07T09:39:33-03:00"
 
 ---
 
+## [run: 2026-07-14]
+
+Shipped `or-u-eval-engine` (`OR.U` — the Eval + success-metrics engine, absorbing Project H) end to end via `/sdlc-flow`, all 8 tasks passing on the first attempt and the consolidated review returning PASS. Task 1 laid the persistence foundation: `EvalRun`/`EvalResult` SQLAlchemy models and a chained Alembic migration. Task 2 built the scorer library (`ScoreResult` plus deterministic/structural and reference-based scorers). Task 3 added a blind, randomized LLM-as-judge scorer that strips model identity and shuffles candidate order before rendering the rubric through a new `.j2` prompt via `PromptManager`. Task 4 introduced `EvalCase`/`EvalSlice` and a `run_slice`/`get_run_history`/`compare_runs` runner that persists regression history through `GenericRepository`. Task 5 built the coding-domain eval slice, scoring `SDLCFlowWorkflow` run telemetry for pass-rate, retry rate, and review-pass rate. Task 6 added `gate_change`, a keep-if-better/revert-if-worse one-change self-improvement gate. Task 7 wired it all together in `scripts/run_eval.py`, an offline eval CLI supporting `--slice`, `--dry-run`, `--gate`, and `--emit-routing`. Task 8 was pure validation (no code changes needed). Notable decisions: `run_slice` returns one `EvalRun` per model rather than a single run, reading the tasks.md signature as shorthand for its own per-model aggregation requirement; `review_pass_rate_scorer` returns `score=None` (not a fabricated verdict) when a coding run bailed before review, documenting a genuine telemetry limitation. Final: 1063 tests pass / 8 skipped, ruff clean, pylint 10.00/10, single Alembic head. Docs added (`docs/evals.md`) and patched (`docs/index.md`, `docs/scripts.md`). This closes the last open Wave 0–4 Bastion Program block tracked in this repo. Next: `OR.ticket.brain-retrieval-improvements` (Brain retrieval architecture improvements — exact-ID short-circuit, `--hybrid` flag, diversity cap), or a fresh Wave 1+ block (`OR.J`/`OR.C`/`OR.P`) if reprioritized.
+
+```
+e66c8dd chore: flow state — docs
+cbfc0f5 docs: update docs for or-u-eval-engine
+b36e7fc chore: flow state — task 8 passed
+f330231 chore: flow state — task 7 passed
+20bc80c feat: implement or-u-eval-engine-task7
+829794c chore: flow state — task 6 passed
+a9c1f01 feat: implement or-u-eval-engine-task6
+afd45fc chore: flow state — task 5 passed
+```
+
+---
+
 ## [2026-07-07]
 
 ### Shipped OR.ticket.pgvector-integration-tests — live pgvector integration suite via /sdlc-task
