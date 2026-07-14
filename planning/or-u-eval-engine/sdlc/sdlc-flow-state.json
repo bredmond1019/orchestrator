@@ -2,10 +2,10 @@
   "spec_slug": "or-u-eval-engine",
   "branch": "or-u-eval-engine-flow-2",
   "started_at": "2026-07-14T18:16:33Z",
-  "updated_at": "2026-07-14T18:21:41Z",
+  "updated_at": "2026-07-14T18:29:06Z",
   "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-u-eval-engine-flow-2",
   "status": "running",
-  "current_task": 2,
+  "current_task": 3,
   "tasks": {
     "1": {
       "status": "passed",
@@ -45,6 +45,26 @@
         "app/evals/scorers.py",
         "tests/evals/__init__.py",
         "tests/evals/test_scorers.py"
+      ],
+      "commit": "",
+      "validated": "gating checks (fast tripwire)"
+    },
+    "3": {
+      "status": "passed",
+      "attempts": 1,
+      "summary": "Added evals.judge — a blind, randomized LLM-as-judge scorer that strips model identity, shuffles candidate order (seed-injectable), renders the rubric via app/prompts/eval_judge.j2 through PromptManager, and maps judge verdicts back to original candidates as ScoreResult.",
+      "issues": [],
+      "fixes": [],
+      "decisions": [
+        "Judge model call is a plain injectable callable (JudgeCallable) rather than an AgentNode subclass, since evals is an offline library (no TaskContext/workflow) — mirrors the AgentNode/pydantic_ai Anthropic model pattern without the Node coupling.",
+        "Default judge model is claude-opus-4-8 (current frontier Anthropic model per the claude-api skill), used only when no judge_call is injected.",
+        "Exposed anonymize_candidates(candidates, rng) as a standalone function separate from judge_candidates so tests can assert the shuffle and the label->candidate_id mapping independently of the (mocked) model call.",
+        "rubric is expressed as rubric_criteria: list[str], matching the block-spec wording 'rubric criteria', rendered as a bullet list in the .j2 template."
+      ],
+      "files_changed": [
+        "app/evals/judge.py",
+        "app/prompts/eval_judge.j2",
+        "tests/evals/test_judge.py"
       ],
       "commit": "",
       "validated": "gating checks (fast tripwire)"
@@ -113,13 +133,29 @@
         "filesReadKb": null,
         "inTokEst": 1388,
         "outTok": 3853
+      },
+      {
+        "label": "implement-3-1",
+        "model": "sonnet",
+        "promptTokEst": 978,
+        "filesReadKb": null,
+        "inTokEst": 978,
+        "outTok": 15923
+      },
+      {
+        "label": "test-3-1",
+        "model": "haiku",
+        "promptTokEst": 1388,
+        "filesReadKb": null,
+        "inTokEst": 1388,
+        "outTok": 3910
       }
     ],
     "total": {
-      "promptTokEst": 5748,
+      "promptTokEst": 8114,
       "filesReadKb": 0,
-      "inTokEst": 5748,
-      "outTok": 37744
+      "inTokEst": 8114,
+      "outTok": 57577
     }
   }
 }
