@@ -406,6 +406,20 @@ class RetrieveChunksNode(Node):
             for row, distance in rows
         ]
 
+    @staticmethod
+    def _exclude_archived_status(q, model, config: dict, include_archived: bool):
+        """Filter out rows whose ``status`` equals the corpus'
+        ``default_status_exclude`` (e.g. "archived"), unless the caller opts in
+        via ``include_archived``. A NULL status is always kept. Shared by the
+        candidate-fetching stages so the exclusion stays byte-for-byte identical.
+        """
+        exclude = config.get("default_status_exclude")
+        if exclude and not include_archived:
+            status_col = getattr(model, "status", None)
+            if status_col is not None:
+                q = q.filter((status_col != exclude) | (status_col.is_(None)))
+        return q
+
     def _keyword_expand(  # pylint: disable=too-many-arguments
         self,
         query: str,
@@ -438,31 +452,27 @@ class RetrieveChunksNode(Node):
         This method is isolated so tests can patch it without a live DB.
         """
         config = _CORPUS_CONFIG[corpus]
-        tsv_field = config.get("tsv_field")
-        if not tsv_field:
+        if not config.get("tsv_field"):
             return []
 
         model = config["model"]
-        tsv_col = getattr(model, tsv_field)
+        tsv_col = getattr(model, config["tsv_field"])
         tsquery = func.plainto_tsquery("english", query)
-        rank = func.ts_rank(tsv_col, tsquery)
-        distance_expr = model.embedding.cosine_distance(vector)
 
         with contextmanager(db_session)() as session:
-            q = (
-                session.query(model, distance_expr.label("_distance"))
-                .filter(tsv_col.op("@@")(tsquery))
-            )
+            q = session.query(
+                model, model.embedding.cosine_distance(vector).label("_distance")
+            ).filter(tsv_col.op("@@")(tsquery))
             if existing_ids:
                 q = q.filter(model.id.notin_(existing_ids))
             if filters and config.get("filter_fields"):
                 q = _apply_metadata_filters(q, model, filters, config["filter_fields"])
-            exclude = config.get("default_status_exclude")
-            if exclude and not include_archived:
-                status_col = getattr(model, "status", None)
-                if status_col is not None:
-                    q = q.filter((status_col != exclude) | (status_col.is_(None)))
-            rows = q.order_by(rank.desc()).limit(_KEYWORD_CANDIDATE_LIMIT).all()
+            q = self._exclude_archived_status(q, model, config, include_archived)
+            rows = (
+                q.order_by(func.ts_rank(tsv_col, tsquery).desc())
+                .limit(_KEYWORD_CANDIDATE_LIMIT)
+                .all()
+            )
             return [
                 _row_to_candidate(row, distance, config, via="keyword")
                 for row, distance in rows
