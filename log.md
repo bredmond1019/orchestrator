@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-15T06:01:56-04:00"
+timestamp: "2026-07-15T07:27:33-04:00"
 ---
 
 # log — Orchestration Repo
@@ -12,6 +12,47 @@ timestamp: "2026-07-15T06:01:56-04:00"
 ---
 
 ## [2026-07-15]
+
+### Manual verification of brain retrieval improvements against the live corpus
+
+- **What:** Post-close-out manual verification of `ticket-brain-retrieval-improvements` against the
+  live `brain_documents` corpus (not just the test suite), per Brandon's request to confirm search
+  actually improved. Live-confirmed all 3 shipped behaviors against the original 2026-07-03 test-run
+  doc's previously-failing queries: (1) exact-ID short-circuit — "What is decision D20 about?" now
+  resolves via ILIKE with zero embedding calls (distance=0.0000) and correctly surfaces
+  `D20-shared-data-contract.md`, fixing test-run query #13; "OR.V graph resolver cleanup" correctly
+  short-circuits but returns zero results since no file is literally named OR.V (a legitimate
+  doc_id/file_path-scope limitation, not a bug). (2) `--hybrid` flag + diversity cap — after fixing a
+  discovered blocker (see below), `--hybrid "OR.V graph resolver cleanup"` returned 5 relevant results
+  capped at 2-per-file; re-running test-run query #1 ("hourly rates") with `--hybrid` changed the
+  result set from all-5-from-rates.md to 2-from-rates.md plus 3 genuinely distinct, relevant docs — a
+  direct, visible diversity improvement. Along the way, found and fixed two infra bugs unrelated to
+  the ticket itself: (a) two unmerged Alembic migration heads (`e2f3a4b5c6d7` and `f6a7b8c9d0e1`, both
+  branched off `d1e2f3a4b5c6`) meant the local DB was missing the `brain_edges` table entirely,
+  crashing `--hybrid` with `UndefinedTable` — worked around with `alembic upgrade heads` (purely
+  additive, pytest still 1080 passed/8 skipped afterward); a real merge migration is still owed
+  (tracked in `state.json` carryover as `alembic-unmerged-heads`). (b) the corpus was 12 days stale
+  (all 1243 rows shared one indexed_at from 2026-07-03) — ran an incremental re-index: 1243 to 4749
+  rows, 175 to 571 distinct files. Also fixed the brain repo's `hooks/post-commit` freshness hook: its
+  engine-lookup never matched the current `core/orchestrator` directory layout (silently no-op'd
+  forever), and `core.hooksPath` was pointing at a nonexistent `.beads/hooks` (dead config from a
+  since-removed beads integration) meaning no git hooks had fired in the brain repo for two weeks.
+  Fixed both, added a regression test case, and proved the fix live end-to-end (committed a scratch
+  corpus file, indexed it, deleted it via a real commit, confirmed the hook auto-pruned the row from
+  `brain_documents`). Also unset the same dangling `.beads/hooks` `core.hooksPath` in
+  `core/orchestrator`, `core/bastion`, and `core/mev` (confirmed via `bd hooks list` that nothing was
+  actually installed there). `planning/handoff.md` was rewritten with full copy-pasteable manual
+  verification commands for all of the above, plus the two carryover entries
+  (`brain-freshness-cron-loop`, `alembic-unmerged-heads`) as the next session's most likely
+  priorities.
+- **Why:** Brandon explicitly asked, after the ticket's close-out, to verify via manual testing that
+  search had actually improved — not just trust the test suite — and separately asked to review/fix
+  the brain repo's post-commit freshness hook (which turned out to be silently broken) and check
+  whether HQ's `hooksPath` covered all the `planning/` repos (it does, by design, confirmed via
+  `index_brain.py`'s `_sub_repo_files()` scoping).
+- **Refs:** `planning/handoff.md`; `planning/state.json`; `planning/test-runs/or-b-brain-retrieval-test-run1.md`.
+
+---
 
 ### Shipped OR.ticket.brain-retrieval-improvements via sdlc-task
 
