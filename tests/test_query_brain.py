@@ -22,7 +22,13 @@ for path in (SCRIPTS_DIR, APP_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from query_brain import format_result, main, semantic_search  # noqa: E402
+from query_brain import (  # noqa: E402
+    exact_id_lookup,
+    find_exact_id,
+    format_result,
+    main,
+    semantic_search,
+)
 
 
 def _fake_doc(**overrides) -> SimpleNamespace:
@@ -60,6 +66,48 @@ def test_semantic_search_embeds_query_and_returns_ordered_rows():
     fake_embedding_service.embed_text.assert_called_once_with("What is Bastion?")
     fake_query.limit.assert_called_once_with(2)
     assert results == fake_rows
+
+
+# ---------------------------------------------------------------------------
+# find_exact_id / exact_id_lookup
+# ---------------------------------------------------------------------------
+
+
+def test_find_exact_id_matches_letter_digit_code():
+    assert find_exact_id("What is decision D20 about?") == "D20"
+
+
+def test_find_exact_id_matches_dotted_code():
+    assert find_exact_id("OR.V graph resolver cleanup") == "OR.V"
+
+
+def test_find_exact_id_matches_multi_segment_dotted_code():
+    assert find_exact_id("what does MV.3B.Q cover") == "MV.3B.Q"
+
+
+def test_find_exact_id_returns_none_for_ordinary_query():
+    assert find_exact_id("What is the Bastion program?") is None
+
+
+def test_exact_id_lookup_queries_doc_id_and_file_path_ilike():
+    fake_doc = _fake_doc(file_path="docs/decisions/D20-shared-data-contract.md")
+    fake_query = MagicMock()
+    fake_query.filter.return_value = fake_query
+    fake_query.limit.return_value = fake_query
+    fake_query.all.return_value = [fake_doc]
+    fake_session = MagicMock()
+    fake_session.query.return_value = fake_query
+
+    with (
+        patch("database.brain_document.BrainDocument") as fake_model,
+        patch("sqlalchemy.or_") as fake_or,
+    ):
+        fake_or.return_value = "fake-or-clause"
+        results = exact_id_lookup("D20", fake_session, limit=5)
+
+    fake_session.query.assert_called_once_with(fake_model)
+    fake_query.limit.assert_called_once_with(5)
+    assert results == [fake_doc]
 
 
 # ---------------------------------------------------------------------------
@@ -140,3 +188,50 @@ def test_main_prints_formatted_results(capsys):
     captured = capsys.readouterr()
     assert doc.file_path in captured.out
     fake_query.limit.assert_called_once_with(1)
+
+
+def test_main_id_query_short_circuits_without_embedding_call(capsys):
+    doc = _fake_doc(file_path="docs/decisions/D20-shared-data-contract.md")
+    fake_query = MagicMock()
+    fake_query.filter.return_value = fake_query
+    fake_query.limit.return_value = fake_query
+    fake_query.all.return_value = [doc]
+    fake_session = MagicMock()
+    fake_session.query.return_value = fake_query
+
+    def _fake_db_session():
+        yield fake_session
+
+    with (
+        patch("database.session.db_session", side_effect=_fake_db_session),
+        patch("services.embedding_service.EmbeddingService") as fake_service_cls,
+    ):
+        main(["What is decision D20 about?"])
+
+    fake_service_cls.assert_not_called()
+    captured = capsys.readouterr()
+    assert doc.file_path in captured.out
+
+
+def test_main_non_id_query_still_uses_semantic_search(capsys):
+    doc = _fake_doc()
+    fake_query = MagicMock()
+    fake_query.order_by.return_value = fake_query
+    fake_query.limit.return_value = fake_query
+    fake_query.all.return_value = [(doc, 0.05)]
+    fake_session = MagicMock()
+    fake_session.query.return_value = fake_query
+
+    def _fake_db_session():
+        yield fake_session
+
+    with (
+        patch("database.session.db_session", side_effect=_fake_db_session),
+        patch("services.embedding_service.EmbeddingService") as fake_service_cls,
+    ):
+        fake_service_cls.return_value.embed_text.return_value = [0.1, 0.2]
+        main(["What is the Bastion program?"])
+
+    fake_service_cls.return_value.embed_text.assert_called_once_with("What is the Bastion program?")
+    captured = capsys.readouterr()
+    assert doc.file_path in captured.out
