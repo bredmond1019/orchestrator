@@ -2530,6 +2530,16 @@ Implements the semantic-then-keyword re-rank pattern ported from the rag-engine-
    among the semantic candidates are fetched and merged in, each flagged `via="structural"` for
    explainability (OR.G). No-op for corpora that don't declare `supports_structural` or when no
    candidate carries a `doc_id`.
+2c. **Stage 1c — keyword-candidate expansion** (brain corpus only, declares a `tsv_field`): an
+   independent top-`_KEYWORD_CANDIDATE_LIMIT` (15) full-text query, ordered by `ts_rank`
+   descending, using the same corpus/filters/archived-exclusion as `_semantic_search`. Rescues
+   documents with a strong keyword match but a cosine-distance rank outside the Stage-1 top-20 —
+   without it, Stage 2's keyword re-rank (scoped to `WHERE id IN (candidate_ids)`) can never score
+   a document Stage 1 didn't already pick. Hits not already present among the candidates are
+   merged in, each flagged `via="keyword"`, and scored with a real cosine distance against the
+   query vector (same technique `_fetch_neighbor_candidates` uses for structural neighbors) so
+   they fit the `_fuse_and_rank` contract unchanged. Always runs (not gated by a request flag,
+   unlike Stage 1b); a no-op for corpora without a `tsv_field` (e.g. `"content"`).
 3. **Additive score fusion:** `score = (1.0 − distance) × title_weight + keyword_contribution`,
    where `title_weight = 2.0` for `is_section_title=True` chunks (section-title 2x weight). The
    keyword contribution is graded for FTS corpora (`_KW_WEIGHT × ts_rank`) and a flat `_KW_BOOST`
@@ -2592,7 +2602,7 @@ descending.
 | `file_path` | `str \| None` | Provenance: source file path (brain corpus; `None` when the row lacks it). |
 | `doc_id` | `str \| None` | Provenance: OKF `doc_id` of the source doc. |
 | `title` | `str \| None` | Provenance: OKF `title` of the source doc, for citation display. |
-| `via` | `str` | Provenance: `"semantic"` (Stage 1) or `"structural"` (Stage 1b neighborhood expansion). |
+| `via` | `str` | Provenance: `"semantic"` (Stage 1), `"structural"` (Stage 1b neighborhood expansion), or `"keyword"` (Stage 1c keyword-candidate expansion). |
 
 ### Internal methods (mockable test seams)
 
@@ -2600,7 +2610,9 @@ descending.
 |---|---|
 | `_semantic_search(vector, corpus, limit, filters=None, include_archived=False)` | Stage 1: pgvector cosine-distance query. Accepts optional `filters` dict; when present and the corpus declares `filter_fields`, delegates to `_apply_metadata_filters` before executing. When the corpus declares `default_status_exclude` and `include_archived` is `False`, also filters out that status (NULL status kept). Isolated for unit-test patching without a live DB. |
 | `_structural_expand(candidates, corpus, vector, filters=None, include_archived=False)` | Stage 1b: when the corpus declares `supports_structural`, resolves the `related:`-neighborhood of the top `_STRUCTURAL_SEED_COUNT` (5) semantic candidates via `_resolve_neighbor_doc_ids` (queries `brain_edges` by `source_doc_id`) and `_fetch_neighbor_candidates` (fetches the resolved `target_doc_id` rows, respecting `filters`/`include_archived`), tagging results `via="structural"`. Short-circuits with no DB call when the corpus doesn't support structural expansion or no candidate carries a `doc_id`. |
-| `_merge_structural_candidates(candidates, structural)` | Static helper: unions structural candidates into the semantic set, deduped by `id` — a structural candidate whose id already appears among `candidates` is dropped so the semantic candidate wins ties rather than duplicating the row. |
+| `_keyword_expand(query, corpus, vector, existing_ids, filters=None, include_archived=False)` | Stage 1c: when the corpus declares a `tsv_field`, runs an independent top-`_KEYWORD_CANDIDATE_LIMIT` (15) full-text query (`ts_rank` descending) excluding ids already in `existing_ids`, applying the same `filters`/`include_archived`/archived-status exclusion (via `_exclude_archived_status`) as `_semantic_search`, tagging results `via="keyword"`. Returns `[]` with no DB call for corpora without a `tsv_field`. |
+| `_exclude_archived_status(q, model, config, include_archived)` | Static helper: filters out rows whose `status` equals the corpus' `default_status_exclude` (e.g. `"archived"`) unless `include_archived=True`; a `NULL` status is always kept. Used by `_keyword_expand`. |
+| `_merge_candidates(candidates, extra)` | Static helper (generalized from `_merge_structural_candidates`): unions an extra candidate set into `candidates`, deduped by `id` — an extra candidate whose id already appears among `candidates` is dropped so the existing candidate wins ties rather than duplicating the row. Used for both the Stage 1b structural merge and the Stage 1c keyword-candidate merge. |
 | `_keyword_search(query, candidate_ids, corpus)` | Stage 2 dispatcher. Returns a `dict[id -> ts_rank]` for corpora declaring a `tsv_field` (graded FTS) or a `set[id]` for the legacy ILIKE path; returns the matching empty shape when `candidate_ids` is empty. Delegates to one of the two helpers below. |
 | `_keyword_search_fts(query, candidate_ids, config, tsv_field)` | Graded full-text search (brain corpus). Builds `ts_rank(content_tsv, plainto_tsquery('english', query))` scoped to candidate IDs, returns `dict[id -> float ts_rank]`. Stop-word removal and stemming come from `plainto_tsquery`. |
 | `_keyword_search_ilike(query, candidate_ids, config)` | Legacy binary ILIKE (content corpus). Query terms are stripped of non-word characters before matching (e.g. `"RAG?"` → `"RAG"`); ORs in any `keyword_extra_fields` columns. Returns a `set` of matched IDs. |
@@ -2610,20 +2622,23 @@ descending.
 
 ### Test coverage
 
-`tests/workflows/test_retrieve_chunks_node.py` — 60 tests covering: score ordering,
+`tests/workflows/test_retrieve_chunks_node.py` — 78 tests covering: score ordering,
 keyword boost, section-title 2x weight, threshold filtering, top-k, NaN safety,
 corpus `"brain"` threading, TaskContext output contract (`{"result": {"chunks": [...]}}` shape),
 exact score formula verification, punctuation stripping in keyword terms, `filters` forwarding
 from event through `process()` → `retrieve()` → `_semantic_search()`, defensive `getattr`
 fallback when event has no `filters` attribute, brain corpus ORing the `keywords` column in
 keyword search, content corpus query unchanged by new config, scalar-filter exclusion of
-non-matching rows, and the structural neighborhood-expansion stage (`_structural_expand`,
-`_merge_structural_candidates`, `expand_structural` toggle on/off, `via="structural"` tagging,
-no-DB-call short-circuit for corpora without `supports_structural`). An additional end-to-end
-suite, `tests/workflows/test_brain_graph_retrieval.py`, proves the headline OR.G acceptance: a
-`related:`-neighbor answer is retrieved and flagged `via="structural"` when absent from the
-semantic-only path, and structural-on/off results are identical when no useful neighbor exists
-(dangling edge).
+non-matching rows, the structural neighborhood-expansion stage (`_structural_expand`,
+`expand_structural` toggle on/off, `via="structural"` tagging, no-DB-call short-circuit for
+corpora without `supports_structural`), the Stage 1c keyword-candidate expansion stage
+(`_keyword_expand` existing-ids exclusion, filters/`include_archived` forwarding, no-DB-call
+short-circuit for corpora without a `tsv_field`, `via="keyword"` tagging, integration through
+`retrieve()`), and the generalized `_merge_candidates` dedupe/base-wins semantics shared by both
+expansion stages. An additional end-to-end suite, `tests/workflows/test_brain_graph_retrieval.py`,
+proves the headline OR.G acceptance: a `related:`-neighbor answer is retrieved and flagged
+`via="structural"` when absent from the semantic-only path, and structural-on/off results are
+identical when no useful neighbor exists (dangling edge).
 
 ---
 
