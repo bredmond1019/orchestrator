@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-15T13:15:00Z"
+timestamp: "2026-07-15T13:57:15Z"
 ---
 
 # log — Orchestration Repo
@@ -12,6 +12,25 @@ timestamp: "2026-07-15T13:15:00Z"
 ---
 
 ## [2026-07-15]
+
+### Closed out OR.ticket.keyword-candidate-expansion — gating suite re-verified, docs patched, handoff rewritten
+
+- **What:** Closed out `OR.ticket.keyword-candidate-expansion`. Re-verified the full gating suite green:
+  1096 passed / 8 skipped, `ruff check` clean, `pylint` 10.00/10. Confirmed no coverage gaps against the
+  new Stage 1c keyword-expansion code path. Ran `/code-review` at low effort and it found no issues.
+  Patched documentation to cover the new stage: `docs/api-reference.md` and `docs/brain-rag.md` both
+  updated with a Stage 1c section. Flipped the block's `status` to `closed` in `planning/state.json` and
+  resolved the `docs-brain-rag-keyword-expansion-pending` carryover entry (removed from
+  `carryover[]` now that the docs it was blocking on have landed). Rewrote `planning/handoff.md` for the
+  next session: no ticket in flight, next session should pick up a Wave-1+ block (`OR.J`, `OR.C`, or
+  `OR.P`).
+- **Why:** Close-out pass on the ticket scoped and handed off earlier in this same session (the
+  `RetrieveChunksNode` keyword-candidate expansion, Stage 1c) — the implementation itself was done
+  before this pass; this session verified it against the full gating suite, closed the loop on the
+  docs debt the earlier handoff had explicitly flagged as out-of-scope-but-required, and left a clean
+  handoff so the next session can move straight to a fresh Wave-1+ block.
+- **Refs:** `planning/ticket-keyword-candidate-expansion/tasks.md`, `planning/handoff.md`,
+  `planning/state.json`, `docs/api-reference.md`, `docs/brain-rag.md`
 
 ### Handoff — root-caused a keyword-candidate retrieval gap, scoped it as a ticket, wrote handoff.md
 
