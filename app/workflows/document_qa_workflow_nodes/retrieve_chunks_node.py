@@ -22,12 +22,18 @@ Supports two corpora:
   structural neighborhood-expansion: the ``related:``-neighbors (from
   ``brain_edges``, mev's ``emit-graph`` output) of the top Stage-1 semantic
   hits are pulled in as extra candidates before keyword re-rank, flagged
-  ``via="structural"`` for explainability (OR.G).
+  ``via="structural"`` for explainability (OR.G). Also adds a Stage 1c
+  keyword-candidate expansion: an independent top-K full-text query (ordered
+  by ``ts_rank``, same corpus/filters/archived-exclusion as
+  ``_semantic_search``) whose hits are unioned into the candidate set flagged
+  ``via="keyword"``, so a document with a strong keyword match but a weak
+  cosine-distance rank still gets scored by Stage 2 keyword re-rank instead
+  of being invisible to it.
 
 The corpus dispatch is a small mapping so adding a third corpus is a one-line
 addition. DB calls are isolated in ``_semantic_search``, ``_structural_expand``,
-and ``_keyword_search`` (mockable seams); ``_fuse_and_rank`` is pure and
-unit-testable without a DB.
+``_keyword_expand``, and ``_keyword_search`` (mockable seams); ``_fuse_and_rank``
+is pure and unit-testable without a DB.
 """
 
 import math
@@ -81,6 +87,10 @@ _CORPUS_CONFIG: dict[str, dict] = {
 # Number of top Stage-1 semantic hits whose related:-neighborhood is walked
 # by the structural expansion stage (_structural_expand).
 _STRUCTURAL_SEED_COUNT: int = 5
+
+# Max number of hits returned by the independent keyword-candidate expansion
+# stage (_keyword_expand), ordered by ts_rank descending.
+_KEYWORD_CANDIDATE_LIMIT: int = 15
 
 # Keyword fusion weights (tune against the Block H smoke queries):
 # - _KW_WEIGHT scales the graded FTS ts_rank contribution (ts_rank values are
@@ -142,10 +152,16 @@ def _row_to_candidate(row, distance: float, config: dict, via: str = "semantic")
 
 
 class RetrieveChunksNode(Node):
-    """Two-stage hybrid retrieval node.
+    """Two-stage hybrid retrieval node (plus two optional widening stages).
 
     Stage 1: semantic candidate set via pgvector cosine distance (top-20).
-    Stage 2: keyword re-rank via ILIKE scoped to stage-1 candidate IDs.
+    Stage 1b: structural expansion via the related:-neighborhood of the top
+        Stage-1 hits (brain corpus only; _structural_expand).
+    Stage 1c: keyword-candidate expansion — an independent top-K full-text
+        query (ts_rank order) unioned into the candidate set, so a document
+        with a strong keyword match but a weak cosine-distance rank still
+        reaches Stage 2 (brain corpus only; _keyword_expand).
+    Stage 2: keyword re-rank via ILIKE/ts_rank scoped to the candidate IDs.
     Score fusion: semantic similarity + keyword boost + section-title 2x weight.
 
     Build carefully — this node is reused verbatim by downstream workflows.
@@ -217,24 +233,34 @@ class RetrieveChunksNode(Node):
                 filters=filters,
                 include_archived=include_archived,
             )
-            candidates = self._merge_structural_candidates(candidates, structural)
+            candidates = self._merge_candidates(candidates, structural)
+        existing_ids = {c["id"] for c in candidates}
+        keyword_candidates = self._keyword_expand(
+            query,
+            corpus,
+            vector,
+            existing_ids,
+            filters=filters,
+            include_archived=include_archived,
+        )
+        candidates = self._merge_candidates(candidates, keyword_candidates)
         candidate_ids = [c["id"] for c in candidates]
         keyword_matches = self._keyword_search(query, candidate_ids, corpus)
         return self._fuse_and_rank(candidates, keyword_matches, k, threshold)
 
     @staticmethod
-    def _merge_structural_candidates(
-        candidates: list[dict], structural: list[dict]
-    ) -> list[dict]:
-        """Union structural candidates into the semantic set, deduped by id.
+    def _merge_candidates(candidates: list[dict], extra: list[dict]) -> list[dict]:
+        """Union an extra candidate set into ``candidates``, deduped by id.
 
-        A structural candidate whose id already appears in ``candidates`` is
-        dropped (the semantic candidate wins) rather than duplicated.
+        An extra candidate whose id already appears in ``candidates`` is
+        dropped (the existing candidate wins) rather than duplicated. Used for
+        both the structural-expansion merge (Stage 1b) and the
+        keyword-candidate-expansion merge (Stage 1c).
         """
-        if not structural:
+        if not extra:
             return candidates
         existing_ids = {c["id"] for c in candidates}
-        return candidates + [c for c in structural if c["id"] not in existing_ids]
+        return candidates + [c for c in extra if c["id"] not in existing_ids]
 
     def _semantic_search(
         self,
@@ -379,6 +405,68 @@ class RetrieveChunksNode(Node):
             _row_to_candidate(row, distance, config, via="structural")
             for row, distance in rows
         ]
+
+    def _keyword_expand(  # pylint: disable=too-many-arguments
+        self,
+        query: str,
+        corpus: str,
+        vector: list[float],
+        existing_ids: set,
+        *,
+        filters: dict | None = None,
+        include_archived: bool = False,
+    ) -> list[dict]:
+        """Stage 1c: widen the candidate set through an independent keyword query.
+
+        Runs a top-``_KEYWORD_CANDIDATE_LIMIT`` full-text query (``ts_rank``
+        descending) over the corpus, gated on the corpus declaring a
+        ``tsv_field`` — a no-op (returns ``[]``, no DB touched) for corpora
+        without one (e.g. "content"), mirroring how ``supports_structural``
+        gates ``_structural_expand``.
+
+        Applies the same filters/include_archived/archived-status exclusion as
+        ``_semantic_search``, excludes ids already present in ``existing_ids``,
+        and scores each hit's cosine distance against ``vector`` the same way
+        ``_fetch_neighbor_candidates`` does for structural neighbors — so the
+        returned candidate dicts fit the existing ``_fuse_and_rank`` scoring
+        contract unchanged. Each candidate is flagged ``via="keyword"``.
+
+        The FTS ``@@`` match predicate already requires a genuine term match
+        before a row is even ranked, so no additional minimum-rank threshold
+        is applied here.
+
+        This method is isolated so tests can patch it without a live DB.
+        """
+        config = _CORPUS_CONFIG[corpus]
+        tsv_field = config.get("tsv_field")
+        if not tsv_field:
+            return []
+
+        model = config["model"]
+        tsv_col = getattr(model, tsv_field)
+        tsquery = func.plainto_tsquery("english", query)
+        rank = func.ts_rank(tsv_col, tsquery)
+        distance_expr = model.embedding.cosine_distance(vector)
+
+        with contextmanager(db_session)() as session:
+            q = (
+                session.query(model, distance_expr.label("_distance"))
+                .filter(tsv_col.op("@@")(tsquery))
+            )
+            if existing_ids:
+                q = q.filter(model.id.notin_(existing_ids))
+            if filters and config.get("filter_fields"):
+                q = _apply_metadata_filters(q, model, filters, config["filter_fields"])
+            exclude = config.get("default_status_exclude")
+            if exclude and not include_archived:
+                status_col = getattr(model, "status", None)
+                if status_col is not None:
+                    q = q.filter((status_col != exclude) | (status_col.is_(None)))
+            rows = q.order_by(rank.desc()).limit(_KEYWORD_CANDIDATE_LIMIT).all()
+            return [
+                _row_to_candidate(row, distance, config, via="keyword")
+                for row, distance in rows
+            ]
 
     def _keyword_search(
         self,
