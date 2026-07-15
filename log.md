@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-15T07:27:33-04:00"
+timestamp: "2026-07-15T13:15:00Z"
 ---
 
 # log — Orchestration Repo
@@ -12,6 +12,113 @@ timestamp: "2026-07-15T07:27:33-04:00"
 ---
 
 ## [2026-07-15]
+
+### Handoff — root-caused a keyword-candidate retrieval gap, scoped it as a ticket, wrote handoff.md
+
+- **What:** Root-caused a real retrieval-quality gap in `RetrieveChunksNode` (the shared hybrid node
+  reused verbatim by downstream workflows): Stage 2 keyword re-rank is scoped
+  `WHERE id IN (stage_1_semantic_candidate_ids)`, so it can boost a document Stage 1's cosine-distance
+  top-20 already picked, but can never rescue one Stage 1 missed. Proved this live against the real
+  corpus: `"OR.V graph resolver cleanup"` never returns `core/orchestrator/planning/status.md` despite
+  it having one of the strongest `ts_rank` keyword scores in the whole 4749-row corpus (0.73–0.80) —
+  its cosine-distance rank is ~#60–77, well outside the top-20 semantic cutoff, so Stage 2 never gets
+  the chance to score it. Scoped the fix (a new `_keyword_expand` Stage 1c, symmetric to the existing
+  `_structural_expand`, unioning its own top-K FTS-ranked candidates into the pool before fusion) as a
+  full ticket: `planning/ticket-keyword-candidate-expansion/tasks.md` + `tasks.json`, registered as
+  `OR.ticket.keyword-candidate-expansion` in `state.json` (wave 9, `open`, `sdlc_workflow: task`,
+  `model: sonnet`). Also caught and fixed a `.gitignore` gap this session: `scripts/*` is
+  per-file-allowlisted and `scripts/refresh_brain.py` (shipped earlier today) was silently excluded
+  from every future commit — added `!/scripts/refresh_brain.py`. Added a second `carryover[]` entry,
+  `docs-brain-rag-keyword-expansion-pending`, flagging that `docs/brain-rag.md` will need a paragraph
+  for the new stage once the ticket ships (explicitly out of the ticket's own scope). Wrote
+  `planning/handoff.md` for the next session, whose first command is
+  `/sdlc-task ticket-keyword-candidate-expansion`.
+- **Why:** Direct continuation of today's manual retrieval-verification work — Brandon asked "how do
+  we resolve this, how can we further test it" about the `OR.V` finding from the prior log entry, and
+  then asked to scope the "better" fix (not the cheap `limit=20 → 100` alternative) and hand off to a
+  fresh agent to implement it, since this session was already long and the fix itself touches a
+  shared, carefully-built node that deserves a clean-context implementation pass.
+- **Refs:** `planning/ticket-keyword-candidate-expansion/tasks.md`, `planning/handoff.md`,
+  `app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`
+
+### Brain freshness follow-through — OR.J scope widened + `refresh_brain.py` stopgap script shipped
+
+- **What:** (1) Widened the OR.J ("Brain freshness loop") block definition in `planning/master-plan.md`
+  (the `### OR.J` section, plus its `## Shared Services` pointer near the top of the file) to explicitly
+  scope in BOTH freshness paths — `index_brain.py` (`brain_documents`) AND `mev emit-graph |
+  scripts/load_brain_edges.py` (`brain_edges`) — not just the content-indexer path it originally named.
+  Rewrote the block's What/Why/Repo/Interfaces/Depends-on/Acceptance-criteria to cover both scripts
+  explicitly, and added a new `scripts/load_brain_edges.py` entry to the Shared Services list (it had
+  none before). This closes the gap identified in the prior session: Block J as originally scoped would
+  have left `brain_edges` exactly as stale as the current fully-manual status quo. (2) Built
+  `scripts/refresh_brain.py` — a new stopgap wrapper script (until Block J actually lands) that runs
+  `index_brain.py` then `mev emit-graph | load_brain_edges.py` in one command, so a developer can no
+  longer forget the edge-loader step. Forwards `--brain-path`/`--rebuild`/`--dry-run` to
+  `index_brain.py`; `--dry-run` skips the edge-refresh step entirely (`brain_edges` has no dry-run
+  mode). Calls `index_brain.main()` in-process and shells out to `mev emit-graph --json` for the edge
+  step, then calls `load_edges()` in-process (mirrors the existing `load_brain_edges.py`
+  session/DB pattern via `database.session.db_session`). (3) Added `tests/test_refresh_brain.py` (5
+  tests, all passing): `main()` sequencing (both steps called by default, `--rebuild`/`--brain-path`
+  forwarded to `index_brain.main`, `--dry-run` skips `refresh_edges` entirely), and `refresh_edges()`
+  (parses mev's JSON output and delegates to `load_edges` with a mocked session, and propagates
+  `subprocess.CalledProcessError` on mev failure). Full suite now 1085 passed / 8 skipped (was
+  1080/8 before this session's earlier alembic-merge pass, +5 for this new test file). ruff clean.
+  (4) Live-verified the new script end-to-end against the real corpus: `--dry-run` correctly listed 491
+  files and skipped the edge step; a real run indexed 12 changed files (174 chunks/embeddings, 479
+  skipped-unchanged) and then loaded 1518 edge rows via the mev/`load_brain_edges` step — confirming
+  both steps really do run together in one invocation. (5) Documentation: added a
+  `## scripts/refresh_brain.py` section to `docs/scripts.md` (with the same "why this exists" framing
+  — the `brain_edges`-staleness finding from the prior session), added it to `docs/scripts.md`'s
+  frontmatter keywords and to `docs/index.md`'s scripts.md row, and added a `docs/scripts.md` row to
+  this repo's root `CLAUDE.md` Documentation table (which had no scripts.md row at all before) plus a
+  `scripts/refresh_brain.py` usage line in `CLAUDE.md`'s `## Build / test / run` bash block.
+- **Why:** Direct follow-through on the prior session's `brain_edges`-staleness finding (`brain_edges`
+  sat at 0 rows through an actively-reindexed `brain_documents` corpus, because the two freshness
+  scripts have no shared trigger) — Brandon asked to (a) make sure Block J's own scope explicitly
+  names both paths so it doesn't get built narrow, and (b) get a script now, as a stopgap, so this
+  doesn't silently regress again before Block J ships.
+- **Refs:** `planning/master-plan.md` `### OR.J`, `scripts/refresh_brain.py`,
+  `tests/test_refresh_brain.py`, `docs/scripts.md`, `docs/index.md`, `CLAUDE.md`.
+
+---
+
+### Second-pass manual retrieval verification, round 2 — Alembic heads merged, brain_edges gap found+fixed
+
+- **What:** Merged the two unmerged Alembic heads (`e2f3a4b5c6d7`, `f6a7b8c9d0e1`) into a real merge
+  migration (`b7a03fc80996`, `alembic merge`, applied via `alembic upgrade head`, single head
+  confirmed, full pytest 1080 passed/8 skipped), clearing the `alembic-unmerged-heads` carryover.
+  Then re-ran manual retrieval queries against the live, freshly re-indexed brain corpus (4749
+  rows/571 files) to see how results looked now that the DB schema was fixed. Found and fixed a
+  second, more serious infra gap: `brain_edges` (the structural-expansion table) was at 0 rows —
+  completely empty — despite an actively-reindexed `brain_documents` corpus, because
+  `scripts/load_brain_edges.py` is entirely decoupled from `scripts/index_brain.py` with no
+  automatic trigger at all. This meant `RetrieveChunksNode`'s structural-expansion stage
+  (`via=structural`) was silently a no-op on every `--hybrid` query — no error, just zero structural
+  results ever, which is easy to mistake for "there's nothing structurally related" rather than "the
+  table was never populated." Verified by running `mev emit-graph | load_brain_edges.py` by hand
+  (1518 edges loaded), then re-running `"D36 state json work block graph" --hybrid` — D36's
+  `related:` neighbors (D29, D30) correctly appeared as `via=structural` for the first time. Also
+  observed a real search-quality finding worth flagging: `"OR.V graph resolver cleanup" --hybrid`
+  returns zero results from the actual OR.V-documenting files (this repo's own `planning/status.md`
+  and `log.md`) even at `limit=20` — instead surfacing tangentially-related cross-repo "graph
+  resolver" content (`core/planning/brain-graph-overlap/notes.md`, bastion's D16 decision) that
+  scores higher, because `status.md`/`log.md` entries are large prose blocks without a chunk
+  narrowly matching the query terms while shorter, more topically-focused competing docs across the
+  now much-larger 571-file corpus win on cosine distance. This is the corpus-growth side of Finding D
+  from the original test-run doc (title/section chunks or narrowly-scoped docs outranking
+  substantive-but-diffuse ones) — worth a wider sampling pass before concluding it's a tuning bug vs.
+  inherent semantic-search behavior. Widened the `brain-freshness-cron-loop` carryover in
+  `state.json` to explicitly cover `brain_edges` (not just `brain_documents`) so Block J's eventual
+  scope doesn't miss this second freshness path. Ran `mev emit-state --write` + `mev validate-brain
+  --state` after both `state.json` edits — clean, 0 new errors.
+- **Why:** Continuing the prior session's manual verification pass: the alembic-merge and
+  brain-freshness carryovers it left behind needed closing out, and re-running the retrieval queries
+  against the now-schema-fixed DB surfaced the brain_edges emptiness (a silent no-op with no error
+  signal) and a corpus-growth search-quality finding worth flagging for a future tuning pass.
+- **Refs:** `planning/handoff.md` (now consumed and removed); `planning/state.json`;
+  `planning/test-runs/or-b-brain-retrieval-test-run1.md`.
+
+---
 
 ### Manual verification of brain retrieval improvements against the live corpus
 
