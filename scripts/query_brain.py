@@ -15,8 +15,53 @@ Usage:
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
+
+# Matches structured brain identifiers like "D20", "OR.V", "MV.3B.Q": one to
+# five uppercase letters, followed by either a run of digits (D20) or one or
+# more dot-separated alphanumeric segments (OR.V, MV.3B.Q). Requiring digits
+# or a dot segment (rather than bare letters) keeps this from matching
+# ordinary capitalized words like "I" or "What".
+ID_PATTERN = re.compile(r"\b[A-Z]{1,5}(?:[0-9]{1,4}|(?:\.[A-Z0-9]{1,5})+)\b")
+
+
+def find_exact_id(query: str) -> str | None:
+    """Return the first structured-ID token in `query`, or None if absent.
+
+    Recognizes bare codes such as `D20`, `OR.V`, `MV.3B.Q` — identifiers that
+    embeddings don't reliably encode as semantically distinct from ordinary
+    prose (see planning/ticket-brain-retrieval-improvements/tasks.md Finding B).
+    """
+    match = ID_PATTERN.search(query)
+    return match.group(0) if match else None
+
+
+def exact_id_lookup(id_str: str, session, limit: int = 5) -> list:
+    """Resolve `id_str` via a deterministic doc_id/file_path ILIKE lookup.
+
+    Args:
+        id_str: The structured ID token (e.g. "D20") to look up.
+        session: An open SQLAlchemy session (injected by the caller).
+        limit: Maximum number of rows to return.
+
+    Returns:
+        A list of `BrainDocument` rows matching `id_str` in either `doc_id`
+        or `file_path`, most-relevant first (doc_id exact-ish matches before
+        file_path substring matches).
+    """
+    # local import: app/ only on sys.path at call time
+    from database.brain_document import BrainDocument
+    from sqlalchemy import or_
+
+    pattern = f"%{id_str}%"
+    return (
+        session.query(BrainDocument)
+        .filter(or_(BrainDocument.doc_id.ilike(pattern), BrainDocument.file_path.ilike(pattern)))
+        .limit(limit)
+        .all()
+    )
 
 
 def semantic_search(query: str, session, embedding_service, limit: int = 5) -> list[tuple]:
@@ -86,10 +131,34 @@ def main(argv: list[str] | None = None) -> None:
         sys.path.insert(0, str(app_dir))
 
     from database.session import db_session
+
+    session = next(db_session())
+
+    exact_id = find_exact_id(args.query)
+    if exact_id is not None:
+        id_results = exact_id_lookup(exact_id, session, limit=args.limit)
+        if not id_results:
+            print(
+                f"No exact match for ID '{exact_id}' — is brain_documents populated? "
+                "Run scripts/index_brain.py --rebuild first."
+            )
+            return
+        for rank, doc in enumerate(id_results, start=1):
+            print(
+                format_result(
+                    rank,
+                    doc,
+                    0.0,
+                    show_content=args.show_content,
+                    content_chars=args.content_chars,
+                )
+            )
+            print()
+        return
+
     from services.embedding_service import EmbeddingService
 
     embedding_service = EmbeddingService()
-    session = next(db_session())
     results = semantic_search(args.query, session, embedding_service, limit=args.limit)
 
     if not results:
