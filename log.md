@@ -2,12 +2,30 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-14T16:35:20-03:00"
+timestamp: "2026-07-15T06:01:56-04:00"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-07-15]
+
+### Shipped OR.ticket.brain-retrieval-improvements via sdlc-task
+
+- **What:** Shipped `ticket-brain-retrieval-improvements` (exact-ID short-circuit, `--hybrid` flag,
+  diversity cap on top-K results) via the `sdlc-task.js` workflow. Close-out complete: `ruff`/`pylint`/
+  `pytest` all clean (1080 passed, 8 skipped); `/code-review low` found zero findings; docs patched
+  (`docs/scripts.md`, `docs/brain-rag.md`, `docs/api-reference.md`). `OR.ticket.brain-retrieval-improvements`
+  flipped `closed` in `planning/state.json`; no tracked `focus.next` item remains after this.
+- **Why:** This was the sole remaining `focus.next` item carried over from the prior session's
+  close-out of `OR.U` (the eval engine). The ticket captured 3 ranked retrieval-architecture
+  improvements from a 2026-07-03 manual test run of `scripts/query_brain.py`: an exact-ID
+  short-circuit, a `--hybrid` CLI flag reusing production fusion logic, and a diversity cap to stop
+  one source file from monopolizing top-K results.
+- **Refs:** `planning/test-runs/or-b-brain-retrieval-test-run1.md`; `planning/state.json`.
 
 ---
 
