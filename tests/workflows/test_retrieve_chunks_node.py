@@ -30,6 +30,7 @@ def _make_candidate(
     content: str = "some content",
     section_title: str | None = "Intro",
     candidate_id: uuid.UUID | None = None,
+    file_path: str | None = None,
 ) -> dict:
     """Build a candidate dict as returned by ``_semantic_search``."""
     return {
@@ -38,6 +39,7 @@ def _make_candidate(
         "section_title": section_title,
         "is_section_title": is_section_title,
         "distance": dist,
+        "file_path": file_path,
     }
 
 
@@ -824,6 +826,65 @@ class TestGradedKeywordFusion:
         assert results[0]["file_path"] is None
         assert results[0]["doc_id"] is None
         assert results[0]["title"] is None
+
+
+# ---------------------------------------------------------------------------
+# Diversity cap — no more than 2 results from the same file_path in top-K
+# ---------------------------------------------------------------------------
+
+
+class TestDiversityCap:
+    """_fuse_and_rank caps results-per-file_path in the final top-K."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_caps_same_file_results_when_alternative_exists(self):
+        """>2 candidates sharing one file_path yield at most 2 from that file,
+        with the freed slot filled by a distinct-file candidate."""
+        same_file = [
+            _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(4)
+        ]
+        other = _make_candidate(dist=0.5, file_path="docs/b.md")
+        results = self.node._fuse_and_rank(
+            same_file + [other], set(), k=3, threshold=0.0
+        )
+        a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
+        b_count = sum(1 for r in results if r["file_path"] == "docs/b.md")
+        assert a_count == 2
+        assert b_count == 1
+        # The two best-scoring docs/a.md candidates (lowest distance) win the slots.
+        assert {r["id"] for r in results if r["file_path"] == "docs/a.md"} == {
+            same_file[0]["id"],
+            same_file[1]["id"],
+        }
+
+    def test_distinct_files_unaffected_by_cap(self):
+        """When every candidate is from a distinct file, output is identical to
+        the uncapped ranking (same ids, same order)."""
+        candidates = [
+            _make_candidate(dist=0.05 * i, file_path=f"docs/{i}.md") for i in range(5)
+        ]
+        results = self.node._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
+        assert [r["id"] for r in results] == [c["id"] for c in candidates]
+
+    def test_backfills_when_not_enough_distinct_files_to_fill_k(self):
+        """No distinct-file candidate exists to fill a freed slot: the cap does
+        not drop results below k, it backfills with the over-cap candidates."""
+        same_file = [
+            _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(4)
+        ]
+        results = self.node._fuse_and_rank(same_file, set(), k=4, threshold=0.0)
+        assert len(results) == 4
+        assert [r["id"] for r in results] == [c["id"] for c in same_file]
+
+    def test_none_file_path_never_capped(self):
+        """Candidates with file_path=None (no citation metadata) are each
+        treated as their own group and are never capped."""
+        candidates = [_make_candidate(dist=0.05 * i, file_path=None) for i in range(4)]
+        results = self.node._fuse_and_rank(candidates, set(), k=4, threshold=0.0)
+        assert len(results) == 4
+        assert [r["id"] for r in results] == [c["id"] for c in candidates]
 
 
 # ---------------------------------------------------------------------------

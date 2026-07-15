@@ -90,6 +90,11 @@ _STRUCTURAL_SEED_COUNT: int = 5
 _KW_WEIGHT: float = 5.0
 _KW_BOOST: float = 1.0
 
+# Diversity cap: max chunks from the same file_path allowed in the final
+# top-K, unless there aren't enough distinct-file candidates to fill the
+# remaining slots (see _apply_diversity_cap).
+_MAX_PER_FILE: int = 2
+
 
 def _apply_metadata_filters(query, model, filters: dict, filter_fields: dict):
     """Apply optional metadata WHERE clauses to a SQLAlchemy query.
@@ -521,4 +526,45 @@ class RetrieveChunksNode(Node):
             )
 
         scored.sort(key=lambda c: c["score"], reverse=True)
-        return scored[:k]
+        return self._apply_diversity_cap(scored, k)
+
+    @staticmethod
+    def _apply_diversity_cap(scored: list[dict], k: int) -> list[dict]:
+        """Cap results-per-``file_path`` in the final top-``k`` selection.
+
+        Walks ``scored`` (already sorted by score descending) and greedily
+        selects up to ``k`` results, allowing at most ``_MAX_PER_FILE`` from
+        any single ``file_path``. A candidate whose file has hit the cap is
+        skipped on the first pass so a genuinely complementary result from a
+        different file gets the freed slot. If the first pass can't fill all
+        ``k`` slots (not enough distinct-file candidates), a second pass backfills
+        the remaining slots from the skipped, over-cap candidates in score order
+        — so the cap only reorders/displaces results when there is something to
+        replace them with, never drops results outright.
+
+        A ``file_path`` of ``None`` (corpora without citation metadata, e.g.
+        "content" chunks with no source file) is never capped — each is treated
+        as its own singleton group.
+        """
+        counts: dict = {}
+        selected: list[dict] = []
+        overflow: list[dict] = []
+        for c in scored:
+            file_path = c.get("file_path")
+            if file_path is None:
+                selected.append(c)
+                if len(selected) >= k:
+                    break
+                continue
+            if counts.get(file_path, 0) < _MAX_PER_FILE:
+                counts[file_path] = counts.get(file_path, 0) + 1
+                selected.append(c)
+                if len(selected) >= k:
+                    break
+            else:
+                overflow.append(c)
+
+        if len(selected) < k and overflow:
+            selected.extend(overflow[: k - len(selected)])
+
+        return selected[:k]
