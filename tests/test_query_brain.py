@@ -8,6 +8,9 @@ Tests cover:
   with truncation ellipsis
 - main(): wires embedding service + db_session together end-to-end and
   prints a "no results" message on an empty corpus (mocked seams)
+- hybrid_search / --hybrid: delegates to RetrieveChunksNode.retrieve (mocked,
+  no live DB/embedding call) and main() prints its results without falling
+  through to the raw semantic_search path
 """
 
 import sys
@@ -25,7 +28,9 @@ for path in (SCRIPTS_DIR, APP_DIR):
 from query_brain import (  # noqa: E402
     exact_id_lookup,
     find_exact_id,
+    format_hybrid_result,
     format_result,
+    hybrid_search,
     main,
     semantic_search,
 )
@@ -233,5 +238,125 @@ def test_main_non_id_query_still_uses_semantic_search(capsys):
         main(["What is the Bastion program?"])
 
     fake_service_cls.return_value.embed_text.assert_called_once_with("What is the Bastion program?")
+    captured = capsys.readouterr()
+    assert doc.file_path in captured.out
+
+
+# ---------------------------------------------------------------------------
+# hybrid_search / format_hybrid_result / --hybrid
+# ---------------------------------------------------------------------------
+
+
+def _fake_chunk(**overrides) -> dict:
+    base = {
+        "content": "Some fused chunk content.",
+        "section_title": None,
+        "score": 1.2345,
+        "source": "General",
+        "file_path": "docs/decisions/D26-example.md",
+        "doc_id": "D26-example",
+        "title": "D26 — Example Decision",
+        "via": "semantic",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_hybrid_search_delegates_to_retrieve_chunks_node():
+    fake_node = MagicMock()
+    fake_node.retrieve.return_value = [_fake_chunk()]
+
+    with patch(
+        "workflows.document_qa_workflow_nodes.retrieve_chunks_node.RetrieveChunksNode",
+        return_value=fake_node,
+    ) as fake_node_cls:
+        results = hybrid_search("What is decision D20 about?", limit=3)
+
+    fake_node_cls.assert_called_once_with()
+    fake_node.retrieve.assert_called_once_with(
+        "What is decision D20 about?", corpus="brain", k=3
+    )
+    assert results == [_fake_chunk()]
+
+
+def test_format_hybrid_result_renders_score_and_via():
+    chunk = _fake_chunk(section_title="Overview")
+    rendered = format_hybrid_result(1, chunk, show_content=False, content_chars=200)
+
+    assert "score=1.2345" in rendered
+    assert chunk["file_path"] in rendered
+    assert "via=semantic" in rendered
+    assert "section: Overview" in rendered
+    assert "content:" not in rendered
+
+
+def test_format_hybrid_result_with_content_truncates_and_marks_ellipsis():
+    chunk = _fake_chunk(content="x" * 300)
+    rendered = format_hybrid_result(1, chunk, show_content=True, content_chars=10)
+
+    assert "content: " + "x" * 10 + "…" in rendered
+
+
+def test_main_hybrid_flag_invokes_fusion_path_and_skips_semantic_search(capsys):
+    fake_node = MagicMock()
+    fake_node.retrieve.return_value = [_fake_chunk()]
+
+    with (
+        patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.RetrieveChunksNode",
+            return_value=fake_node,
+        ) as fake_node_cls,
+        patch("services.embedding_service.EmbeddingService") as fake_service_cls,
+        patch("database.session.db_session") as fake_db_session,
+    ):
+        main(["What is the Bastion program?", "--hybrid"])
+
+    fake_node_cls.assert_called_once_with()
+    fake_node.retrieve.assert_called_once_with(
+        "What is the Bastion program?", corpus="brain", k=5
+    )
+    fake_service_cls.assert_not_called()
+    fake_db_session.assert_not_called()
+    captured = capsys.readouterr()
+    assert "score=1.2345" in captured.out
+    assert "docs/decisions/D26-example.md" in captured.out
+
+
+def test_main_hybrid_flag_prints_no_results_message_on_empty_fusion(capsys):
+    fake_node = MagicMock()
+    fake_node.retrieve.return_value = []
+
+    with patch(
+        "workflows.document_qa_workflow_nodes.retrieve_chunks_node.RetrieveChunksNode",
+        return_value=fake_node,
+    ):
+        main(["some question", "--hybrid"])
+
+    captured = capsys.readouterr()
+    assert "No results" in captured.out
+
+
+def test_main_without_hybrid_flag_preserves_semantic_search_behavior(capsys):
+    doc = _fake_doc()
+    fake_query = MagicMock()
+    fake_query.order_by.return_value = fake_query
+    fake_query.limit.return_value = fake_query
+    fake_query.all.return_value = [(doc, 0.05)]
+    fake_session = MagicMock()
+    fake_session.query.return_value = fake_query
+
+    def _fake_db_session():
+        yield fake_session
+
+    with (
+        patch("database.session.db_session", side_effect=_fake_db_session),
+        patch("services.embedding_service.EmbeddingService") as fake_service_cls,
+    ):
+        fake_service_cls.return_value.embed_text.return_value = [0.1, 0.2]
+        main(["What is the Bastion program?"])
+
+    fake_service_cls.return_value.embed_text.assert_called_once_with(
+        "What is the Bastion program?"
+    )
     captured = capsys.readouterr()
     assert doc.file_path in captured.out

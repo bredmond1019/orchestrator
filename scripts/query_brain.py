@@ -87,6 +87,51 @@ def semantic_search(query: str, session, embedding_service, limit: int = 5) -> l
     return session.query(BrainDocument, distance).order_by(distance).limit(limit).all()
 
 
+def hybrid_search(query: str, limit: int = 5) -> list[dict]:
+    """Run RetrieveChunksNode's keyword+semantic fusion pipeline over the brain corpus.
+
+    Reuses the production `_keyword_search_fts` + `_fuse_and_rank` logic
+    (`app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`)
+    instead of the raw cosine-distance-only `semantic_search` above, so a
+    manual test session sees the same ranking the production `DOCUMENT_QA`
+    workflow would produce.
+
+    Args:
+        query: Natural-language question to search for.
+        limit: Maximum number of fused results to return (`k`).
+
+    Returns:
+        A list of up to `limit` normalized chunk dicts (see
+        `RetrieveChunksNode._fuse_and_rank`), sorted by fused score
+        descending.
+    """
+    # local import: app/ only on sys.path at call time
+    from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
+        RetrieveChunksNode,
+    )
+
+    node = RetrieveChunksNode()
+    return node.retrieve(query, corpus="brain", k=limit)
+
+
+def format_hybrid_result(
+    rank: int, chunk: dict, *, show_content: bool, content_chars: int
+) -> str:
+    """Render one `hybrid_search` result dict for terminal display."""
+    file_path = chunk.get("file_path") or "(no file_path)"
+    header = f"[{rank}] score={chunk['score']:.4f}  {file_path}  via={chunk.get('via', 'semantic')}"
+    detail = f"    title: {chunk.get('title') or '(none)'}"
+    if chunk.get("section_title"):
+        detail += f"  section: {chunk['section_title']}"
+    lines = [header, detail]
+    if show_content:
+        content = chunk.get("content") or ""
+        snippet = content[:content_chars].replace("\n", " ")
+        ellipsis = "…" if len(content) > content_chars else ""
+        lines.append(f"    content: {snippet}{ellipsis}")
+    return "\n".join(lines)
+
+
 def format_result(
     rank: int, doc, distance: float, *, show_content: bool, content_chars: int
 ) -> str:
@@ -124,11 +169,40 @@ def main(argv: list[str] | None = None) -> None:
         default=200,
         help="Snippet length in characters when --show-content is set (default: 200)",
     )
+    parser.add_argument(
+        "--hybrid",
+        action="store_true",
+        help=(
+            "Use RetrieveChunksNode's keyword+semantic fusion pipeline (the "
+            "same ranking the production DOCUMENT_QA workflow produces) "
+            "instead of raw cosine-distance semantic search."
+        ),
+    )
     args = parser.parse_args(argv)
 
     app_dir = Path(__file__).resolve().parent.parent / "app"
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
+
+    if args.hybrid:
+        chunks = hybrid_search(args.query, limit=args.limit)
+        if not chunks:
+            print(
+                "No results — is brain_documents populated? "
+                "Run scripts/index_brain.py --rebuild first."
+            )
+            return
+        for rank, chunk in enumerate(chunks, start=1):
+            print(
+                format_hybrid_result(
+                    rank,
+                    chunk,
+                    show_content=args.show_content,
+                    content_chars=args.content_chars,
+                )
+            )
+            print()
+        return
 
     from database.session import db_session
 
