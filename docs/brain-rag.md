@@ -203,6 +203,23 @@ curl -X POST http://localhost:8080/events/ \
 
 Supported filter keys: `"layer"` (array overlap — matches if the document's layer list contains the value), `"project"` (scalar `==`), `"status"` (scalar `==`). Unknown keys and `null` values are silently skipped.
 
+### Keyword-candidate expansion
+
+Stage 2's keyword re-rank is scoped to `WHERE id IN (candidate_ids)` — it can only boost a
+document Stage 1 (semantic) or Stage 1b (structural) already picked as a candidate. A document
+with a strong full-text match but a cosine-distance rank outside the Stage-1 top-20 was
+previously invisible to keyword re-rank no matter how well it matched. Confirmed live: the query
+`"OR.V graph resolver cleanup"` never surfaced `core/orchestrator/planning/status.md` despite it
+having one of the best `ts_rank` scores in the whole corpus, because its cosine-distance rank sat
+around 60-77.
+
+Stage 1c (`_keyword_expand`) fixes this: an independent top-15 full-text query (`ts_rank`
+descending, same corpus/filters/archived-exclusion as `_semantic_search`) runs alongside
+structural expansion, and its hits are unioned into the candidate set before Stage 2 re-ranks,
+flagged `"via": "keyword"` in the response. It always runs for the brain corpus (not gated by a
+request flag, unlike `expand_structural`) and is a no-op for corpora without a `tsv_field` (e.g.
+`"content"`).
+
 ---
 
 ## Testing retrieval manually
