@@ -152,7 +152,9 @@ class TestBrainGraphRetrievalAcceptance:
 
         with patch(_EMBED_PATCH) as mock_embed, patch.object(
             self.node, "_semantic_search", return_value=[alpha_candidate]
-        ), patch.object(self.node, "_keyword_search", return_value=set()), patch(
+        ), patch.object(self.node, "_keyword_search", return_value=set()), patch.object(
+            self.node, "_keyword_expand", return_value=[]
+        ), patch(
             _DB_SESSION_PATCH, fake_db_session
         ):
             mock_embed.return_value.embed_text.return_value = [0.1] * 1024
@@ -167,9 +169,14 @@ class TestBrainGraphRetrievalAcceptance:
 
         # Semantic-only path on the SAME fixture: beta must be absent, and the
         # structural stage must never open the DB when the toggle is off.
+        # (_keyword_expand is an independent Stage 1c, not gated by
+        # expand_structural, so it is mocked out here to isolate the
+        # structural-stage's own DB-call behavior under test.)
         with patch(_EMBED_PATCH) as mock_embed, patch.object(
             self.node, "_semantic_search", return_value=[alpha_candidate]
-        ), patch.object(self.node, "_keyword_search", return_value=set()), patch(
+        ), patch.object(self.node, "_keyword_search", return_value=set()), patch.object(
+            self.node, "_keyword_expand", return_value=[]
+        ), patch(
             _DB_SESSION_PATCH
         ) as mock_db_session:
             mock_embed.return_value.embed_text.return_value = [0.1] * 1024
