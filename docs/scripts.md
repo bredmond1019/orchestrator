@@ -6,7 +6,7 @@ doc_id: scripts
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, developer scripts, run_eval]
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, refresh_brain, developer scripts, run_eval]
 related: [getting-started, brain-rag, configuration, evals]
 ---
 
@@ -217,6 +217,35 @@ index, not a source of truth, so a full reload is simpler and safe to re-run.
 
 See `docs/brain-rag.md` and `docs/api-reference.md` § `BrainEdge SQLAlchemy Model` for the full
 structural retrieval architecture.
+
+---
+
+## `scripts/refresh_brain.py` — Refresh both brain freshness paths in one command
+
+Stopgap wrapper that runs `index_brain.py` (`brain_documents`) and then
+`mev emit-graph | load_brain_edges.py` (`brain_edges`) in sequence, until `OR.J` (Brain
+freshness loop) wires both into a cron / `bastion brain reindex`. The two underlying scripts
+have no shared entry point today — running only `index_brain.py` leaves `brain_edges` exactly
+as stale as never running anything at all (confirmed 2026-07-15: `brain_edges` sat at 0 rows
+through an actively re-indexed 4749-row `brain_documents` corpus, and `RetrieveChunksNode`'s
+structural-expansion stage silently returned zero `via="structural"` results the entire time,
+with no error). Prefer this script over running the two underlying scripts by hand.
+
+```bash
+python scripts/refresh_brain.py
+python scripts/refresh_brain.py --rebuild
+python scripts/refresh_brain.py --brain-path ~/Dev/agentic-portfolio --dry-run
+```
+
+| Argument | Description |
+|---|---|
+| `--brain-path` | Path to the brain repo root. Forwarded to both steps. Defaults to the nearest ancestor containing `brain.toml`. |
+| `--rebuild` | Forwarded to `index_brain.py` only — drop all non-diagnostic rows and re-index from scratch. `brain_edges` has no rebuild distinction; every run is already a full clear-then-reload. |
+| `--dry-run` | Forwarded to `index_brain.py` only. `brain_edges` has no dry-run mode, so **the edge-refresh step is skipped entirely** when set — nothing would be written either way, but don't read a dry-run's clean exit as proof `brain_edges` is current. |
+
+Requires the `mev` CLI on `PATH` for the edge-refresh step. Exits non-zero (propagates
+`subprocess.CalledProcessError`) if `mev emit-graph` fails, before any `brain_edges` write is
+attempted.
 
 ---
 
