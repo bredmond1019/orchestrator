@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-15T13:57:15Z"
+timestamp: "2026-07-15T18:44:04Z"
 ---
 
 # log — Orchestration Repo
@@ -12,6 +12,37 @@ timestamp: "2026-07-15T13:57:15Z"
 ---
 
 ## [2026-07-15]
+
+### Status corrections (Phase 0 A/B, Go-Public, Business/Visibility removal) + OR.C/bastion workspace-contract investigation, handoff
+
+- **What:** Corrected several stale planning items in planning/status.md at Brandon's direct instruction:
+  Phase 0 Block A flipped to Done (LinkedIn overhaul + GitHub triage finished); Phase 0 Block B flipped to
+  Done with private-face-intentionally-minimal framing (Tailscale is up but only used for SSH into the Mac
+  Mini; wiring more onto it is deliberately deferred until the Brain RAG DB migrates there); the Go-Public
+  checklist flipped fully complete; and the Business/Visibility table removed from the file entirely since
+  all business-dev tracking now lives in agentic-portfolio/business/docs/. Added a Decisions & Deviations
+  Log entry documenting all of this plus the OR.J deferral rationale. Also investigated OR.C ("Multi-workspace
+  Brain — per-repo/per-client corpora, Python half") and found bastion's cross-repo counterpart (BA.6.B,
+  "Multi-workspace Brain — bastion graph reader over per-repo/per-client roots") is already shipped and Done,
+  but the shared "knowledge workspace" convention the two halves are supposed to converge on exists only as
+  prose in each repo's own master-plan.md, with no pinned contract doc (unlike the existing D20
+  docs/data-contract.md pattern). Directly edited planning/state.json's carryover[] this session (before
+  this log-work run): appended a deferral-rationale sentence to the existing brain-freshness-cron-loop entry,
+  and added a new entry or-c-bastion-workspace-data-contract describing the OR.C/bastion contract gap in full
+  detail (file paths, function names on both sides) as the primary next-session deliverable. Ran
+  `mev emit-state --write` once after those edits (0 errors, 20 pre-existing unrelated warnings). Wrote
+  planning/handoff.md for the next agent, pointing them at the or-c-bastion-workspace-data-contract carryover
+  entry as the first thing to read, with the full bastion-side file/function map (src/brain/*.rs, src/config.rs
+  resolve_workspace_root + FileConfig.workspaces/default_workspace, src/cli.rs --workspace/--knowledge-dir
+  flags, docs/brain.md, planning/master-plan.md ### BA.6.B) so the next agent doesn't have to re-explore
+  bastion from scratch. No production code was changed in this repo this session — this was a
+  planning/status/handoff-only session.
+- **Why:** Brandon directed a correction of stale status tracking (Phase 0 blocks, Go-Public checklist,
+  Business/Visibility section) and requested investigation of OR.C's readiness/dependencies, which surfaced
+  a real cross-repo documentation gap (no pinned data-contract doc for the shared workspace convention)
+  worth flagging as the next session's top priority via a handoff.
+- **Refs:** `planning/status.md`, `planning/state.json` (carryover[] entries: brain-freshness-cron-loop,
+  or-c-bastion-workspace-data-contract), `planning/handoff.md`, bastion `planning/master-plan.md` ### BA.6.B
 
 ### Closed out OR.ticket.keyword-candidate-expansion — gating suite re-verified, docs patched, handoff rewritten
 
