@@ -1317,3 +1317,407 @@ class TestExpandStructuralThreading:
         with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         assert mock_ret.call_args[1].get("expand_structural") is True
+
+
+# ---------------------------------------------------------------------------
+# OR.V — keyword-candidate expansion (Stage 1c): _keyword_expand
+# ---------------------------------------------------------------------------
+
+
+def _apply_keyword_predicate(expr, row) -> bool:
+    """Best-effort evaluator for the WHERE predicates built inside
+    ``_keyword_expand``, so a fake query can genuinely filter fixture rows.
+
+    Handles the two predicate shapes ``_keyword_expand`` builds directly
+    (``model.id.notin_(existing_ids)`` and, via ``_apply_metadata_filters``,
+    ``col == value`` / ``col.overlap([value])``). The FTS ``tsv_col.op("@@")``
+    match predicate uses a custom operator this evaluator can't interpret —
+    treated as always-true, since the fixture rows in these tests are already
+    curated to represent "this row matched the FTS query".
+    """
+    op = getattr(expr, "operator", None)
+    left = getattr(expr, "left", None)
+    right = getattr(expr, "right", None)
+    col_key = getattr(left, "key", None)
+    if col_key is None:
+        return True
+    row_val = getattr(row, col_key, None)
+
+    op_name = getattr(op, "__name__", "")
+    if op_name == "eq":
+        return row_val == getattr(right, "value", right)
+    if op_name in ("not_in_op", "notin_op"):
+        vals = getattr(right, "value", right)
+        try:
+            return row_val not in vals
+        except TypeError:
+            return True
+    if op_name in ("in_op",):
+        vals = getattr(right, "value", right)
+        try:
+            return row_val in vals
+        except TypeError:
+            return True
+    # Unknown operator (FTS "@@" match, array .overlap, status != exclude) —
+    # assume it passes; these tests curate fixture rows to already satisfy it.
+    return True
+
+
+class _FakeKeywordExpandQuery:
+    """Chainable stand-in for the SQLAlchemy query used in ``_keyword_expand``.
+
+    Applies real WHERE predicates (via ``_apply_keyword_predicate``) against a
+    fixed ``(row, distance)`` fixture list, so ``existing_ids`` exclusion and
+    ``filters`` scoping are exercised against the actual expressions the
+    production code builds, not re-implemented by hand.
+    """
+
+    def __init__(self, rows_with_distance):
+        self._rows = rows_with_distance
+        self.filter_call_count = 0
+
+    def filter(self, *exprs):
+        rows = self._rows
+        for expr in exprs:
+            rows = [(row, dist) for row, dist in rows if _apply_keyword_predicate(expr, row)]
+        result = _FakeKeywordExpandQuery(rows)
+        result.filter_call_count = self.filter_call_count + 1
+        return result
+
+    def order_by(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, n):
+        result = _FakeKeywordExpandQuery(self._rows[:n])
+        result.filter_call_count = self.filter_call_count
+        return result
+
+    def all(self):
+        return self._rows
+
+
+def _make_brain_row(
+    row_id: uuid.UUID | None = None,
+    content: str = "keyword matched content",
+    file_path: str = "core/orchestrator/planning/status.md",
+    doc_id: str = "orchestrator-status",
+    title: str | None = "Status",
+    project: str | None = None,
+    status: str | None = None,
+):
+    """Build a fixture row shaped like a ``BrainDocument`` ORM row."""
+    row = MagicMock()
+    row.id = row_id or uuid.uuid4()
+    row.content = content
+    row.section = "## Status"
+    row.is_section_title = False
+    row.file_path = file_path
+    row.doc_id = doc_id
+    row.title = title
+    row.project = project
+    row.status = status
+    return row
+
+
+class TestKeywordExpand:
+    """Unit tests for _keyword_expand — mocked db_session, no live DB."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_content_corpus_is_noop_without_touching_db(self):
+        """The content corpus declares no tsv_field — always [], DB never opened."""
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session"
+        ) as mock_db_session:
+            result = self.node._keyword_expand(
+                "query text", "content", [0.1] * 1024, set()
+            )
+        assert result == []
+        mock_db_session.assert_not_called()
+
+    def test_brain_corpus_returns_candidate_flagged_keyword_with_distance(self):
+        """A matching brain-corpus row is returned as a candidate dict with
+        via='keyword' and a real, non-null distance."""
+        row = _make_brain_row()
+        fake_query = _FakeKeywordExpandQuery([(row, 0.42)])
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._keyword_expand(
+                "OR.V graph resolver cleanup", "brain", [0.1] * 1024, set()
+            )
+
+        assert len(result) == 1
+        candidate = result[0]
+        assert candidate["via"] == "keyword"
+        assert candidate["id"] == row.id
+        assert candidate["distance"] is not None
+        assert candidate["distance"] == pytest.approx(0.42)
+
+    def test_existing_id_excluded_from_result(self):
+        """A row whose id is already in existing_ids is excluded — no duplicate."""
+        existing_row = _make_brain_row()
+        new_row = _make_brain_row()
+        fake_query = _FakeKeywordExpandQuery(
+            [(existing_row, 0.3), (new_row, 0.4)]
+        )
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._keyword_expand(
+                "query", "brain", [0.1] * 1024, {existing_row.id}
+            )
+
+        result_ids = {c["id"] for c in result}
+        assert existing_row.id not in result_ids
+        assert new_row.id in result_ids
+
+    def test_result_capped_at_keyword_candidate_limit(self):
+        """More matching rows than _KEYWORD_CANDIDATE_LIMIT are truncated."""
+        from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
+            _KEYWORD_CANDIDATE_LIMIT,
+        )
+
+        rows = [
+            (_make_brain_row(), 0.1 + i * 0.001)
+            for i in range(_KEYWORD_CANDIDATE_LIMIT + 5)
+        ]
+        fake_query = _FakeKeywordExpandQuery(rows)
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._keyword_expand(
+                "query", "brain", [0.1] * 1024, set()
+            )
+
+        assert len(result) == _KEYWORD_CANDIDATE_LIMIT
+
+    def test_metadata_filters_forwarded_into_query(self):
+        """filters is applied via _apply_metadata_filters the same way
+        _semantic_search applies it — a non-matching project row is excluded."""
+        matching_row = _make_brain_row(project="acme", status=None)
+        other_project_row = _make_brain_row(project="other-project", status=None)
+        rows = [(matching_row, 0.1), (other_project_row, 0.2)]
+        fake_query = _FakeKeywordExpandQuery(rows)
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            result = self.node._keyword_expand(
+                "query",
+                "brain",
+                [0.1] * 1024,
+                set(),
+                filters={"project": "acme"},
+                include_archived=True,
+            )
+
+        result_ids = {c["id"] for c in result}
+        assert matching_row.id in result_ids
+        assert other_project_row.id not in result_ids
+
+    def test_include_archived_and_filters_call_the_query_filter_hook(self):
+        """filters + include_archived are threaded into _keyword_expand's query
+        the same way _semantic_search applies them — verified via the number
+        of .filter() calls made, mirroring TestKeywordSearchShapes's style."""
+        row = _make_brain_row(project="acme", status=None)
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.order_by.return_value = fake_query
+        fake_query.limit.return_value = fake_query
+        fake_query.all.return_value = [(row, 0.1)]
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        # include_archived=False: base "@@" match filter + archived-status
+        # exclusion filter = 2 filter() calls minimum.
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            self.node._keyword_expand(
+                "query", "brain", [0.1] * 1024, set(), include_archived=False
+            )
+        base_call_count = fake_query.filter.call_count
+
+        fake_query.filter.reset_mock()
+        fake_query.filter.return_value = fake_query
+        # include_archived=True + a metadata filter: base match + metadata
+        # filter = 2 filter() calls, one fewer than the archived-exclusion path
+        # would add on top.
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            _fake_db_session,
+        ):
+            self.node._keyword_expand(
+                "query",
+                "brain",
+                [0.1] * 1024,
+                set(),
+                filters={"project": "acme"},
+                include_archived=True,
+            )
+        filtered_call_count = fake_query.filter.call_count
+
+        assert base_call_count >= 2
+        assert filtered_call_count >= 2
+
+
+# ---------------------------------------------------------------------------
+# retrieve() — keyword-candidate expansion merged into the fused candidate set
+# ---------------------------------------------------------------------------
+
+
+class TestRetrieveKeywordExpansion:
+    """Integration tests for retrieve() merging _keyword_expand output."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_keyword_only_candidate_appears_in_final_result_flagged(self):
+        """A candidate _keyword_expand finds (that Stage-1 semantic search did
+        NOT return) is unioned into the final candidate set, flagged via='keyword'."""
+        semantic_id = uuid.uuid4()
+        keyword_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=semantic_id)
+        keyword_candidate = _make_candidate(
+            dist=0.6, candidate_id=keyword_id, content="rescued by keyword match"
+        )
+        keyword_candidate["via"] = "keyword"
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            self.node, "_structural_expand", return_value=[]
+        ), patch.object(
+            self.node, "_keyword_expand", return_value=[keyword_candidate]
+        ) as mock_kw, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve("q", corpus="brain", k=5)
+
+        mock_kw.assert_called_once()
+        result_by_id = {r["id"]: r for r in result}
+        assert keyword_id in result_by_id
+        assert result_by_id[keyword_id]["via"] == "keyword"
+        assert result_by_id[semantic_id]["via"] == "semantic"
+
+    def test_keyword_candidate_duplicate_id_not_double_counted(self):
+        """A keyword-expand candidate sharing an id with an existing candidate
+        is not duplicated in the fused result."""
+        dup_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=dup_id)
+        dup_keyword = _make_candidate(dist=0.7, candidate_id=dup_id)
+        dup_keyword["via"] = "keyword"
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            self.node, "_structural_expand", return_value=[]
+        ), patch.object(
+            self.node, "_keyword_expand", return_value=[dup_keyword]
+        ), patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve("q", corpus="brain", k=5)
+
+        assert len(result) == 1
+        assert result[0]["via"] == "semantic"
+
+    def test_content_corpus_keyword_expand_real_noop_unaffected(self):
+        """For the 'content' corpus, the real (unmocked) _keyword_expand no-op
+        path is exercised — content-corpus output is unaffected by Stage 1c."""
+        candidate = _make_candidate(dist=0.2)
+
+        with patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+        ) as MockEmb, patch.object(
+            self.node, "_semantic_search", return_value=[candidate]
+        ), patch(
+            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session"
+        ) as mock_db_session, patch.object(
+            self.node, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = self.node.retrieve("q", corpus="content", k=5)
+
+        # _keyword_expand's real no-op path never opens a DB session for content.
+        mock_db_session.assert_not_called()
+        assert len(result) == 1
+        assert result[0]["id"] == candidate["id"]
+
+
+# ---------------------------------------------------------------------------
+# _merge_candidates (renamed from _merge_structural_candidates) — regression
+# ---------------------------------------------------------------------------
+
+
+class TestMergeCandidatesRename:
+    """Confirms the renamed _merge_candidates still exercises the dedupe
+    behavior the structural-expansion tests already cover indirectly."""
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_merge_candidates_dedupes_by_id_base_wins(self):
+        base_id = uuid.uuid4()
+        extra_id = uuid.uuid4()
+        base = [_make_candidate(candidate_id=base_id, content="base")]
+        extra = [
+            _make_candidate(candidate_id=base_id, content="dup-should-be-dropped"),
+            _make_candidate(candidate_id=extra_id, content="new"),
+        ]
+
+        result = RetrieveChunksNode._merge_candidates(base, extra)
+
+        result_by_id = {c["id"]: c for c in result}
+        assert result_by_id[base_id]["content"] == "base"
+        assert extra_id in result_by_id
+        assert len(result) == 2
+
+    def test_merge_candidates_empty_extra_returns_base_unchanged(self):
+        base = [_make_candidate()]
+        result = RetrieveChunksNode._merge_candidates(base, [])
+        assert result == base
