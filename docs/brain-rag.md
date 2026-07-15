@@ -228,6 +228,12 @@ Each line shows cosine distance (`0.0` = identical, larger = less similar), the 
 its OKF `title`, and the section header. See `docs/scripts.md` § `query_brain.py` for the full
 flag reference. Requires only Postgres + Ollama running (no API server, no Celery worker).
 
+A query matching a bare structured code (`D20`, `OR.V`, `MV.3B.Q`) short-circuits straight to
+a `doc_id`/`file_path` lookup — no embedding call. Pass `--hybrid` to run the same
+keyword+semantic fusion `RetrieveChunksNode` uses in production (including the diversity cap
+on results-per-file), without standing up the API/Celery stack — see (2) below for when the
+full pipeline is still worth exercising.
+
 ### 2. Full answer path — `DOCUMENT_QA` over HTTP
 
 Exercises the real pipeline an end user gets: two-stage hybrid retrieval (semantic + graded

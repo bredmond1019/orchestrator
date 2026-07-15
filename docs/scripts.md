@@ -229,6 +229,10 @@ no LLM answer synthesis — so you can eyeball indexing/retrieval quality right 
 `scripts/index_brain.py --rebuild` without standing up the API/Celery stack and driving the
 full `DOCUMENT_QA` workflow.
 
+A query that is (or contains) a bare structured code — e.g. `D20`, `OR.V`, `MV.3B.Q` — skips
+embedding entirely and resolves via a deterministic `doc_id`/`file_path` ILIKE lookup instead,
+since short alphanumeric identifiers aren't reliably distinct in embedding space.
+
 ```bash
 python scripts/query_brain.py "What is the Bastion program and its five layers?"
 
@@ -237,6 +241,13 @@ python scripts/query_brain.py "How does structural graph retrieval work?" --limi
 
 # Longer snippets
 python scripts/query_brain.py "some question" --show-content --content-chars 400
+
+# Exact-ID short-circuit — no embedding call made
+python scripts/query_brain.py "What is decision D20 about?"
+
+# Hybrid mode — reuses RetrieveChunksNode's keyword+semantic fusion (same ranking
+# the production DOCUMENT_QA workflow produces) instead of raw cosine distance
+python scripts/query_brain.py "some question" --hybrid
 ```
 
 | Argument | Description |
@@ -245,16 +256,20 @@ python scripts/query_brain.py "some question" --show-content --content-chars 400
 | `--limit` | Number of results to show (default: `5`). |
 | `--show-content` | Print a content snippet for each result. |
 | `--content-chars` | Snippet length in characters when `--show-content` is set (default: `200`). |
+| `--hybrid` | Use `RetrieveChunksNode`'s keyword+semantic fusion pipeline instead of raw cosine-distance semantic search. |
 
 Each result line shows the cosine distance (`0.0` = identical, larger = less similar), the
-source file path, the OKF `title`, and the section header if the chunk falls under one.
+source file path, the OKF `title`, and the section header if the chunk falls under one. In
+`--hybrid` mode, each line instead shows the fused score and a `via=semantic|structural`
+provenance tag.
 
 **Use this when:**
 - You just ran `scripts/index_brain.py --rebuild` and want a fast sanity check that
   retrieval surfaces the right documents before wiring up the full `DOCUMENT_QA` path
 - You're debugging a `"brain"`-corpus retrieval quality issue and want to isolate whether the
   problem is in embedding/ranking (this script) vs. keyword fusion or structural expansion
-  (`RetrieveChunksNode`)
+  (`RetrieveChunksNode`) — pass `--hybrid` to see the fused-and-diversity-capped ranking without
+  standing up the API/Celery stack
 
 See `docs/brain-rag.md` § "Testing retrieval manually" for a walkthrough and for how this
 compares to the full `DOCUMENT_QA` answer path.
