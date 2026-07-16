@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-16T06:20:00Z"
+timestamp: "2026-07-16T12:02:21Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,38 @@ timestamp: "2026-07-16T06:20:00Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
+
+## [2026-07-16]
+
+### Closed task-context-fixture-emission carryover (real fixture emitted, engine-rs repointed)
+- **What:** Added `scripts/emit_task_context_fixture.py`, which runs `ResearchAgentWorkflow` end to
+  end (Anthropic client + `PromptManager.get_prompt` mocked, no DB/Celery) and dumps
+  `TaskContext.model_dump(mode="json")` to `tests/fixtures/task_context/research_agent_task_context.json`
+  — a real, code-path-captured fixture, made deterministic via fixed event literals + mocked
+  responses, with `node_runs.*.{started_at,completed_at}` redacted to a fixed `Z`-suffixed sentinel.
+  Added `tests/test_task_context_fixture.py` (2 tests) — the Python-side half of the two-way
+  contract, re-running the emission live and asserting it still matches the checked-in fixture.
+  Added `tests/fixtures/task_context/README.md` for provenance. Fixed a `.gitignore` gap
+  (`/scripts/*` was silently dropping the new script; added
+  `!/scripts/emit_task_context_fixture.py`). Docs patched: `docs/scripts.md` (new script section),
+  `docs/data-contract.md` §6 (conformance fixture pointer), `docs/index.md` (scripts.md row).
+  Also touched the sibling `engine-rs` repo (separate git repo, explicitly authorized this
+  session): copied the fixture in, deleted the stale hand-authored `python_task_context.json`,
+  repointed `crates/engine-contract/tests/round_trip.rs` at the real fixture (test (a) now asserts
+  against `TaskContext`, not `EventsRow`), and added a divergence-check test comparing engine-rs's
+  copy against the orchestrator-owned original when a sibling checkout is present. Full `cargo
+  test` green there (that repo's own log/commit lifecycle is a follow-up, noted in
+  `planning/handoff.md`). `/close-out` ran clean in this repo: harness gate green (1168 passed / 8
+  skipped, ruff clean, pylint 10.00/10, pytest-count 1173→1175, no drop), `/code-review low` found
+  and fixed one stale docstring path reference, `/update-docs --patch` applied the three doc edits
+  above.
+- **Why:** Closing the `task-context-fixture-emission` carryover recorded in `planning/state.json`
+  (full finding in `planning/task-context-fixture/notes.md`) — this repo owns the `task_context`
+  data contract (D30) but had never emitted a real captured fixture of it, so `engine-rs`'s
+  conformance guard was asserting against a fixture it hand-authored about itself during EN.0.B
+  (structurally identical to the `claude-code-rs` CLI schema drift fixed via that repo's D2).
+- **Refs:** `planning/task-context-fixture/notes.md`; `docs/data-contract.md` (D30); sibling repo
+  `engine-rs` (`crates/engine-contract/tests/round_trip.rs`); `planning/handoff.md`.
 
 ## [run: 2026-07-16]
 
