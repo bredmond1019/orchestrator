@@ -7,7 +7,7 @@ layer: [engine]
 project: orchestrator
 status: active
 keywords: [docs index, developer reference, orchestration framework, getting-started, API reference]
-related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, sdlc-flow-workflow, evals]
+related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, sdlc-flow-workflow, evals, memory]
 ---
 
 # Documentation Index
@@ -22,6 +22,7 @@ Developer reference for the orchestration framework. Start here, then open the d
 | [workflows.md](workflows.md) | What each workflow does, its node DAG, event payload shape, and ready-to-paste curl examples. |
 | [scripts.md](scripts.md) | All developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py` (brain mode + multi-workspace `--workspace`/`--root` mode), `load_brain_edges.py`, `refresh_brain.py`, `query_brain.py`, `emit_task_context_fixture.py` (real `task_context` conformance fixture for `engine-rs`). |
 | [brain-rag.md](brain-rag.md) | Brain corpus indexing and semantic retrieval — `BrainDocument` model, `index_brain.py`, querying via `DOCUMENT_QA`, structural graph expansion via `BrainEdge`, manual retrieval testing via `query_brain.py`. |
+| [memory.md](memory.md) | Block OR.S memory layer — `Peer`/`AgentEpisode`/`SemanticMemory` entities, the two-stage ingest/consolidation pipeline, confidence decay, the never-overwrite contradiction rule, and `MemoryLoaderNode`'s cosine/NL query modes. |
 
 ## Core reference
 

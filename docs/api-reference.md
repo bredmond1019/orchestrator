@@ -74,6 +74,20 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 52. [AnswerNode](#answernode)
 53. [UpdateSessionMemoryNode](#updatesessionmemorynode)
 54. [DocumentQAWorkflow](#documentqaworkflow)
+55. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
+56. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
+57. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
+58. [decay module](#decay-module)
+59. [EpisodeWriteService](#episodewriteservice)
+60. [UpsertMemoryNode](#upsertmemorynode)
+61. [MemoryLoaderNode](#memoryloadernode)
+62. [IngestTimeExtractionNode](#ingesttimeextractionnode)
+63. [MemoryWriteNode](#memorywritenode)
+64. [MemoryIngestWorkflow](#memoryingestworkflow)
+65. [LoadMemoryContextNode](#loadmemorycontextnode)
+66. [ConsolidationNode](#consolidationnode)
+67. [ConsolidationWriteNode](#consolidationwritenode)
+68. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
 
 ---
 
@@ -3675,3 +3689,617 @@ EmbedQuestionNode
 - `tests/workflows/test_document_qa_nodes.py` — 24 node-level unit tests covering all five nodes, including the `AnswerNode` telemetry recording path (`run_agent_recorded` with `node_runs` populated) and the `UpdateSessionMemoryNode` Pydantic-model output path.
 - `tests/workflows/test_document_qa_workflow.py` — workflow wiring, DAG structure, `WorkflowValidator` acceptance.
 - `tests/workflows/test_document_qa_e2e.py` — 9 end-to-end tests running all five nodes in sequence (external services and DB calls mocked). Explicitly asserts that `AnswerNode` stores a Pydantic `OutputType` instance (not a dict) and that `UpdateSessionMemoryNode` handles it correctly end-to-end.
+
+---
+
+## Peer SQLAlchemy Model
+
+**Source:** `app/database/peer.py`
+
+```python
+class Peer(Base):
+    __tablename__ = "peers"
+```
+
+Block OR.S memory-layer entity anchor — any entity that persists and changes over time: a client,
+company, product, SOP, or the user themself (Honcho's multi-peer entity model, D25). A peer owns a
+stream of `AgentEpisode` rows and the `SemanticMemory` facts distilled from them. See
+[docs/memory.md](memory.md) for the full architecture.
+
+**Module-level helper:** `peer_id_fk_column(doc, nullable=False)` — builds the shared
+`String(256) -> peers.peer_id` foreign key column definition used by `AgentEpisode.peer_id`,
+`SemanticMemory.peer_id`, and `SemanticMemory.source_peer_id`.
+
+**`PeerType` (`StrEnum`):** `CLIENT`, `COMPANY`, `PRODUCT`, `SOP`, `USER`.
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `peer_id` | `String(256)` | No (PK) | `uuid.uuid4` (str) | Caller-supplied identifier (e.g. a client slug), or a random UUID when the caller has no natural identifier. |
+| `peer_type` | `String(32)` | No | — | Entity kind — one of `client`, `company`, `product`, `sop`, `user` (`PeerType`). |
+| `workspace_id` | `String(256)` | No | — | The D47 workspace name (`brain.toml` `[[repos]].slug` format) this peer is scoped to. |
+| `representation` | `Text` | Yes | — | Dream-time-refreshed durable summary of everything known about this peer; updated only by `MemoryConsolidationWorkflow`. |
+| `updated_at` | `DateTime` | Yes | `datetime.now` | Last-written timestamp; bumped on episode write or consolidation (`onupdate=datetime.now`). |
+
+**Index:** `ix_peers_workspace_id_peer_type` on `(workspace_id, peer_type)`.
+
+### Migration
+
+Created by `app/alembic/versions/a3b4c5d6e7f8_create_memory_layer_tables.py`, alongside
+`AgentEpisode` and `SemanticMemory`.
+
+---
+
+## AgentEpisode SQLAlchemy Model
+
+**Source:** `app/database/agent_episode.py`
+
+```python
+class AgentEpisode(Base):
+    __tablename__ = "agent_episodes"
+```
+
+Fast, ingest-time episodic memory record — "what happened" in one interaction with a `Peer`.
+Episodes are the raw material dream-time consolidation reasons over to distill durable
+`SemanticMemory` facts. Every `MemoryIngestWorkflow` run appends exactly one row.
+
+**Module-level constant:** `EMBEDDING_DIM = 1024`.
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key. |
+| `peer_id` | `String(256)` (FK -> `peers.peer_id`) | No | — | The peer this episode concerns. |
+| `session_id` | `String(256)` | Yes | — | The session/conversation this interaction belongs to, if any. |
+| `summary` | `Text` | No | — | Fast extraction of what happened in this interaction. |
+| `outcome` | `String(64)` | Yes | — | Short outcome classification (e.g. `'quoted_rate'`). |
+| `tags` | `JSON` | Yes | `list` | Free-form tags surfaced during ingest-time extraction. |
+| `embedding` | `Vector(1024)` | Yes | — | 1024-dim embedding of `summary` for cosine retrieval (pgvector; matches the OR.H `mxbai-embed-large` default). |
+| `occurred_at` | `DateTime` | No | `datetime.now` | Timestamp the interaction occurred. |
+
+### Migration
+
+Created by `app/alembic/versions/a3b4c5d6e7f8_create_memory_layer_tables.py`, alongside `Peer`
+and `SemanticMemory`.
+
+---
+
+## SemanticMemory SQLAlchemy Model
+
+**Source:** `app/database/semantic_memory.py`
+
+```python
+class SemanticMemory(Base):
+    __tablename__ = "semantic_memories"
+```
+
+A single durable fact about a `Peer`, distilled from one or more `AgentEpisode` rows (dream-time
+consolidation) or written directly at ingest time. Facts decay in confidence over time
+(`app/memory/decay.py`) and are never overwritten in place: a contradicting fact lowers the
+confidence of the contradicted row and inserts a new row, so the full evidentiary history
+survives. See [docs/memory.md](memory.md#contradictions-never-overwrite).
+
+**Module-level constants:** `EMBEDDING_DIM = 1024`, `DEFAULT_DECAY_FACTOR = 0.95`.
+
+### Columns
+
+| Column | SQLAlchemy Type | Nullable | Default | Description |
+|---|---|---|---|---|
+| `id` | `UUID(as_uuid=True)` | No (PK) | `uuid.uuid4` | Primary key. |
+| `peer_id` | `String(256)` (FK -> `peers.peer_id`) | No | — | The peer this fact is about. |
+| `fact` | `Text` | No | — | The distilled durable fact text. |
+| `confidence` | `Float` | No | — | Confidence in this fact as of `updated_at`, before decay is applied. Never silently aged down by a background job — always computed on read via `effective_confidence()`. |
+| `evidence_episode_ids` | `JSON` | Yes | `list` | `AgentEpisode` ids that support this fact. |
+| `decay_factor` | `Float` | No | `DEFAULT_DECAY_FACTOR` (0.95) | Per-week confidence decay multiplier applied by `effective_confidence()`. |
+| `source_peer_id` | `String(256)` (FK -> `peers.peer_id`) | Yes | — | Set when this fact about `peer_id` was derived from another peer's evidence (e.g. a company fact inferred from a client episode). |
+| `created_at` | `DateTime` | Yes | `datetime.now` | Timestamp this fact row was first written. |
+| `updated_at` | `DateTime` | Yes | `datetime.now` | Timestamp this fact row's confidence was last set (`onupdate=datetime.now`). |
+| `embedding` | `Vector(1024)` | Yes | — | 1024-dim embedding of `fact` for cosine retrieval. |
+
+### Migration
+
+Created by `app/alembic/versions/a3b4c5d6e7f8_create_memory_layer_tables.py`, alongside `Peer`
+and `AgentEpisode`.
+
+---
+
+## decay module
+
+**Source:** `app/memory/decay.py`
+
+Pure functions, no I/O — the block OR.S decay rule. Not a class; imported as
+`from memory.decay import effective_confidence, weeks_between`.
+
+### `weeks_between(then: datetime, now: datetime) -> float`
+
+Number of **whole weeks** elapsed between `then` and `now`; fractional weeks truncate toward zero
+(6 days elapsed = 0 weeks decayed, not ~0.86). Returns `0.0` for a non-positive delta (`now`
+at or before `then`) rather than a negative value.
+
+### `effective_confidence(confidence: float, decay_factor: float, weeks_elapsed: float) -> float`
+
+`confidence * decay_factor ** weeks_elapsed`. Identity at `weeks_elapsed == 0`. Monotonically
+non-increasing for `0 <= decay_factor <= 1` and `weeks_elapsed >= 0` — the only regime this
+function is used in. Reference case (D-pinned in the OR.S spec): `confidence * 0.95 **
+weeks_elapsed`.
+
+### Test coverage
+
+- `tests/memory/test_decay.py`.
+
+---
+
+## EpisodeWriteService
+
+**Source:** `app/memory/episode_write_service.py`
+
+```python
+class EpisodeWriteService:
+```
+
+Fast, ingest-time write path: writes one `AgentEpisode` per interaction and upserts the owning
+`Peer` — creates it on first sight of `(workspace_id, peer_id)`, otherwise reuses the existing row
+and bumps its `updated_at`. This is the foundation of the block OR.S accumulation acceptance
+criterion (a client entity accumulates episodes across interactions instead of duplicating peer
+rows).
+
+### Seams (mockable, patched in tests)
+
+- `_session_scope() -> ContextManager` — yields a SQLAlchemy session; defaults to
+  `contextmanager(db_session)()`.
+- `_embed(text: str) -> list[float]` — embeds via `EmbeddingService().embed_text(text)`.
+
+### `write(*, workspace_id, peer_id, peer_type, summary, session_id=None, outcome=None, tags=None, occurred_at=None) -> AgentEpisode`
+
+Embeds `summary`, upserts the owning `Peer` (verbatim `workspace_id` string match, D47 name
+semantics), writes the `AgentEpisode`, commits, and returns the persisted, refreshed row
+(embedding + generated id populated).
+
+### Test coverage
+
+- `tests/memory/test_episode_write_service.py`.
+
+---
+
+## UpsertMemoryNode
+
+**Source:** `app/memory/upsert_memory_node.py`
+
+```python
+class UpsertMemoryNode(Node):
+```
+
+Writes extracted facts into `SemanticMemory`, enforcing the never-overwrite contradiction rule.
+Reusable across both memory workflows (block OR.S design decision 1 — a standalone module, no
+coupling to any one workflow): `MemoryIngestWorkflow` attaches it after fast extraction;
+`MemoryConsolidationWorkflow` attaches it after deep consolidation. Both paths share this one
+implementation, so contradiction handling never diverges between them.
+
+**Module-level constants:** `CONTRADICTION_PENALTY = 0.5` (multiplier applied to a contradicted
+row's decayed confidence), `DEFAULT_FACT_CONFIDENCE = 0.9` (default for an incoming fact that
+doesn't specify one).
+
+### Constructor
+
+`UpsertMemoryNode(source_node_name: str = "IngestTimeExtractionNode")` — `source_node_name` names
+the upstream node whose `result` carries `{"peer_id", "facts", "evidence_episode_ids"}` when this
+node runs inside a workflow's `process()` chain; both memory workflows point this at their own
+extraction/consolidation node.
+
+### Seams (mockable, patched in tests)
+
+- `_session_scope() -> ContextManager` — same pattern as `EpisodeWriteService`.
+- `_embed(text: str) -> list[float]` — same pattern as `EpisodeWriteService`.
+
+### `upsert_facts(*, peer_id, facts: list[dict], evidence_episode_ids=None) -> list[SemanticMemory]`
+
+Upserts each fact dict (`fact`, optional `confidence`, `decay_factor`,
+`evidence_episode_ids`, `source_peer_id`, `contradicts_fact_id`) for `peer_id`. When
+`contradicts_fact_id` is set: the referenced row's decayed confidence is lowered by
+`CONTRADICTION_PENALTY` (dangling ids are a silent no-op, never a raised error) and a **new** row
+is always inserted — the old row is never overwritten or deleted. Returns the newly inserted,
+refreshed rows.
+
+### Node interface (`process`)
+
+Reads `task_context.get_node_output(self.source_node_name)["result"]` for `{"peer_id", "facts",
+"evidence_episode_ids"}` (CLAUDE.md standing rule 9 storage contract).
+
+**Output contract:**
+
+```python
+task_context.nodes["UpsertMemoryNode"] = {
+    "result": {
+        "upserted": [
+            {"id": "<uuid-str>", "peer_id": "...", "fact": "...",
+             "confidence": 0.9, "decay_factor": 0.95,
+             "evidence_episode_ids": ["<uuid-str>", ...]},
+            ...
+        ]
+    }
+}
+```
+
+### Test coverage
+
+- `tests/memory/test_upsert_memory_node.py`.
+
+---
+
+## MemoryLoaderNode
+
+**Source:** `app/memory/memory_loader_node.py`
+
+```python
+class MemoryLoaderNode(Node):
+```
+
+Session-start (or any-time) top-k memory loading — a standalone module, no coupling to any one
+workflow (block OR.S design decision 1): a session-start loader or any node that needs "what do we
+know about peer X" attaches this to its own DAG. Two query modes (Honcho pattern, D25): **cosine
+mode** (rank by similarity to a caller-supplied embedding) and **NL-question mode** (embed the
+question, rank by `similarity * effective_confidence`). Both modes scope by `workspace_id` (D47
+verbatim string match) and optionally `peer_id`. See
+[docs/memory.md](memory.md#memoryloadernode--two-query-modes).
+
+**Module-level constants:** `DEFAULT_TOP_K = 5`, `DEFAULT_EPISODE_LIMIT = 5`,
+`DEFAULT_CONTEXT_WINDOW_TOKENS = 8000`, `DEFAULT_BUDGET_RATIO = 0.10`.
+
+**Module-level pure functions:** `_estimate_tokens(text) -> int` (chars // 4 estimate, no live
+tokenizer dependency); `_cosine_similarity(a, b) -> float` (returns `0.0` rather than raising for
+zero-magnitude/empty vectors, so an unembedded row sorts last instead of crashing ranking).
+
+### Constructor
+
+`MemoryLoaderNode(top_k=5, episode_limit=5, context_window_tokens=8000, budget_ratio=0.10)`.
+
+### Seams (mockable, patched in tests)
+
+- `_session_scope() -> ContextManager` — same pattern as `EpisodeWriteService`.
+- `_embed(text: str) -> list[float]` — same pattern as `EpisodeWriteService`.
+
+### `retrieve(*, workspace_id, peer_id=None, query_embedding=None, question=None, top_k=None, include_episodes=False, episode_limit=None) -> dict`
+
+Exactly one of `query_embedding` (cosine mode) or `question` (NL-question mode) must be supplied;
+neither or both raises `ValueError`. Returns `{"facts": [...], "episodes": [...]}` (`"episodes"`
+only populated when `include_episodes=True`). Each fact dict carries `{"id", "peer_id", "fact",
+"confidence", "effective_confidence", "score", "evidence_episode_ids"}` for downstream citation.
+Logs a warning (never raises) via `_check_context_budget` when the estimated token cost of what
+was loaded exceeds `context_window_tokens * budget_ratio`.
+
+### Node interface (`process`)
+
+Reads loader params directly off `task_context.event` (not an upstream node's output — the whole
+point of "no coupling to any one workflow"): `workspace_id` (required), optional `peer_id`,
+`query_embedding`, `question`, `top_k`, `include_episodes`, `episode_limit`.
+
+**Output contract:** `task_context.nodes["MemoryLoaderNode"] = {"result": {"facts": [...],
+"episodes": [...]}}` per `retrieve()`.
+
+### Test coverage
+
+- `tests/memory/test_memory_loader_node.py`.
+
+---
+
+## IngestTimeExtractionNode
+
+**Source:** `app/workflows/memory_ingest_workflow_nodes/ingest_time_extraction_node.py`
+
+```python
+class IngestTimeExtractionNode(AgentNode):
+```
+
+`AgentNode` subclass that extracts a structured record from one raw interaction: an episode
+summary, outcome classification, free-form tags, and candidate durable facts (each optionally
+flagged with a free-text `contradicts_hint`). First stage of the two-stage pipeline (D25). System
+prompt: `app/prompts/memory_ingest_extraction.j2` (CLAUDE.md rule 2). Uses `run_agent_recorded`
+for D30 telemetry.
+
+**`get_agent_config()`:** `model_provider=ModelProvider.CLAUDE_CODE_SDK`, `model_name="sonnet"`.
+Not D35-pinned like `ConsolidationNode` — this node is an explicit local-model routing candidate
+for `OR.U`/Project H to evaluate later; swapping the provider is a pure config change, never an
+`if` in `process()`.
+
+**`OutputType`:** `episode_summary: str`, `outcome: str | None`, `tags: list[str]`,
+`facts: list[Fact]` where `Fact` is `{fact: str, contradicts_hint: str | None}`.
+
+### Node interface (`process`)
+
+Reads `task_context.event` (`MemoryIngestEventSchema`): `interaction`, `workspace_id`, `peer_id`,
+`peer_type`, `session_id`.
+
+**Output contract:**
+
+```python
+task_context.nodes["IngestTimeExtractionNode"] = {
+    "result": {
+        "workspace_id": "...", "peer_id": "...", "peer_type": "...", "session_id": "...",
+        "episode_summary": "...", "outcome": "...", "tags": [...],
+        "facts": [{"fact": "...", "contradicts_hint": None}, ...],
+    }
+}
+```
+
+### Test coverage
+
+- `tests/workflows/test_memory_ingest_workflow.py`.
+
+---
+
+## MemoryWriteNode
+
+**Source:** `app/workflows/memory_ingest_workflow_nodes/memory_write_node.py`
+
+```python
+class MemoryWriteNode(Node):
+```
+
+Terminal write step of `MemoryIngestWorkflow`. Composes the two standalone `app/memory/` building
+blocks: `EpisodeWriteService.write(...)` (persist the episode, upsert the owning peer), then
+`UpsertMemoryNode.upsert_facts(...)` (write extracted candidate facts as plain new
+`SemanticMemory` rows — ingest-time only surfaces a free-text `contradicts_hint`; resolving that
+hint to a concrete `contradicts_fact_id` is deferred to dream-time consolidation). Does not talk
+to the database directly — delegates to the two memory-module seams, which is what tests
+monkeypatch.
+
+### Constructor
+
+`MemoryWriteNode(source_node_name="IngestTimeExtractionNode", episode_write_service=None,
+upsert_memory_node=None)` — the last two default to fresh instances but are injectable so tests
+can supply doubles without monkeypatching two separate seams.
+
+### Node interface (`process`)
+
+Reads `task_context.get_node_output(self.source_node_name)["result"]` for `{"workspace_id",
+"peer_id", "peer_type", "session_id", "episode_summary", "outcome", "tags", "facts"}`.
+
+**Output contract:**
+
+```python
+task_context.nodes["MemoryWriteNode"] = {
+    "result": {
+        "episode_id": "<uuid-str>",
+        "peer_id": "...",
+        "upserted_fact_ids": ["<uuid-str>", ...],
+    }
+}
+```
+
+### Test coverage
+
+- `tests/workflows/test_memory_ingest_workflow.py`.
+
+---
+
+## MemoryIngestWorkflow
+
+**Source:** `app/workflows/memory_ingest_workflow.py`
+
+```python
+class MemoryIngestWorkflow(Workflow):
+```
+
+Fast, per-interaction memory ingest (block OR.S, first pipeline stage). Extracts an episode
+summary + candidate facts from one interaction, then writes the episode and upserts the facts.
+
+**Graph (linear DAG — no router):**
+
+```
+IngestTimeExtractionNode
+    -> MemoryWriteNode
+```
+
+### `workflow_schema`
+
+| Property | Value |
+|---|---|
+| `event_schema` | `MemoryIngestEventSchema` |
+| `start` | `IngestTimeExtractionNode` |
+| `nodes` | `[IngestTimeExtractionNode, MemoryWriteNode]` |
+| Connections | Linear: `IngestTimeExtractionNode -> MemoryWriteNode`; `MemoryWriteNode.connections = []` |
+
+### Registration
+
+`WorkflowRegistry.MEMORY_INGEST` (`app/workflows/workflow_registry.py`); mapped to
+`MemoryIngestEventSchema` in `app/api/schema_registry.py`.
+
+### Test coverage
+
+- `tests/workflows/test_memory_ingest_workflow.py` — node + workflow wiring.
+- `tests/workflows/test_memory_e2e.py` — end-to-end accumulation across interactions.
+
+---
+
+## LoadMemoryContextNode
+
+**Source:** `app/workflows/memory_consolidation_workflow_nodes/load_memory_context_node.py`
+
+```python
+class LoadMemoryContextNode(Node):
+```
+
+Dream-time context gather — the raw material `ConsolidationNode` reasons over. For every peer in
+scope (the single `event.peer_id`, or every `Peer` row in `event.workspace_id` when `peer_id` is
+omitted — the nightly-batch case), gathers recent `AgentEpisode` rows (optionally filtered by
+`event.since`), current `SemanticMemory` facts, and the prior `representation` text.
+
+### Seams (mockable, patched in tests)
+
+- `_session_scope() -> ContextManager` — same pattern as `EpisodeWriteService`.
+
+### Node interface (`process`)
+
+Reads `task_context.event` (`MemoryConsolidationEventSchema`): `workspace_id`, optional
+`peer_id`, optional `since`.
+
+**Output contract:**
+
+```python
+task_context.nodes["LoadMemoryContextNode"] = {
+    "result": {
+        "workspace_id": "...",
+        "peers": [
+            {"peer_id": "...", "peer_type": "...", "representation": "...",
+             "episodes": [{"id": "...", "summary": "...", "outcome": "...",
+                           "tags": [...], "occurred_at": "..."}, ...],
+             "facts": [{"id": "...", "fact": "...", "confidence": 0.9,
+                        "decay_factor": 0.95}, ...]},
+            ...
+        ],
+    }
+}
+```
+
+Possibly-empty `"peers"` when no peers match the scope.
+
+### Test coverage
+
+- `tests/workflows/test_memory_consolidation_workflow.py`.
+
+---
+
+## ConsolidationNode
+
+**Source:** `app/workflows/memory_consolidation_workflow_nodes/consolidation_node.py`
+
+```python
+class ConsolidationNode(AgentNode):
+```
+
+`AgentNode` subclass — the deep, dream-time reasoning pass. Reasons across each peer's recent
+episodes, current facts, and prior representation (as loaded by `LoadMemoryContextNode`) to
+produce, per peer, a refreshed durable `representation` and a set of durable facts (some new, some
+proposing a `contradicts_fact_id` against an existing fact — the never-overwrite rule is enforced
+downstream by `UpsertMemoryNode`; this node only *proposes* the contradiction). System prompt:
+`app/prompts/memory_consolidation.j2` (CLAUDE.md rule 2). Uses `run_agent_recorded` for D30
+telemetry.
+
+**D35 guard (frontier-only rule):** `get_agent_config()` pins
+`model_provider=ModelProvider.CLAUDE_CODE_SDK` unconditionally (`model_name="opus"`) — dream-time
+consolidation must stay on Claude, never a local model (weak models produce
+confident-but-wrong durable facts). `tests/workflows/test_memory_consolidation_workflow.py`
+asserts this directly so a config drift to a local model fails CI. Unlike
+`IngestTimeExtractionNode`, this node has no local-model exemption — do not change
+`model_provider` here without updating D35.
+
+**`OutputType`:** `peers: list[PeerConsolidation]` where `PeerConsolidation` is
+`{peer_id: str, representation: str, facts: list[ConsolidatedFact]}` and `ConsolidatedFact` is
+`{fact: str, confidence: float | None, contradicts_fact_id: str | None,
+evidence_episode_ids: list[str]}`.
+
+### Node interface (`process`)
+
+Reads `task_context.get_node_output("LoadMemoryContextNode")["result"]`.
+
+**Output contract:**
+
+```python
+task_context.nodes["ConsolidationNode"] = {
+    "result": {
+        "workspace_id": "...",
+        "peers": [{"peer_id": "...", "representation": "...", "facts": [...]}, ...],
+    }
+}
+```
+
+### Test coverage
+
+- `tests/workflows/test_memory_consolidation_workflow.py` — includes the D35 `model_provider`
+  guard assertion and consolidation output schema validity for the multi-peer case.
+
+---
+
+## ConsolidationWriteNode
+
+**Source:** `app/workflows/memory_consolidation_workflow_nodes/consolidation_write_node.py`
+
+```python
+class ConsolidationWriteNode(Node):
+```
+
+Terminal write step of `MemoryConsolidationWorkflow`. For each peer in `ConsolidationNode`'s
+output, in isolation from every other peer in the same run: writes the consolidated facts via
+`UpsertMemoryNode.upsert_facts(...)` (the same reusable seam `MemoryIngestWorkflow` uses, so
+contradiction handling has exactly one implementation) and refreshes the owning
+`Peer.representation`. A dangling `peer_id` (malformed consolidation output) is a silent no-op for
+the representation update, never a raised error — one bad peer never aborts the rest of the batch.
+
+**Static helper:** `_coerce_fact_id(raw_id) -> uuid.UUID | None` — parses the string
+`contradicts_fact_id` `ConsolidationNode` proposed into a `uuid.UUID`; a hallucinated non-UUID
+shape or `None` both fall through to `None` (no contradiction resolved) rather than raising.
+
+### Constructor
+
+`ConsolidationWriteNode(source_node_name="ConsolidationNode", upsert_memory_node=None)` — the
+latter defaults to a fresh `UpsertMemoryNode` instance but is injectable for tests.
+
+### Node interface (`process`)
+
+Reads `task_context.get_node_output(self.source_node_name)["result"]` for `{"workspace_id",
+"peers": [{"peer_id", "representation", "facts"}, ...]}`.
+
+**Output contract:**
+
+```python
+task_context.nodes["ConsolidationWriteNode"] = {
+    "result": {
+        "workspace_id": "...",
+        "peers": [
+            {"peer_id": "...", "representation": "...", "upserted_fact_ids": ["...", ...]},
+            ...
+        ],
+    }
+}
+```
+
+### Test coverage
+
+- `tests/workflows/test_memory_consolidation_workflow.py`.
+
+---
+
+## MemoryConsolidationWorkflow
+
+**Source:** `app/workflows/memory_consolidation_workflow.py`
+
+```python
+class MemoryConsolidationWorkflow(Workflow):
+```
+
+Dream-time consolidation (block OR.S, second pipeline stage). Deep reasoning across a peer's (or
+every peer's) recently accumulated episodes and current facts to distill durable memory, resolve
+contradictions, and refresh `Peer.representation`. Claude only (D35). *Scheduling* the nightly run
+is deployment config, explicitly out of scope for this block — this workflow is only ever
+event-dispatched, like every other workflow in this repo.
+
+**Graph (linear DAG — no router):**
+
+```
+LoadMemoryContextNode
+    -> ConsolidationNode
+    -> ConsolidationWriteNode
+```
+
+### `workflow_schema`
+
+| Property | Value |
+|---|---|
+| `event_schema` | `MemoryConsolidationEventSchema` |
+| `start` | `LoadMemoryContextNode` |
+| `nodes` | `[LoadMemoryContextNode, ConsolidationNode, ConsolidationWriteNode]` |
+| Connections | Linear: each node connects to the next; `ConsolidationWriteNode.connections = []` |
+
+### Registration
+
+`WorkflowRegistry.MEMORY_CONSOLIDATION` (`app/workflows/workflow_registry.py`); mapped to
+`MemoryConsolidationEventSchema` in `app/api/schema_registry.py`.
+
+### Test coverage
+
+- `tests/workflows/test_memory_consolidation_workflow.py` — node + workflow wiring, D35 guard,
+  consolidation output schema validity.
+- `tests/workflows/test_memory_e2e.py` — end-to-end accumulation across interactions + cited
+  "status with client X" answer (agent seam mocked).
