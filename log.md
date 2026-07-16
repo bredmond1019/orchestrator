@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-16T01:51:00Z"
+timestamp: "2026-07-16T02:01:11Z"
 ---
 
 # log — Orchestration Repo
@@ -12,6 +12,22 @@ timestamp: "2026-07-16T01:51:00Z"
 ---
 
 ## [2026-07-15]
+
+### Handoff — wrote handoff.md pointing the next agent at /generate-tasks OR.C
+
+- **What:** Wrote a fresh `planning/handoff.md` closing out the workspace-contract session (same
+  session as the D47 entry below). The handoff summarizes what shipped (contract v1.0.0 + cross-pin +
+  D47 + OR.C/BA.6.B spec updates, commits `98b5087` brain / `08e83e7` orchestrator / `4cb63eb`
+  bastion), lists the remaining work in priority order — (1) `/generate-tasks OR.C` conforming to
+  `docs/workspace-contract.md`, (2) register `OR.C` in `state.json` `tracks[]` when scoping, (3)
+  leave `OR.J` deferred — and carries the code map for the OR.C spec (index_brain.py slug stamping,
+  RetrieveChunksNode filter path, bastion's `resolve_workspace_root` semantics to mirror). No new
+  `carryover[]` entries were needed; the design questions that gated OR.C are all settled in the
+  contract + D47.
+- **Why:** Brandon asked for a clean handoff so the next (fresh-context) agent can go straight to
+  scoping `OR.C` with `/generate-tasks OR.C` instead of re-deriving this session's design work.
+- **Refs:** `planning/handoff.md`, `docs/workspace-contract.md`, brain
+  `docs/decisions/D47-workspace-contract.md`, `planning/master-plan.md` `### OR.C`
 
 ### Pinned the knowledge workspace data contract (D47) — canonical docs/workspace-contract.md v1.0.0, cross-pinned in bastion, carryover resolved
 
