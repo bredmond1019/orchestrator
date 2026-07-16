@@ -63,6 +63,7 @@ Each row is one section-level chunk of a brain document. The brain is indexed by
 | `status` | string (nullable) | OKF `status` frontmatter field (e.g. `active`, `draft`, `archived`) |
 | `keywords` | ARRAY(string) (nullable) | OKF `keywords` frontmatter field; used in GIN-indexed search |
 | `related` | ARRAY(string) (nullable) | OKF `related` frontmatter field — `[[wikilink]]` targets for graph traversal |
+| `authored_at` | datetime (nullable) | Block OR.M. The file's `mtime` at index time (`file_path.stat().st_mtime`), persisted on upsert and backfillable for pre-existing rows via `--backfill-dates`. Drives the age-decay ranking term below; `NULL` rows are never decayed. |
 
 ---
 
@@ -83,7 +84,19 @@ python scripts/index_brain.py
 
 # Full rebuild — drop all non-diagnostic rows and re-index from scratch
 python scripts/index_brain.py --rebuild
+
+# Backfill authored_at (file mtime) on existing rows without re-embedding — a stat() call
+# per file, no Ollama round-trip. Run once after upgrading to block OR.M.
+python scripts/index_brain.py --backfill-dates
 ```
+
+**Fresh-clone caveat on `authored_at`.** The indexer stamps `authored_at` from the file's
+filesystem `mtime` at index time, which is *checkout* time in a freshly-cloned repo — every file
+gets the same clone timestamp, not its true last-edit date. This is not a bug to work around: the
+brain vault (`agentic-portfolio`) is edited in place on the machine that runs `index_brain.py`, so
+in the actual deployment `mtime` ≈ last-edit time, which is exactly the age signal the ranking
+decay (below) wants. A CI runner or a scratch clone would see uniform dates and therefore no
+useful decay signal — note it, don't build around it.
 
 The script defaults to the parent of the orchestration repo (the brain root), resolved from the script's own location — so it works from any working directory. If your brain repo is elsewhere:
 
@@ -219,6 +232,65 @@ structural expansion, and its hits are unioned into the candidate set before Sta
 flagged `"via": "keyword"` in the response. It always runs for the brain corpus (not gated by a
 request flag, unlike `expand_structural`) and is a no-op for corpora without a `tsv_field` (e.g.
 `"content"`).
+
+### Memory expansion (Stage 1d, OR.M)
+
+`DOCUMENT_QA` can also surface accumulated `SemanticMemory` facts (block OR.S — see
+[`docs/memory.md`](memory.md)) as retrieval candidates, flagged `"via": "memory"` alongside
+`"semantic"`/`"structural"`/`"keyword"`. This is a fourth candidate source, not a fourth corpus —
+it runs on top of whichever corpus the event already queries.
+
+Opt-in, gated on **both** fields together — either alone is a no-op that touches no memory DB:
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "DOCUMENT_QA",
+    "data": {
+      "doc_id": "00000000-0000-0000-0000-000000000000",
+      "question": "What is my current contracting rate strategy?",
+      "corpus": "brain",
+      "workspace_id": "orchestrator",
+      "include_memory": true
+    }
+  }'
+```
+
+| Event field | Type | Default | Meaning |
+|---|---|---|---|
+| `workspace_id` | string, nullable | `null` | D47 workspace name to scope memory retrieval to. Required (non-null) together with `include_memory=true`. |
+| `peer_id` | string, nullable | `null` | Optional narrowing of memory retrieval to one entity's facts. |
+| `include_memory` | bool | `false` | Opt-in gate for Stage 1d. |
+| `apply_decay` | bool | `true` | Opt-out for the `authored_at` age-decay described below (brain corpus only). |
+
+All four fields are optional — a `DOCUMENT_QA` event that omits them validates unchanged and
+retrieves exactly as it did before block OR.M (the block's core acceptance criterion: no peers, no
+facts, and the response is byte-identical to the pre-OR.M response).
+
+A surfaced memory fact carries `file_path: null` and `doc_id: null` (facts have no source-file
+provenance) and its score already reflects the fact's decay — the loader is queried in **cosine
+mode** with the same query embedding `RetrieveChunksNode` already computed (not by re-embedding
+the question text in NL mode), and the adapter multiplies the raw cosine score by the fact's
+`effective_confidence` before merging it into the fused ranking.
+
+Memory is capped at 3 candidates per query and is not diversity-capped by file (every memory
+candidate is its own singleton group, `file_path=None`) — see `docs/api-reference.md` §
+`RetrieveChunksNode` for the full mechanics, and `docs/memory.md` for the decay/contradiction
+model those facts come from.
+
+### Age-based ranking decay (`authored_at`, OR.M)
+
+Independent of memory: brain-corpus candidates are also down-weighted by document age using the
+`authored_at` column above. When `apply_decay` is `true` (the default) and a candidate carries a
+non-null `authored_at`, its fused score is multiplied by the same decay formula memory facts use
+(`confidence * decay_factor ** weeks_elapsed`, from `app/memory/decay.py`), but with a **far
+gentler** per-week factor — `0.99`, not memory's `0.95`. At `0.95`/week a 6-month-old row retains
+≈26% of its score, which would bury the decisions log for a query like "what did we decide in
+June"; at `0.99`/week it retains ≈77%. Rows with `authored_at=null` (not yet backfilled, or from a
+corpus that doesn't carry the field) are never decayed. Set `"apply_decay": false` on the event to
+reproduce pre-OR.M ranking exactly regardless of `authored_at`.
 
 ---
 

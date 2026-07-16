@@ -7,7 +7,7 @@ layer: [brain, engine]
 project: orchestrator
 status: active
 keywords: [memory, Peer, AgentEpisode, SemanticMemory, decay, contradiction, Honcho, workspace_id, MemoryLoaderNode, D35]
-related: [api-reference, workspace-contract, workflows, D25-honcho-reference, D35-top-tier-models]
+related: [api-reference, brain-rag, workspace-contract, workflows, D25-honcho-reference, D35-top-tier-models]
 ---
 
 # Memory Layer — Entities, Episodes, and Durable Facts
@@ -142,6 +142,30 @@ window (D25's Honcho token-efficiency finding). `MemoryLoaderNode` estimates the
 (chars // 4) of what it loaded and logs a warning — never raises — when that estimate exceeds the
 configured budget (`DEFAULT_CONTEXT_WINDOW_TOKENS = 8000`, `DEFAULT_BUDGET_RATIO = 0.10`). This is
 a soft guard, not a hard failure.
+
+### First consumer (block OR.M)
+
+For the whole of block OR.S, `MemoryLoaderNode` had **zero consumers** outside its own package
+and tests — the write path (`EpisodeWriteService`/`UpsertMemoryNode`) was wired, but nothing ever
+read the tier back. Block **OR.M** gives it its first: `RetrieveChunksNode._memory_expand`
+(`app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`, `DOCUMENT_QA` workflow's
+Stage 1d) calls `MemoryLoaderNode().retrieve()` in **cosine mode** — passing the query embedding
+`RetrieveChunksNode` already computed via `EmbeddingService`, never `question` (NL mode would
+re-embed the identical string for no benefit) — and adapts each returned fact into a `via="memory"`
+retrieval candidate, decayed via the fact's own `effective_confidence`. See
+[`docs/brain-rag.md`](brain-rag.md#memory-expansion-stage-1d-orm) for the request-shape and
+ranking detail, and [`docs/api-reference.md`](api-reference.md#retrievechunksnode) for the
+mechanics.
+
+**Attaching `MemoryLoaderNode` elsewhere.** Nothing about the node is `DOCUMENT_QA`-specific — per
+design decision 1 it is a standalone module with no coupling to any one workflow. Any other node
+or workflow that wants "what do we know about peer X" attaches a `MemoryLoaderNode` to its own DAG
+the same way: instantiate it, call `.retrieve(workspace_id=..., ...)` directly (as
+`_memory_expand` does), or drop it in as a `process()`-chain node and read
+`task_context.get_node_output("MemoryLoaderNode")["result"]`. It degrades gracefully when the
+host event has no `workspace_id` — returns `{"facts": [], "episodes": []}` rather than raising
+`AttributeError` — so it is safe to attach to a workflow whose event schema doesn't declare the
+field at all.
 
 ## D35 — consolidation stays on Claude, never local
 

@@ -2283,16 +2283,23 @@ similarity search from `RetrieveChunksNode` corpus `"brain"`) is available as of
 | `title` | `String(512)` | Yes | `NULL` | OKF frontmatter `title`; stored for FTS (weight `'A'`) and citation display. |
 | `description` | `Text` | Yes | `NULL` | OKF frontmatter `description`; stored for FTS (weight `'B'`) and citation display. |
 | `content_tsv` | `TSVECTOR` | Yes | generated | **Read-only generated column** — Postgres maintains it from `title`+`keywords` (weight `'A'`), `description` (`'B'`), and `content` (`'C'`). GIN-indexed (`ix_brain_documents_content_tsv`) for graded `ts_rank` full-text search. The indexer must **never** write it. |
+| `authored_at` | `DateTime` | Yes | `NULL` | Block **OR.M** — the file's `mtime` at index time (`file_path.stat().st_mtime`), persisted by `scripts/index_brain.py` on upsert and backfillable for pre-existing rows via `--backfill-dates`. Distinct from `indexed_at`: `indexed_at` resets to "now" on every `--rebuild` (useless as an age signal — see the Gotcha below), while `authored_at` tracks when the content was actually last edited. Drives the age-decay term in `RetrieveChunksNode._fuse_and_rank` (`_DOC_DECAY_FACTOR`); `NULL` rows (not yet backfilled) are never decayed. |
 
 ### Migration
 
 The `brain_documents` table is created by migration `b3c4d5e6f7a8`
 (`app/alembic/versions/b3c4d5e6f7a8_create_brain_documents_table.py`).
 `down_revision` chains off the `a1b2c3d4e5f6` migration (learning_artifacts table).
-Two later migrations extend it: `d1e2f3a4b5c6` adds the six OKF columns
-(`doc_id`/`layer`/`project`/`status`/`keywords`/`related`) with their GIN/btree indexes, and
+Three later migrations extend it: `d1e2f3a4b5c6` adds the six OKF columns
+(`doc_id`/`layer`/`project`/`status`/`keywords`/`related`) with their GIN/btree indexes,
 `e2f3a4b5c6d7` adds `is_section_title`/`title`/`description`, the generated `content_tsv`
-column with its GIN index, and the HNSW ANN index on `embedding`.
+column with its GIN index, and the HNSW ANN index on `embedding`, and
+`f1a2b3c4d5e6` (block OR.M) adds the nullable `authored_at` column.
+
+**Gotcha — `indexed_at` is not a usable staleness signal.** `scripts/index_brain.py` sets
+`indexed_at=datetime.now()` on every upsert, so a `--rebuild` resets the entire corpus's age to
+zero — any decay computed against it would just multiply every row by the same constant. Use
+`authored_at` for anything age-sensitive; `indexed_at` is for incremental-skip bookkeeping only.
 
 **SQLite note:** The `ARRAY(String)`, `Vector`, and `TSVECTOR` columns are PostgreSQL-only
 types. The SQLite-backed test fixtures exclude `brain_documents` from `create_all`; round-trip
@@ -2594,7 +2601,7 @@ from database import ChatSession, ContentChunk
 **Source:** `app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`
 
 ```python
-class RetrieveChunksNode(Node):
+class RetrieveChunksNode(Node, DbSeamMixin):
 ```
 
 Two-stage hybrid retrieval node for the `DOCUMENT_QA` workflow (Phase 1 Project D Task 3).
@@ -2633,11 +2640,37 @@ Implements the semantic-then-keyword re-rank pattern ported from the rag-engine-
    query vector (same technique `_fetch_neighbor_candidates` uses for structural neighbors) so
    they fit the `_fuse_and_rank` contract unchanged. Always runs (not gated by a request flag,
    unlike Stage 1b); a no-op for corpora without a `tsv_field` (e.g. `"content"`).
+2d. **Stage 1d — memory expansion** (block OR.M, `_memory_expand`): opt-in surfacing of
+   accumulated `SemanticMemory` facts (block OR.S) as retrieval candidates alongside brain/content
+   chunks. Gated on **both** `event.include_memory=True` and a non-`None` `event.workspace_id` —
+   either alone is a no-op that touches no DB (design decision 2). When both are set, delegates to
+   `MemoryLoaderNode.retrieve()` in **cosine mode** (passing the already-embedded query `vector`,
+   never `question` — `RetrieveChunksNode` already holds the embedding from `EmbeddingService`, so
+   NL mode would re-embed the identical string for no benefit; design decision 3), scoped to
+   `workspace_id` and optionally `peer_id`, capped at `_MEMORY_CANDIDATE_LIMIT` (3) facts. Each
+   returned fact becomes a candidate with `file_path=None`, `doc_id=None`, `via="memory"`, and a
+   score pre-multiplied by its `effective_confidence` (`MemoryLoaderNode` cosine mode returns raw
+   similarity; the decay weighting is applied here in the adapter, not by switching loader modes —
+   design decision 3). Not folded into `_CORPUS_CONFIG`: every existing config consumer
+   (`_semantic_search`/`_keyword_expand`/`_fetch_neighbor_candidates`) assumes a single-table query
+   against `model.embedding`/`model.id`, but `semantic_memories` needs a `Peer` join scoped by
+   `workspace_id` that `_apply_metadata_filters`'s plain `getattr(model, field)` has no vocabulary
+   for — mirroring `_structural_expand`'s shape (a dedicated Stage method feeding the existing
+   `_merge_candidates`) avoids a one-consumer `join_spec` config key (design decision 1). Memory
+   candidate ids are excluded from the Stage 2 keyword query against `brain_documents`/
+   `content_chunks` — they are never real rows in either table.
 3. **Additive score fusion:** `score = (1.0 − distance) × title_weight + keyword_contribution`,
    where `title_weight = 2.0` for `is_section_title=True` chunks (section-title 2x weight). The
    keyword contribution is graded for FTS corpora (`_KW_WEIGHT × ts_rank`) and a flat `_KW_BOOST`
    for the legacy set path. NaN distances are filtered out before sorting (mirrors the Rust
-   `total_cmp` guard).
+   `total_cmp` guard). For the brain corpus, when `apply_decay=True` (default) and a candidate
+   carries a non-`None` `authored_at`, the fused score is additionally multiplied by
+   `effective_confidence(1.0, _DOC_DECAY_FACTOR, weeks_between(authored_at, now))` — reusing the
+   pure decay helpers from `app/memory/decay.py` as-is (block OR.M Task 5). `_DOC_DECAY_FACTOR =
+   0.99`/week, deliberately far gentler than memory's `0.95`/week: a 6-month-old doc at 0.95/wk
+   retains ≈26% (burying the decisions log for a query like "what did we decide in June"), while
+   0.99/wk retains ≈77%. `authored_at=None` rows (pre-backfill, or non-brain corpora) are never
+   decayed regardless of `apply_decay`. `apply_decay=False` reproduces pre-OR.M ranking exactly.
 
 **Corpus dispatch** — controlled by the `corpus` field on the incoming event:
 
@@ -2651,9 +2684,11 @@ Adding a third corpus requires one entry in the module-level `_CORPUS_CONFIG` di
 ### `process(task_context: TaskContext) -> TaskContext`
 
 Reads `event.question`, `event.corpus` (defaults to `"content"`), `event.filters`,
-`event.include_archived`, and `event.expand_structural` (all via `getattr` defensive read —
-defaulting to `None`/`False`/`True` respectively) from the task context, calls `retrieve()` with
-`k=5`, `filters`, `include_archived`, and `expand_structural`, and writes the result:
+`event.include_archived`, `event.expand_structural`, `event.workspace_id`, `event.peer_id`,
+`event.include_memory`, and `event.apply_decay` (all via `getattr` defensive read — defaulting to
+`None`/`False`/`True`/`None`/`None`/`False`/`True` respectively, so an event predating block OR.M
+that omits the last four fields still validates and retrieves unchanged) from the task context,
+calls `retrieve()` with `k=5` plus all of the above, and writes the result:
 
 ```python
 task_context.update_node(node_name=self.node_name, result={"chunks": chunks})
@@ -2666,11 +2701,11 @@ output = task_context.get_node_output("RetrieveChunksNode")
 chunks = output["result"]["chunks"]
 ```
 
-### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None, include_archived=False, expand_structural=True) -> list[dict]`
+### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None, include_archived=False, expand_structural=True, workspace_id=None, peer_id=None, include_memory=False, apply_decay=True) -> list[dict]`
 
 Public retrieval method. Embeds `query` via `EmbeddingService`, runs the two-stage (plus optional
-structural) pipeline, and returns up to `k` normalized chunk dicts sorted by fused score
-descending.
+structural and memory) pipeline, and returns up to `k` normalized chunk dicts sorted by fused
+score descending.
 
 **Parameters:**
 
@@ -2683,6 +2718,10 @@ descending.
 | `filters` | `dict \| None` | `None` | Optional metadata filters (keyword-only). Applied only when the corpus declares `filter_fields`. See `DocumentQAEventSchema` for accepted keys. |
 | `include_archived` | `bool` | `False` | Keyword-only. When `False`, brain-corpus results exclude `status='archived'` docs. No effect on the content corpus. |
 | `expand_structural` | `bool` | `True` | Keyword-only. When `True` and the corpus declares `supports_structural` (currently `"brain"` only), widens the Stage-1 semantic candidate set through the `related:`-neighborhood of the top hits before keyword re-rank. No-op for `"content"` or when `False`. |
+| `workspace_id` | `str \| None` | `None` | Block OR.M. Keyword-only. D47 workspace name to scope Stage 1d memory retrieval to. Required (non-`None`) **together with** `include_memory=True` for `_memory_expand` to run at all — either alone is a no-op. |
+| `peer_id` | `str \| None` | `None` | Block OR.M. Keyword-only. Optional narrowing of Stage 1d memory retrieval to one entity's facts. |
+| `include_memory` | `bool` | `False` | Block OR.M. Keyword-only, opt-in. Gates Stage 1d (`_memory_expand`) — surfaces accumulated `SemanticMemory` facts as `via="memory"` candidates. See `workspace_id` above for the second half of the gate. |
+| `apply_decay` | `bool` | `True` | Block OR.M. Keyword-only, opt-out. When `True`, brain-corpus candidates with a non-`None` `authored_at` are down-weighted by age in `_fuse_and_rank` (`_DOC_DECAY_FACTOR`). Set `False` to reproduce pre-OR.M ranking exactly regardless of `authored_at`. |
 
 **Return schema** — each element of the returned list contains:
 
@@ -2692,10 +2731,18 @@ descending.
 | `section_title` | `str \| None` | Markdown section header the chunk falls under. |
 | `score` | `float` | Fused retrieval score (higher = more relevant). |
 | `source` | `str` | Display label: `section_title` or `"General"` if none. |
-| `file_path` | `str \| None` | Provenance: source file path (brain corpus; `None` when the row lacks it). |
+| `file_path` | `str \| None` | Provenance: source file path (brain corpus; `None` when the row lacks it, including every `via="memory"` candidate — memory facts have no source file). |
 | `doc_id` | `str \| None` | Provenance: OKF `doc_id` of the source doc. |
 | `title` | `str \| None` | Provenance: OKF `title` of the source doc, for citation display. |
-| `via` | `str` | Provenance: `"semantic"` (Stage 1), `"structural"` (Stage 1b neighborhood expansion), or `"keyword"` (Stage 1c keyword-candidate expansion). |
+| `via` | `str` | Provenance: `"semantic"` (Stage 1), `"structural"` (Stage 1b neighborhood expansion), `"keyword"` (Stage 1c keyword-candidate expansion), or `"memory"` (Stage 1d memory expansion, block OR.M). |
+
+Note: `authored_at` (block OR.M) is threaded through `_row_to_candidate` and consumed internally
+by `_fuse_and_rank`'s age-decay term (see Stage 3 above), but is **not** one of the returned dict's
+keys — it is a scoring input, not a citation field.
+
+`_session_scope()` (used by `_memory_expand` and elsewhere the node needs a DB session) comes
+from [`DbSeamMixin`](#dbseammixin) (block OR.M) — the node's 4 previously-inline
+`contextmanager(db_session)()` call sites now resolve through the shared mixin.
 
 ### Internal methods (mockable test seams)
 
@@ -2704,13 +2751,14 @@ descending.
 | `_semantic_search(vector, corpus, limit, filters=None, include_archived=False)` | Stage 1: pgvector cosine-distance query. Accepts optional `filters` dict; when present and the corpus declares `filter_fields`, delegates to `_apply_metadata_filters` before executing. When the corpus declares `default_status_exclude` and `include_archived` is `False`, also filters out that status (NULL status kept). Isolated for unit-test patching without a live DB. |
 | `_structural_expand(candidates, corpus, vector, filters=None, include_archived=False)` | Stage 1b: when the corpus declares `supports_structural`, resolves the `related:`-neighborhood of the top `_STRUCTURAL_SEED_COUNT` (5) semantic candidates via `_resolve_neighbor_doc_ids` (queries `brain_edges` by `source_doc_id`) and `_fetch_neighbor_candidates` (fetches the resolved `target_doc_id` rows, respecting `filters`/`include_archived`), tagging results `via="structural"`. Short-circuits with no DB call when the corpus doesn't support structural expansion or no candidate carries a `doc_id`. |
 | `_keyword_expand(query, corpus, vector, existing_ids, filters=None, include_archived=False)` | Stage 1c: when the corpus declares a `tsv_field`, runs an independent top-`_KEYWORD_CANDIDATE_LIMIT` (15) full-text query (`ts_rank` descending) excluding ids already in `existing_ids`, applying the same `filters`/`include_archived`/archived-status exclusion (via `_exclude_archived_status`) as `_semantic_search`, tagging results `via="keyword"`. Returns `[]` with no DB call for corpora without a `tsv_field`. |
+| `_memory_expand(vector, *, workspace_id, peer_id)` | Block OR.M Stage 1d: no-op returning `[]` with no DB call when `workspace_id` is `None` (the caller — `retrieve()` — already gates the `include_memory` half of the check, so this method only additionally enforces the non-`None` `workspace_id` half). Otherwise delegates to `MemoryLoaderNode.retrieve()` in cosine mode (`query_embedding=vector`), scoped to `workspace_id`/`peer_id`, capped at `_MEMORY_CANDIDATE_LIMIT` (3). Maps each returned fact to a candidate dict: `file_path=None`, `doc_id=None`, `via="memory"`, `distance = 1.0 - similarity` (so it fits `_fuse_and_rank`'s `1.0 - distance` fusion unchanged), pre-scaled by `effective_confidence` from the fact (decay applied here, not by switching `MemoryLoaderNode` to NL/question mode — design decision 3). |
 | `_exclude_archived_status(q, model, config, include_archived)` | Static helper: filters out rows whose `status` equals the corpus' `default_status_exclude` (e.g. `"archived"`) unless `include_archived=True`; a `NULL` status is always kept. Used by `_keyword_expand`. |
-| `_merge_candidates(candidates, extra)` | Static helper (generalized from `_merge_structural_candidates`): unions an extra candidate set into `candidates`, deduped by `id` — an extra candidate whose id already appears among `candidates` is dropped so the existing candidate wins ties rather than duplicating the row. Used for both the Stage 1b structural merge and the Stage 1c keyword-candidate merge. |
-| `_keyword_search(query, candidate_ids, corpus)` | Stage 2 dispatcher. Returns a `dict[id -> ts_rank]` for corpora declaring a `tsv_field` (graded FTS) or a `set[id]` for the legacy ILIKE path; returns the matching empty shape when `candidate_ids` is empty. Delegates to one of the two helpers below. |
+| `_merge_candidates(candidates, extra)` | Static helper (generalized from `_merge_structural_candidates`): unions an extra candidate set into `candidates`, deduped by `id` — an extra candidate whose id already appears among `candidates` is dropped so the existing candidate wins ties rather than duplicating the row. Used for the Stage 1b structural merge, the Stage 1c keyword-candidate merge, and the Stage 1d memory merge. |
+| `_keyword_search(query, candidate_ids, corpus)` | Stage 2 dispatcher. Returns a `dict[id -> ts_rank]` for corpora declaring a `tsv_field` (graded FTS) or a `set[id]` for the legacy ILIKE path; returns the matching empty shape when `candidate_ids` is empty. Delegates to one of the two helpers below. `candidate_ids` excludes any `via="memory"` candidate — Stage 1d ids are never real rows in `brain_documents`/`content_chunks`, so they must never reach this query (block OR.M acceptance criterion). |
 | `_keyword_search_fts(query, candidate_ids, config, tsv_field)` | Graded full-text search (brain corpus). Builds `ts_rank(content_tsv, plainto_tsquery('english', query))` scoped to candidate IDs, returns `dict[id -> float ts_rank]`. Stop-word removal and stemming come from `plainto_tsquery`. |
 | `_keyword_search_ilike(query, candidate_ids, config)` | Legacy binary ILIKE (content corpus). Query terms are stripped of non-word characters before matching (e.g. `"RAG?"` → `"RAG"`); ORs in any `keyword_extra_fields` columns. Returns a `set` of matched IDs. |
 | `_apply_metadata_filters(query, model, filters, filter_fields)` | Module-level helper. Translates `{field: value}` pairs to SQLAlchemy WHERE clauses: scalar fields use `col == value`; array fields (e.g. `layer`) use `.overlap([value])`. Applied inside `_semantic_search`; extracted to keep `_semantic_search` under the pylint locals limit and to make filter logic independently testable. |
-| `_fuse_and_rank(candidates, keyword_matches, k, threshold)` | Pure: score fusion, NaN filtering, threshold cut, top-k. Grades the keyword contribution when `keyword_matches` is a `dict` (`_KW_WEIGHT × ts_rank`) and applies a flat `_KW_BOOST` when it is a `set`. Carries `file_path`/`doc_id`/`title`/`via` provenance through to each result. Delegates final top-k selection to `_apply_diversity_cap`. No DB calls. |
+| `_fuse_and_rank(candidates, keyword_matches, k, threshold, *, apply_decay=True)` | Pure: score fusion, NaN filtering, threshold cut, top-k. Grades the keyword contribution when `keyword_matches` is a `dict` (`_KW_WEIGHT × ts_rank`) and applies a flat `_KW_BOOST` when it is a `set`. When `apply_decay=True` (default), multiplies the fused score by `effective_confidence(1.0, _DOC_DECAY_FACTOR, weeks_between(authored_at, now))` for any candidate carrying a non-`None` `authored_at` (block OR.M); candidates with `authored_at=None` (content, memory, or pre-backfill brain rows) are never decayed. Carries `file_path`/`doc_id`/`title`/`via` provenance through to each result. Delegates final top-k selection to `_apply_diversity_cap`. No DB calls. |
 | `_apply_diversity_cap(scored, k)` | Static helper: caps results-per-`file_path` to `_MAX_PER_FILE` (2) in the final top-`k` selection, greedily selecting from the score-sorted list and backfilling from over-cap candidates only if there aren't enough distinct-file candidates to fill all `k` slots — never drops results outright. A `None` `file_path` is treated as its own singleton group (never capped). |
 
 ### Test coverage
@@ -3831,12 +3879,62 @@ weeks_elapsed`.
 
 ---
 
+## DbSeamMixin
+
+**Source:** `app/memory/seams.py`
+
+```python
+class DbSeamMixin:
+```
+
+Block **OR.M** Task 1. Centralizes the `_session_scope()`/`_embed()` seam that every
+`app/memory/` write/read path (`EpisodeWriteService`, `UpsertMemoryNode`, `MemoryLoaderNode`) and
+`RetrieveChunksNode` (`app/workflows/document_qa_workflow_nodes/`) previously copy-pasted
+independently. Kept in `app/memory/` rather than `app/core/` so the memory package doesn't gain a
+core-tier dependency.
+
+**Deliberately a mixin, not a composed-in helper.** Existing tests monkeypatch
+`node._session_scope` / `node._embed` **per-instance** — an instance attribute shadows a mixin
+method, so those tests survive untouched. Composition (e.g. a `self._seams = DbSeamMixin()`
+attribute) would break every one of them, since the patched name on the outer object would no
+longer be the name the class body actually calls.
+
+### `_session_scope(self) -> ContextManager`
+
+Returns `contextmanager(db_session)()` (CLAUDE.md standing rule 7: persistence only via the
+shared session seam, never ad hoc). Isolated so tests can monkeypatch it to yield a real (e.g.
+in-memory SQLite) session without touching the deployment database.
+
+### `_embed(self, text: str) -> list[float]`
+
+Delegates to the module-level `embed_text(text)` below, so the actual embedding call has exactly
+one implementation. Isolated so tests can monkeypatch it and avoid a live embedding provider call.
+
+### `embed_text(text: str) -> list[float]` (module-level function)
+
+`EmbeddingService().embed_text(text)`. Module-level (not a method) so any caller — a
+`DbSeamMixin` subclass's `_embed`, or a node with no other reason to mix in the DB seam — can
+reuse the same single implementation.
+
+### Classes mixing in `DbSeamMixin`
+
+`EpisodeWriteService`, `UpsertMemoryNode`, `MemoryLoaderNode` (all `app/memory/`), and
+`RetrieveChunksNode` (`app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`) — the
+last picked it up as part of block OR.M Task 1 (it already called
+`contextmanager(db_session)()` inline at 4 call sites; those now resolve through the mixin).
+
+### Test coverage
+
+- `tests/memory/test_seams.py`.
+
+---
+
 ## EpisodeWriteService
 
 **Source:** `app/memory/episode_write_service.py`
 
 ```python
-class EpisodeWriteService:
+class EpisodeWriteService(DbSeamMixin):
 ```
 
 Fast, ingest-time write path: writes one `AgentEpisode` per interaction and upserts the owning
@@ -3847,9 +3945,8 @@ rows).
 
 ### Seams (mockable, patched in tests)
 
-- `_session_scope() -> ContextManager` — yields a SQLAlchemy session; defaults to
-  `contextmanager(db_session)()`.
-- `_embed(text: str) -> list[float]` — embeds via `EmbeddingService().embed_text(text)`.
+`_session_scope()`/`_embed()` come from [`DbSeamMixin`](#dbseammixin) (block OR.M) — see that
+entry for the mixin-vs-composition rationale.
 
 ### `write(*, workspace_id, peer_id, peer_type, summary, session_id=None, outcome=None, tags=None, occurred_at=None) -> AgentEpisode`
 
@@ -3868,7 +3965,7 @@ semantics), writes the `AgentEpisode`, commits, and returns the persisted, refre
 **Source:** `app/memory/upsert_memory_node.py`
 
 ```python
-class UpsertMemoryNode(Node):
+class UpsertMemoryNode(Node, DbSeamMixin):
 ```
 
 Writes extracted facts into `SemanticMemory`, enforcing the never-overwrite contradiction rule.
@@ -3890,8 +3987,8 @@ extraction/consolidation node.
 
 ### Seams (mockable, patched in tests)
 
-- `_session_scope() -> ContextManager` — same pattern as `EpisodeWriteService`.
-- `_embed(text: str) -> list[float]` — same pattern as `EpisodeWriteService`.
+`_session_scope()`/`_embed()` come from [`DbSeamMixin`](#dbseammixin) (block OR.M) — same
+pattern as `EpisodeWriteService`.
 
 ### `upsert_facts(*, peer_id, facts: list[dict], evidence_episode_ids=None) -> list[SemanticMemory]`
 
@@ -3933,7 +4030,7 @@ task_context.nodes["UpsertMemoryNode"] = {
 **Source:** `app/memory/memory_loader_node.py`
 
 ```python
-class MemoryLoaderNode(Node):
+class MemoryLoaderNode(Node, DbSeamMixin):
 ```
 
 Session-start (or any-time) top-k memory loading — a standalone module, no coupling to any one
@@ -3957,8 +4054,8 @@ zero-magnitude/empty vectors, so an unembedded row sorts last instead of crashin
 
 ### Seams (mockable, patched in tests)
 
-- `_session_scope() -> ContextManager` — same pattern as `EpisodeWriteService`.
-- `_embed(text: str) -> list[float]` — same pattern as `EpisodeWriteService`.
+`_session_scope()`/`_embed()` come from [`DbSeamMixin`](#dbseammixin) (block OR.M) — same
+pattern as `EpisodeWriteService`.
 
 ### `retrieve(*, workspace_id, peer_id=None, query_embedding=None, question=None, top_k=None, include_episodes=False, episode_limit=None) -> dict`
 
@@ -3971,9 +4068,14 @@ was loaded exceeds `context_window_tokens * budget_ratio`.
 
 ### Node interface (`process`)
 
-Reads loader params directly off `task_context.event` (not an upstream node's output — the whole
-point of "no coupling to any one workflow"): `workspace_id` (required), optional `peer_id`,
-`query_embedding`, `question`, `top_k`, `include_episodes`, `episode_limit`.
+Reads loader params directly off `task_context.event` via `getattr` (not a hard attribute access,
+and not an upstream node's output — the whole point of "no coupling to any one workflow"):
+`workspace_id`, optional `peer_id`, `query_embedding`, `question`, `top_k`, `include_episodes`,
+`episode_limit`. When the event has no `workspace_id` (or it is `None`), degrades gracefully:
+returns `{"facts": [], "episodes": []}` without opening a DB session or calling the embedding
+service, rather than raising `AttributeError` — the schema-degradation guard block OR.M's
+acceptance criteria require (first exercised by `RetrieveChunksNode`, which is the schema most
+likely to omit `workspace_id` entirely).
 
 **Output contract:** `task_context.nodes["MemoryLoaderNode"] = {"result": {"facts": [...],
 "episodes": [...]}}` per `retrieve()`.
