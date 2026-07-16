@@ -6,13 +6,13 @@ doc_id: workflows
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [workflow catalog, CONTENT_PIPELINE, DOCUMENT_QA, SDLC_FLOW, PRICE_SCOUT, event payload, curl]
-related: [api-reference, app-architecture-overview, data-contract, sdlc-flow-workflow]
+keywords: [workflow catalog, CONTENT_PIPELINE, DOCUMENT_QA, SDLC_FLOW, PRICE_SCOUT, MEMORY_INGEST, MEMORY_CONSOLIDATION, event payload, curl]
+related: [api-reference, app-architecture-overview, data-contract, sdlc-flow-workflow, memory]
 ---
 
 # Workflow Catalog
 
-Six production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
+Eight production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
 
 **All requests require the `X-API-Key` header:**
 
@@ -335,7 +335,116 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 6. SDLC Flow (`SDLC_FLOW`)
+## 6. Memory Ingest (`MEMORY_INGEST`)
+
+**What it does:** Fast, per-interaction memory extraction — the first stage of the two-stage block OR.S memory pipeline (Honcho reference architecture, D25). Extracts an episode summary, outcome, tags, and candidate facts from a single interaction via Claude, then writes the episode (upserting the owning `Peer`) and upserts the extracted facts as `SemanticMemory` rows.
+
+**When to use:** Call this once per interaction with a peer (a client, company, product, SOP, or user) to record what happened, in near-real-time. Deep cross-episode reasoning happens later, out of band, via `MEMORY_CONSOLIDATION`.
+
+See [memory.md](memory.md) for the full memory-layer architecture (entities, decay, the never-overwrite contradiction rule).
+
+**Node DAG:**
+
+```
+IngestTimeExtractionNode -> MemoryWriteNode
+```
+
+`IngestTimeExtractionNode` (`AgentNode`) extracts the structured episode + candidate facts (system prompt from `memory_ingest_extraction.j2`). `MemoryWriteNode` (terminal) writes the `AgentEpisode` and upserts facts into the memory store.
+
+**Event payload:**
+
+```json
+{
+  "workflow_type": "MEMORY_INGEST",
+  "data": {
+    "workspace_id": "orchestrator",
+    "peer_id": "acme-corp",
+    "peer_type": "client",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "interaction": "Called to discuss Q3 renewal; wants a 20% discount for a 2-year term."
+  }
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `workspace_id` | string | yes | D47 workspace name (`brain.toml` `[[repos]].slug` format) this interaction is scoped to |
+| `peer_id` | string | yes | The entity this interaction concerned — caller-supplied (e.g. a client slug) |
+| `peer_type` | string | yes | One of `client`, `company`, `product`, `sop`, `user` |
+| `session_id` | string | no | The session/conversation this interaction belongs to, if any |
+| `interaction` | string | yes | Raw interaction text (transcript or free-text summary) to extract from |
+
+**Trigger:**
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "MEMORY_INGEST",
+    "data": {
+      "workspace_id": "orchestrator",
+      "peer_id": "acme-corp",
+      "peer_type": "client",
+      "interaction": "Called to discuss Q3 renewal; wants a 20% discount for a 2-year term."
+    }
+  }'
+```
+
+---
+
+## 7. Memory Consolidation (`MEMORY_CONSOLIDATION`)
+
+**What it does:** Dream-time consolidation — the second stage of the two-stage block OR.S memory pipeline. Reasons deeply (Claude only, D35 frontier-only rule) across a peer's (or every peer's, in a workspace) recently accumulated episodes and current facts to distill durable `SemanticMemory` rows, resolve contradictions (lower-and-insert, never overwrite/delete), and refresh `Peer.representation`.
+
+**When to use:** Run out of band (nightly batch or on demand) after enough `MEMORY_INGEST` episodes have accumulated for a workspace. Scheduling (Celery beat/cron) is deployment config and out of scope for this workflow — it is only ever event-dispatched, like every other workflow in this repo.
+
+See [memory.md](memory.md) for the full memory-layer architecture.
+
+**Node DAG:**
+
+```
+LoadMemoryContextNode -> ConsolidationNode -> ConsolidationWriteNode
+```
+
+`LoadMemoryContextNode` loads recent episodes, current facts, and prior representation for every peer in scope. `ConsolidationNode` (`AgentNode`, pinned to `ModelProvider.CLAUDE_CODE_SDK` / `"opus"` per D35) runs the deep per-peer consolidation pass (system prompt from `memory_consolidation.j2`), keyed per `peer_id` so multi-peer runs stay isolated. `ConsolidationWriteNode` (terminal) writes the consolidated facts and refreshes each peer's representation.
+
+**Event payload:**
+
+```json
+{
+  "workflow_type": "MEMORY_CONSOLIDATION",
+  "data": {
+    "workspace_id": "orchestrator",
+    "peer_id": "acme-corp",
+    "since": "2026-07-01T00:00:00Z"
+  }
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `workspace_id` | string | yes | D47 workspace name this consolidation pass is scoped to (episodes/peers matched by verbatim string) |
+| `peer_id` | string | no | Consolidate only this peer; omit to consolidate every peer in the workspace |
+| `since` | datetime | no | Only reason over episodes at/after this timestamp; omit to consider all episodes |
+
+**Trigger:**
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "MEMORY_CONSOLIDATION",
+    "data": {
+      "workspace_id": "orchestrator"
+    }
+  }'
+```
+
+---
+
+## 8. SDLC Flow (`SDLC_FLOW`)
 
 **What it does:** Drives a structured spec (`SDLCTask` list persisted as JSON) through a sequential implement → test → triage → review loop, task by task, in one shared git worktree — then patches docs, writes a wrap-up log, and opens a PR. Replaces markdown-based task parsing with the `SDLCState`/`SDLCTask` schema in `app/schemas/sdlc_schema.py`.
 

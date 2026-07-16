@@ -42,15 +42,15 @@ Show what's next, why, what's blocked and by what, and recommend the next action
 
 ## Output Format
 
-### ⏭ Up Next
+### Up Next
 - **<Item/Task Title or Slug>** - <Brief overview/gist of the work.>
 ...
 
-### 🚫 Blocked
+### Blocked
 - **<Blocked Item>** - Blocked by: `<Blocker>` (Why: <concise explanation>).
 - (Or: "None.")
 
-### 💡 Recommendation
+### Recommendation
 - **Recommended Action:** `<exact command or next step>`
 - **Rationale:** <Why this is the best next step, linking it to local handoff/state and overall company/core/business goals.>
 

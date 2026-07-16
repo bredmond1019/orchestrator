@@ -2,12 +2,80 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-16T12:02:21Z"
+timestamp: "2026-07-16T15:40:00Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [run: 2026-07-16]
+
+### `/close-out --merge-branch` on `or-s-entity-memory-layer` — validation, review, docs audit
+- **What:** Ran `/close-out --merge-branch` against the `or-s-entity-memory-layer-flow` branch
+  after `sdlc-flow` completed. Full validation gate re-confirmed green (standing-rules scan, both
+  import checks, ruff 0 violations, pylint 10.00/10, pytest 1320 passed / 8 skipped / 0 failed,
+  emoji gate OK). Coverage scan found no blocking gaps — verified every new `app/memory/`/
+  `app/workflows/memory_*` class is directly imported and exercised by `tests/memory/*` and
+  `tests/workflows/test_memory_*`. `/code-review low` surfaced 2 non-blocking simplification
+  findings (no correctness bugs): `_session_scope()` copy-pasted verbatim across 5 new files and
+  `_embed()` across 3 — recorded as `carryover[]` slug `memory-layer-duplicated-session-scope-embed-seams`
+  in `planning/state.json` rather than fixed inline, since it's cleanup, not a defect. `/update-docs
+  --patch` audit found docs already fully current (the sdlc-flow docs stage had already covered
+  everything) — nothing to patch.
+- **Why:** Close the quality loop on the `OR.S` block before merging — confirm gates hold, catch
+  any coverage/doc gaps the per-task loop missed, and capture the review's cleanup finding
+  durably instead of losing it once the branch merges.
+- **Refs:** `planning/handoff.md`; `planning/state.json` `carryover[]`.
+
+```
+afc822c chore: wrap up or-s-entity-memory-layer
+```
+
+---
+
+### `or-s-entity-memory-layer` (`OR.S`, Project G reframed) shipped — Brain memory/entity capability
+Ran `/sdlc-flow or-s-entity-memory-layer` on branch `or-s-entity-memory-layer-flow`; all 8 tasks
+PASS. Task 1 added the `Peer`/`AgentEpisode`/`SemanticMemory` SQLAlchemy models (pgvector
+`Vector(1024)` embeddings, `peer_type` StrEnum, workspace/peer_type composite index) plus a
+single-head Alembic migration. Task 2 built the standalone `app/memory/` package — pure decay
+functions (`confidence * decay_factor ** weeks_elapsed`), `EpisodeWriteService`, and
+`UpsertMemoryNode` (contradictions lower-and-insert, never overwrite/delete). Task 3 wired
+`MemoryIngestWorkflow` (fast per-interaction extraction via a Claude `AgentNode` + episode/fact
+writes), registered in both `workflow_registry.py` and `schema_registry.py`. Task 4 wired
+`MemoryConsolidationWorkflow` (dream-time deep reasoning on `opus`/Claude only per D35, resolving
+`contradicts_fact_id` hints and refreshing `Peer.representation`); this task also fixed an
+emoji-gate violation in `.claude/commands/next.md` and recovered from a stray commit that had
+landed on `main` instead of the feature branch (reset `main` to `f9a5d07`, reapplied on the correct
+branch). Task 5 added `MemoryLoaderNode` (cosine top-k + NL-question mode ranking facts/episodes by
+similarity × decayed confidence, workspace-scoped via a join to `Peer.workspace_id` per D47), plus
+another emoji-gate fix and a defensive fix for a numpy/pgvector truthiness bug (`is not None` instead
+of `or []`). Task 6 added an end-to-end acceptance suite (`test_memory_e2e.py`) proving accumulation
+across ingest runs, a cited NL "status with client X" answer, cross-workspace isolation, and an
+ingest-to-consolidation round-trip against real in-memory SQLite. Task 7 added `docs/memory.md` plus
+14 new `docs/api-reference.md` entries. Task 8 validated the full block: ruff clean, pylint
+10.00/10, pytest 1320 passed / 8 skipped / 0 failed, single Alembic head, schema-registry
+completeness green. Reviewed PASS in 1 attempt. Notable decisions: `app/memory/` stays a standalone
+importable module per the spec's "no coupling to any one workflow" rule; consolidation is
+Claude-only (D35 frontier-only rule for durable-fact generation); nightly scheduling is intentionally
+out of scope (deployment config, `OR.J`-style trigger problem). `OR.S` (= Project G reframed) is now
+**Done** — the Brain's memory/entity capability is shipped.
+
+Next: `OR.L` (answer-time grounding — citation verify + abstain) or `OR.P` (semantic code search),
+both unblocked.
+
+```
+e115ebf docs: update docs for or-s-entity-memory-layer
+1b2b07d feat: implement or-s-entity-memory-layer-task7
+d684efa feat: implement or-s-entity-memory-layer-task6
+e96de53 fix: fix pass 1 for or-s-entity-memory-layer-task5
+7882340 feat: implement or-s-entity-memory-layer-task5
+c8361d7 fix: fix pass 1 for or-s-entity-memory-layer-task4
+655579f feat: implement or-s-entity-memory-layer-task4
+772d706 feat: implement or-s-entity-memory-layer-task3
+```
 
 ---
 
