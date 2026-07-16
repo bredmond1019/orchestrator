@@ -30,10 +30,19 @@ Supports two corpora:
   cosine-distance rank still gets scored by Stage 2 keyword re-rank instead
   of being invisible to it.
 
+Also adds a Stage 1d memory expansion: when the caller opts in
+(``include_memory=True``) with a non-None ``workspace_id``, accumulated
+``SemanticMemory`` facts (``app/memory/``, block OR.S) scoped to that
+workspace/peer are pulled in via ``MemoryLoaderNode.retrieve()`` (cosine mode,
+reusing the Stage-1 query embedding) and merged in as candidates flagged
+``via="memory"``. Decay is applied in the adapter (see ``_memory_expand``)
+since cosine mode itself applies none. Gated independently of corpus — it
+runs for any corpus, not just "brain".
+
 The corpus dispatch is a small mapping so adding a third corpus is a one-line
 addition. DB calls are isolated in ``_semantic_search``, ``_structural_expand``,
-``_keyword_expand``, and ``_keyword_search`` (mockable seams); ``_fuse_and_rank``
-is pure and unit-testable without a DB.
+``_keyword_expand``, ``_memory_expand``, and ``_keyword_search`` (mockable
+seams); ``_fuse_and_rank`` is pure and unit-testable without a DB.
 """
 
 import math
@@ -44,6 +53,7 @@ from core.task import TaskContext
 from database.brain_document import BrainDocument
 from database.brain_edge import BrainEdge
 from database.content_chunk import ContentChunk
+from memory.memory_loader_node import MemoryLoaderNode
 from memory.seams import DbSeamMixin
 from services.embedding_service import EmbeddingService
 from sqlalchemy import func, or_
@@ -103,6 +113,11 @@ _KW_BOOST: float = 1.0
 # top-K, unless there aren't enough distinct-file candidates to fill the
 # remaining slots (see _apply_diversity_cap).
 _MAX_PER_FILE: int = 2
+
+# Max number of SemanticMemory facts pulled in by the memory-expansion stage
+# (_memory_expand). file_path=None candidates are never diversity-capped
+# (_apply_diversity_cap), so this bounds the supply directly.
+_MEMORY_CANDIDATE_LIMIT: int = 3
 
 
 def _apply_metadata_filters(query, model, filters: dict, filter_fields: dict):
@@ -166,6 +181,8 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         query (ts_rank order) unioned into the candidate set, so a document
         with a strong keyword match but a weak cosine-distance rank still
         reaches Stage 2 (brain corpus only; _keyword_expand).
+    Stage 1d: memory expansion — accumulated SemanticMemory facts scoped to
+        workspace_id/peer_id, opt-in via include_memory (_memory_expand).
     Stage 2: keyword re-rank via ILIKE/ts_rank scoped to the candidate IDs.
     Score fusion: semantic similarity + keyword boost + section-title 2x weight.
 
@@ -180,6 +197,9 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         filters = getattr(event, "filters", None)
         include_archived = getattr(event, "include_archived", False)
         expand_structural = getattr(event, "expand_structural", True)
+        workspace_id = getattr(event, "workspace_id", None)
+        peer_id = getattr(event, "peer_id", None)
+        include_memory = getattr(event, "include_memory", False)
         chunks = self.retrieve(
             query,
             corpus=corpus,
@@ -187,6 +207,9 @@ class RetrieveChunksNode(Node, DbSeamMixin):
             filters=filters,
             include_archived=include_archived,
             expand_structural=expand_structural,
+            workspace_id=workspace_id,
+            peer_id=peer_id,
+            include_memory=include_memory,
         )
         task_context.update_node(
             node_name=self.node_name,
@@ -194,7 +217,7 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         )
         return task_context
 
-    def retrieve(  # pylint: disable=too-many-arguments
+    def retrieve(  # pylint: disable=too-many-arguments,too-many-locals
         self,
         query: str,
         corpus: str = "content",
@@ -204,6 +227,9 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         filters: dict | None = None,
         include_archived: bool = False,
         expand_structural: bool = True,
+        workspace_id: str | None = None,
+        peer_id: str | None = None,
+        include_memory: bool = False,
     ) -> list[dict]:
         """Run the two-stage hybrid retrieval pipeline.
 
@@ -220,6 +246,13 @@ class RetrieveChunksNode(Node, DbSeamMixin):
                 (currently "brain" only), widens the Stage-1 semantic candidate
                 set through the ``related:``-neighborhood of the top hits
                 before keyword re-rank. No-op for "content" or when False.
+            workspace_id: D47 workspace name to scope memory retrieval to.
+                Memory expansion (Stage 1d) is a no-op unless this is not
+                ``None`` **and** ``include_memory=True``.
+            peer_id: Optional narrowing of memory retrieval to one entity.
+            include_memory: Opt-in gate for Stage 1d memory expansion —
+                surfaces accumulated ``SemanticMemory`` facts as ``via="memory"``
+                candidates. Requires a non-None ``workspace_id`` to take effect.
 
         Returns:
             List of up to ``k`` normalized chunk dicts, each containing
@@ -249,7 +282,13 @@ class RetrieveChunksNode(Node, DbSeamMixin):
             include_archived=include_archived,
         )
         candidates = self._merge_candidates(candidates, keyword_candidates)
-        candidate_ids = [c["id"] for c in candidates]
+        if include_memory:
+            memory_candidates = self._memory_expand(
+                vector, workspace_id=workspace_id, peer_id=peer_id
+            )
+            candidates = self._merge_candidates(candidates, memory_candidates)
+        memory_ids = {c["id"] for c in candidates if c.get("via") == "memory"}
+        candidate_ids = [c["id"] for c in candidates if c["id"] not in memory_ids]
         keyword_matches = self._keyword_search(query, candidate_ids, corpus)
         return self._fuse_and_rank(candidates, keyword_matches, k, threshold)
 
@@ -482,6 +521,62 @@ class RetrieveChunksNode(Node, DbSeamMixin):
                 _row_to_candidate(row, distance, config, via="keyword")
                 for row, distance in rows
             ]
+
+    @staticmethod
+    def _memory_expand(
+        vector: list[float],
+        *,
+        workspace_id: str | None,
+        peer_id: str | None,
+    ) -> list[dict]:
+        """Stage 1d: widen the candidate set through accumulated memory facts.
+
+        No-op (returns ``[]``, no DB touched) when ``workspace_id`` is
+        ``None`` — the caller (``retrieve()``) already gates on
+        ``include_memory``, so this method only additionally enforces the
+        non-None ``workspace_id`` half of design decision 2.
+
+        Calls ``MemoryLoaderNode.retrieve()`` in **cosine mode**, reusing the
+        Stage-1 query embedding (``vector``) rather than re-embedding the
+        question text — cosine mode sets ``use_decay_weighting=False``
+        internally, so decay is applied here in the adapter instead, by
+        multiplying the raw cosine score by the ``effective_confidence``
+        already computed by ``_score_fact``.
+
+        Adapts each fact dict to the standard candidate-dict shape consumed
+        by ``_fuse_and_rank``. The ``distance`` inversion is deliberate:
+        ``_fuse_and_rank`` computes ``similarity = 1.0 - distance``, so
+        storing ``distance = 1.0 - (score * effective_confidence)`` round-trips
+        back to the decayed score with ``_fuse_and_rank`` left unchanged.
+        Each candidate is flagged ``via="memory"`` and carries
+        ``file_path=None``/``doc_id=None``/``title=None`` (memory facts have
+        no source-file provenance).
+
+        This method is isolated so tests can patch it without a live DB.
+        """
+        if workspace_id is None:
+            return []
+
+        result = MemoryLoaderNode().retrieve(
+            workspace_id=workspace_id,
+            peer_id=peer_id,
+            query_embedding=vector,
+            top_k=_MEMORY_CANDIDATE_LIMIT,
+        )
+        return [
+            {
+                "id": fact["id"],
+                "content": fact["fact"],
+                "section_title": None,
+                "is_section_title": False,
+                "distance": 1.0 - (fact["score"] * fact["effective_confidence"]),
+                "file_path": None,
+                "doc_id": None,
+                "title": None,
+                "via": "memory",
+            }
+            for fact in result["facts"]
+        ]
 
     def _keyword_search(
         self,

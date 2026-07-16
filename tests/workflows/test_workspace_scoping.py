@@ -47,6 +47,12 @@ def _make_event(question: str = "q", corpus: str = "brain", filters: dict | None
     event.filters = filters
     event.include_archived = True  # skip the unrelated default-status filter
     event.expand_structural = True
+    # Explicit — a bare MagicMock auto-vivifies unset attributes to a
+    # (truthy, non-None) Mock, which would otherwise flip on Stage 1d memory
+    # expansion (OR.M Task 4) for these workspace-scoping-only tests.
+    event.workspace_id = None
+    event.peer_id = None
+    event.include_memory = False
     return event
 
 
