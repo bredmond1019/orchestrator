@@ -19,16 +19,14 @@ standing rule 7). ``_session_scope`` and ``_embed`` are mockable seams,
 following the same pattern as ``EpisodeWriteService``.
 """
 
-from contextlib import contextmanager
 from datetime import datetime
 
 from core.nodes.base import Node
 from core.task import TaskContext
 from database.semantic_memory import DEFAULT_DECAY_FACTOR, SemanticMemory
-from database.session import db_session
-from services.embedding_service import EmbeddingService
 
 from memory.decay import effective_confidence, weeks_between
+from memory.seams import DbSeamMixin
 
 # How much a contradicted fact's (decayed) confidence is multiplied by when a
 # new, contradicting fact is written. A row is never overwritten or deleted —
@@ -39,9 +37,14 @@ CONTRADICTION_PENALTY = 0.5
 DEFAULT_FACT_CONFIDENCE = 0.9
 
 
-class UpsertMemoryNode(Node):
+class UpsertMemoryNode(Node, DbSeamMixin):
     """Upsert extracted facts into ``SemanticMemory``, applying decay + the
-    never-overwrite contradiction rule."""
+    never-overwrite contradiction rule.
+
+    ``_session_scope``/``_embed`` come from ``DbSeamMixin``
+    (``app/memory/seams.py``) — see that module's docstring for why a mixin
+    (not composition) preserves the per-instance test monkeypatches.
+    """
 
     def __init__(self, source_node_name: str = "IngestTimeExtractionNode"):
         """``source_node_name`` is the upstream node whose ``result`` carries
@@ -51,26 +54,6 @@ class UpsertMemoryNode(Node):
         extraction/consolidation node — the node itself stays agnostic of
         which one produced its input."""
         self.source_node_name = source_node_name
-
-    # ------------------------------------------------------------------
-    # Seams — patched in tests
-    # ------------------------------------------------------------------
-
-    def _session_scope(self):
-        """Return a context manager yielding a SQLAlchemy session.
-
-        Isolated so tests can monkeypatch it to yield a real (e.g. in-memory
-        SQLite) session without touching the deployment database.
-        """
-        return contextmanager(db_session)()
-
-    def _embed(self, text: str) -> list[float]:
-        """Embed ``text`` via the configured ``EmbeddingService``.
-
-        Isolated so tests can monkeypatch it and avoid a live embedding
-        provider call.
-        """
-        return EmbeddingService().embed_text(text)
 
     # ------------------------------------------------------------------
     # Core logic

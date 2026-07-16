@@ -122,7 +122,7 @@ def _run_semantic_search_scoped(node: RetrieveChunksNode, project_filter: str, r
         yield fake_session
 
     with patch(
-        "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+        "memory.seams.db_session",
         _fake_db_session,
     ):
         return RetrieveChunksNode._semantic_search(
@@ -244,7 +244,7 @@ class TestBrainScopedQueryUnaffected:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             results = RetrieveChunksNode._semantic_search(
@@ -295,7 +295,7 @@ class TestStructuralExpansionNoOpForWorkspace:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._structural_expand([candidate], "brain", [0.1] * 1024)

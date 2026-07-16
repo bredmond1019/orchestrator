@@ -45,7 +45,7 @@ from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (  # noqa:
 )
 
 _EMBED_PATCH = "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
-_DB_SESSION_PATCH = "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session"
+_DB_SESSION_PATCH = "memory.seams.db_session"
 
 
 def _brain_row(doc_id: str, content: str, title: str = "") -> SimpleNamespace:

@@ -20,17 +20,21 @@ hoc elsewhere in a node).
 """
 
 import uuid
-from contextlib import contextmanager
 
 from core.nodes.base import Node
 from core.task import TaskContext
 from database.peer import Peer
-from database.session import db_session
+from memory.seams import DbSeamMixin
 from memory.upsert_memory_node import UpsertMemoryNode
 
 
-class ConsolidationWriteNode(Node):
-    """Terminal node: write consolidated facts + refreshed representations."""
+class ConsolidationWriteNode(Node, DbSeamMixin):
+    """Terminal node: write consolidated facts + refreshed representations.
+
+    ``_session_scope`` comes from ``DbSeamMixin`` (``app/memory/seams.py``) —
+    see that module's docstring for why a mixin (not composition) preserves
+    the per-instance test monkeypatches.
+    """
 
     def __init__(
         self,
@@ -42,14 +46,6 @@ class ConsolidationWriteNode(Node):
         a fresh instance but is injectable so tests can supply a double."""
         self.source_node_name = source_node_name
         self.upsert_memory_node = upsert_memory_node or UpsertMemoryNode()
-
-    def _session_scope(self):
-        """Return a context manager yielding a SQLAlchemy session.
-
-        Isolated so tests can monkeypatch it to yield a real (e.g. in-memory
-        SQLite) session without touching the deployment database.
-        """
-        return contextmanager(db_session)()
 
     def _update_representation(self, peer_id: str, representation: str) -> None:
         """Refresh ``Peer.representation`` for ``peer_id``.

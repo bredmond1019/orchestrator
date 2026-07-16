@@ -38,14 +38,13 @@ is pure and unit-testable without a DB.
 
 import math
 import re
-from contextlib import contextmanager
 
 from core.nodes.base import Node
 from core.task import TaskContext
 from database.brain_document import BrainDocument
 from database.brain_edge import BrainEdge
 from database.content_chunk import ContentChunk
-from database.session import db_session
+from memory.seams import DbSeamMixin
 from services.embedding_service import EmbeddingService
 from sqlalchemy import func, or_
 
@@ -151,8 +150,14 @@ def _row_to_candidate(row, distance: float, config: dict, via: str = "semantic")
     }
 
 
-class RetrieveChunksNode(Node):
+class RetrieveChunksNode(Node, DbSeamMixin):
     """Two-stage hybrid retrieval node (plus two optional widening stages).
+
+    ``_session_scope`` comes from ``DbSeamMixin`` (``app/memory/seams.py``) —
+    the shared seam that replaces this node's former 5 inline
+    ``contextmanager(db_session)()`` call sites. See that module's docstring
+    for why a mixin (not composition) preserves the per-instance test
+    monkeypatches.
 
     Stage 1: semantic candidate set via pgvector cosine distance (top-20).
     Stage 1b: structural expansion via the related:-neighborhood of the top
@@ -287,7 +292,7 @@ class RetrieveChunksNode(Node):
         """
         config = _CORPUS_CONFIG[corpus]
         model = config["model"]
-        with contextmanager(db_session)() as session:
+        with self._session_scope() as session:
             distance_expr = model.embedding.cosine_distance(vector)
             q = session.query(model, distance_expr.label("_distance"))
             if filters and config.get("filter_fields"):
@@ -346,7 +351,7 @@ class RetrieveChunksNode(Node):
 
         existing_doc_ids = {c.get("doc_id") for c in candidates}
 
-        with contextmanager(db_session)() as session:
+        with self._session_scope() as session:
             neighbor_doc_ids = self._resolve_neighbor_doc_ids(
                 session, seed_doc_ids, existing_doc_ids
             )
@@ -459,7 +464,7 @@ class RetrieveChunksNode(Node):
         tsv_col = getattr(model, config["tsv_field"])
         tsquery = func.plainto_tsquery("english", query)
 
-        with contextmanager(db_session)() as session:
+        with self._session_scope() as session:
             q = session.query(
                 model, model.embedding.cosine_distance(vector).label("_distance")
             ).filter(tsv_col.op("@@")(tsquery))
@@ -510,16 +515,15 @@ class RetrieveChunksNode(Node):
             return self._keyword_search_fts(query, candidate_ids, config, tsv_field)
         return self._keyword_search_ilike(query, candidate_ids, config)
 
-    @staticmethod
     def _keyword_search_fts(
-        query: str, candidate_ids: list, config: dict, tsv_field: str
+        self, query: str, candidate_ids: list, config: dict, tsv_field: str
     ) -> dict:
         """Graded full-text search: returns ``dict[id -> ts_rank]`` (FTS corpora)."""
         model = config["model"]
         tsv_col = getattr(model, tsv_field)
         tsquery = func.plainto_tsquery("english", query)
         rank = func.ts_rank(tsv_col, tsquery)
-        with contextmanager(db_session)() as session:
+        with self._session_scope() as session:
             q = (
                 session.query(model.id, rank.label("kw_rank"))
                 .filter(model.id.in_(candidate_ids))
@@ -527,8 +531,7 @@ class RetrieveChunksNode(Node):
             )
             return {row.id: float(row.kw_rank) for row in q.all()}
 
-    @staticmethod
-    def _keyword_search_ilike(query: str, candidate_ids: list, config: dict) -> set:
+    def _keyword_search_ilike(self, query: str, candidate_ids: list, config: dict) -> set:
         """Legacy binary substring match: returns ``set[id]`` (content corpus)."""
         model = config["model"]
         content_col = getattr(model, config["content_field"])
@@ -545,7 +548,7 @@ class RetrieveChunksNode(Node):
                 func.array_to_string(extra_col, " ").ilike(f"%{t}%") for t in terms
             )
 
-        with contextmanager(db_session)() as session:
+        with self._session_scope() as session:
             q = (
                 session.query(model.id)
                 .filter(model.id.in_(candidate_ids))
