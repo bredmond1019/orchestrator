@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-15T18:44:04Z"
+timestamp: "2026-07-16T01:51:00Z"
 ---
 
 # log — Orchestration Repo
@@ -12,6 +12,49 @@ timestamp: "2026-07-15T18:44:04Z"
 ---
 
 ## [2026-07-15]
+
+### Pinned the knowledge workspace data contract (D47) — canonical docs/workspace-contract.md v1.0.0, cross-pinned in bastion, carryover resolved
+
+- **What:** Pinned the knowledge workspace data contract (D47): authored canonical
+  `docs/workspace-contract.md` v1.0.0, cross-pinned the consumer view in bastion
+  `docs/workspace-contract.md`, recorded brain decision D47, updated the OR.C block spec + protocol
+  tables, and resolved the `or-c-bastion-workspace-data-contract` carryover. Session detail:
+  consumed `planning/handoff.md` (the or-c-bastion-workspace-data-contract handoff). Two design
+  decisions confirmed with Brandon: (1) workspace names = `brain.toml` `[[repos]].slug` values
+  (kebab-case, no second namespace) — already the retrieval `project` filter key and OR.O's
+  `project_override` stamp; (2) name-parity registries, not a shared file — each resolver keeps its
+  own registry (bastion: `[workspaces]` in `~/.config/bastion/config.toml`, shipped; Python: OR.C's
+  future config/CLI) with binding resolution-precedence semantics (explicit root > named workspace >
+  default > cwd; pure, typed unknown-name vs no-registry errors). Before deciding (2), reviewed
+  core/engine-rs and confirmed it never resolves workspaces by design ("Brain/RAG stays Python",
+  engine-rs `planning/context.md` governing principle 7) — an already-resolved `workspace_id` would
+  arrive as event/metadata data; this three-way alignment is stated in the contract's Consumers
+  table. Authored `docs/workspace-contract.md` (canonical, v1.0.0, orchestrator-owned, D20
+  data-contract.md pattern: versioned header, §1 what a workspace is, §2 names, §3 resolution
+  semantics, §4 OKF corpus rules shared minimum (.md/.mdx, skip hidden + target/, doc_id-else-stem
+  node identity, [[slug]] edges), §5 consumers, §6 semver + changelog). Every behavioral claim
+  verified against bastion source (`src/config.rs` `resolve_workspace_root`, `src/validate/mod.rs`
+  `find_markdown_files`, `src/brain/okf.rs`). Cross-pinned consumer view:
+  `core/bastion/docs/workspace-contract.md` (Pinned Contract Version 1.0.0, rule→Rust-surface
+  mapping tables, re-pin checklist) + row in bastion `docs/index.md`. Brain decision D47
+  (`docs/decisions/D47-workspace-contract.md` + index row) recording the three sub-decisions.
+  `planning/master-plan.md` ### OR.C updated: Interfaces bullet now cites the pinned contract;
+  acceptance criteria now require conformance to it (name = manifest slug, §3/§4 rules) — that edit
+  was made earlier this session, before this log-work run. Brain CLAUDE.md Update Protocol table:
+  new "Orchestrator↔bastion workspace contract changed" row (mirrors the D20 row). Orchestrator
+  CLAUDE.md standing rule 5: added workspace-contract pointer. bastion `planning/master-plan.md`
+  ### BA.6.B Interfaces bullet: "Contract now pinned" note. Resolved (removed) the
+  `or-c-bastion-workspace-data-contract` carryover entry in `planning/state.json` (its
+  `clears_when` — contract doc exists, cross-pinned in both repos — is satisfied);
+  `mev emit-state --write` run (0 errors, 19 pre-existing W_EMIT_NO_SENTINEL warnings in unrelated
+  repos) and `mev validate-brain --state` clean (0 errors). No production code changed; no
+  `tracks[].blocks[]` status changes — the carryover was a carryover, not a block; OR.C itself
+  remains open/unstarted.
+- **Why:** Primary deliverable of the 2026-07-15 handoff — pin the contract before OR.C is scoped
+  so the Python and Rust halves can't silently diverge on what a "workspace" is.
+- **Refs:** docs/workspace-contract.md, bastion docs/workspace-contract.md, brain
+  docs/decisions/D47-workspace-contract.md, planning/master-plan.md ### OR.C, planning/state.json,
+  planning/handoff.md
 
 ### Status corrections (Phase 0 A/B, Go-Public, Business/Visibility removal) + OR.C/bastion workspace-contract investigation, handoff
 

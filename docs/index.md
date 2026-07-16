@@ -7,7 +7,7 @@ layer: [engine]
 project: orchestrator
 status: active
 keywords: [docs index, developer reference, orchestration framework, getting-started, API reference]
-related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, sdlc-flow-workflow, evals]
+related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, sdlc-flow-workflow, evals]
 ---
 
 # Documentation Index
@@ -30,6 +30,7 @@ Developer reference for the orchestration framework. Start here, then open the d
 | [api-reference.md](api-reference.md) | Class-level reference for every public abstraction in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/` that you subclass when writing a new workflow. |
 | [sdlc-flow-workflow.md](sdlc-flow-workflow.md) | `SDLC_FLOW` workflow — setup (task list, harness.json, auth), triggering, the task-loop node-by-node, the state file / resuming, and a debugging checklist. |
 | [data-contract.md](data-contract.md) | **Versioned** canonical contract for how external consumers (e.g. the `bastion` CLI) read execution state — the `events` table, `task_context`/`node_runs` JSON, and HTTP surface. Bump the version when any shape changes. |
+| [workspace-contract.md](workspace-contract.md) | **Versioned** canonical contract for the shared "knowledge workspace" convention (`OR.C` ⇄ bastion `BA.6.B`) — workspace names (= `brain.toml` slugs), resolution precedence, and OKF corpus rules. Bump the version when any rule changes. |
 | [evals.md](evals.md) | Offline eval harness (`app/evals/` + `scripts/run_eval.py`, Bastion Program Block OR.U) — scorers, blind LLM-as-judge, slices, the runner/regression-history persistence, the one-change self-improvement gate, and the coding domain slice. |
 | [configuration.md](configuration.md) | Every environment variable, connection-string assembly, and Docker service topology — configure the stack for local or Docker deployment without guessing. |
 | [app-architecture-overview.md](app-architecture-overview.md) | Codebase analysis of the FastAPI → Celery → Workflow DAG → TaskContext architecture. |
