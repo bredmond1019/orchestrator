@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-16T02:01:11Z"
+timestamp: "2026-07-16T06:20:00Z"
 ---
 
 # log — Orchestration Repo
@@ -47,6 +47,26 @@ cda61ad feat: implement or-c-multi-workspace-brain-task2
 fac81e0 fix: replace blind Exception assert with FrozenInstanceError in workspace_resolver tests
 e07897b chore: wrap up or-c-multi-workspace-brain
 db347c9 feat: implement or-c-multi-workspace-brain-task1
+```
+
+### Close-out hardening pass on or-c-multi-workspace-brain-flow
+
+- **What:** Ran `/close-out --clean-worktree` as a separate session after the sdlc-flow PASS above.
+  Re-ran the full `planning/harness.json` suite by hand and confirmed green (1166 passed, 8 skipped,
+  ruff 0 violations, pylint 10.00/10, pytest-count 1145→1173, no drop; emoji gate OK). A coverage gap
+  scan found both changed source files (`app/services/workspace_resolver.py`,
+  `scripts/index_brain.py`) already adequately covered — no blocking gaps. `/code-review low` on the
+  diff returned no findings. `/update-docs --patch` caught one real stale issue: the earlier docs
+  stage had inserted a new "24. WorkspaceResolver" TOC entry into `docs/api-reference.md` without
+  renumbering the rest, leaving a duplicate "24." entry; fixed by renumbering entries 24-53 to 25-54
+  (commit `71804f7`). Wrote `planning/handoff.md` flagging PR #6
+  (`or-c-multi-workspace-brain-flow`) as ready to merge next.
+- **Why:** Standard post-PASS close-out hardening before handing the branch off for merge.
+- **Refs:** commit `71804f7` "docs: fix duplicate TOC entry numbering in api-reference.md";
+  carryover `init-worktree-missing-app-env-copy` added to `planning/state.json`.
+
+```
+71804f7 docs: fix duplicate TOC entry numbering in api-reference.md
 ```
 
 ## [run: 2026-07-15]
