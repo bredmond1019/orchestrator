@@ -11,6 +11,44 @@ timestamp: "2026-07-16T02:01:11Z"
 
 ---
 
+## [run: 2026-07-16]
+
+Resumed and completed `/sdlc-flow or-c-multi-workspace-brain` (Tasks 1–5, all passed; final
+verdict **PASS**), closing out Bastion Program Block `OR.C` (Multi-workspace Brain, Python half).
+Task 1 (`app/services/workspace_resolver.py`, implemented in the prior bailed run) was resumed and
+its test suite hardened — a blind `pytest.raises(Exception)` around the frozen-dataclass mutation
+check was replaced with the precise `dataclasses.FrozenInstanceError`. Task 2 added workspace mode
+to `scripts/index_brain.py`: new `--workspace NAME`/`--root PATH` flags select a contract-§4
+corpus walk (`.md` + `.mdx`, hidden entries and `target/` dirs skipped, empty corpus fatal),
+stamping every row's `project` with the workspace name verbatim and storing `file_path` relative
+to the workspace root, with brain mode left byte-for-byte unchanged as the no-flag default; all
+destructive queries (per-file upsert delete, `--rebuild`, `--prune-paths`) became mode-aware,
+scoping to `project` in workspace mode and never touching non-manifest workspace rows in brain
+mode. A new portability fixture (`tests/fixtures/okf_workspace/`) exercises every §4 rule. Task 3
+added `tests/workflows/test_workspace_scoping.py`, proving via the real `_semantic_search`/
+`_apply_metadata_filters` path that retrieval already conforms to the workspace contract —
+cross-workspace isolation, same-relative-path coexistence, and harmless structural-expansion
+no-ops all confirmed with **no production retrieval code change** needed, as the spec anticipated.
+Task 4 patched `docs/scripts.md`, `docs/configuration.md`, and `docs/brain-rag.md` for the new
+mode and the workspace registry file; the docs stage additionally patched `docs/api-reference.md`.
+Task 5's validation pass also tripped the emoji-gate on two historical `log.md` lines quoting a
+Telegram bot's reply string — replaced with a plain-text `[checkmark]` placeholder, preserving the
+factual record. Reviewed PASS in 1 attempt; full gate green. `planning/state.json`'s `OR.C` block
+flipped `closed`. Next: pick a fresh Wave-1+ block (`OR.J` brain-freshness cron loop, or `OR.P`
+semantic code search) — `OR.J` remains intentionally deferred per the
+`brain-freshness-cron-loop` carryover pending its automation prerequisites.
+
+```
+28e22c5 docs: update docs for or-c-multi-workspace-brain
+1c95103 fix: fix pass 1 for or-c-multi-workspace-brain-task5
+5935420 feat: implement or-c-multi-workspace-brain-task4
+82ff4a6 feat: implement or-c-multi-workspace-brain-task3
+cda61ad feat: implement or-c-multi-workspace-brain-task2
+fac81e0 fix: replace blind Exception assert with FrozenInstanceError in workspace_resolver tests
+e07897b chore: wrap up or-c-multi-workspace-brain
+db347c9 feat: implement or-c-multi-workspace-brain-task1
+```
+
 ## [run: 2026-07-15]
 
 Ran `/sdlc-flow or-c-multi-workspace-brain` (Tasks 1–5 targeted). Task 1 implemented
