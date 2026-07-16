@@ -43,6 +43,7 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 21. [ClaudeCodeBackend](#claudecodebackend)
 22. [ClaudeAgentSdkBackend](#claudeagentsdkbackend)
 23. [BastionSessionBackend](#bastionsessionbackend)
+24. [WorkspaceResolver](#workspaceresolver)
 24. [ClaudeCodeModel](#claudecodemodel)
 25. [WorkflowRegistry](#workflowregistry)
 26. [Event SQLAlchemy Model](#event-sqlalchemy-model)
@@ -2394,6 +2395,84 @@ truth — see `docs/scripts.md` § `load_brain_edges.py`).
 `tests/test_load_brain_edges.py` — 15 tests covering the loader: the version=='2' guard,
 resolved-target read-through, dangling-edge preservation, unresolvable-source skip, and
 clear-then-reload idempotency, mocking the session/repository seam (no live DB).
+
+---
+
+## WorkspaceResolver
+
+**Source:** `app/services/workspace_resolver.py`
+
+Pure resolution helpers implementing the knowledge workspace contract (`docs/workspace-contract.md`
+§3 resolution semantics, brain D47). Mirrors bastion's `src/config.rs` `resolve_workspace_root` +
+`FileConfig.workspaces`/`default_workspace` — same semantics, per-consumer registry file. Consumed
+by `scripts/index_brain.py`'s `--workspace`/`--root` multi-workspace indexing mode.
+
+### `WorkspaceRegistry`
+
+```python
+@dataclass(frozen=True)
+class WorkspaceRegistry:
+    workspaces: dict[str, str] = field(default_factory=dict)
+    default_workspace: str | None = None
+```
+
+A loaded (or empty) `[workspaces]` registry. `workspaces` maps name -> path, both verbatim
+strings (no canonicalization). `is_empty` (property) is `True` only when no registry file was
+found/loaded at all — distinct from a present-but-empty `[workspaces]` table.
+
+### `validate_workspace_name(name: str) -> None`
+
+Validates `name` conforms to contract §2 (kebab-case: lowercase ASCII letters, digits, hyphens).
+Raises `InvalidWorkspaceNameError` on failure.
+
+### `default_registry_path(xdg_config_home=None, home=None) -> Path | None`
+
+Resolves the default registry path from `$XDG_CONFIG_HOME`/`$HOME` without touching
+`os.environ` directly (callers/tests inject the values — pure function). Returns
+`$XDG_CONFIG_HOME/orchestrator/config.toml`, falling back to `~/.config/orchestrator/config.toml`,
+or `None` when neither is supplied.
+
+### `load_registry(path: Path | None = None) -> WorkspaceRegistry`
+
+Loads the `[workspaces]` table from `path`. Degradation contract: `path` is `None`, absent, or
+unreadable -> empty `WorkspaceRegistry` (no error); `path` exists but is malformed TOML or the
+wrong shape -> `MalformedRegistryError`.
+
+### `resolve_workspace_root(explicit_root, workspace, registry) -> Path`
+
+```python
+def resolve_workspace_root(
+    explicit_root: Path | None,
+    workspace: str | None,
+    registry: WorkspaceRegistry,
+) -> Path:
+```
+
+Resolves a workspace name/root to an effective corpus root path. Pure — no I/O, no
+canonicalization, no existence checks; registry paths are returned verbatim.
+
+| Precedence (highest -> lowest) | Source |
+|---|---|
+| 1. `explicit_root` | Always wins outright, no registry lookup. |
+| 2. `workspace` | Looked up in `registry.workspaces`. |
+| 3. `registry.default_workspace` | Looked up the same way. |
+| 4. Built-in default | `Path(".")`. |
+
+### Typed errors
+
+| Exception | Raised when |
+|---|---|
+| `WorkspaceResolverError` | Base class for all typed workspace-resolution errors. |
+| `InvalidWorkspaceNameError` | A supplied (or resolved-default) workspace name fails the §2 kebab-case format. |
+| `NoWorkspaceRegistryError` | A workspace name was supplied but the registry is entirely empty (no file found). |
+| `UnknownWorkspaceError` | A workspace name was supplied but is not present in a non-empty registry. |
+| `MalformedRegistryError` | The registry file exists but is invalid TOML or the wrong shape (e.g. `[workspaces]` not a table, or a non-string name/path). |
+
+### Test coverage
+
+`tests/services/test_workspace_resolver.py` — 41 tests covering registry loading (missing/empty/
+malformed files), name validation, and all four resolution-precedence branches plus their typed
+error paths.
 
 ---
 
