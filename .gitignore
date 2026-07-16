@@ -127,6 +127,7 @@ trees/
 !/scripts/run_eval.py
 !/scripts/refresh_brain.py
 !/scripts/emit_task_context_fixture.py
+!/scripts/ingest_repo_log.py
 # SDLC harness breadcrumbs (machine-local state — not committed)
 sdlc-state.json
 sdlc-block-state.json
