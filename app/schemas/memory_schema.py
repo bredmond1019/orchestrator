@@ -1,10 +1,13 @@
 """Event schemas for the block OR.S memory workflows.
 
 ``MemoryIngestEventSchema`` is the fast, per-interaction ingest path (Task
-3). ``MemoryConsolidationEventSchema`` (Task 4) will be added here alongside
-it, per the standard scaffold — one schema module per project, mirroring the
-other ``app/schemas/*_schema.py`` files.
+3). ``MemoryConsolidationEventSchema`` is the dream-time consolidation path
+(Task 4) — Claude-only per D35. Both live here per the standard scaffold —
+one schema module per project, mirroring the other ``app/schemas/*_schema.py``
+files.
 """
+
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -36,4 +39,30 @@ class MemoryIngestEventSchema(BaseModel):
     )
     interaction: str = Field(
         ..., description="The raw interaction text IngestTimeExtractionNode extracts from"
+    )
+
+
+class MemoryConsolidationEventSchema(BaseModel):
+    """Event schema for ``MemoryConsolidationWorkflow`` — one dream-time pass.
+
+    Fields:
+        workspace_id: The D47 workspace name this consolidation pass is
+            scoped to. Consolidation only ever reasons over peers within one
+            workspace (D47 name semantics, verbatim string match).
+        peer_id: When set, consolidate only this peer. When omitted (the
+            common nightly-batch case), consolidate every peer in the
+            workspace — the load node fans out to all of them and the
+            consolidation node's structured output is keyed per peer so each
+            peer's facts stay isolated within the same run.
+        since: Only reason over episodes that occurred at or after this
+            timestamp. When omitted, all episodes for the peer(s) are
+            considered.
+    """
+
+    workspace_id: str = Field(..., description="D47 workspace name this pass is scoped to")
+    peer_id: str | None = Field(
+        default=None, description="Consolidate only this peer; omit for every peer in workspace"
+    )
+    since: datetime | None = Field(
+        default=None, description="Only reason over episodes at/after this timestamp"
     )
