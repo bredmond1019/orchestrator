@@ -136,6 +136,12 @@ Status lifecycle: `pending` (seeded) → `running` (on entry) → `success` \| `
 | node output | `nodes[name]` (look for the `output` key) |
 | run input | `events.data` |
 
+**Conformance fixture.** `tests/fixtures/task_context/research_agent_task_context.json` is a real,
+code-path-captured `task_context` (emitted by `scripts/emit_task_context_fixture.py`), not a
+hand-authored one — `engine-rs`'s `round_trip.rs` asserts against a checked-in copy of it, and this
+repo's own `tests/test_task_context_fixture.py` asserts the live shape still matches it. Re-emit and
+update both copies whenever §5/§6 change; see `docs/scripts.md`.
+
 ---
 
 ## 7. HTTP surface
