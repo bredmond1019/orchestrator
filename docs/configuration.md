@@ -6,8 +6,8 @@ doc_id: configuration
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [environment variables, connection string, Docker, PostgreSQL, Redis, Celery]
-related: [getting-started, scripts]
+keywords: [environment variables, connection string, Docker, PostgreSQL, Redis, Celery, workspace registry]
+related: [getting-started, scripts, workspace-contract]
 ---
 
 # Configuration Reference
@@ -551,3 +551,49 @@ docker run -d -p 6379:6379 redis:latest
 
 Add the AI provider key(s) for whichever `ModelProvider` values your target workflows use (see
 section 3). All other AI provider variables can be left blank.
+
+---
+
+## 9. Workspace registry (`index_brain.py --workspace`, OR.C)
+
+`scripts/index_brain.py --workspace NAME` (see `docs/scripts.md` § "Workspace mode") resolves
+`NAME` against a small **registry file** that is separate from `app/.env` / `docker/.env` — it
+maps workspace names to filesystem roots and is read by
+`app/services/workspace_resolver.load_registry()`. This is the Python half of the shared
+"knowledge workspace" convention pinned in `docs/workspace-contract.md` (v1.0.0, brain D47);
+the bastion CLI keeps its own separate registry file with the same name→path semantics.
+
+**Location:** `$XDG_CONFIG_HOME/orchestrator/config.toml`, falling back to
+`~/.config/orchestrator/config.toml` if `$XDG_CONFIG_HOME` is unset.
+
+**Format:** a `[workspaces]` table (name → path, both plain strings, no canonicalization) plus
+an optional top-level `default_workspace` key:
+
+```toml
+# ~/.config/orchestrator/config.toml
+default_workspace = "my-notes"
+
+[workspaces]
+my-notes = "/Users/me/notes"
+client-acme = "/Users/me/clients/acme/docs"
+```
+
+Workspace names must be kebab-case (lowercase ASCII letters, digits, and hyphens) per contract
+§2 — the same string used verbatim as the `BrainDocument.project` value at index time and as
+the `filters={"project": "<name>"}` value at query time. No second namespace is introduced:
+don't reuse a name already registered in the brain repo's `brain.toml` manifest (those slugs are
+brain-mode `project` values, not workspace-registry entries).
+
+**Degradation rules** (contract §3, enforced by `load_registry`):
+
+| Registry file state | Behavior |
+|---|---|
+| Absent, or present but unreadable (e.g. permissions) | Empty registry — no error. A `--workspace NAME` invocation then raises `NoWorkspaceRegistryError` naming the workspace. |
+| Present and valid TOML with a `[workspaces]` table | Loaded normally. An unregistered `--workspace NAME` raises `UnknownWorkspaceError` naming the workspace. |
+| Present but malformed (invalid TOML, `[workspaces]` not a table, non-string name/path, non-string `default_workspace`) | `MalformedRegistryError` at load time — a load-time failure, not a silently-empty registry. |
+
+Resolution precedence when both flags and a registry are involved is the same contract §3 order
+documented in `docs/scripts.md`: explicit `--root` > named `--workspace` (registry lookup) >
+registry `default_workspace` > built-in default. Resolution itself is pure — the registry is
+never touched for `--root`, and no path in the registry is checked for existence until the
+indexer actually walks it.

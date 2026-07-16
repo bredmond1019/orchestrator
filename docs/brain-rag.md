@@ -6,8 +6,8 @@ doc_id: brain-rag
 layer: [engine, brain]
 project: orchestrator
 status: active
-keywords: [brain RAG, BrainDocument, index_brain, semantic retrieval, DOCUMENT_QA, embeddings]
-related: [app-architecture-overview, D36-bastion-engine-brain-role, D37-local-embeddings-mxbai]
+keywords: [brain RAG, BrainDocument, index_brain, semantic retrieval, DOCUMENT_QA, embeddings, multi-workspace]
+related: [app-architecture-overview, D36-bastion-engine-brain-role, D37-local-embeddings-mxbai, workspace-contract]
 ---
 
 # Brain RAG
@@ -298,6 +298,53 @@ There are three levels of reset, from softest to hardest:
 **Why the table can't be cleanly downgraded:** `brain_documents` is created by migration `b3c4d5e6f7a8`, which sits *below* the mergepoint `020c9f7f89e2` that it shares with the `events` and `content_chunks`/`chat_sessions` tables. Downgrading far enough to drop `brain_documents` would also drop those tables. To drop just this table, run a manual `DROP TABLE brain_documents CASCADE` or author a dedicated down-migration — don't reach for `alembic downgrade`.
 
 **On the diagnostic-row carve-out:** `doc_type="diagnostic"` rows carry client-specific pattern data that is expensive to regenerate, so `--rebuild` deliberately leaves them in place. If you genuinely need a *full* clear including diagnostic rows, delete them by hand (e.g. `DELETE FROM brain_documents WHERE doc_type = 'diagnostic'`).
+
+---
+
+## Multi-workspace corpora (OR.C)
+
+`index_brain.py` and `RetrieveChunksNode` are not hard-wired to the brain repo — a **workspace**
+is any named OKF markdown root, per the pinned knowledge workspace contract
+(`docs/workspace-contract.md` v1.0.0, brain D47), and the brain corpus above is just the
+degenerate single-workspace case (no `--workspace`/`--root` flags needed, behavior unchanged).
+
+Indexing a second, non-brain OKF directory:
+
+```bash
+python scripts/index_brain.py --workspace my-notes
+```
+
+resolves `my-notes` against the `[workspaces]` registry (see `docs/configuration.md` §
+"Workspace registry"), walks it per contract §4 (`.md`/`.mdx`, hidden entries and `target/`
+skipped, empty corpus fatal), and stamps every row `project=my-notes` with `file_path` relative
+to that workspace's own root.
+
+**The workspace name IS the retrieval scoping value** — no separate concept exists at query
+time. Answer over that workspace alone with the same `filters` field documented above:
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "DOCUMENT_QA",
+    "data": {
+      "doc_id": "00000000-0000-0000-0000-000000000000",
+      "question": "What does this workspace say about X?",
+      "corpus": "brain",
+      "filters": {"project": "my-notes"}
+    }
+  }'
+```
+
+Two workspaces can each contain a same-named/same-relative-path file without colliding — every
+destructive write (incremental upsert, `--rebuild`, `--prune-paths`) is scoped by `project` in
+workspace mode, and a brain-scoped query never returns another workspace's rows (retrieval was
+already conformant here — no production change was needed, only tests). Structural graph
+expansion (`brain_edges`) is a harmless no-op for a workspace with no loaded edges.
+
+See `docs/workspace-contract.md` for the full binding rules (names, resolution precedence, corpus
+rules) and `docs/scripts.md` § "Workspace mode" for the full CLI reference.
 
 ---
 

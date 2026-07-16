@@ -6,8 +6,8 @@ doc_id: scripts
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, refresh_brain, developer scripts, run_eval]
-related: [getting-started, brain-rag, configuration, evals]
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, refresh_brain, developer scripts, run_eval, workspace mode]
+related: [getting-started, brain-rag, configuration, evals, workspace-contract]
 ---
 
 # Developer Scripts
@@ -125,6 +125,72 @@ python scripts/index_brain.py --prune-paths docs/old.md docs/decisions/gone.md
 # from the script's own location — so it works from any working directory)
 python scripts/index_brain.py --brain-path /path/to/agentic-portfolio
 ```
+
+### Workspace mode — indexing an arbitrary OKF directory (OR.C)
+
+By default `index_brain.py` runs in **brain mode**: no flags needed, behavior is unchanged from
+the table above (the `brain.toml` walk-up default). Passing `--workspace` and/or `--root`
+switches to **workspace mode**, which indexes any OKF markdown directory — not just the brain
+repo — per the pinned knowledge workspace contract (`docs/workspace-contract.md` v1.0.0).
+
+```bash
+# Index a workspace registered by name in ~/.config/orchestrator/config.toml
+python scripts/index_brain.py --workspace my-notes
+
+# Override resolution with an explicit root — --root always requires --workspace,
+# since the name supplies the row identity ("project" column); --root only
+# overrides where the corpus is read from
+python scripts/index_brain.py --workspace my-notes --root /tmp/my-notes-checkout
+
+# Dry run over a workspace — lists root-relative paths + the stamped project name
+python scripts/index_brain.py --workspace my-notes --dry-run
+```
+
+**Flags:**
+
+| Flag | Effect |
+|---|---|
+| `--workspace NAME` | Selects workspace mode. Resolves `NAME` against the `[workspaces]` registry (see `docs/configuration.md` § workspace registry) via `app/services/workspace_resolver.py`. `NAME` also becomes the row identity — every indexed chunk is stamped `project=NAME`. |
+| `--root PATH` | Explicit workspace root, overriding registry resolution (contract §3 precedence step 1). Requires `--workspace` — the flag only changes *where* the corpus is read from, not the row identity. Using `--root` without `--workspace` is a usage error. |
+| `--brain-path` | Brain-mode-only. Combining it with `--workspace`/`--root` is a usage error. |
+
+**Resolution** (`resolve_workspace_root`, contract §3), highest precedence first: (1) `--root`
+always wins, no registry lookup; (2) `--workspace NAME` looked up in the `[workspaces]` registry
+— an unregistered name raises a typed, descriptive error naming the workspace
+(`UnknownWorkspaceError`), and a name supplied with no registry file at all raises a distinct
+error (`NoWorkspaceRegistryError`); (3) the registry's `default_workspace` key, resolved the same
+way; (4) the built-in default `Path(".")`. Resolution is pure — no I/O, no canonicalization, no
+existence checks — so a resolved path that doesn't exist or isn't a directory surfaces as its own
+explicit error once the indexer tries to walk it. Every resolver error is mapped to a
+`SystemExit` carrying the resolver's own message — no raw tracebacks reach the CLI.
+
+**Corpus walk** (`_collect_workspace_files`, contract §4 shared minimum): recursive; `.md` and
+`.mdx` files; any file or directory whose name starts with `.` is skipped; any directory named
+`target` is skipped. No `brain.toml` is required and none of the brain-mode narrowings apply (no
+vocab checks, no manifest, no sub-repo crawl, no tier roots, no underscore/ephemeral-filename
+skips). An empty result (zero `.md`/`.mdx` files under the resolved root) is a fatal error naming
+the root — an empty corpus is never indexed silently.
+
+**Row shape in workspace mode:** `file_path` is stored **relative to the workspace root** (not
+the brain repo), and `project` is stamped with the workspace name **verbatim** on every row,
+overriding any frontmatter `project:` value — this is what lets two different workspaces contain
+a same-named file (e.g. both have a `README.md`) without colliding, and it's the same string
+retrieval later filters on (`filters={"project": "<name>"}` — see `docs/brain-rag.md`).
+Frontmatter parsing, chunking, embedding, and `title`/`description`/`is_section_title`
+population are otherwise identical to brain mode.
+
+**Scoped destructive queries:** in workspace mode, the per-file upsert delete (keyed on
+`file_path + section`), `--rebuild`, and `--prune-paths` all additionally filter on
+`project == <workspace name>` — so two workspaces sharing a relative path never delete or
+overwrite each other's rows. As a corollary, **brain-mode `--rebuild` was narrowed**: it now
+deletes only rows whose `project` is `NULL`/empty or one of the brain manifest's registered
+project slugs, so a brain-mode rebuild can never wipe a non-manifest workspace's corpus that
+happens to share the same `brain_documents` table. Diagnostic-row (`client_slug`) protection is
+unchanged in every mode. `--dry-run` and `--limit` both work in workspace mode the same way they
+do in brain mode.
+
+See `docs/workspace-contract.md` for the full binding contract and `docs/configuration.md` §
+workspace registry for the registry file format.
 
 **`--prune-paths`** deletes `brain_documents` rows whose `file_path` matches the given
 paths, then exits. The incremental upsert keys on `file_path + section`, so a deleted or

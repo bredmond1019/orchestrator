@@ -20,7 +20,7 @@ Developer reference for the orchestration framework. Start here, then open the d
 |---|---|
 | [getting-started.md](getting-started.md) | Set up and run the stack — local dev (Homebrew scripts) and Docker/OrbStack path. Start here if you're new. |
 | [workflows.md](workflows.md) | What each workflow does, its node DAG, event payload shape, and ready-to-paste curl examples. |
-| [scripts.md](scripts.md) | All developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py`, `load_brain_edges.py`, `refresh_brain.py`, `query_brain.py`. |
+| [scripts.md](scripts.md) | All developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py` (brain mode + multi-workspace `--workspace`/`--root` mode), `load_brain_edges.py`, `refresh_brain.py`, `query_brain.py`. |
 | [brain-rag.md](brain-rag.md) | Brain corpus indexing and semantic retrieval — `BrainDocument` model, `index_brain.py`, querying via `DOCUMENT_QA`, structural graph expansion via `BrainEdge`, manual retrieval testing via `query_brain.py`. |
 
 ## Core reference
