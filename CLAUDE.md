@@ -5,6 +5,7 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 ## Before you start
 
 - **Strategic context:** `planning/context.md` (read first) → `planning/status.md` (current state)
+- **Symlink warning:** the `planning/` directory is actually a local symlink pointing to the company brain repo's `_planning/` vault (e.g. `core/_planning/orchestrator/`). The brain repo is responsible for tracking all planning files under Git. Do not track `planning/` in this project's public Git repository (it is gitignored).
 - **Role in Bastion:** this repo is the **Engine** + the **Python half of the Brain** of the brain's
   primary program, Bastion. Cross-repo order + seams are authoritative in the brain
   (`agentic-portfolio/planning/bastion-product/master-plan.md`); the local adoption + the new
