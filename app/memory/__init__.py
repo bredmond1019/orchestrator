@@ -10,14 +10,15 @@ compose:
   peer-accumulation writes.
 - ``upsert_memory_node.UpsertMemoryNode``: fact upserts with never-overwrite
   contradiction handling.
-- ``memory_loader_node.MemoryLoaderNode`` (Task 5): session-start top-k
-  loading, cosine and NL-query modes.
+- ``memory_loader_node.MemoryLoaderNode``: session-start top-k loading,
+  cosine and NL-query modes.
 
 See ``docs/memory.md`` for the full architecture reference.
 """
 
 from memory.decay import effective_confidence, weeks_between
 from memory.episode_write_service import EpisodeWriteService
+from memory.memory_loader_node import MemoryLoaderNode
 from memory.upsert_memory_node import CONTRADICTION_PENALTY, UpsertMemoryNode
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "EpisodeWriteService",
     "UpsertMemoryNode",
     "CONTRADICTION_PENALTY",
+    "MemoryLoaderNode",
 ]
