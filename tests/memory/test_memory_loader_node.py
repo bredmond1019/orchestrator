@@ -544,3 +544,39 @@ class TestProcess:
 
         output = result_context.get_node_output("MemoryLoaderNode")["result"]
         assert output["facts"][0]["fact"] == "NL-mode fact."
+
+    def test_process_missing_workspace_id_returns_empty_envelope(self, node):
+        """Event has no ``workspace_id`` attribute at all (e.g. a schema that
+        predates the D47 field) — must degrade gracefully, not raise
+        ``AttributeError``, and must never enter the DB seam."""
+        session_scope_called = False
+        original_session_scope = node._session_scope  # noqa: SLF001
+
+        @contextmanager
+        def _tracking_session_scope():
+            nonlocal session_scope_called
+            session_scope_called = True
+            with original_session_scope() as session:
+                yield session
+
+        node._session_scope = _tracking_session_scope  # noqa: SLF001
+
+        event = SimpleNamespace()  # no workspace_id attribute at all
+        task_context = TaskContext(event=event)
+
+        result_context = node.process(task_context)
+
+        output = result_context.get_node_output("MemoryLoaderNode")["result"]
+        assert output == {"facts": [], "episodes": []}
+        assert session_scope_called is False
+
+    def test_process_none_workspace_id_returns_empty_envelope(self, node):
+        """Event explicitly carries ``workspace_id=None`` — same graceful
+        degradation as the attribute being absent entirely."""
+        event = SimpleNamespace(workspace_id=None)
+        task_context = TaskContext(event=event)
+
+        result_context = node.process(task_context)
+
+        output = result_context.get_node_output("MemoryLoaderNode")["result"]
+        assert output == {"facts": [], "episodes": []}
