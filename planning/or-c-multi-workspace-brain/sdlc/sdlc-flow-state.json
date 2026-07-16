@@ -1,0 +1,117 @@
+{
+  "spec_slug": "or-c-multi-workspace-brain",
+  "branch": "or-c-multi-workspace-brain-flow-2",
+  "started_at": "2026-07-16T02:30:24Z",
+  "updated_at": "2026-07-16T02:34:38Z",
+  "worktree_path": "/Users/brandon/Dev/agentic-portfolio/core/orchestrator/trees/or-c-multi-workspace-brain-flow-2",
+  "status": "blocked",
+  "current_task": 1,
+  "tasks": {
+    "1": {
+      "status": "failed",
+      "attempts": 1,
+      "summary": "Added app/services/workspace_resolver.py implementing contract §3 workspace resolution (WorkspaceRegistry, load_registry, resolve_workspace_root, typed errors: UnknownWorkspaceError, NoWorkspaceRegistryError, MalformedRegistryError, InvalidWorkspaceNameError) with full unit test coverage.",
+      "issues": [
+        "tests/workflows/test_retrieve_chunks_node.py::TestRetrieve::test_semantic_search_called_with_vector_and_corpus",
+        "tests/workflows/test_retrieve_chunks_node.py::TestRetrieve::test_corpus_brain_threads_through",
+        "tests/workflows/test_retrieve_chunks_node.py::TestSemanticSearchFilters::test_retrieve_forwards_filters_to_semantic_search",
+        "tests/workflows/test_retrieve_chunks_node.py::TestSemanticSearchFilters::test_retrieve_without_filters_passes_none_to_semantic_search",
+        "tests/workflows/test_retrieve_chunks_node.py::TestSemanticSearchFilters::test_filters_none_produces_same_result_as_no_filters",
+        "tests/workflows/test_retrieve_chunks_node.py::TestSemanticSearchFilters::test_scalar_filter_excludes_non_matching_rows",
+        "tests/workflows/test_retrieve_chunks_node.py::TestCrossRepoProjectScoping::test_retrieve_end_to_end_scopes_by_project_per_repo",
+        "tests/workflows/test_retrieve_chunks_node.py::TestIncludeArchivedThreading::test_retrieve_forwards_include_archived",
+        "tests/workflows/test_retrieve_chunks_node.py::TestIncludeArchivedThreading::test_retrieve_defaults_include_archived_false",
+        "tests/workflows/test_retrieve_chunks_node.py::TestRetrieveStructuralExpansion::test_structural_neighbor_appears_in_fused_result_flagged",
+        "tests/workflows/test_retrieve_chunks_node.py::TestRetrieveStructuralExpansion::test_neighbor_absent_from_semantic_only_path",
+        "tests/workflows/test_retrieve_chunks_node.py::TestRetrieveStructuralExpansion::test_dedup_prefers_existing_semantic_candidate",
+        "tests/workflows/test_retrieve_chunks_node.py::TestRetrieveStructuralExpansion::test_structural_expand_receives_query_vector_and_corpus",
+        "tests/workflows/test_retrieve_chunks_node.py::TestStructuralExpansionRegression::test_brain_path_identical_with_toggle_on_or_off_when_no_edges"
+      ],
+      "fixes": [],
+      "decisions": [
+        "Used stdlib tomllib (Python 3.12+) for TOML parsing rather than adding a new dependency, matching the repo's requires-python = \">=3.12\" floor.",
+        "Reused a single InvalidWorkspaceNameError check on both the --workspace name and the registry's default_workspace name inside resolve_workspace_root, since both are name lookups per contract §3.",
+        "MalformedRegistryError also fires for a non-table [workspaces] value or non-string default_workspace/entry types, not just TOML syntax errors, since contract §3 calls a 'wrong shape' registry a load-time error too.",
+        "Pre-existing failures in tests/workflows/test_retrieve_chunks_node.py (14 tests) were verified to predate this task's changes (same failures with git stash / untouched files) and are out of scope for Task 1."
+      ],
+      "files_changed": [
+        "app/services/workspace_resolver.py",
+        "tests/services/test_workspace_resolver.py"
+      ],
+      "commit": "",
+      "validated": ""
+    }
+  },
+  "review": {
+    "verdict": null,
+    "findings": [],
+    "attempts": 0
+  },
+  "docs": {
+    "changed": [],
+    "created": []
+  },
+  "bail_reason": "Immediate-bail reason 1 (missing upstream dependency): the test DB schema lacks column brain_documents.is_section_title that the ORM model/tests expect, indicating an out-of-scope migration is needed before this task can pass.",
+  "pr": {
+    "url": null,
+    "number": null
+  },
+  "tokens": {
+    "stages": [
+      {
+        "label": "worktree-setup",
+        "model": "haiku",
+        "promptTokEst": 784,
+        "filesReadKb": null,
+        "inTokEst": 784,
+        "outTok": 8937
+      },
+      {
+        "label": "enumerate",
+        "model": "haiku",
+        "promptTokEst": 262,
+        "filesReadKb": null,
+        "inTokEst": 262,
+        "outTok": 687
+      },
+      {
+        "label": "implement-1-1",
+        "model": "sonnet",
+        "promptTokEst": 1018,
+        "filesReadKb": null,
+        "inTokEst": 1018,
+        "outTok": 9985
+      },
+      {
+        "label": "test-1-1",
+        "model": "haiku",
+        "promptTokEst": 1430,
+        "filesReadKb": null,
+        "inTokEst": 1430,
+        "outTok": 4964
+      },
+      {
+        "label": "triage:task 1 test:1",
+        "model": "sonnet",
+        "promptTokEst": 389,
+        "filesReadKb": null,
+        "inTokEst": 389,
+        "outTok": 367
+      },
+      {
+        "label": "wrap-up",
+        "model": "sonnet",
+        "promptTokEst": 1466,
+        "filesReadKb": null,
+        "inTokEst": 1466,
+        "outTok": 10574
+      }
+    ],
+    "total": {
+      "promptTokEst": 5349,
+      "filesReadKb": 0,
+      "inTokEst": 5349,
+      "outTok": 35514
+    }
+  }
+}
