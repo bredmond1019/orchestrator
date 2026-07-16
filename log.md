@@ -11,6 +11,40 @@ timestamp: "2026-07-16T02:01:11Z"
 
 ---
 
+## [run: 2026-07-15]
+
+`/sdlc-flow or-c-multi-workspace-brain` ran Tasks 1–5 and BAILED after Task 1. Task 1 implemented
+`app/services/workspace_resolver.py` — the contract §3 workspace-resolution seam (`WorkspaceRegistry`,
+`load_registry`, `resolve_workspace_root`, and the typed errors `UnknownWorkspaceError`,
+`NoWorkspaceRegistryError`, `MalformedRegistryError`, `InvalidWorkspaceNameError`) — using stdlib
+`tomllib` (no new dependency, matching the `>=3.12` floor) with full unit coverage in
+`tests/services/test_workspace_resolver.py`. The task's own tests passed, but the per-task test gate
+also runs the full suite, which surfaced 14 pre-existing failures in
+`tests/workflows/test_retrieve_chunks_node.py` — the test DB schema is missing the
+`brain_documents.is_section_title` column that the ORM model and those tests expect. These failures
+were verified (via `git stash` / untouched-file diff) to predate this task's changes, so the run
+correctly triaged them as out of scope and invoked Immediate-bail reason 1 (missing upstream
+dependency): an out-of-scope Alembic migration is needed to add that column before this or any
+future task touching that suite can pass. Tasks 2–5 did not run. No block status changed in
+`state.json` — `OR.C` remains `open`, now flagged blocked in `planning/status.md` pending the
+missing migration.
+
+Next: fix the upstream schema gap first — add the missing `brain_documents.is_section_title` Alembic
+migration (or confirm/align the ORM model against the live schema) so the full suite is green, then
+re-run `/sdlc-flow or-c-multi-workspace-brain` (or `/sdlc-flow or-c-multi-workspace-brain --resume`)
+starting at Task 2.
+
+```
+31acfa1 feat: implement or-c-multi-workspace-brain-task1
+3780042 chore: init worktree or-c-multi-workspace-brain-flow-2
+87674ba chore(harness): pull base-template c0344dd — D50 block-status flip on SDLC engine close
+5950ac0 docs: log the OR.C-scoping handoff session
+08e83e7 docs: add the canonical knowledge workspace contract (v1.0.0, brain D47)
+5881ad2 docs: log status-corrections + OR.C/bastion handoff session
+c9bfb96 docs: log close-out session for keyword-candidate-expansion
+76e9949 docs: patch api-reference + brain-rag for Stage 1c keyword-candidate expansion
+```
+
 ## [2026-07-15]
 
 ### Handoff — wrote handoff.md pointing the next agent at /generate-tasks OR.C
