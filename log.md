@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-16T12:02:21Z"
+timestamp: "2026-07-16T15:40:00Z"
 ---
 
 # log — Orchestration Repo
@@ -12,6 +12,29 @@ timestamp: "2026-07-16T12:02:21Z"
 ---
 
 ## [run: 2026-07-16]
+
+### `/close-out --merge-branch` on `or-s-entity-memory-layer` — validation, review, docs audit
+- **What:** Ran `/close-out --merge-branch` against the `or-s-entity-memory-layer-flow` branch
+  after `sdlc-flow` completed. Full validation gate re-confirmed green (standing-rules scan, both
+  import checks, ruff 0 violations, pylint 10.00/10, pytest 1320 passed / 8 skipped / 0 failed,
+  emoji gate OK). Coverage scan found no blocking gaps — verified every new `app/memory/`/
+  `app/workflows/memory_*` class is directly imported and exercised by `tests/memory/*` and
+  `tests/workflows/test_memory_*`. `/code-review low` surfaced 2 non-blocking simplification
+  findings (no correctness bugs): `_session_scope()` copy-pasted verbatim across 5 new files and
+  `_embed()` across 3 — recorded as `carryover[]` slug `memory-layer-duplicated-session-scope-embed-seams`
+  in `planning/state.json` rather than fixed inline, since it's cleanup, not a defect. `/update-docs
+  --patch` audit found docs already fully current (the sdlc-flow docs stage had already covered
+  everything) — nothing to patch.
+- **Why:** Close the quality loop on the `OR.S` block before merging — confirm gates hold, catch
+  any coverage/doc gaps the per-task loop missed, and capture the review's cleanup finding
+  durably instead of losing it once the branch merges.
+- **Refs:** `planning/handoff.md`; `planning/state.json` `carryover[]`.
+
+```
+afc822c chore: wrap up or-s-entity-memory-layer
+```
+
+---
 
 ### `or-s-entity-memory-layer` (`OR.S`, Project G reframed) shipped — Brain memory/entity capability
 Ran `/sdlc-flow or-s-entity-memory-layer` on branch `or-s-entity-memory-layer-flow`; all 8 tasks
