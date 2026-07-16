@@ -65,6 +65,20 @@ class BrainDocument(Base):
         default=datetime.now,
         doc="Timestamp when this chunk was last indexed",
     )
+    # Column added in migration f1a2b3c4d5e6
+    authored_at = Column(
+        DateTime,
+        nullable=True,
+        doc=(
+            "File mtime (source-of-truth authoring freshness) at index time, "
+            "persisted by index_brain.py from the stat() call it already made "
+            "for the incremental-skip check. NULL for pre-backfill rows (never "
+            "decayed by RetrieveChunksNode._fuse_and_rank). Deliberately NOT "
+            "indexed_at, which index_brain.py --rebuild resets to now() on every "
+            "upsert (block OR.M correction 3) — that would decay the entire "
+            "corpus by the same constant rather than reflecting real age."
+        ),
+    )
     # Extended fields for diagnostic doc_type
     client_slug = Column(
         String(128),
