@@ -26,6 +26,7 @@ Args:
 
 import argparse
 import logging
+import os
 import re
 import sys
 import tomllib
@@ -34,6 +35,7 @@ from datetime import datetime
 from pathlib import Path
 
 import frontmatter
+from sqlalchemy import or_
 
 # ---------------------------------------------------------------------------
 # Corpus derivation (manifest-driven; HQ Restructure Block I)
@@ -463,6 +465,42 @@ def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, st
     return result
 
 
+# Empty-vocab config used in workspace mode: no brain.toml, no vocab checks, no
+# manifest, no skip_dirs narrowing — normalize_metadata still runs (for doc_id
+# derivation, list coercion, etc.) but never logs an out-of-vocabulary warning
+# because the vocab sets are empty (a warning check against an empty set can
+# still fire on any non-empty value, so normalize_metadata's warnings are the
+# expected, harmless side effect of a plain OKF corpus with no brain.toml).
+_WORKSPACE_CONFIG = BrainConfig(
+    valid_layers=frozenset(),
+    valid_projects=frozenset(),
+    valid_statuses=frozenset(),
+    skip_dirs=(),
+    repos=(),
+)
+
+
+def _collect_workspace_files(root: Path) -> list[Path]:
+    """Recursively collect the OKF corpus under an arbitrary workspace root.
+
+    Contract §4 shared minimum: ``.md`` and ``.mdx`` files; skip any file or
+    directory whose name starts with ``.``; skip any directory named
+    ``target``. No brain.toml, no vocab, no manifest, no tier/sub-repo logic,
+    no underscore/ephemeral-filename skips — those are brain-mode narrowings,
+    not part of the shared-minimum contract.
+    """
+    result: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != "target")
+        for fname in sorted(filenames):
+            if fname.startswith("."):
+                continue
+            if Path(fname).suffix not in (".md", ".mdx"):
+                continue
+            result.append(Path(dirpath) / fname)
+    return result
+
+
 def chunk_by_section(content: str) -> list[tuple[str, str]]:
     """Split markdown content into (section, body) pairs by H2/H3 headers.
 
@@ -555,7 +593,12 @@ def _get_doc_type_for_path(file_path: str, brain_path: Path) -> str:
     return _classify_doc_type(rel.as_posix())
 
 
-def _prune_paths(paths: list[str], brain_path: Path, dry_run: bool = False) -> None:
+def _prune_paths(
+    paths: list[str],
+    brain_path: Path,
+    dry_run: bool = False,
+    project: str | None = None,
+) -> None:
     """Delete ``brain_documents`` rows for files removed or renamed away.
 
     Surgical orphan cleanup: the incremental indexer keys its upsert on
@@ -570,8 +613,11 @@ def _prune_paths(paths: list[str], brain_path: Path, dry_run: bool = False) -> N
     Args:
         paths:      File paths to prune, relative to the brain root (absolute
                     paths under the brain root are accepted and relativised).
-        brain_path: Absolute path to the brain repo root.
+        brain_path: Absolute path to the brain repo root (or workspace root).
         dry_run:    When True, report what would be deleted without writing.
+        project:    In workspace mode, the workspace name — scopes the delete to
+                    ``project == <name>`` so two workspaces sharing a relative
+                    path never prune each other's rows. ``None`` in brain mode.
     """
     from database.brain_document import BrainDocument
     from database.session import db_session
@@ -591,6 +637,8 @@ def _prune_paths(paths: list[str], brain_path: Path, dry_run: bool = False) -> N
         base = session.query(BrainDocument).filter(
             BrainDocument.file_path.in_(rel_paths)
         )
+        if project is not None:
+            base = base.filter(BrainDocument.project == project)
         protected = base.filter(BrainDocument.client_slug.isnot(None)).count()
         prunable = base.filter(BrainDocument.client_slug.is_(None))
 
@@ -626,8 +674,23 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--brain-path",
-        default=str(_DEFAULT_BRAIN_PATH),
-        help=f"Path to the brain repo root (default: {_DEFAULT_BRAIN_PATH})",
+        default=None,
+        help=f"Path to the brain repo root (default: {_DEFAULT_BRAIN_PATH}). "
+        "Brain-mode-only — do not combine with --workspace/--root.",
+    )
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="NAME",
+        help="Index an arbitrary knowledge workspace by registered name (contract §3) "
+        "instead of the brain repo. Selects workspace mode.",
+    )
+    parser.add_argument(
+        "--root",
+        default=None,
+        metavar="PATH",
+        help="Explicit workspace root path, overriding registry resolution (contract §3 "
+        "step 1). Requires --workspace (the name supplies the row identity).",
     )
     parser.add_argument(
         "--rebuild",
@@ -659,22 +722,77 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    brain_path = _resolve_brain_path(args.brain_path)
+    workspace_mode = bool(args.workspace or args.root)
+
+    if args.root and not args.workspace:
+        raise SystemExit(
+            "Error: --root requires --workspace — the name supplies the row identity "
+            "('project' column); --root only overrides resolution."
+        )
+    if args.brain_path is not None and workspace_mode:
+        raise SystemExit(
+            "Error: --brain-path is a brain-mode-only flag; do not combine it with "
+            "--workspace/--root."
+        )
 
     # Set up sys.path for imports from app/
     app_dir = Path(__file__).resolve().parent.parent / "app"
     if str(app_dir) not in sys.path:
         sys.path.insert(0, str(app_dir))
 
+    project_scope: str | None = None
+    if workspace_mode:
+        from services.workspace_resolver import (
+            WorkspaceResolverError,
+            default_registry_path,
+            load_registry,
+            resolve_workspace_root,
+        )
+
+        registry_path = default_registry_path(
+            xdg_config_home=os.environ.get("XDG_CONFIG_HOME"),
+            home=os.environ.get("HOME"),
+        )
+        explicit_root = Path(args.root).resolve() if args.root else None
+        try:
+            registry = load_registry(registry_path)
+            brain_path = resolve_workspace_root(explicit_root, args.workspace, registry)
+        except WorkspaceResolverError as e:
+            raise SystemExit(f"Error: {e}") from e
+        brain_path = brain_path.resolve()
+        if not brain_path.is_dir():
+            raise SystemExit(
+                f"Error: resolved workspace root is not a directory: {brain_path}"
+            )
+        project_scope = args.workspace
+        config = _WORKSPACE_CONFIG
+    else:
+        brain_path = _resolve_brain_path(
+            args.brain_path if args.brain_path is not None else str(_DEFAULT_BRAIN_PATH)
+        )
+        config = None  # loaded below, after the --prune-paths early exit
+
     # --prune-paths: surgical orphan cleanup, exits before any embedding work
     # (so it needs no VOYAGE_API_KEY and never touches the corpus walk).
     if args.prune_paths:
-        _prune_paths(args.prune_paths, brain_path, dry_run=args.dry_run)
+        _prune_paths(args.prune_paths, brain_path, dry_run=args.dry_run, project=project_scope)
         return
 
-    # Load the manifest (vocab + crawl rules + repo list), then collect files.
-    config = _load_brain_config(brain_path)
-    files = _collect_files(brain_path, config)
+    if workspace_mode:
+        workspace_files = _collect_workspace_files(brain_path)
+        if not workspace_files:
+            raise SystemExit(
+                f"Error: empty corpus — no .md/.mdx files found under workspace root: "
+                f"{brain_path}"
+            )
+        files: list[tuple[Path, str, str | None]] = [
+            (fp, _classify_doc_type(fp.relative_to(brain_path).as_posix()), project_scope)
+            for fp in workspace_files
+        ]
+    else:
+        # Load the manifest (vocab + crawl rules + repo list), then collect files.
+        config = _load_brain_config(brain_path)
+        files = _collect_files(brain_path, config)
     if args.limit is not None:
         files = files[: args.limit]
         logger.info("--limit %d: processing first %d file(s) only", args.limit, len(files))
@@ -707,11 +825,22 @@ def main(argv: list[str] | None = None) -> None:
     # Handle --rebuild: delete all non-diagnostic rows
     if args.rebuild:
         with next(db_session()) as session:  # type: ignore[arg-type]
-            deleted = (
-                session.query(BrainDocument)
-                .filter(BrainDocument.client_slug.is_(None))
-                .delete(synchronize_session=False)
-            )
+            query = session.query(BrainDocument).filter(BrainDocument.client_slug.is_(None))
+            if workspace_mode:
+                # Workspace-mode --rebuild only ever touches this workspace's own rows.
+                query = query.filter(BrainDocument.project == project_scope)
+            else:
+                # Brain-mode --rebuild must never wipe a non-manifest workspace's corpus:
+                # only rows with no project (brain-family files) or a manifest slug qualify.
+                manifest_slugs = list(config.valid_projects)
+                query = query.filter(
+                    or_(
+                        BrainDocument.project.is_(None),
+                        BrainDocument.project == "",
+                        BrainDocument.project.in_(manifest_slugs),
+                    )
+                )
+            deleted = query.delete(synchronize_session=False)
             session.commit()
             logger.info("--rebuild: deleted %d existing rows", deleted)
 
@@ -723,12 +852,16 @@ def main(argv: list[str] | None = None) -> None:
             # Incremental skip check (skip --rebuild because we already cleared)
             if not args.rebuild:
                 with next(db_session()) as session:  # type: ignore[arg-type]
-                    existing = (
-                        session.query(BrainDocument)
-                        .filter(BrainDocument.file_path == rel_str)
-                        .order_by(BrainDocument.indexed_at.desc())
-                        .first()
+                    existing_query = session.query(BrainDocument).filter(
+                        BrainDocument.file_path == rel_str
                     )
+                    if workspace_mode:
+                        # Scope by project too: two workspaces can share a relative
+                        # path, and the skip check must not read the wrong one's row.
+                        existing_query = existing_query.filter(
+                            BrainDocument.project == project_scope
+                        )
+                    existing = existing_query.order_by(BrainDocument.indexed_at.desc()).first()
                     if existing and existing.indexed_at is not None:
                         mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
                         if existing.indexed_at > mtime:
@@ -784,11 +917,18 @@ def main(argv: list[str] | None = None) -> None:
                     for (section_header, chunk_text), embedding in zip(
                         final_chunks, embeddings, strict=True
                     ):
-                        # Delete old rows matching file_path + section
-                        session.query(BrainDocument).filter(
+                        # Delete old rows matching file_path + section (workspace mode
+                        # additionally scopes by project — two workspaces can share a
+                        # relative path and must not delete each other's rows).
+                        delete_query = session.query(BrainDocument).filter(
                             BrainDocument.file_path == rel_str,
                             BrainDocument.section == section_header,
-                        ).delete(synchronize_session=False)
+                        )
+                        if workspace_mode:
+                            delete_query = delete_query.filter(
+                                BrainDocument.project == project_scope
+                            )
+                        delete_query.delete(synchronize_session=False)
 
                         doc = BrainDocument(
                             file_path=rel_str,
