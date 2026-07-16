@@ -14,37 +14,21 @@ to yield a real (SQLite) test session and ``_embed`` to avoid a live
 embedding provider call.
 """
 
-from contextlib import contextmanager
 from datetime import datetime
 
 from database.agent_episode import AgentEpisode
 from database.peer import Peer
-from database.session import db_session
-from services.embedding_service import EmbeddingService
+
+from memory.seams import DbSeamMixin
 
 
-class EpisodeWriteService:
-    """Write an episode and upsert its owning peer in a single transaction."""
+class EpisodeWriteService(DbSeamMixin):
+    """Write an episode and upsert its owning peer in a single transaction.
 
-    # ------------------------------------------------------------------
-    # Seams — patched in tests
-    # ------------------------------------------------------------------
-
-    def _session_scope(self):
-        """Return a context manager yielding a SQLAlchemy session.
-
-        Isolated so tests can monkeypatch it to yield a real (e.g. in-memory
-        SQLite) session without touching the deployment database.
-        """
-        return contextmanager(db_session)()
-
-    def _embed(self, text: str) -> list[float]:
-        """Embed ``text`` via the configured ``EmbeddingService``.
-
-        Isolated so tests can monkeypatch it and avoid a live embedding
-        provider call.
-        """
-        return EmbeddingService().embed_text(text)
+    ``_session_scope``/``_embed`` come from ``DbSeamMixin``
+    (``app/memory/seams.py``) — see that module's docstring for why a mixin
+    (not composition) preserves the per-instance test monkeypatches.
+    """
 
     # ------------------------------------------------------------------
     # Core logic

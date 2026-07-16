@@ -310,7 +310,7 @@ class TestRetrieve:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._keyword_search(
@@ -439,7 +439,7 @@ class TestKeywordSearchShapes:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._keyword_search("data contract", candidate_ids, "brain")
@@ -486,7 +486,7 @@ class TestKeywordSearchShapes:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._keyword_search("python", candidate_ids, "content")
@@ -703,7 +703,7 @@ class TestCrossRepoProjectScoping:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             # Call the unbound method directly so this helper still exercises
@@ -915,7 +915,7 @@ class TestArchivedExclusion:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             self.node._semantic_search(
@@ -1038,7 +1038,7 @@ class TestStructuralExpand:
         """Candidates with no doc_id produce no seeds; the DB is never opened."""
         candidates = [_make_candidate()]  # no "doc_id" key
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session"
+            "memory.seams.db_session"
         ) as mock_db_session:
             result = self.node._structural_expand(candidates, "brain", [0.1] * 1024)
         assert result == []
@@ -1066,7 +1066,7 @@ class TestStructuralExpand:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._structural_expand([seed], "brain", [0.1] * 1024)
@@ -1091,7 +1091,7 @@ class TestStructuralExpand:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._structural_expand(
@@ -1112,7 +1112,7 @@ class TestStructuralExpand:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._structural_expand([seed], "brain", [0.1] * 1024)
@@ -1428,7 +1428,7 @@ class TestKeywordExpand:
     def test_content_corpus_is_noop_without_touching_db(self):
         """The content corpus declares no tsv_field — always [], DB never opened."""
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session"
+            "memory.seams.db_session"
         ) as mock_db_session:
             result = self.node._keyword_expand(
                 "query text", "content", [0.1] * 1024, set()
@@ -1449,7 +1449,7 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._keyword_expand(
@@ -1478,7 +1478,7 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._keyword_expand(
@@ -1508,7 +1508,7 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._keyword_expand(
@@ -1532,7 +1532,7 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             result = self.node._keyword_expand(
@@ -1568,7 +1568,7 @@ class TestKeywordExpand:
         # include_archived=False: base "@@" match filter + archived-status
         # exclusion filter = 2 filter() calls minimum.
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             self.node._keyword_expand(
@@ -1582,7 +1582,7 @@ class TestKeywordExpand:
         # filter = 2 filter() calls, one fewer than the archived-exclusion path
         # would add on top.
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session",
+            "memory.seams.db_session",
             _fake_db_session,
         ):
             self.node._keyword_expand(
@@ -1676,7 +1676,7 @@ class TestRetrieveKeywordExpansion:
         ) as MockEmb, patch.object(
             self.node, "_semantic_search", return_value=[candidate]
         ), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.db_session"
+            "memory.seams.db_session"
         ) as mock_db_session, patch.object(
             self.node, "_keyword_search", return_value=set()
         ):

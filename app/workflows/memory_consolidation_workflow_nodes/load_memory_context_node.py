@@ -13,26 +13,21 @@ way ``EpisodeWriteService._session_scope`` is: tests monkeypatch it to yield
 a real (SQLite) test session.
 """
 
-from contextlib import contextmanager
-
 from core.nodes.base import Node
 from core.task import TaskContext
 from database.agent_episode import AgentEpisode
 from database.peer import Peer
 from database.semantic_memory import SemanticMemory
-from database.session import db_session
+from memory.seams import DbSeamMixin
 
 
-class LoadMemoryContextNode(Node):
-    """Load per-peer episodes, facts, and representation for consolidation."""
+class LoadMemoryContextNode(Node, DbSeamMixin):
+    """Load per-peer episodes, facts, and representation for consolidation.
 
-    def _session_scope(self):
-        """Return a context manager yielding a SQLAlchemy session.
-
-        Isolated so tests can monkeypatch it to yield a real (e.g. in-memory
-        SQLite) session without touching the deployment database.
-        """
-        return contextmanager(db_session)()
+    ``_session_scope`` comes from ``DbSeamMixin`` (``app/memory/seams.py``) —
+    see that module's docstring for why a mixin (not composition) preserves
+    the per-instance test monkeypatches.
+    """
 
     def _peers_in_scope(self, session, *, workspace_id: str, peer_id: str | None) -> list[Peer]:
         """Return the peer(s) this consolidation pass reasons over.
