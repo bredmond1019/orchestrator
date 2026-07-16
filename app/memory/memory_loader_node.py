@@ -281,24 +281,33 @@ class MemoryLoaderNode(Node, DbSeamMixin):
     def process(self, task_context: TaskContext) -> TaskContext:
         """Read loader params from the workflow event and load memory.
 
-        Reads ``workspace_id`` (required), and optionally ``peer_id``,
-        ``question``, ``query_embedding``, ``top_k``, ``include_episodes``,
-        ``episode_limit`` off ``task_context.event`` — so this node attaches
-        directly to any workflow's DAG without depending on a specific
-        upstream node's output (design decision 1: no coupling to any one
-        workflow).
+        Reads ``workspace_id`` off ``task_context.event`` via ``getattr`` (not
+        a hard attribute access) — so this node attaches directly to any
+        workflow's DAG without depending on a specific upstream node's output
+        or on the event schema declaring the field at all (design decision 1:
+        no coupling to any one workflow). When the event has no
+        ``workspace_id`` (or it is ``None``), degrades gracefully: returns the
+        empty envelope without opening a DB session or making an embedding
+        call, rather than raising ``AttributeError``.
+
+        Also optionally reads ``peer_id``, ``question``, ``query_embedding``,
+        ``top_k``, ``include_episodes``, ``episode_limit``.
 
         Writes ``{"facts": [...], "episodes": [...]}`` per ``retrieve()``.
         """
         event = task_context.event
-        result = self.retrieve(
-            workspace_id=event.workspace_id,
-            peer_id=getattr(event, "peer_id", None),
-            query_embedding=getattr(event, "query_embedding", None),
-            question=getattr(event, "question", None),
-            top_k=getattr(event, "top_k", None),
-            include_episodes=getattr(event, "include_episodes", False),
-            episode_limit=getattr(event, "episode_limit", None),
-        )
+        workspace_id = getattr(event, "workspace_id", None)
+        if workspace_id is None:
+            result: dict = {"facts": [], "episodes": []}
+        else:
+            result = self.retrieve(
+                workspace_id=workspace_id,
+                peer_id=getattr(event, "peer_id", None),
+                query_embedding=getattr(event, "query_embedding", None),
+                question=getattr(event, "question", None),
+                top_k=getattr(event, "top_k", None),
+                include_episodes=getattr(event, "include_episodes", False),
+                episode_limit=getattr(event, "episode_limit", None),
+            )
         task_context.update_node(node_name=self.node_name, result=result)
         return task_context
