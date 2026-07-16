@@ -107,6 +107,10 @@ app/alembic/versions/*
 !app/alembic/versions/*_add_frontmatter_columns_to_brain_documents.py
 !app/alembic/versions/*_create_brain_edges_table.py
 !app/alembic/versions/*_create_eval_runs_and_results_tables.py
+!app/alembic/versions/*_merge_fts_ann_and_eval_tables_heads.py
+!app/alembic/versions/*_brain_documents_fts_ann_and_metadata_columns.py
+!app/alembic/versions/*_create_memory_layer_tables.py
+!app/alembic/versions/*_add_authored_at_to_brain_documents.py
 
 # Playground
 playground/*.png

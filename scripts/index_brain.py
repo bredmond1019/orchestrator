@@ -22,6 +22,10 @@ Args:
     --prune-paths PATH … Delete brain_documents rows for these deleted/renamed-away
                          file paths, then exit. Surgical orphan cleanup with no
                          embedding call; driven by the brain repo's freshness hook.
+    --backfill-dates     Populate authored_at (file mtime) for existing rows without
+                         re-embedding — a stat() call per file, no Ollama/Voyage
+                         round-trip. Exits after backfilling; combine with --dry-run
+                         to preview without writing.
 """
 
 import argparse
@@ -667,6 +671,60 @@ def _prune_paths(
         )
 
 
+def _backfill_dates(
+    files: list[tuple[Path, str, str | None]],
+    brain_path: Path,
+    dry_run: bool = False,
+) -> None:
+    """Populate ``authored_at`` (file mtime) for existing rows, no re-embedding.
+
+    A stat() call per file — no Ollama/Voyage round-trip. Scopes the update by
+    ``project`` only when the corpus entry carries a ``project_override``
+    (workspace mode, or an OR.O sub-repo file in brain mode) — mirroring the
+    incremental-skip check's scoping in ``main()`` — so brain-family files
+    (``project_override is None``) update every row sharing the relative
+    ``file_path`` regardless of their frontmatter-derived ``project`` value.
+
+    Args:
+        files:      (absolute_path, doc_type, project_override) triples, as
+                    produced by ``_collect_files``/``_collect_workspace_files``.
+        brain_path: Absolute path to the brain repo root (or workspace root).
+        dry_run:    When True, report what would be updated without writing.
+    """
+    from database.brain_document import BrainDocument
+    from database.session import db_session
+
+    total_updated = 0
+    total_files = 0
+    for file_path, _doc_type, project_override in files:
+        rel_str = str(file_path.relative_to(brain_path))
+        mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
+        total_files += 1
+
+        if dry_run:
+            logger.info("Dry run — would set authored_at=%s for %s", mtime, rel_str)
+            continue
+
+        with next(db_session()) as session:  # type: ignore[arg-type]
+            query = session.query(BrainDocument).filter(
+                BrainDocument.file_path == rel_str
+            )
+            if project_override is not None:
+                query = query.filter(BrainDocument.project == project_override)
+            updated = query.update({"authored_at": mtime}, synchronize_session=False)
+            session.commit()
+            total_updated += updated
+
+    if dry_run:
+        logger.info("Dry run — would backfill authored_at for %d file(s)", total_files)
+    else:
+        logger.info(
+            "--backfill-dates: updated %d row(s) across %d file(s)",
+            total_updated,
+            total_files,
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the brain corpus indexer."""
     parser = argparse.ArgumentParser(
@@ -719,6 +777,13 @@ def main(argv: list[str] | None = None) -> None:
         "pre-rebuild write-path check (embed a 2-3 file subset and confirm "
         "is_section_title is a True/False mix + title/description populate) "
         "before paying for the full corpus.",
+    )
+    parser.add_argument(
+        "--backfill-dates",
+        action="store_true",
+        help="Populate authored_at (file mtime) for existing rows without "
+        "re-embedding — a stat() call per file, no embedding API call. "
+        "Exits after backfilling; combine with --dry-run to preview.",
     )
     args = parser.parse_args(argv)
 
@@ -797,6 +862,12 @@ def main(argv: list[str] | None = None) -> None:
         files = files[: args.limit]
         logger.info("--limit %d: processing first %d file(s) only", args.limit, len(files))
 
+    # --backfill-dates: surgical authored_at population, exits before any
+    # embedding work (no VOYAGE_API_KEY needed, no full-corpus re-index).
+    if args.backfill_dates:
+        _backfill_dates(files, brain_path, dry_run=args.dry_run)
+        return
+
     if args.dry_run:
         logger.info("Dry run — no DB writes, no API calls.")
         logger.info("Files that would be indexed:")
@@ -847,6 +918,10 @@ def main(argv: list[str] | None = None) -> None:
     for file_path, doc_type, project_override in files:
         rel_str = str(file_path.relative_to(brain_path))
         total_files += 1
+        # authored_at: the real authoring-freshness signal (file mtime), computed
+        # once per file and persisted on every upsert below — distinct from
+        # indexed_at, which --rebuild resets to now() (block OR.M correction 3).
+        authored_at = datetime.fromtimestamp(file_path.stat().st_mtime)
 
         try:
             # Incremental skip check (skip --rebuild because we already cleared)
@@ -863,8 +938,7 @@ def main(argv: list[str] | None = None) -> None:
                         )
                     existing = existing_query.order_by(BrainDocument.indexed_at.desc()).first()
                     if existing and existing.indexed_at is not None:
-                        mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
-                        if existing.indexed_at > mtime:
+                        if existing.indexed_at > authored_at:
                             skipped_files += 1
                             continue
 
@@ -937,6 +1011,7 @@ def main(argv: list[str] | None = None) -> None:
                             content=chunk_text,
                             embedding=embedding,
                             indexed_at=datetime.now(),
+                            authored_at=authored_at,
                             doc_id=norm["doc_id"],
                             layer=norm["layer"],
                             project=norm["project"],

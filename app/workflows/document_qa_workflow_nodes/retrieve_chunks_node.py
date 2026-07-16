@@ -47,12 +47,14 @@ seams); ``_fuse_and_rank`` is pure and unit-testable without a DB.
 
 import math
 import re
+from datetime import datetime
 
 from core.nodes.base import Node
 from core.task import TaskContext
 from database.brain_document import BrainDocument
 from database.brain_edge import BrainEdge
 from database.content_chunk import ContentChunk
+from memory.decay import effective_confidence, weeks_between
 from memory.memory_loader_node import MemoryLoaderNode
 from memory.seams import DbSeamMixin
 from services.embedding_service import EmbeddingService
@@ -119,6 +121,13 @@ _MAX_PER_FILE: int = 2
 # (_apply_diversity_cap), so this bounds the supply directly.
 _MEMORY_CANDIDATE_LIMIT: int = 3
 
+# Per-week decay factor applied to "brain" corpus results by authored_at age
+# (_fuse_and_rank), gated by DocumentQAEventSchema.apply_decay (default True).
+# Deliberately far gentler than memory's 0.95/week (design decision 4): at
+# 0.95/wk a 6-month-old doc retains ~26%, burying the decisions log; at
+# 0.99/wk it retains ~77%. Rows with authored_at=None are never decayed.
+_DOC_DECAY_FACTOR: float = 0.99
+
 
 def _apply_metadata_filters(query, model, filters: dict, filter_fields: dict):
     """Apply optional metadata WHERE clauses to a SQLAlchemy query.
@@ -161,6 +170,7 @@ def _row_to_candidate(row, distance: float, config: dict, via: str = "semantic")
         "file_path": getattr(row, "file_path", None),
         "doc_id": getattr(row, "doc_id", None),
         "title": getattr(row, "title", None),
+        "authored_at": getattr(row, "authored_at", None),
         "via": via,
     }
 
@@ -200,6 +210,7 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         workspace_id = getattr(event, "workspace_id", None)
         peer_id = getattr(event, "peer_id", None)
         include_memory = getattr(event, "include_memory", False)
+        apply_decay = getattr(event, "apply_decay", True)
         chunks = self.retrieve(
             query,
             corpus=corpus,
@@ -210,6 +221,7 @@ class RetrieveChunksNode(Node, DbSeamMixin):
             workspace_id=workspace_id,
             peer_id=peer_id,
             include_memory=include_memory,
+            apply_decay=apply_decay,
         )
         task_context.update_node(
             node_name=self.node_name,
@@ -230,6 +242,7 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         workspace_id: str | None = None,
         peer_id: str | None = None,
         include_memory: bool = False,
+        apply_decay: bool = True,
     ) -> list[dict]:
         """Run the two-stage hybrid retrieval pipeline.
 
@@ -253,6 +266,10 @@ class RetrieveChunksNode(Node, DbSeamMixin):
             include_memory: Opt-in gate for Stage 1d memory expansion —
                 surfaces accumulated ``SemanticMemory`` facts as ``via="memory"``
                 candidates. Requires a non-None ``workspace_id`` to take effect.
+            apply_decay: When True (default), "brain" corpus candidates with a
+                non-None ``authored_at`` are down-weighted by age in
+                ``_fuse_and_rank`` (see ``_DOC_DECAY_FACTOR``). Set False to
+                reproduce pre-decay ranking exactly.
 
         Returns:
             List of up to ``k`` normalized chunk dicts, each containing
@@ -290,7 +307,9 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         memory_ids = {c["id"] for c in candidates if c.get("via") == "memory"}
         candidate_ids = [c["id"] for c in candidates if c["id"] not in memory_ids]
         keyword_matches = self._keyword_search(query, candidate_ids, corpus)
-        return self._fuse_and_rank(candidates, keyword_matches, k, threshold)
+        return self._fuse_and_rank(
+            candidates, keyword_matches, k, threshold, apply_decay=apply_decay
+        )
 
     @staticmethod
     def _merge_candidates(candidates: list[dict], extra: list[dict]) -> list[dict]:
@@ -651,14 +670,16 @@ class RetrieveChunksNode(Node, DbSeamMixin):
             )
             return {row.id for row in q.all()}
 
-    def _fuse_and_rank(
+    def _fuse_and_rank(  # pylint: disable=too-many-locals
         self,
         candidates: list[dict],
         keyword_matches: set | dict,
         k: int,
         threshold: float,
+        *,
+        apply_decay: bool = True,
     ) -> list[dict]:
-        """Pure score fusion, NaN filtering, and top-k selection.
+        """Pure score fusion, NaN filtering, decay, and top-k selection.
 
         Score formula (ported from rag-engine-rs ``two_stage_retrieval.rs``):
 
@@ -672,6 +693,16 @@ class RetrieveChunksNode(Node, DbSeamMixin):
           higher than a weak one.
         - ``set[id]`` (legacy ILIKE corpora): flat ``_KW_BOOST`` for membership.
 
+        When ``apply_decay`` is True (default) and a candidate carries a
+        non-None ``authored_at``, the fused score is additionally multiplied
+        by ``effective_confidence(1.0, _DOC_DECAY_FACTOR, weeks_elapsed)`` —
+        the same pure decay helper block OR.S uses for memory facts
+        (``app/memory/decay.py``), reused as-is per design decision 4. A
+        candidate with ``authored_at=None`` (pre-backfill rows, or corpora
+        that don't carry the field at all, e.g. "content" and memory
+        candidates) is never decayed. ``apply_decay=False`` reproduces
+        pre-block ranking exactly regardless of ``authored_at``.
+
         NaN-safe: candidates whose ``distance`` is NaN are filtered out before
         sorting (the Rust ``total_cmp`` guard, which never panics on NaN).
 
@@ -682,6 +713,7 @@ class RetrieveChunksNode(Node, DbSeamMixin):
                 ``set[id]`` (legacy binary) of keyword hits.
             k: Maximum number of results to return.
             threshold: Minimum fused score to include a result.
+            apply_decay: Opt-out gate for the ``authored_at`` age decay.
 
         Returns:
             List of normalized dicts ``{"content", "section_title", "score",
@@ -689,6 +721,7 @@ class RetrieveChunksNode(Node, DbSeamMixin):
             descending, length <= ``k``.
         """
         graded = isinstance(keyword_matches, dict)
+        now = datetime.now()
         scored = []
         for c in candidates:
             distance = c["distance"]
@@ -702,6 +735,15 @@ class RetrieveChunksNode(Node, DbSeamMixin):
             else:
                 keyword_boost = _KW_BOOST if c["id"] in keyword_matches else 0.0
             score = similarity * title_weight + keyword_boost
+            authored_at = c.get("authored_at")
+            # isinstance guard (not "is not None"): a candidate dict built from
+            # a loosely-specced test double (or any future source that doesn't
+            # carry a real datetime) must degrade to undecayed rather than
+            # raise inside weeks_between's datetime arithmetic.
+            if apply_decay and isinstance(authored_at, datetime):
+                score *= effective_confidence(
+                    1.0, _DOC_DECAY_FACTOR, weeks_between(authored_at, now)
+                )
             if score < threshold:
                 continue
             scored.append(

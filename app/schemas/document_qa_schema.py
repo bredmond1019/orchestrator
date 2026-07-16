@@ -25,6 +25,11 @@ class DocumentQAEventSchema(BaseModel):
         peer_id: Optional narrowing to a single entity's memory.
         include_memory: Opt-in gate for surfacing accumulated
             ``SemanticMemory`` facts alongside brain/content retrieval.
+        apply_decay: Opt-out gate for the ``authored_at``-based ranking decay
+            applied to ``"brain"`` corpus results. Defaults to True; set
+            False to reproduce pre-decay ranking exactly (e.g. for a "what
+            did we decide in June" query that decay would otherwise
+            sabotage).
     """
 
     doc_id: UUID = Field(..., description="Document to answer over")
@@ -82,5 +87,15 @@ class DocumentQAEventSchema(BaseModel):
             "fourth via='memory' candidate source alongside semantic/"
             "structural/keyword. Requires a non-None workspace_id to take "
             "effect. No effect on the 'content' corpus."
+        ),
+    )
+    apply_decay: bool = Field(
+        default=True,
+        description=(
+            "When True (default), 'brain' corpus results are down-weighted "
+            "by authored_at age (gentler than memory's decay — see "
+            "RetrieveChunksNode._DOC_DECAY_FACTOR). Set False to reproduce "
+            "pre-decay ranking exactly. No effect on the 'content' corpus or "
+            "on rows with authored_at=None."
         ),
     )
