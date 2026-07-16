@@ -4,6 +4,7 @@ from workflows.content_pipeline_workflow import ContentPipelineWorkflow
 from workflows.customer_care_workflow import CustomerCareWorkflow
 from workflows.document_ingest_workflow import DocumentIngestWorkflow
 from workflows.document_qa_workflow import DocumentQAWorkflow
+from workflows.memory_ingest_workflow import MemoryIngestWorkflow
 from workflows.proposal_generator_workflow import ProposalGeneratorWorkflow
 from workflows.research_agent_workflow import ResearchAgentWorkflow
 from workflows.sdlc_flow_workflow import SDLCFlowWorkflow
@@ -17,3 +18,4 @@ class WorkflowRegistry(Enum):
     DOCUMENT_INGEST = DocumentIngestWorkflow
     DOCUMENT_QA = DocumentQAWorkflow
     SDLC_FLOW = SDLCFlowWorkflow
+    MEMORY_INGEST = MemoryIngestWorkflow
