@@ -1,5 +1,6 @@
 """Unit tests for app/services/workspace_resolver.py (contract §3 semantics)."""
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -246,5 +247,5 @@ def test_workspace_registry_not_empty_with_default_only():
 
 def test_workspace_registry_frozen():
     registry = WorkspaceRegistry()
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         registry.workspaces = {"a": "b"}
