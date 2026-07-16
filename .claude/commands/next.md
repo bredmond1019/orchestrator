@@ -42,7 +42,7 @@ Show what's next, why, what's blocked and by what, and recommend the next action
 
 ## Output Format
 
-### ⏭ Up Next
+### Up Next
 - **<Item/Task Title or Slug>** - <Brief overview/gist of the work.>
 ...
 
