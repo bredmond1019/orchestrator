@@ -20,6 +20,11 @@ class DocumentQAEventSchema(BaseModel):
         session_id: Q&A session identifier; generated if absent.
         corpus: Corpus to retrieve from — ``"content"`` (content_chunks,
             the default) or ``"brain"`` (brain_documents).
+        workspace_id: The D47 workspace name to scope memory retrieval to;
+            same string semantics as the brain corpus ``project`` filter.
+        peer_id: Optional narrowing to a single entity's memory.
+        include_memory: Opt-in gate for surfacing accumulated
+            ``SemanticMemory`` facts alongside brain/content retrieval.
     """
 
     doc_id: UUID = Field(..., description="Document to answer over")
@@ -55,5 +60,27 @@ class DocumentQAEventSchema(BaseModel):
             "Stage-1 semantic candidate set through the 'related:'-neighborhood "
             "of the top hits before keyword re-rank. Set False to disable the "
             "structural expansion stage. No effect on the 'content' corpus."
+        ),
+    )
+    workspace_id: str | None = Field(
+        default=None,
+        description=(
+            "The D47 workspace name to scope memory retrieval to — same "
+            "string semantics as the brain corpus 'project' filter. Required "
+            "(non-None) alongside include_memory=True for memory retrieval "
+            "to run at all."
+        ),
+    )
+    peer_id: str | None = Field(
+        default=None,
+        description="Optional narrowing of memory retrieval to one entity.",
+    )
+    include_memory: bool = Field(
+        default=False,
+        description=(
+            "Opt-in gate for surfacing accumulated SemanticMemory facts as a "
+            "fourth via='memory' candidate source alongside semantic/"
+            "structural/keyword. Requires a non-None workspace_id to take "
+            "effect. No effect on the 'content' corpus."
         ),
     )
