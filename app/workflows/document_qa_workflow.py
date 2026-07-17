@@ -3,9 +3,9 @@
 Embeds the user question, retrieves the most relevant chunks from the ingested
 corpus via two-stage hybrid retrieval, and routes on retrieval confidence
 (block OR.L): weak or empty retrieval abstains deterministically; confident
-retrieval assembles the RAG context alongside prior session turns and
-generates a grounded answer. Either branch persists the new turn to the chat
-session.
+retrieval assembles the RAG context alongside prior session turns, generates
+a grounded answer, and deterministically verifies its citations. Either
+branch persists the new turn to the chat session.
 
 Graph::
 
@@ -13,15 +13,20 @@ Graph::
         -> RetrieveChunksNode
             -> GroundingRouterNode (router)
                 -> AbstainNode -> UpdateSessionMemoryNode
-                -> AssembleContextNode -> AnswerNode -> UpdateSessionMemoryNode
+                -> AssembleContextNode -> AnswerNode
+                    -> VerifyCitationsNode -> UpdateSessionMemoryNode
 
 ``GroundingRouterNode`` routes to ``AbstainNode`` when ``retrieval_confidence``
 (from ``RetrieveChunksNode``) falls below ``event.confidence_threshold`` or
 zero chunks were retrieved; otherwise it falls through to
 ``AssembleContextNode``. ``AbstainNode`` makes no LLM call — it writes the
-unified answer envelope directly. Both branches converge on
-``UpdateSessionMemoryNode``, which persists the turn identically regardless
-of which branch produced the envelope.
+unified answer envelope directly. On the answered branch,
+``VerifyCitationsNode`` deterministically checks ``AnswerNode``'s citations
+against the retrieved chunks (existence + lexical claim support) and either
+completes the envelope (verified/unverified citations, corroboration) or
+withholds it (all citations unverified) — no LLM judging involved. Both
+branches converge on ``UpdateSessionMemoryNode``, which persists the turn
+identically regardless of which terminal node produced the envelope.
 """
 
 from core.schema import NodeConfig, WorkflowSchema
@@ -39,6 +44,9 @@ from workflows.document_qa_workflow_nodes.retrieve_chunks_node import RetrieveCh
 from workflows.document_qa_workflow_nodes.update_session_memory_node import (
     UpdateSessionMemoryNode,
 )
+from workflows.document_qa_workflow_nodes.verify_citations_node import (
+    VerifyCitationsNode,
+)
 
 
 class DocumentQAWorkflow(Workflow):
@@ -46,7 +54,7 @@ class DocumentQAWorkflow(Workflow):
         description=(
             "Document Q&A pipeline: embed question -> two-stage hybrid retrieval -> "
             "confidence-gated abstain router -> assemble RAG context + session memory -> "
-            "grounded answer -> persist turn."
+            "grounded answer -> deterministic citation verification -> persist turn."
         ),
         event_schema=DocumentQAEventSchema,
         start=EmbedQuestionNode,
@@ -90,8 +98,17 @@ class DocumentQAWorkflow(Workflow):
             ),
             NodeConfig(
                 node=AnswerNode,
-                connections=[UpdateSessionMemoryNode],
+                connections=[VerifyCitationsNode],
                 description="Generate grounded answer via Claude (system prompt from .j2).",
+            ),
+            NodeConfig(
+                node=VerifyCitationsNode,
+                connections=[UpdateSessionMemoryNode],
+                description=(
+                    "Deterministically verify each cited section against the "
+                    "retrieved chunks (existence + lexical claim support); "
+                    "withhold the answer if all citations fail."
+                ),
             ),
             NodeConfig(
                 node=UpdateSessionMemoryNode,
