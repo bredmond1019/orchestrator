@@ -13,6 +13,53 @@ timestamp: "2026-07-16T15:40:00Z"
 
 ## [run: 2026-07-16]
 
+### `or-m-memory-into-brain-rag` shipped — spend the OR.S memory tier into Brain RAG
+Ran `/sdlc-flow or-m-memory-into-brain-rag` on branch `or-m-memory-into-brain-rag-flow`; all 8
+tasks PASS, reviewed PASS in 1 attempt. Task 1 extracted a shared `DbSeamMixin`
+(`app/memory/seams.py`, `_session_scope` + `_embed` routed through `embed_text`) into the 5 memory
+files and `RetrieveChunksNode`'s 5 inline seam sites, closing the
+`memory-layer-duplicated-session-scope-embed-seams` carryover. Task 2 added optional
+`workspace_id`/`peer_id`/`include_memory` fields to `DocumentQAEventSchema`, backward-compatible.
+Task 3 made `MemoryLoaderNode.process` degrade to an empty `{facts: [], episodes: []}` envelope
+(no DB hit) when `workspace_id` is missing, instead of raising. Task 4 added a `_memory_expand`
+Stage 1d to `RetrieveChunksNode`, surfacing `SemanticMemory` facts as `via="memory"` candidates
+(opt-in on `include_memory=True` + non-None `workspace_id`, decay applied in the adapter, memory
+ids excluded from the keyword-search stage) — and fixed a MagicMock auto-vivification regression
+this exposed in `test_workspace_scoping.py`. Task 5 persisted a nullable `authored_at` column on
+`brain_documents` (from the file mtime `index_brain.py` already computed, plus a `--backfill-dates`
+flag) and wired a gentle, opt-out (`apply_decay=True`, ~0.99/week) ranking decay into
+`_fuse_and_rank`; also discovered and committed 3 prior migrations that existed on disk but were
+never added to the `.gitignore` allowlist, closing a real single-Alembic-head gap. Task 6 added
+`scripts/ingest_repo_log.py`, a dogfood ingest parsing `log.md`'s dated entries into
+`Peer`/`AgentEpisode` rows via `EpisodeWriteService`; run `--dry-run` against the real `log.md`
+(114 entries) per the spec's honest-risk gate and recorded a mixed (not clean-noise, not
+clean-signal) verdict in the Amendment Log without invoking `--rebuild`. Task 7 corrected the
+D31/D25 entries in the brain's `knowledge.md`/`memory.md` and updated `docs/brain-rag.md`,
+`docs/memory.md`, `docs/api-reference.md` for Stage 1d, `authored_at` decay, and the new
+`DbSeamMixin`/`embed_text` abstractions. Task 8 validated the full gate: ruff clean, pylint
+10.00/10, pytest 1365 passed / 8 skipped (up from the 1320 baseline), single Alembic head,
+`TestSchemaRegistryCompleteness` green, single `_session_scope` definition, `mev emit-state
+--write` 0 errors. Notable decision: this spec is deliberately **not** registered as a numbered
+master-plan block — it verified `OR.M` free but left registering it in `master-plan.md`/
+`status.md`/`state.json` as an explicit out-of-scope, brain-side follow-up. Next: `OR.L`
+(answer-time grounding), sequenced deliberately after this block since memory candidates carry
+`file_path=None` and OR.L's citation-verify keys on `file_path`.
+
+```
+e55637d docs: update docs for or-m-memory-into-brain-rag
+9cc0424 feat: implement or-m-memory-into-brain-rag-task7
+672284f feat: implement or-m-memory-into-brain-rag-task6
+5ccc314 feat: implement or-m-memory-into-brain-rag-task5
+8a9ad9e feat: implement or-m-memory-into-brain-rag-task4
+64d18bf feat: implement or-m-memory-into-brain-rag-task3
+6793215 feat: implement or-m-memory-into-brain-rag-task2
+c90f179 feat: implement or-m-memory-into-brain-rag-task1
+```
+
+---
+
+## [run: 2026-07-16]
+
 ### `/close-out --merge-branch` on `or-s-entity-memory-layer` — validation, review, docs audit
 - **What:** Ran `/close-out --merge-branch` against the `or-s-entity-memory-layer-flow` branch
   after `sdlc-flow` completed. Full validation gate re-confirmed green (standing-rules scan, both
