@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-16T15:40:00Z"
+timestamp: "2026-07-17T00:30:00Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,41 @@ timestamp: "2026-07-16T15:40:00Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
+
+## [2026-07-16]
+
+### `/close-out --merge-branch` on `or-m-memory-into-brain-rag` — validation, coverage scan, docs index fix
+- **What:** Ran `/close-out --merge-branch` after `/sdlc-flow or-m-memory-into-brain-rag` completed
+  successfully (all 8 tasks PASS, reviewed PASS in 1 attempt, PR #8 opened). Step 1 validation suite:
+  all gating checks green — standing-rules scan (3 clean), both import checks (db-session,
+  db-repository), app/worker import (non-gating pydantic shadow warning, pre-existing/unrelated),
+  ruff 0 violations, pylint 10.00/10, pytest-count 1372 collected, full pytest 1365 passed / 8
+  skipped, emoji gate OK. Step 2 coverage scan: no blocking gaps — the new/changed logic
+  (`seams.py`, `memory_loader_node.py`, `upsert_memory_node.py`, `episode_write_service.py`,
+  `retrieve_chunks_node.py`, `document_qa_schema.py`, `index_brain.py`, `ingest_repo_log.py`) all
+  have accompanying tests in the diff; the two consolidation-node files
+  (`consolidation_write_node.py`, `load_memory_context_node.py`) are pure `DbSeamMixin` refactors,
+  non-blocking, already covered by the passing suite; Alembic migrations classified non-blocking
+  (generated schema). Step 2.5 `/code-review low`: no findings — clean diff, no correctness bugs.
+  Step 3 `/update-docs --patch`: audit found `docs/api-reference.md`, `docs/brain-rag.md`,
+  `docs/memory.md`, `docs/scripts.md` already comprehensively patched by the sdlc-flow's own docs
+  task. Found 2 minor stale rows in `docs/index.md` ("Start here" table rows for `scripts.md` and
+  `brain-rag.md` hadn't been updated to mention the new `--backfill-dates` flag /
+  `ingest_repo_log.py` script / Stage 1d memory expansion / `authored_at` decay) and fixed them
+  surgically — committed as `9a014a7 docs: add or-m-memory-into-brain-rag capabilities to docs
+  index`. Step 4 handoff: wrote `planning/handoff.md` pointing the next agent at the still-pending
+  Step 5b merge, and noting `OR.L` (answer-time grounding) or `OR.P` (semantic code search) as the
+  next candidate blocks. Removed the `memory-layer-duplicated-session-scope-embed-seams` carryover
+  from `planning/state.json` — this session's Task 1 (`DbSeamMixin` extraction in
+  `app/memory/seams.py`) satisfied its `clears_when` exactly. Ran `mev emit-state --write` after the
+  carryover removal: 0 errors, 20 pre-existing `W_EMIT_NO_SENTINEL` warnings fleet-wide (unrelated,
+  not actioned). Step 5b (fast-forward merge of `or-m-memory-into-brain-rag-flow` into `main`) has
+  not yet run — it happens after this log-work step, as part of the same `/close-out` invocation.
+- **Why:** Standard close-out quality gate after a `/sdlc-flow` run, per this repo's `/close-out`
+  command, to verify test coverage, patch stale docs, remove a resolved carryover, and hand off
+  cleanly before merging the branch.
+- **Refs:** PR #8; `or-m-memory-into-brain-rag` spec; `planning/handoff.md`;
+  `docs/index.md` (commit `9a014a7`).
 
 ## [run: 2026-07-16]
 
