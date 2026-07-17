@@ -153,6 +153,7 @@ python scripts/index_brain.py --workspace my-notes --dry-run
 | `--workspace NAME` | Selects workspace mode. Resolves `NAME` against the `[workspaces]` registry (see `docs/configuration.md` § workspace registry) via `app/services/workspace_resolver.py`. `NAME` also becomes the row identity — every indexed chunk is stamped `project=NAME`. |
 | `--root PATH` | Explicit workspace root, overriding registry resolution (contract §3 precedence step 1). Requires `--workspace` — the flag only changes *where* the corpus is read from, not the row identity. Using `--root` without `--workspace` is a usage error. |
 | `--brain-path` | Brain-mode-only. Combining it with `--workspace`/`--root` is a usage error. |
+| `--backfill-dates` | Populates `authored_at` (from each indexed file's mtime) for existing `brain_documents` rows that don't have it set yet, without any re-embedding or re-chunking round-trip. Exits immediately after backfilling — combine with `--dry-run` to preview the row count first. This is the one-time catch-up for rows indexed before `authored_at` existed; every normal index/`--rebuild` run populates it going forward. See `docs/brain-rag.md` for how `authored_at` feeds `RetrieveChunksNode`'s ranking decay. |
 
 **Resolution** (`resolve_workspace_root`, contract §3), highest precedence first: (1) `--root`
 always wins, no registry lookup; (2) `--workspace NAME` looked up in the `[workspaces]` registry
@@ -368,6 +369,57 @@ provenance tag.
 
 See `docs/brain-rag.md` § "Testing retrieval manually" for a walkthrough and for how this
 compares to the full `DOCUMENT_QA` answer path.
+
+---
+
+## `scripts/ingest_repo_log.py` — Dogfood ingest of this repo's `log.md` (OR.M)
+
+Parses this repo's `log.md` dated `##`/`###` entries into one reused `Peer(peer_id="orchestrator",
+peer_type=PeerType.PRODUCT, workspace_id="orchestrator")` plus one `AgentEpisode` per entry, written
+through the existing `EpisodeWriteService` (reused verbatim — no hand-rolled inserts). This gives
+`RetrieveChunksNode`'s `_memory_expand` stage real episode data to be proven against instead of an
+empty memory tier. Ingest only — consolidation over these episodes and any write-back to
+`planning/knowledge.md`/`planning/memory.md` are explicitly out of scope.
+
+```bash
+# Dry run — parse and print entries, no DB writes, no embedding API calls
+python scripts/ingest_repo_log.py --dry-run
+
+# Ingest only the first N parsed entries
+python scripts/ingest_repo_log.py --limit 5
+
+# Delete existing 'orchestrator' peer episodes, then re-ingest from scratch
+python scripts/ingest_repo_log.py --rebuild
+
+# Ingest a log file at a different path
+python scripts/ingest_repo_log.py --log-path /path/to/log.md --dry-run
+```
+
+| Argument | Description |
+|---|---|
+| `--log-path PATH` | Path to the log file to ingest (default: this repo's own root `log.md`). |
+| `--dry-run` | Parse and print entries without writing to the DB or calling the embedding API. |
+| `--limit N` | Ingest only the first `N` parsed entries. |
+| `--rebuild` | Delete existing `orchestrator`-peer episodes (scoped by `peer_id`) before re-ingesting from scratch. |
+
+**`--dry-run` is the deliverable's gate, not a convenience flag.** `log.md` is a *process* log
+("ran `/close-out`, gates green, 1320 tests passed") — distilled into facts and injected into
+answers, that risks being noise, since the durable content already lives in
+`knowledge.md`/`decisions/` and is already indexed into `brain_documents` by
+`scripts/index_brain.py`. Read the `--dry-run` output before trusting the write path.
+
+**Heading parsing:** recognizes `## [run: DATE]` / `## [DATE]` / `## DATE` as pure
+session-grouping headers (not entries themselves), `## DATE (title)` as a combined date+title
+entry, and `### title` as an entry dated by the nearest preceding `##` grouping header — unless
+the `###` heading carries its own embedded `DATE (title)` pattern, which overrides the enclosing
+grouping header's date (the log has entries filed under a later session's grouping header that
+document earlier-dated work).
+
+**Use this when:**
+- You want the memory tier's `_memory_expand` retrieval stage to have real episode data to
+  retrieve against, without waiting on live peer/agent interaction traffic
+- After a substantial `log.md` update, if you want the memory tier refreshed (`--rebuild`) to
+  match
 
 ---
 
