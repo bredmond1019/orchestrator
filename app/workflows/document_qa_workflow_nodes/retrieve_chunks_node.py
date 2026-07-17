@@ -225,9 +225,33 @@ class RetrieveChunksNode(Node, DbSeamMixin):
         )
         task_context.update_node(
             node_name=self.node_name,
-            result={"chunks": chunks},
+            result={
+                "chunks": chunks,
+                "retrieval_confidence": self._compute_retrieval_confidence(chunks),
+            },
         )
         return task_context
+
+    @staticmethod
+    def _compute_retrieval_confidence(chunks: list[dict]) -> float:
+        """Squash the top fused retrieval score into a [0, 1] confidence signal.
+
+        Uses a logistic squash (``1 / (1 + e^-score)``) on the single
+        highest-scoring chunk's fused ``score`` — monotonic in that score by
+        construction, so a stronger top match always yields a higher (or
+        equal) confidence. Chosen over max-score normalization because it
+        needs no corpus-wide max to divide by (which would make the signal
+        depend on the rest of the result set, not just the top hit) and it
+        naturally saturates towards 1.0 for very strong matches without a
+        hardcoded cap.
+
+        Returns 0.0 when ``chunks`` is empty (no retrieval signal at all) —
+        the design decision 2 "zero chunks" abstain trigger downstream.
+        """
+        if not chunks:
+            return 0.0
+        top_score = max(c["score"] for c in chunks)
+        return 1.0 / (1.0 + math.exp(-top_score))
 
     def retrieve(  # pylint: disable=too-many-arguments,too-many-locals
         self,

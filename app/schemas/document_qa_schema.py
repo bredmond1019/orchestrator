@@ -30,6 +30,18 @@ class DocumentQAEventSchema(BaseModel):
             False to reproduce pre-decay ranking exactly (e.g. for a "what
             did we decide in June" query that decay would otherwise
             sabotage).
+        confidence_threshold: Minimum ``retrieval_confidence`` (see
+            ``RetrieveChunksNode``) required to attempt an answer at all.
+            Below this (or with zero retrieved chunks), ``GroundingRouterNode``
+            (block OR.L) routes to the deterministic abstain path instead of
+            calling the answer LLM. Conservative default: chosen to sit above
+            the confidence produced by weak/near-empty retrieval while still
+            passing through any genuine on-topic match.
+        high_stakes: Opt-in flag (block OR.L) — when True and the answer's
+            verified citations don't span >=2 distinct source files
+            (uncorroborated), the envelope sets ``escalate_to_human: true``.
+            Does not change whether an answer is returned, only whether it is
+            flagged for human follow-up.
     """
 
     doc_id: UUID = Field(..., description="Document to answer over")
@@ -97,5 +109,25 @@ class DocumentQAEventSchema(BaseModel):
             "RetrieveChunksNode._DOC_DECAY_FACTOR). Set False to reproduce "
             "pre-decay ranking exactly. No effect on the 'content' corpus or "
             "on rows with authored_at=None."
+        ),
+    )
+    confidence_threshold: float = Field(
+        default=0.55,
+        description=(
+            "Minimum retrieval_confidence (RetrieveChunksNode, block OR.L) "
+            "required to attempt an answer. Below this, or with zero "
+            "retrieved chunks, GroundingRouterNode routes to the "
+            "deterministic abstain path instead of calling the answer LLM. "
+            "Conservative default sits above weak/near-empty retrieval "
+            "confidence while passing through genuine on-topic matches."
+        ),
+    )
+    high_stakes: bool = Field(
+        default=False,
+        description=(
+            "Opt-in flag (block OR.L). When True and the answer's verified "
+            "citations don't span >=2 distinct source files (uncorroborated), "
+            "the envelope sets escalate_to_human: true. Does not affect "
+            "whether an answer is returned, only whether it is flagged."
         ),
     )
