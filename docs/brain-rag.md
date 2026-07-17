@@ -420,6 +420,122 @@ rules) and `docs/scripts.md` § "Workspace mode" for the full CLI reference.
 
 ---
 
+## Answer-time grounding (OR.L)
+
+Block OR.L hardens the `DOCUMENT_QA` answer path — including brain-corpus queries — with a
+confidence/abstain gate and deterministic citation verification, layered on top of everything
+above. It applies to both corpora (`"content"` and `"brain"`); it's documented here because the
+brain corpus, with its long tail of thin or off-topic sections, is exactly where an ungrounded
+answer is most likely and most costly.
+
+### The confidence/abstain gate
+
+Before any answer LLM call, `GroundingRouterNode` reads the `retrieval_confidence` signal
+`RetrieveChunksNode` now computes (a logistic squash of the top fused chunk score, `0.0` for zero
+chunks) and compares it against `event.confidence_threshold` (default `0.55`). Below threshold —
+or with zero retrieved chunks — the workflow routes to `AbstainNode`, a deterministic node that
+writes the answer envelope directly (`"I don't have that in my documents."`, `abstained: true`)
+with **no LLM call at all**, rather than relying on the prompt's "say you don't know" instruction
+as the only backstop. The session turn is still persisted either way.
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "DOCUMENT_QA",
+    "data": {
+      "doc_id": "00000000-0000-0000-0000-000000000000",
+      "question": "What color is the sky on Mars?",
+      "corpus": "brain",
+      "confidence_threshold": 0.55
+    }
+  }'
+```
+
+### Deterministic citation verification
+
+For an answer that does go through the LLM, `VerifyCitationsNode` checks each section
+`AnswerNode` claims to have cited against the chunks actually retrieved — purely deterministic,
+no LLM judging:
+
+- **Existence** — the cited title must (normalized) match a retrieved chunk's `section_title`.
+  A citation to a section that was never in the context (hallucinated or misremembered) lands in
+  `unverified_citations`.
+- **Claim support** — a lexical content-word overlap ratio (`support_score`) between the answer
+  text and the matched chunk's content must clear a documented threshold. A citation to a real
+  section that doesn't actually back the claim also lands in `unverified_citations`.
+
+If **every** citation fails — or the answer cites nothing at all over a non-empty context — the
+answer is **withheld**: the envelope flips to the same abstain shape (`abstained: true,
+withheld_reason: "citations_unverified"`) instead of shipping an ungrounded answer. This is what
+makes `document_qa_answer.j2`'s citation-discipline rules ("cite only section titles that appear
+verbatim in the context") enforceable rather than just advisory — the model is told the
+consequence, and the consequence is real.
+
+### Corroboration and `escalate_to_human`
+
+`corroborated` is true iff the verified citations span **two or more distinct source files** —
+a preference signal for high-stakes questions, not a hard gate (design decision 4). Set
+`"high_stakes": true` on the event to have single-source (uncorroborated) answers flagged
+`escalate_to_human: true` on the envelope — the answer still ships, just marked for human
+follow-up:
+
+```bash
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: dev-secret' \
+  -d '{
+    "workflow_type": "DOCUMENT_QA",
+    "data": {
+      "doc_id": "00000000-0000-0000-0000-000000000000",
+      "question": "What is our current rate strategy?",
+      "corpus": "brain",
+      "high_stakes": true
+    }
+  }'
+```
+
+`escalate_to_human` is also always `true` on the abstain and withheld paths.
+
+### What's verified vs what stays prompt-level
+
+- **Verified (deterministic, code-side):** citation existence, lexical claim support,
+  corroboration span, the confidence threshold gate. All pure functions or DB-free logic,
+  covered by unit tests — see `docs/api-reference.md` § `GroundingRouterNode`, `AbstainNode`,
+  `VerifyCitationsNode`.
+- **Prompt-level (advisory, not enforced by code):** semantic correctness of the answer's
+  wording, whether the cited section is the *best* possible citation among several plausible
+  ones, and any contradiction between two corroborating sources. `document_qa_answer.j2`'s
+  citation-discipline rules narrow what the model is likely to get away with, but the only
+  code-side backstop is "does the citation exist and lexically overlap" — LLM-judged semantic
+  contradiction is explicitly out of scope for this block (bastion's fuzzy follow-on).
+
+### The unified answer envelope
+
+Every terminal path — answered, abstained (below-confidence), or withheld
+(citations-unverified) — produces the same envelope shape, so a caller doesn't need to branch on
+which happened:
+
+```json
+{
+  "answer": "...",
+  "cited_sections": ["Introduction"],
+  "verified_citations": [{"section_title": "Introduction", "file_path": "docs/career.md", "support_score": 0.42}],
+  "unverified_citations": [],
+  "context_confidence": 0.87,
+  "abstained": false,
+  "corroborated": false,
+  "escalate_to_human": false,
+  "withheld_reason": null
+}
+```
+
+See `docs/api-reference.md` § "Answer envelope (block OR.L)" (under `VerifyCitationsNode`) for
+the full field reference.
+
+---
+
 ## Notes
 
 - The `brain_documents` table uses PostgreSQL `ARRAY` for `workflow_patterns`, which is not compatible with SQLite. Tests that touch this model are marked `@pytest.mark.skip(reason="requires PostgreSQL")` — this is intentional (see decision D31).
