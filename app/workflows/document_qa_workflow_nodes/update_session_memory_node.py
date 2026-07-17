@@ -1,12 +1,22 @@
 """UpdateSessionMemoryNode — append new Q&A turns to the ChatSession.
 
-After the ``AnswerNode`` generates a grounded answer, this node:
-1. Loads the existing ``ChatSession`` (or creates a new one if this is the
+Terminal node for both branches of the confidence-gated DAG (block OR.L):
+the normal ``AnswerNode`` path and the deterministic ``AbstainNode`` path.
+Whichever branch ran, this node:
+1. Reads the unified answer envelope (design decision 5) from whichever of
+   ``AnswerNode`` / ``AbstainNode`` actually produced output — exactly one of
+   the two runs per event, so a plain membership check on
+   ``task_context.nodes`` picks the right one.
+2. Loads the existing ``ChatSession`` (or creates a new one if this is the
    first turn for this session id).
-2. Appends the user question and assistant answer as new turns.
-3. Extends ``topics_covered`` from any cited sections in the answer.
-4. Persists the session via ``GenericRepository`` using the ``db_session``
+3. Appends the user question and assistant answer as new turns.
+4. Extends ``topics_covered`` from any cited sections in the answer.
+5. Persists the session via ``GenericRepository`` using the ``db_session``
    factory (CLAUDE.md rule 7 — no deployment logic inside the node).
+
+The user question is read from ``task_context.event.question`` directly
+(rather than from ``AssembleContextNode``'s output) since the abstain branch
+never runs ``AssembleContextNode`` at all.
 
 Two persistence seams (``_load_session`` / ``_persist``) are isolated so tests
 never touch a real database.
@@ -51,6 +61,22 @@ class UpdateSessionMemoryNode(Node):
             else:
                 repo.create(chat_session)
 
+    @staticmethod
+    def _get_answer_envelope(task_context: TaskContext):
+        """Return the answer envelope from whichever branch produced it.
+
+        Exactly one of ``AnswerNode`` (normal path) or ``AbstainNode``
+        (confidence-gated abstain path, block OR.L) runs per event — a plain
+        membership check picks the branch that actually executed.
+
+        Raises:
+            KeyError: descriptive error if neither branch has run (mis-ordered
+                workflow), matching ``TaskContext.get_node_output``'s contract.
+        """
+        if "AnswerNode" in task_context.nodes:
+            return task_context.get_node_output("AnswerNode")["result"]
+        return task_context.get_node_output("AbstainNode")["result"]
+
     # ------------------------------------------------------------------
     # Core logic
     # ------------------------------------------------------------------
@@ -59,10 +85,9 @@ class UpdateSessionMemoryNode(Node):
         """Append the new Q&A turn and persist the session.
 
         Reads:
-          - ``AssembleContextNode`` output: ``question``.
-          - ``AnswerNode`` output: the ``OutputType`` result with ``answer``
-            and ``cited_sections``.
-          - ``task_context.event``: ``session_id``, ``doc_id``.
+          - ``task_context.event``: ``question``, ``session_id``, ``doc_id``.
+          - Whichever of ``AnswerNode`` / ``AbstainNode`` ran: the answer
+            envelope (``answer`` + ``cited_sections``).
 
         Writes:
           - ``UpdateSessionMemoryNode`` result:
@@ -70,20 +95,22 @@ class UpdateSessionMemoryNode(Node):
         """
         event = task_context.event
 
-        # Read the user question from AssembleContextNode
-        assembled = task_context.get_node_output("AssembleContextNode")["result"]
-        question: str = assembled.get("question", "")
+        # The user question is always available on the event itself — the
+        # abstain branch never runs AssembleContextNode, so it can't be the
+        # source of truth here.
+        question: str = event.question
 
-        # Read the assistant answer from AnswerNode
-        answer_output = task_context.get_node_output("AnswerNode")["result"]
+        # Read the answer envelope from whichever branch produced it.
+        answer_output = self._get_answer_envelope(task_context)
         # AnswerNode stores result as OutputType (Pydantic model) serialized by
         # run_agent_recorded → update_node. to_jsonable converts it to a dict.
+        # AbstainNode always stores a plain dict.
         if hasattr(answer_output, "answer"):
             # Pydantic model instance
             answer_text: str = answer_output.answer
             cited_sections: list[str] = list(answer_output.cited_sections or [])
         else:
-            # Already a dict (serialized by to_jsonable)
+            # Already a dict (serialized by to_jsonable, or AbstainNode's envelope)
             answer_text = answer_output.get("answer", "")
             cited_sections = list(answer_output.get("cited_sections", []))
 
