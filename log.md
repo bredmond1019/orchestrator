@@ -11,6 +11,45 @@ timestamp: "2026-07-17T00:30:00Z"
 
 ---
 
+## [run: 2026-07-16]
+
+### `or-l-answer-grounding` shipped — answer-time grounding (confidence signal, abstain routing, citation verification)
+- **What:** Ran `/sdlc-flow or-l-answer-grounding` end to end (Tasks 1–5, all PASS, reviewed PASS in 1
+  attempt). Task 1: `RetrieveChunksNode` now emits a monotonic `retrieval_confidence` float
+  (logistic squash of the top fused score, 0.0 on zero chunks); `DocumentQAEventSchema` gains
+  `confidence_threshold` (default 0.55) and `high_stakes` (default `False`). Task 2: a new
+  `GroundingRouterNode` (`BaseRouter` subclass) sits after retrieval and routes weak/empty
+  retrieval to a deterministic `AbstainNode` — a unified envelope (`abstained: true`,
+  `escalate_to_human: true`, `cited_sections: []`), no LLM call — while confident retrieval keeps
+  the existing Assemble→Answer path; `UpdateSessionMemoryNode` was taught to persist the turn from
+  whichever branch ran. Task 3: a new `VerifyCitationsNode` between `AnswerNode` and
+  `UpdateSessionMemoryNode` checks each cited section for existence against the retrieved chunks
+  and a lexical content-word overlap support score (`SUPPORT_THRESHOLD=0.3`); citations failing
+  existence are dropped as unverified, and an answer whose citations *all* fail is withheld
+  (`withheld_reason: "citations_unverified"`); `corroborated` requires verified citations across
+  ≥2 distinct files; `document_qa_answer.j2` was tightened for citation discipline. Task 4:
+  documented the full grounding pipeline in `docs/api-reference.md` and a new "Answer-time
+  grounding (OR.L)" section in `docs/brain-rag.md`, with an `docs/index.md` touch-up. Task 5:
+  confirmed the validation gate — ruff clean, pylint 10.00/10, 1405 passed / 8 skipped / 0 failed,
+  with the abstain-no-agent-call, unverified-citation, and withheld-envelope acceptance criteria
+  each covered by a dedicated test. Notable decisions: logistic squash chosen over max-score
+  normalization for `retrieval_confidence` (needs no corpus-wide max); `UpdateSessionMemoryNode`'s
+  envelope-selection logic was extended beyond the task's stated file list each time a new
+  terminal node was added, since without it the happy path would keep persisting a stale envelope
+  shape. `planning/state.json` `OR.L` flipped to `closed` (Wave 3, Brain hardening + memory).
+  Next: `OR.P` (semantic code search) or `OR.R` (Brain-as-MCP-server) — both unblocked; branch
+  `or-l-answer-grounding-flow` merge into `main` pending.
+```
+176fce5 feat: implement or-l-answer-grounding-task4
+c2f7d4f feat: implement or-l-answer-grounding-task3
+1be7b7e feat: implement or-l-answer-grounding-task2
+8a8f4e7 feat: implement or-l-answer-grounding-task1
+daaf2c9 docs: log close-out pass for or-m-memory-into-brain-rag
+9a014a7 docs: add or-m-memory-into-brain-rag capabilities to docs index
+7eee35b chore: wrap up or-m-memory-into-brain-rag
+e55637d docs: update docs for or-m-memory-into-brain-rag
+```
+
 ## [2026-07-16]
 
 ### `/close-out --merge-branch` on `or-m-memory-into-brain-rag` — validation, coverage scan, docs index fix
