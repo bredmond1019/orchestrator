@@ -1,5 +1,6 @@
 """Tests for the assembled DocumentQAWorkflow (Project D, Task 4; DAG rewired
-for the confidence-gated abstain branch in block OR.L, Task 2).
+for the confidence-gated abstain branch in block OR.L, Task 2, and for
+deterministic citation verification in block OR.L, Task 3).
 
 Two layers:
 
@@ -28,6 +29,9 @@ from workflows.document_qa_workflow_nodes.retrieve_chunks_node import RetrieveCh
 from workflows.document_qa_workflow_nodes.update_session_memory_node import (
     UpdateSessionMemoryNode,
 )
+from workflows.document_qa_workflow_nodes.verify_citations_node import (
+    VerifyCitationsNode,
+)
 
 
 class TestDocumentQAWorkflowStructure:
@@ -39,8 +43,8 @@ class TestDocumentQAWorkflowStructure:
         """event_schema must be DocumentQAEventSchema."""
         assert DocumentQAWorkflow.workflow_schema.event_schema is DocumentQAEventSchema
 
-    def test_seven_nodes_in_workflow(self):
-        """The workflow must contain exactly seven nodes."""
+    def test_eight_nodes_in_workflow(self):
+        """The workflow must contain exactly eight nodes."""
         node_classes = {nc.node for nc in DocumentQAWorkflow.workflow_schema.nodes}
         assert node_classes == {
             EmbedQuestionNode,
@@ -49,14 +53,15 @@ class TestDocumentQAWorkflowStructure:
             AbstainNode,
             AssembleContextNode,
             AnswerNode,
+            VerifyCitationsNode,
             UpdateSessionMemoryNode,
         }
 
     def test_dag_connections(self):
-        """Connections form the confidence-gated DAG:
+        """Connections form the confidence-gated, citation-verified DAG:
 
         Embed->Retrieve->GroundingRouter->{Abstain, Assemble}
-        Abstain->Update; Assemble->Answer->Update; Update->[].
+        Abstain->Update; Assemble->Answer->VerifyCitations->Update; Update->[].
         """
         node_map = {
             nc.node: nc.connections
@@ -67,7 +72,8 @@ class TestDocumentQAWorkflowStructure:
         assert node_map[GroundingRouterNode] == [AbstainNode, AssembleContextNode]
         assert node_map[AbstainNode] == [UpdateSessionMemoryNode]
         assert node_map[AssembleContextNode] == [AnswerNode]
-        assert node_map[AnswerNode] == [UpdateSessionMemoryNode]
+        assert node_map[AnswerNode] == [VerifyCitationsNode]
+        assert node_map[VerifyCitationsNode] == [UpdateSessionMemoryNode]
         assert node_map[UpdateSessionMemoryNode] == []
 
     def test_only_grounding_router_is_a_router(self):

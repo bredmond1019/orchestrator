@@ -63,16 +63,27 @@ class UpdateSessionMemoryNode(Node):
 
     @staticmethod
     def _get_answer_envelope(task_context: TaskContext):
-        """Return the answer envelope from whichever branch produced it.
+        """Return the answer envelope from whichever terminal node produced it.
 
-        Exactly one of ``AnswerNode`` (normal path) or ``AbstainNode``
-        (confidence-gated abstain path, block OR.L) runs per event — a plain
-        membership check picks the branch that actually executed.
+        Three possibilities per event, checked most-downstream-first:
+
+        - ``VerifyCitationsNode`` (block OR.L, Task 3): ran on the answered
+          branch, after ``AnswerNode`` — its output is the final envelope
+          (verified/unverified citations, corroboration, and any
+          citations-unverified withhold), so it must win over the raw
+          ``AnswerNode`` output when both are present.
+        - ``AnswerNode``: the answered branch before ``VerifyCitationsNode``
+          existed, or a workflow wired without citation verification.
+        - ``AbstainNode``: the confidence-gated abstain path (block OR.L,
+          Task 2) — no ``AnswerNode``/``VerifyCitationsNode`` ever ran.
 
         Raises:
-            KeyError: descriptive error if neither branch has run (mis-ordered
-                workflow), matching ``TaskContext.get_node_output``'s contract.
+            KeyError: descriptive error if none of the three has run
+                (mis-ordered workflow), matching
+                ``TaskContext.get_node_output``'s contract.
         """
+        if "VerifyCitationsNode" in task_context.nodes:
+            return task_context.get_node_output("VerifyCitationsNode")["result"]
         if "AnswerNode" in task_context.nodes:
             return task_context.get_node_output("AnswerNode")["result"]
         return task_context.get_node_output("AbstainNode")["result"]
