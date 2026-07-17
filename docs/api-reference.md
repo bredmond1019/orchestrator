@@ -72,22 +72,25 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 50. [EmbedQuestionNode](#embedquestionnode)
 51. [AssembleContextNode](#assemblecontextnode)
 52. [AnswerNode](#answernode)
-53. [UpdateSessionMemoryNode](#updatesessionmemorynode)
-54. [DocumentQAWorkflow](#documentqaworkflow)
-55. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
-56. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
-57. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
-58. [decay module](#decay-module)
-59. [EpisodeWriteService](#episodewriteservice)
-60. [UpsertMemoryNode](#upsertmemorynode)
-61. [MemoryLoaderNode](#memoryloadernode)
-62. [IngestTimeExtractionNode](#ingesttimeextractionnode)
-63. [MemoryWriteNode](#memorywritenode)
-64. [MemoryIngestWorkflow](#memoryingestworkflow)
-65. [LoadMemoryContextNode](#loadmemorycontextnode)
-66. [ConsolidationNode](#consolidationnode)
-67. [ConsolidationWriteNode](#consolidationwritenode)
-68. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
+53. [GroundingRouterNode](#groundingrouternode)
+54. [AbstainNode](#abstainnode)
+55. [VerifyCitationsNode](#verifycitationsnode)
+56. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+57. [DocumentQAWorkflow](#documentqaworkflow)
+58. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
+59. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
+60. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
+61. [decay module](#decay-module)
+62. [EpisodeWriteService](#episodewriteservice)
+63. [UpsertMemoryNode](#upsertmemorynode)
+64. [MemoryLoaderNode](#memoryloadernode)
+65. [IngestTimeExtractionNode](#ingesttimeextractionnode)
+66. [MemoryWriteNode](#memorywritenode)
+67. [MemoryIngestWorkflow](#memoryingestworkflow)
+68. [LoadMemoryContextNode](#loadmemorycontextnode)
+69. [ConsolidationNode](#consolidationnode)
+70. [ConsolidationWriteNode](#consolidationwritenode)
+71. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
 
 ---
 
@@ -2736,6 +2739,25 @@ score descending.
 | `title` | `str \| None` | Provenance: OKF `title` of the source doc, for citation display. |
 | `via` | `str` | Provenance: `"semantic"` (Stage 1), `"structural"` (Stage 1b neighborhood expansion), `"keyword"` (Stage 1c keyword-candidate expansion), or `"memory"` (Stage 1d memory expansion, block OR.M). |
 
+**`retrieval_confidence` (block OR.L):** `process()` additionally writes a top-level
+`retrieval_confidence: float` alongside `chunks` (not part of the per-chunk dict above):
+
+```python
+task_context.nodes["RetrieveChunksNode"] = {
+    "result": {
+        "chunks": [...],
+        "retrieval_confidence": 0.87,
+    }
+}
+```
+
+Computed by `_compute_retrieval_confidence(chunks)`: a logistic squash
+(`1 / (1 + e^-score)`) of the single highest-scoring chunk's fused `score`, monotonic in
+that score by construction and bounded to `[0, 1]`. Returns `0.0` when `chunks` is empty
+(no retrieval signal at all). This is the raw retrieval-derived confidence signal
+`GroundingRouterNode` gates on and that surfaces on the final answer envelope as
+`context_confidence` (design decision 1) — see § "Answer envelope (block OR.L)" below.
+
 Note: `authored_at` (block OR.M) is threaded through `_row_to_candidate` and consumed internally
 by `_fuse_and_rank`'s age-decay term (see Stage 3 above), but is **not** one of the returned dict's
 keys — it is a scoring input, not a citation field.
@@ -3479,15 +3501,23 @@ session without generating an id client-side.
 | `filters` | `dict \| None` | No | `None` | Optional metadata filters for `"brain"` corpus retrieval. Accepted keys: `"project"` (scalar), `"layer"` (array overlap), `"status"` (scalar). Omitting or passing `None` reproduces current behavior exactly; ignored for `"content"` corpus. |
 | `include_archived` | `bool` | No | `False` | When `False`, the `"brain"` corpus excludes `status='archived'` docs from retrieval. Set `True` to surface archived historical context. No effect on the `"content"` corpus. |
 | `expand_structural` | `bool` | No | `True` | When `True`, the `"brain"` corpus retrieval widens the Stage-1 semantic candidate set through the `related:`-neighborhood (from `brain_edges`) of the top hits before keyword re-rank. Set `False` to disable the structural expansion stage. No effect on the `"content"` corpus. |
+| `workspace_id` | `str \| None` | No | `None` | Block OR.M. D47 workspace name to scope Stage 1d memory retrieval to. Required (non-`None`) together with `include_memory=True` for memory retrieval to run at all. |
+| `peer_id` | `str \| None` | No | `None` | Block OR.M. Optional narrowing of memory retrieval to one entity's facts. |
+| `include_memory` | `bool` | No | `False` | Block OR.M. Opt-in gate surfacing accumulated `SemanticMemory` facts as `via="memory"` retrieval candidates. |
+| `apply_decay` | `bool` | No | `True` | Block OR.M. When `True`, `"brain"` corpus candidates with a non-`None` `authored_at` are down-weighted by age. Set `False` to reproduce pre-OR.M ranking exactly. |
+| `confidence_threshold` | `float` | No | `0.55` | Block OR.L. Minimum `retrieval_confidence` (see `RetrieveChunksNode`) required to attempt an answer at all. Below this — or with zero retrieved chunks — `GroundingRouterNode` routes to the deterministic `AbstainNode` path instead of calling the answer LLM. |
+| `high_stakes` | `bool` | No | `False` | Block OR.L. When `True` and the answer's verified citations don't span ≥2 distinct source files (uncorroborated), the envelope sets `escalate_to_human: true`. Does not change whether an answer is returned, only whether it is flagged for human follow-up. |
 
 ### Validation
 
-All seven fields accept their Python-native types; Pydantic coerces UUID strings automatically.
+All thirteen fields accept their Python-native types; Pydantic coerces UUID strings automatically.
 A missing `doc_id` or `question` raises a `ValidationError`. `corpus` is not constrained by the
 schema — the `RetrieveChunksNode` corpus dispatch handles unknown values. `filters` keys that are
 not declared in `filter_fields` for the target corpus are silently ignored. `include_archived` and
 `expand_structural` are explicit boolean fields (not `filters` keys) so both overrides are
-type-checked and self-documenting.
+type-checked and self-documenting. `confidence_threshold` and `high_stakes` (block OR.L) are
+consumed by `GroundingRouterNode` and `VerifyCitationsNode` respectively — see those sections
+and § "Answer envelope (block OR.L)" below.
 
 ---
 
@@ -3649,6 +3679,185 @@ task_context.nodes["AnswerNode"] = {
 
 ---
 
+## GroundingRouterNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/grounding_router_node.py`
+
+```python
+class GroundingRouterNode(BaseRouter):
+```
+
+Block OR.L. Sits after `RetrieveChunksNode` in the `DocumentQAWorkflow` DAG and gates whether
+the retrieved context is strong enough to attempt an answer at all — design decision 2: "abstain
+is a routed branch, not a prompt rule." A `BaseRouter` subclass mirroring the
+`BlogDecisionRouterNode` (Project A) shape: one `RouterNode` route plus a fallback.
+
+### `BelowConfidenceRouter` (`RouterNode`)
+
+`determine_next_node(task_context) -> Node | None`:
+
+1. Reads `RetrieveChunksNode` output via `task_context.get_node_output("RetrieveChunksNode")`
+   (raises the framework's descriptive `KeyError` if `RetrieveChunksNode` hasn't run yet).
+2. Reads `chunks` and `retrieval_confidence` from that output, and `event.confidence_threshold`.
+3. Returns `AbstainNode()` when `chunks` is empty **or** `retrieval_confidence < confidence_threshold`.
+4. Otherwise returns `None`, so `GroundingRouterNode.fallback` (`AssembleContextNode()`) is used.
+
+### `GroundingRouterNode.__init__`
+
+```python
+self.routes = [BelowConfidenceRouter()]
+self.fallback = AssembleContextNode()
+```
+
+### Routing outcome
+
+| Condition | Next node |
+|---|---|
+| Zero retrieved chunks | `AbstainNode` |
+| `retrieval_confidence < event.confidence_threshold` | `AbstainNode` |
+| Otherwise | `AssembleContextNode` (normal answer path) |
+
+---
+
+## AbstainNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/abstain_node.py`
+
+```python
+class AbstainNode(Node):
+```
+
+Block OR.L. Deterministic node that runs in place of `AssembleContextNode -> AnswerNode` when
+`GroundingRouterNode` decides retrieval is too weak (or empty). Makes **no LLM call** — writes
+the unified answer envelope (see § "Answer envelope (block OR.L)" below) directly, so
+`UpdateSessionMemoryNode` can persist the turn identically regardless of which branch produced it.
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+**Reads:**
+- `RetrieveChunksNode` output: `retrieval_confidence`.
+
+**Writes** the abstain envelope under `AbstainNode`:
+
+```python
+task_context.nodes["AbstainNode"] = {
+    "result": {
+        "answer": "I don't have that in my documents.",
+        "cited_sections": [],
+        "verified_citations": [],
+        "unverified_citations": [],
+        "context_confidence": 0.31,           # from RetrieveChunksNode
+        "abstained": True,
+        "corroborated": False,
+        "escalate_to_human": True,
+        "withheld_reason": "below_confidence_threshold",
+    }
+}
+```
+
+`ABSTAIN_MESSAGE` (module constant) is the user-facing text: `"I don't have that in my documents."`
+
+---
+
+## VerifyCitationsNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/verify_citations_node.py`
+
+```python
+class VerifyCitationsNode(Node):
+```
+
+Block OR.L. Deterministic node between `AnswerNode` and `UpdateSessionMemoryNode` on the answered
+branch only (the abstain branch bypasses straight from `AbstainNode` to
+`UpdateSessionMemoryNode`, so this node never runs there). Checks each section title `AnswerNode`
+claims to have cited against the chunks `RetrieveChunksNode` actually retrieved, then writes the
+final (answered-or-withheld) envelope. No LLM judging — LLM-judged semantic contradiction is out
+of scope for this block.
+
+### Verification logic
+
+For each title in `AnswerNode.cited_sections`:
+
+1. **Existence** — `_normalize_title()` (case-insensitive, strips a leading `#` heading marker
+   and collapses whitespace) compares the cited title against the retrieved chunks'
+   `section_title`s. No match → `unverified_citations` with `reason: "not_found"`.
+2. **Claim support** — for a title that does match, `support_score(answer_sentences, chunk_content)`
+   computes a pure lexical content-word overlap ratio between the answer text (split into
+   sentences by `split_sentences()`) and the matched chunk's `content`. Below
+   `SUPPORT_THRESHOLD` (module constant, `0.3`) → `unverified_citations` with `reason:
+   "unsupported"`; at or above → `verified_citations` (carries `section_title`, `file_path`,
+   `support_score`).
+
+### `support_score(answer_sentences: list[str], chunk_content: str) -> float`
+
+Pure function: `|answer_content_words ∩ chunk_content_words| / |answer_content_words|`, over
+content words only (a small English stopword list and tokens of length ≤2 are excluded so the
+ratio reflects topical overlap, not grammar). Returns `0.0` when the answer contributes no
+content words. Monotonic in shared vocabulary between the answer and the chunk.
+
+### Withholding
+
+`_build_envelope()`: when **every** citation fails (including the zero-citations-over-a-
+non-empty-context case), the envelope is **withheld** rather than shipping an ungrounded answer —
+it flips to the same shape `AbstainNode` produces:
+
+```python
+{
+    "answer": "I don't have verified support for that in my documents.",  # WITHHELD_MESSAGE
+    "cited_sections": [],
+    "verified_citations": [],
+    "unverified_citations": [...],
+    "context_confidence": 0.82,
+    "abstained": True,
+    "corroborated": False,
+    "escalate_to_human": True,
+    "withheld_reason": "citations_unverified",
+}
+```
+
+### Corroboration and `high_stakes` escalation
+
+When at least one citation is verified, `corroborated = len({v["file_path"] for v in
+verified_citations if v["file_path"]}) >= 2` — true iff verified citations span **at least two
+distinct source files** (design decision 4, "prefer" not "require"). When `event.high_stakes` is
+`True` and `corroborated` is `False`, `escalate_to_human` is set `True` — the answer still ships,
+just flagged.
+
+### `process(task_context: TaskContext) -> TaskContext`
+
+**Reads:**
+- `AnswerNode` output: `answer`, `cited_sections` (handles both the Pydantic `OutputType`
+  instance and a plain dict, mirroring `UpdateSessionMemoryNode`'s existing dual-shape handling —
+  standing rule 9).
+- `RetrieveChunksNode` output: `chunks`, `retrieval_confidence` (carried through to
+  `context_confidence` on the final envelope — design decision 1).
+- `task_context.event.high_stakes` (defensive `getattr`, defaults `False`).
+
+**Writes** the final envelope (answered or withheld) under `VerifyCitationsNode`.
+
+### Answer envelope (block OR.L)
+
+Design decision 5: **one envelope shape** for every outcome (answered / abstained / withheld),
+written by whichever terminal node produced it — `AbstainNode`, or `VerifyCitationsNode` on the
+answered branch:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `answer` | `str` | The answer text, the abstain message, or the withheld message. |
+| `cited_sections` | `list[str]` | Raw section titles `AnswerNode` claimed (empty on abstain/withheld). |
+| `verified_citations` | `list[dict]` | Citations passing both existence + claim-support checks — each `{"section_title", "file_path", "support_score"}`. |
+| `unverified_citations` | `list[dict]` | Citations failing either check — each `{"section_title", "reason", ...}` (`reason` is `"not_found"` or `"unsupported"`). |
+| `context_confidence` | `float` | `RetrieveChunksNode`'s `retrieval_confidence`, carried through unchanged (design decision 1's Design-Note naming). |
+| `abstained` | `bool` | `True` for the below-confidence and citations-unverified-withheld paths; `False` for a normal answered turn. |
+| `corroborated` | `bool` | `True` iff `verified_citations` span ≥2 distinct `file_path`s. |
+| `escalate_to_human` | `bool` | `True` on abstain/withhold, or when `high_stakes=True` and not `corroborated`. |
+| `withheld_reason` | `str \| None` | `"below_confidence_threshold"`, `"citations_unverified"`, or `None` on a normal answered turn. |
+
+`UpdateSessionMemoryNode` reads this envelope from whichever of `VerifyCitationsNode` /
+`AnswerNode` / `AbstainNode` actually ran (see below) and persists the turn identically either way.
+
+---
+
 ## UpdateSessionMemoryNode
 
 **Source:** `app/workflows/document_qa_workflow_nodes/update_session_memory_node.py`
@@ -3657,18 +3866,36 @@ task_context.nodes["AnswerNode"] = {
 class UpdateSessionMemoryNode(Node):
 ```
 
-Terminal node of the `DocumentQAWorkflow` DAG. Loads or creates the `ChatSession` for the
-current `session_id`, appends the user question and assistant answer as a new turn pair,
-extends `topics_covered` with any cited sections (deduplicated), and persists the session via
-`GenericRepository` (CLAUDE.md rule 7 — no deployment logic inside the node).
+Terminal node of the `DocumentQAWorkflow` DAG, shared by **both branches** of the block OR.L
+confidence-gated DAG. Loads or creates the `ChatSession` for the current `session_id`, appends
+the user question and assistant answer as a new turn pair, extends `topics_covered` with any
+cited sections (deduplicated), and persists the session via `GenericRepository` (CLAUDE.md rule
+7 — no deployment logic inside the node).
+
+### `_get_answer_envelope(task_context) -> dict`
+
+Block OR.L. Reads the unified answer envelope (see `VerifyCitationsNode` § "Answer envelope")
+from whichever terminal node actually produced it, checked most-downstream-first so
+`VerifyCitationsNode`'s final envelope wins whenever it ran:
+
+1. `VerifyCitationsNode` (present) → its output (the answered-or-withheld envelope).
+2. Else `AnswerNode` (present) → its raw output (a workflow wired without citation
+   verification, or a workflow predating block OR.L Task 3).
+3. Else `AbstainNode` → the below-confidence abstain envelope (block OR.L Task 2) — neither
+   `AnswerNode` nor `VerifyCitationsNode` ran on this branch.
+
+Raises the framework's descriptive `KeyError` (via `TaskContext.get_node_output`) if none of the
+three ran (mis-ordered workflow).
 
 ### `process(task_context: TaskContext) -> TaskContext`
 
 **Reads:**
-- `AssembleContextNode` output: `question`.
-- `AnswerNode` output: `answer` and `cited_sections` (handles both Pydantic model instance and
-  dict forms, since `run_agent_recorded` may store either depending on the `node_run` path).
-- `task_context.event`: `session_id`, `doc_id`.
+- `task_context.event`: `question`, `session_id`, `doc_id` — the user question is read from the
+  event directly (not from `AssembleContextNode`'s output), since the abstain branch never runs
+  `AssembleContextNode` at all.
+- The answer envelope via `_get_answer_envelope()`: `answer` and `cited_sections` (handles both
+  the Pydantic `OutputType` model instance and dict forms — the abstain envelope is always a
+  plain dict; `AnswerNode`'s serialized output may be either depending on the `node_run` path).
 
 **Logic:**
 1. Loads the existing `ChatSession` via `_load_session(session_id)`.
@@ -3709,19 +3936,33 @@ class DocumentQAWorkflow(Workflow):
 ```
 
 Grounded Q&A workflow over ingested documents (Phase 1 Project D). Embeds the user question,
-retrieves the most relevant chunks via two-stage hybrid retrieval, assembles the RAG context
-alongside prior session turns, generates a grounded answer, and persists the new turn to the
-`ChatSession`.
+retrieves the most relevant chunks via two-stage hybrid retrieval, and (block OR.L) routes on a
+retrieval-confidence gate: weak or empty retrieval abstains deterministically with no LLM call;
+confident retrieval assembles the RAG context alongside prior session turns, generates a grounded
+answer, and deterministically verifies its citations (existence + lexical claim support,
+corroboration, `high_stakes` escalation). Either branch persists the new turn to the
+`ChatSession` via the same terminal node.
 
-**Graph (linear DAG — no router):**
+**Graph (router after `RetrieveChunksNode`, block OR.L):**
 
 ```
 EmbedQuestionNode
     -> RetrieveChunksNode
-        -> AssembleContextNode
-            -> AnswerNode
-                -> UpdateSessionMemoryNode
+        -> GroundingRouterNode (router)
+            -> AbstainNode -> UpdateSessionMemoryNode
+            -> AssembleContextNode -> AnswerNode
+                -> VerifyCitationsNode -> UpdateSessionMemoryNode
 ```
+
+`GroundingRouterNode` routes to `AbstainNode` when `RetrieveChunksNode`'s `retrieval_confidence`
+falls below `event.confidence_threshold` (or zero chunks were retrieved); otherwise it falls
+through to `AssembleContextNode`. `AbstainNode` makes no LLM call — it writes the unified answer
+envelope directly. On the answered branch, `VerifyCitationsNode` deterministically checks
+`AnswerNode`'s citations against the retrieved chunks and either completes the envelope
+(verified/unverified citations, corroboration) or withholds it (all citations unverified) — no
+LLM judging involved. Both branches converge on `UpdateSessionMemoryNode`, which persists the
+turn identically regardless of which terminal node produced the envelope. See § "Answer envelope
+(block OR.L)" under `VerifyCitationsNode` for the full envelope shape.
 
 ### `workflow_schema`
 
@@ -3729,14 +3970,17 @@ EmbedQuestionNode
 |---|---|
 | `event_schema` | `DocumentQAEventSchema` |
 | `start` | `EmbedQuestionNode` |
-| `nodes` | `[EmbedQuestionNode, RetrieveChunksNode, AssembleContextNode, AnswerNode, UpdateSessionMemoryNode]` |
-| Connections | Linear: each node connects to the next; `UpdateSessionMemoryNode.connections = []` |
+| `nodes` | `[EmbedQuestionNode, RetrieveChunksNode, GroundingRouterNode, AbstainNode, AssembleContextNode, AnswerNode, VerifyCitationsNode, UpdateSessionMemoryNode]` |
+| Connections | `EmbedQuestionNode -> RetrieveChunksNode -> GroundingRouterNode` (`is_router=True`, connections `[AbstainNode, AssembleContextNode]`) `-> {AbstainNode | AssembleContextNode -> AnswerNode -> VerifyCitationsNode}` `-> UpdateSessionMemoryNode` (`connections = []`, terminal) |
 
 ### Test coverage
 
-- `tests/workflows/test_document_qa_nodes.py` — 24 node-level unit tests covering all five nodes, including the `AnswerNode` telemetry recording path (`run_agent_recorded` with `node_runs` populated) and the `UpdateSessionMemoryNode` Pydantic-model output path.
-- `tests/workflows/test_document_qa_workflow.py` — workflow wiring, DAG structure, `WorkflowValidator` acceptance.
-- `tests/workflows/test_document_qa_e2e.py` — 9 end-to-end tests running all five nodes in sequence (external services and DB calls mocked). Explicitly asserts that `AnswerNode` stores a Pydantic `OutputType` instance (not a dict) and that `UpdateSessionMemoryNode` handles it correctly end-to-end.
+- `tests/workflows/test_document_qa_nodes.py` — node-level unit tests covering all original five nodes, including the `AnswerNode` telemetry recording path (`run_agent_recorded` with `node_runs` populated) and the `UpdateSessionMemoryNode` Pydantic-model output path.
+- `tests/workflows/test_document_qa_workflow.py` — workflow wiring, DAG structure (including the block OR.L router), `WorkflowValidator` acceptance.
+- `tests/workflows/test_document_qa_e2e.py` — end-to-end tests running the full DAG in sequence (external services and DB calls mocked). Explicitly asserts that `AnswerNode` stores a Pydantic `OutputType` instance (not a dict) and that `UpdateSessionMemoryNode` handles it correctly end-to-end.
+- `tests/workflows/test_grounding_confidence.py` (block OR.L Task 1) — `retrieval_confidence` monotonicity/boundedness, zero-chunk case, `confidence_threshold`/`high_stakes` schema field defaults.
+- `tests/workflows/test_abstain_path.py` (block OR.L Task 2) — below-threshold and zero-chunk abstain (with the agent seam asserted never invoked), at/above-threshold normal path, session persistence on both branches, and the router's descriptive `KeyError` when `RetrieveChunksNode` output is missing.
+- `tests/workflows/test_citation_verification.py` (block OR.L Task 3) — fabricated-citation flagging, all-citations-fail withholding, genuine verified citations, corroboration across ≥2 files, `high_stakes` + uncorroborated escalation, and `support_score` pure-function cases.
 
 ---
 
