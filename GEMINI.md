@@ -5,6 +5,7 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 ## Before you start
 
 - **Strategic context:** `planning/context.md` (read first) → `planning/status.md` (current state)
+- **Symlink warning:** the `planning/` directory is actually a local symlink pointing to the company brain repo's `_planning/` vault (e.g. `core/_planning/orchestrator/`). The brain repo is responsible for tracking all planning files under Git. Do not track `planning/` in this project's public Git repository (it is gitignored).
 - **Role in Bastion:** this repo is the **Engine** + the **Python half of the Brain** of the brain's
   primary program, Bastion. Cross-repo order + seams are authoritative in the brain
   (`agentic-portfolio/planning/bastion-product/master-plan.md`); the local adoption + the new
@@ -13,7 +14,7 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 - **Architecture reference:** `docs/app-architecture-overview.md`
 - **SDLC pipeline config:** `planning/harness.json` — the validation suite the SDLC engines run
   (the 8-check suite, now externalized via base-template's richer check kinds). This is the source of
-  truth for `/test`; keep the lint/test skills below in sync with it.
+  truth for `/test`; keep the lint/test commands below in sync with it.
 - **Decisions log:** `planning/decisions/` (start at `planning/decisions/index.md`) — check before relitigating any settled choice
 
 ---
@@ -24,12 +25,12 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 2. **Never hardcode a system prompt in Python.** All prompts are `.j2` files in `app/prompts/`, loaded via `PromptManager`.
 3. **`customer_care` is reference-only.** Do not extend it, add tests for it, or treat it as a pattern to modify. New workflows go alongside it.
 4. **New projects = new workflow directories.** Add `app/workflows/<name>_workflow.py` + `app/workflows/<name>_workflow_nodes/` + `app/schemas/<name>_schema.py`. Use `createworkflow` (see below).
-5. **Python stays Python; Rust is the Console.** Do not suggest Rust rewrites of any part of this repo. Rust (bastion, the Console) is a *separate Bastion layer* that reads this repo over HTTP/Postgres and never shares code with it — it harvests crates and observes; it never holds the orchestration core or any billable workflow. (See `planning/decisions/` D6, D17, **D36**; brain D24.)
+5. **Python is the prototyping Engine + Brain half; `engine-rs` is the Rust pilot.** Per brain **D42**, a fresh Rust execution engine (`engine-rs`, core tier) is being built as a *parallel pilot* and is the graduation target for the Engine layer. This repo stays the fast prototyping/iteration tier and the Python half of the Brain, and remains the production path **until `engine-rs` reaches data-contract parity**. The **data contract** (`docs/data-contract.md`, D20/D30) is the seam both engines write — preserve it byte-for-byte; graduation is per-workflow, not big-bang. `engine-rs` embeds in `bastion serve` (which reads this repo's contract). (See brain **D42**, which reopens D6 and narrows D17/**D36**; brain D24/D41. Local D6/D36 are narrowed, not deleted — Python is not going away.) This repo also owns the **workspace contract** (`docs/workspace-contract.md`, brain D47) — the shared "knowledge workspace" convention (`OR.C` ⇄ bastion `BA.6.B`: names = `brain.toml` slugs, resolution precedence, OKF corpus rules); bump its version + re-pin `bastion/docs/workspace-contract.md` when any rule changes.
 6. **Register every new workflow in both registries.** Add the enum member to `app/workflows/workflow_registry.py` AND add the corresponding event schema entry to `app/api/schema_registry.py`. Missing the second step causes the API dispatcher to 422 every request for that workflow. `tests/api/test_endpoint.py::TestSchemaRegistryCompleteness` enforces this automatically.
 7. **No deployment logic inside nodes.** This framework is the deployment-agnostic *brain* — it must not know where it runs. The two things that vary by deployment are **injected, never hardcoded**: model choice (per-node `model_provider` config) and persistence (always via `GenericRepository`). The first `if running_locally:` inside a node means two products have started being built. Keep deployment decisions in config and in the shell, never here. (See `planning/decisions/` D16, D18.)
 8. **The eval rubric, the validator, the test-runner, and any consolidation prompt are human-owned gates.** If self-improving / agent-contribution features are ever built, agents may *propose* changes to these by PR but never self-approve them, and never author-and-deploy new node code without human review. (See `planning/decisions/` D20. Not in scope until a node library exists to compose over — Phase 3+.)
 9. **Seed TaskContext with the real storage structure in tests.** `AgentNode` stores output via `update_node(node_name=..., result=output)`, which produces `{"result": output}` in `task_context.nodes`. Tests that seed an upstream node as `ctx.nodes["X"] = raw_dict` instead of `ctx.nodes["X"] = {"result": raw_dict}` will pass silently (agent is mocked) but prove the wrong key contract. Always mirror what the actual node writes. When in doubt, check the `update_node` call in the source node.
-10. **Every new `.md` under `docs/` or `planning/` must open with OKF YAML frontmatter.** The governing standard is [D27 in the company brain](../docs/decisions/D27-enriched-okf-frontmatter.md); the canonical authoring guide is `agentic-portfolio/docs/okf-frontmatter.md`. Required fields: `type`, `title`, `description`. Optional but strongly encouraged: `doc_id` (kebab-case, defaults to filename stem), `layer` (closed set: `brain` · `engine` · `factory` · `console` · `surface` · `infra` · `business` · `content` · `meta`), `project` (use `orchestrator` for this repo; omit for cross-cutting docs), `status` (`active` · `draft` · `deprecated` · `superseded` · `archived`), `keywords` (3–7 free-form topic terms), `related` (list of `doc_id`s). Adding a file to a directory requires updating that directory's `index.md`; propagate up the tree if the parent scope changes.
+10. **Every new `.md` under `docs/` or `planning/` must open with OKF YAML frontmatter.** The governing standard is D27 in the company brain; the canonical authoring guide is `agentic-portfolio/docs/okf-frontmatter.md`. Required fields: `type`, `title`, `description`. Optional but strongly encouraged: `doc_id` (kebab-case, defaults to filename stem), `layer` (closed set: `brain` · `engine` · `factory` · `console` · `surface` · `infra` · `business` · `content` · `meta`), `project` (use `orchestrator` for this repo; omit for cross-cutting docs), `status` (`active` · `draft` · `deprecated` · `superseded` · `archived`), `keywords` (3–7 free-form topic terms), `related` (list of `doc_id`s). Adding a file to a directory requires updating that directory's `index.md`; propagate up the tree if the parent scope changes.
 
 ---
 
@@ -76,6 +77,10 @@ uv run python -m pytest
 # Full Docker stack
 cd docker && ./start.sh    # up (reads docker/.env)
 cd docker && ./stop.sh     # down
+
+# Refresh the brain corpus (brain_documents) + structural graph (brain_edges) — prefer this
+# over running the two underlying scripts by hand; see docs/scripts.md for the full reference.
+uv run python scripts/refresh_brain.py
 ```
 
 ---
@@ -119,7 +124,7 @@ Run `uv run python -m ruff check app/ --fix` before committing to auto-resolve m
 ## What NOT to touch
 
 - `app/workflows/customer_care_workflow*` — reference implementation, frozen
-- `app/core/skills/` — excluded from ruff and pylint, do not reformat
+- `app/core/commands/` — excluded from ruff and pylint, do not reformat
 - `app/alembic/` — migration history, excluded from pylint, never hand-edit generated files
 
 ---
@@ -132,3 +137,4 @@ Developer reference docs in `docs/`:
 |---|---|
 | [docs/api-reference.md](docs/api-reference.md) | Precise class-level reference for every public abstraction in app/core/, app/database/, app/services/, and app/workflows/ that a developer must understand and subclass when writing a new workflow. |
 | [docs/configuration.md](docs/configuration.md) | Complete reference for every environment variable, connection string assembly, and Docker service topology so a developer can configure the stack for local development or a Docker deployment without guessing. |
+| [docs/scripts.md](docs/scripts.md) | Reference for every script in `scripts/`: setup, dev server, inspection, and the brain corpus/graph pipeline (`index_brain.py`, `load_brain_edges.py`, `refresh_brain.py`, `query_brain.py`). |
