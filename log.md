@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-17T04:02:25Z"
+timestamp: "2026-07-23T19:07:08Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,21 @@ timestamp: "2026-07-17T04:02:25Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
+
+## [2026-07-23]
+
+### Documented 8 production workflows for bastion-web UI integration; set OR.W as next focus
+- **What:** Confirmed OR.L merged (2026-07-17); discovered + documented 8 production workflows for
+  bastion-web UI integration (Tier 1 business: RESEARCH_AGENT, PROPOSAL_GENERATOR, DOCUMENT_INGEST/QA,
+  MEMORY_INGEST/CONSOLIDATION; Tier 2 content: CONTENT_PIPELINE; Tier 3 dev: SDLC_FLOW). Created
+  planning/workflows-for-ui-integration.md with DAG, payloads, use cases, and 5-phase integration
+  roadmap. Updated state.json carryover[] with new workflows-documented-for-bastion-web-ui-integration
+  entry. Set OR.W (external-intelligence loop, Wave 5) as next focus; ready for /generate-tasks in next
+  session. Wrote planning/handoff.md pointing next agent at OR.W scoping.
+- **Why:** Cross-repo coordination for bastion-web UI project; business workflows ready for integration
+  testing. All Wave 0–4 blocks closed; next focus is the external-intelligence loop (Wave 5, Bastion
+  program).
+- **Refs:** planning/workflows-for-ui-integration.md; planning/handoff.md; block OR.W; block OR.L (merged).
 
 ## [run: 2026-07-24]
 
