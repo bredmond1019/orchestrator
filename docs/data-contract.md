@@ -24,6 +24,12 @@ The orchestrator **owns** this document. Consumers (e.g. [`bastion`](../../basti
 > resume foundation — see `planning/decisions/D28-node-level-execution-state.md`). It documents
 > what the orchestrator already exposes; it does not couple the framework to any consumer.
 
+> **Known gap (as of 2026-07-23):** `POST /events/{run_id}/abort` (§7) is specified here and is
+> **live in `engine-rs`** (`crates/engine-serve/src/abort.rs`, triggered via `bastion abort
+> <run_id>`), but it is **not yet implemented in orchestrator's own Python API** — there is no
+> matching route in `app/api/`. Treat §7's abort entry as orchestrator's *target* shape, not a
+> currently-callable orchestrator endpoint, until it's built here.
+
 ---
 
 ## 1. Identity rule (load-bearing)
@@ -72,11 +78,13 @@ PostgreSQL and never mutates `task_context` by hand.
 
 **This does not forbid a consumer from *triggering* a write the execution runtime performs on its
 own behalf.** As of v1.1.0, `bastion` may call `POST /events/{run_id}/abort` (§7) to request that a
-live run stop; the runtime — the orchestrator, or `engine-rs`'s embedded execution engine per
-brain decision D25 ("bastion triggers, the Engine executes"; see
+live run stop; the runtime — `engine-rs`'s embedded execution engine per brain decision D25
+("bastion triggers, the Engine executes"; see
 `agentic-portfolio/docs/decisions/D25-bastion-acts-through-engine.md`) — is what actually flips
 the cancellation token and stamps the resulting `metadata["cancellation"]` marker (§5). The
-consumer never writes the row itself; it only asks the runtime that owns the row to.
+consumer never writes the row itself; it only asks the runtime that owns the row to. **Today this
+runtime is `engine-rs` only** — orchestrator's own Python API does not yet implement this route
+(see the "Known gap" callout above).
 
 ---
 
@@ -228,7 +236,7 @@ Mounted at `/` (`app/api/`):
 | `GET` | `/health` | — | `{ "status": str, "version": str }` |
 | `GET` | `/workflows` | — | `{ "workflows": [str, ...] }` — registered types |
 | `GET` | `/workflows/{type}/graph` | — | `{ "nodes": [str, ...], "edges": [[from, to], ...] }` |
-| `POST` | `/events/{run_id}/abort` | — (no body) | `202 { "run_id": str, "status": "aborting" }` — **abort** a live run (new in v1.1.0) |
+| `POST` | `/events/{run_id}/abort` | — (no body) | `202 { "run_id": str, "status": "aborting" }` — **abort** a live run (new in v1.1.0; **not yet implemented in orchestrator's own API** — see "Known gap" above; live in `engine-rs` today) |
 
 `GET /workflows/{type}/graph` returns `404` for an unknown type. Node names in `nodes`/`edges` are
 class names (§1).
@@ -240,7 +248,9 @@ from a private-network shell script) must add the header. `bastion` is a **read-
 Postgres observer** — it never POSTs to this endpoint — so no re-pin is required.
 
 **`POST /events/{run_id}/abort` (new in v1.1.0).** Requests that a live run stop. Reuses the same
-`X-API-Key` gate as `POST /events/`:
+`X-API-Key` gate as `POST /events/`. **Not yet implemented in orchestrator's own Python API** —
+this route currently only exists in `engine-rs` (`crates/engine-serve/src/abort.rs`); the
+semantics below are the target shape for when orchestrator adds it:
 
 - **`401 Unauthorized`** — missing or mismatched `X-API-Key` header (no body).
 - **`404 Not Found`** — `run_id` is unknown, or the run has already reached a terminal state
