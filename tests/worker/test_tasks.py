@@ -7,6 +7,8 @@ authoritative write via the repository. The framework itself stays
 deployment-agnostic; only the worker knows persistence exists.
 """
 
+import logging
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -116,3 +118,118 @@ def test_missing_event_raises(wired_worker):
         worker_tasks.process_incoming_event("missing")
 
     wired_worker["workflow"].run.assert_not_called()
+
+
+def test_successful_run_writes_no_failure_marker(wired_worker):
+    """A run that completes without raising carries no metadata.failure key."""
+    worker_tasks.process_incoming_event("evt-1")
+
+    db_event = wired_worker["db_event"]
+    metadata = db_event.task_context.get("metadata") or {}
+    assert "failure" not in metadata
+
+
+@pytest.fixture
+def failing_worker(monkeypatch):
+    """Like ``wired_worker``, but the workflow raises and ``db_session`` is
+    modelled with the real commit-on-success/rollback-on-exception contract
+    across independent sessions, so the rollback-survival guarantee for the
+    failure marker can actually be exercised and asserted.
+    """
+    sessions: list[MagicMock] = []
+
+    def fake_db_session():
+        session = MagicMock(name=f"session{len(sessions)}")
+        sessions.append(session)
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    db_event = StubEvent()
+    repository = MagicMock(name="repository")
+    repository.get.return_value = db_event
+
+    monkeypatch.setattr(worker_tasks, "db_session", fake_db_session)
+    monkeypatch.setattr(
+        worker_tasks, "GenericRepository", MagicMock(return_value=repository)
+    )
+
+    error = RuntimeError("boom")
+
+    def fake_run(event, on_progress=None):
+        raise error
+
+    workflow = MagicMock(name="workflow")
+    workflow.run.side_effect = fake_run
+
+    registry = MagicMock(name="WorkflowRegistry")
+    registry.__getitem__.return_value.value.return_value = workflow
+    monkeypatch.setattr(worker_tasks, "WorkflowRegistry", registry)
+
+    return {
+        "sessions": sessions,
+        "db_event": db_event,
+        "repository": repository,
+        "error": error,
+    }
+
+
+def test_raising_workflow_writes_failure_marker(failing_worker):
+    """A raising workflow produces a readable metadata.failure marker."""
+    with pytest.raises(RuntimeError, match="boom"):
+        worker_tasks.process_incoming_event("evt-1")
+
+    db_event = failing_worker["db_event"]
+    marker = db_event.task_context["metadata"]["failure"]
+    assert marker["failed"] is True
+    assert marker["error"] == "RuntimeError: boom"
+    # `at` is a parseable ISO-8601 timestamp.
+    datetime.fromisoformat(marker["at"])
+
+
+def test_original_exception_reraised_unchanged(failing_worker):
+    """The original exception instance propagates unchanged (Celery still
+    sees the failure)."""
+    with pytest.raises(RuntimeError) as excinfo:
+        worker_tasks.process_incoming_event("evt-1")
+
+    assert excinfo.value is failing_worker["error"]
+
+
+def test_failure_marker_survives_outer_rollback(failing_worker):
+    """Rollback-survival regression test: the marker is written on a second,
+    separately committed session even though the outer session rolled back."""
+    with pytest.raises(RuntimeError):
+        worker_tasks.process_incoming_event("evt-1")
+
+    sessions = failing_worker["sessions"]
+    assert len(sessions) == 2, "expected two independent db_session() opens"
+    outer_session, fresh_session = sessions
+
+    outer_session.rollback.assert_called_once()
+    outer_session.commit.assert_not_called()
+
+    fresh_session.commit.assert_called_once()
+    fresh_session.rollback.assert_not_called()
+
+
+def test_marker_write_failure_does_not_mask_original_exception(
+    failing_worker, caplog
+):
+    """A failure in the marker write itself is logged, not raised, and the
+    original exception still propagates."""
+    failing_worker["repository"].update.side_effect = RuntimeError(
+        "marker write failed"
+    )
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(RuntimeError, match="boom"):
+            worker_tasks.process_incoming_event("evt-1")
+
+    assert any(
+        "failed to write failure marker" in record.message.lower()
+        for record in caplog.records
+    )

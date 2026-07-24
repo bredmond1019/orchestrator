@@ -1,0 +1,8 @@
+{
+  "event_id": "00000000-0000-0000-0000-000000000001",
+  "workflow_type": "CUSTOMER_CARE",
+  "status": "queued",
+  "created_at": "2026-07-16T09:00:00",
+  "updated_at": "2026-07-16T09:00:00",
+  "task_context": null
+}
