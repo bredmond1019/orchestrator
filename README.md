@@ -1,7 +1,7 @@
 ---
 type: Index
-title: Python Orchestration System — README
-description: Event-driven AI pipeline framework — FastAPI, Celery, Workflow DAG, TaskContext. Entry point for the repo.
+title: Synapse — README
+description: The Brain layer of Bastion — corpus, embeddings, structural graph, memory, and retrieval, on an event-driven FastAPI/Celery pipeline framework. Entry point for the repo.
 doc_id: readme
 layer: [engine]
 project: orchestrator
@@ -10,9 +10,14 @@ keywords: [orchestration framework, FastAPI, Celery, workflow DAG, quick start]
 related: [docs-index, app-architecture-overview, getting-started]
 ---
 
-# AI Event System — Orchestration Framework
+# Synapse — the Brain layer
 
 > Part of the **Bastion** ecosystem — see the [bastion-os](https://github.com/bredmond1019/bastion-os) front door for the full architecture.
+>
+> **Renamed from `orchestrator` (2026-07-24).** Synapse is the **knowledge layer** — the corpus,
+> embeddings, structural graph, memory, and retrieval. It is *not* the orchestrator: `engine-rs` is.
+> The name is currently narrative-only; the directory, package, and block IDs flip in one atomic
+> migration later. See brain decisions **D51** (the Brain/Engine boundary) and **D52** (the rename).
 
 **Business Value:** This production-grade framework provides the technical spine for custom AI pipelines. It eliminates the need to rewrite retry logic, state management, and provider abstractions for every new project. It guarantees predictable execution, testable nodes, and a codebase that remains maintainable after handoff.
 
