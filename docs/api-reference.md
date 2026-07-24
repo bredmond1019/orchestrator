@@ -3109,7 +3109,7 @@ ALLOWED_ORIGINS=https://learn-agentic-ai.com,http://localhost:3000
 
 ## API Layer
 
-**Sources:** `app/api/models.py`, `app/api/health.py`, `app/api/schema_registry.py`, `app/api/endpoint.py`, `app/api/graph.py`
+**Sources:** `app/api/models.py`, `app/api/health.py`, `app/api/schema_registry.py`, `app/api/endpoint.py`, `app/api/graph.py`, `app/api/event_status.py`
 
 The API layer exposes a generic dispatch endpoint, read-only workflow graph introspection
 endpoints, and a health endpoint. All request and response types are typed Pydantic
@@ -3141,6 +3141,7 @@ event schema before dispatch.
 ```python
 class TaskAcceptedResponse(BaseModel):
     task_id: str
+    event_id: str
     message: str
 ```
 
@@ -3149,7 +3150,61 @@ Typed 202 response body returned by `POST /events` on successful dispatch.
 | Field | Type | Description |
 |---|---|---|
 | `task_id` | `str` | The Celery task UUID assigned to the dispatched workflow run. |
+| `event_id` | `str` | The `events.id` of the row `handle_event` just created (new in v1.2.0 of `docs/data-contract.md`). Pass this to `GET /events/{event_id}` to poll the run. |
 | `message` | `str` | Human-readable confirmation string. |
+
+### `EventStatusResponse`
+
+**Source:** `app/api/models.py`
+
+```python
+class EventStatusResponse(BaseModel):
+    event_id: str
+    workflow_type: str
+    status: str
+    created_at: datetime | None
+    updated_at: datetime | None
+    task_context: dict | None
+```
+
+Typed 200 response body for `GET /events/{event_id}`. `status` is **derived** on every read by
+`api.event_status.derive_status` (see below) — it is never stored, and no `status` column exists
+on `events`.
+
+| Field | Type | Description |
+|---|---|---|
+| `event_id` | `str` | The `events.id` looked up. |
+| `workflow_type` | `str` | The registered workflow type name for this run. |
+| `status` | `str` | One of `queued`, `running`, `failed`, `succeeded`, `cancelled`, `halted` (see `EventStatus` below). |
+| `created_at` | `datetime \| None` | Row creation timestamp. |
+| `updated_at` | `datetime \| None` | Last write timestamp (advances at every node boundary). |
+| `task_context` | `dict \| None` | The raw `task_context` JSON (see `docs/data-contract.md` §5); `None` for a run not yet persisted. |
+
+### `EventStatus` and `derive_status`
+
+**Source:** `app/api/event_status.py`
+
+```python
+class EventStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    FAILED = "failed"
+    SUCCEEDED = "succeeded"
+    CANCELLED = "cancelled"
+    HALTED = "halted"
+
+
+def derive_status(task_context: dict[str, Any] | None) -> EventStatus: ...
+```
+
+Pure, side-effect-free derivation of a run's read-side status from its `task_context` dict — no DB
+access, no I/O. Shared by the `GET /events/{event_id}` route and the test suite as the single
+source of truth for the status vocabulary. Evaluated in precedence order (so a cancelled or
+budget-halted run is never mislabelled `running`): `queued` (no `task_context`) → `cancelled`
+(`metadata.cancellation.cancelled`) → `halted` (`metadata.budget.halted`) → `failed`
+(`metadata.failure.failed` or any `node_runs[*].status == "failed"`) → `running` (any `node_runs[*]`
+entry non-terminal, or `node_runs` empty) → `succeeded` (all `node_runs[*]` entries `success`). See
+`docs/data-contract.md` §7 for the full table and the agreement with §4's active-run scan rule.
 
 ### `WorkflowListResponse`
 
@@ -3209,7 +3264,7 @@ Typed 200 response body for `GET /health`.
 
 ```
 POST /events/  X-API-Key: <key>  {"workflow_type": "CONTENT_PIPELINE", "data": {...}}
-  → 202 TaskAcceptedResponse(task_id="...", message="...")
+  → 202 TaskAcceptedResponse(task_id="...", event_id="...", message="...")
   → 401 if X-API-Key is absent or wrong
   → 503 if ORCHESTRATION_API_KEY is unset (operator misconfiguration)
   → 422 if workflow_type is unknown or data fails schema validation
@@ -3218,7 +3273,26 @@ POST /events/  X-API-Key: <key>  {"workflow_type": "CONTENT_PIPELINE", "data": {
 Dispatches a workflow run. Requires the `X-API-Key` request header (see
 [`require_api_key`](#require_api_key)). On success, the event row is flushed (not
 committed) before `send_task` — the transaction rolls back if Celery dispatch fails,
-preventing ghost rows (see CLAUDE.md core hardening table).
+preventing ghost rows (see CLAUDE.md core hardening table). The 202 body's `event_id`
+is the `events.id` of that row; pass it to `GET /events/{event_id}` to poll the run.
+
+### `GET /events/{event_id}`
+
+**Source:** `app/api/endpoint.py`
+
+```
+GET /events/{event_id}  X-API-Key: <key>
+  → 200 EventStatusResponse(event_id=..., workflow_type=..., status=..., created_at=..., updated_at=..., task_context=...)
+  → 401 if X-API-Key is absent or wrong
+  → 404 if event_id is unknown or is not a syntactically valid UUID
+```
+
+Reads back a previously submitted event with a derived run-level `status` (see
+`EventStatus`/`derive_status` above). Requires the `X-API-Key` request header (reuses
+[`require_api_key`](#require_api_key) unchanged). Read-only: no `session.add`, no
+`flush`, no `commit`, no mutation of `task_context` — this route opens no write
+transaction and adds no column to `events`. An unknown or malformed `event_id` (e.g.
+not a UUID) both resolve to `404`, never a raw `500`.
 
 ### `GET /health`
 
