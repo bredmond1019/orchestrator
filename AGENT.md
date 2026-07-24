@@ -1,15 +1,48 @@
-# AGENT.md — Orchestration Repo
+# AGENT.md — Synapse (the Brain repo; formerly `orchestrator`)
 
-Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → TaskContext.
+**Synapse** is the knowledge layer of Bastion — the corpus, embeddings, structural graph, memory, and
+retrieval. It is *not* the orchestrator: `engine-rs` is. Per brain **D52** the name is adopted in
+narrative now while block IDs stay `OR.*` and the `brain.toml` slug stays `orchestrator` until one
+atomic cross-repo flip (see the `synapse-rename-mechanical-flip-pending` carryover).
+
+Still built on the event-driven pipeline framework: FastAPI → Celery → Workflow DAG → TaskContext.
+
+## THE BOUNDARY TEST — read this before scoping any new work
+
+Brain (Synapse) or Engine (engine-rs)? Ask in order. Governed by brain **D51**; this block is
+byte-identical in `core/engine-rs/CLAUDE.md`.
+
+```
+THE BOUNDARY TEST — Brain (Synapse) or Engine (engine-rs)?  Ask in order.
+
+1. Does it need IN-PROCESS access to embeddings, pgvector, brain_edges,
+   or the memory tables?                                    YES -> Synapse
+2. Does it produce a client- or repo-facing artifact
+   (brief, proposal, PDF, PR, code)?                        YES -> engine-rs
+3. Is it maintaining the corpus itself (freshness, validation,
+   distillation, retrieval quality, scheduled chores)?      YES -> Synapse
+
+TIEBREAKER — if 1 and 2 are both YES, the work is a hybrid.
+   SPLIT it at the ingest seam. Never let one repo own both halves.
+       engine-rs workflow  --POST /ingest/*-->  Synapse
+   engine-rs acquires and reasons; Synapse owns everything behind the endpoint
+   (embedding, storage, retrieval, memory, decay).
+```
+
+**What this repo keeps:** `DOCUMENT_INGEST`, `DOCUMENT_QA`, `MEMORY_INGEST`, `MEMORY_CONSOLIDATION`,
+and the corpus/graph/memory capability itself. **What is leaving** (per D51, tracked as `OR.X`):
+`CUSTOMER_CARE` (immediately), `RESEARCH_AGENT`, `PROPOSAL_GENERATOR`, `CONTENT_PIPELINE`,
+`SDLC_FLOW`, and `app/evals/`. Do not extend anything on the leaving list — fixes only.
 
 ## Before you start
 
 - **Strategic context:** `planning/context.md` (read first) → `planning/status.md` (current state)
-- **Role in Bastion:** this repo is the **Engine** + the **Python half of the Brain** of the brain's
-  primary program, Bastion. Cross-repo order + seams are authoritative in the brain
-  (`agentic-portfolio/planning/bastion-product/master-plan.md`); the local adoption + the new
-  Brain-side blocks are in `planning/master-plan.md` ("Role in Bastion" / "Bastion Program Blocks") and
-  `planning/decisions/D36-bastion-engine-brain-role.md`.
+- **Role in Bastion:** this repo is the **Brain** — the knowledge layer — of the brain's primary
+  program, Bastion. (It was the Engine + Brain half; **D50/D51 divested the Engine role to
+  `engine-rs`.**) Cross-repo order + seams are authoritative in the brain
+  (`agentic-portfolio/planning/bastion-product/master-plan.md`); current work is
+  `planning/master-plan.md` → **Phase S — Synapse consolidation**, with the older Brain-side blocks
+  under "Bastion Program Blocks" and `planning/decisions/D36-bastion-engine-brain-role.md`.
 - **Architecture reference:** `docs/app-architecture-overview.md`
 - **SDLC pipeline config:** `planning/harness.json` — the validation suite the SDLC engines run
   (the 8-check suite, now externalized via base-template's richer check kinds). This is the source of
@@ -22,14 +55,15 @@ Event-driven AI pipeline framework: FastAPI → Celery → Workflow DAG → Task
 
 1. **Every new function, module, or behaviour change ships with tests.** No exceptions — this applies to ad-hoc fixes and one-off changes just as much as formal blocks/tasks. If you add or change code, add or update the tests that cover it. Per-project test requirements are in `planning/master-plan.md` Project Library.
 2. **Never hardcode a system prompt in Python.** All prompts are `.j2` files in `app/prompts/`, loaded via `PromptManager`.
-3. **`customer_care` is reference-only.** Do not extend it, add tests for it, or treat it as a pattern to modify. New workflows go alongside it.
-4. **New projects = new workflow directories.** Add `app/workflows/<name>_workflow.py` + `app/workflows/<name>_workflow_nodes/` + `app/schemas/<name>_schema.py`. Use `createworkflow` (see below).
-5. **Python stays Python; Rust is the Console.** Do not suggest Rust rewrites of any part of this repo. Rust (bastion, the Console) is a *separate Bastion layer* that reads this repo over HTTP/Postgres and never shares code with it — it harvests crates and observes; it never holds the orchestration core or any billable workflow. (See `planning/decisions/` D6, D17, **D36**; brain D24.)
+3. **`customer_care` is being deleted, not preserved.** Per D51 it is an Engine-shaped reference implementation with no engine-rs counterpart to wait for, so it is the first removal under `OR.X`. Do not extend it, add tests for it, or treat it as a pattern to copy.
+4. **New workflows go to `engine-rs`, not here.** Run the boundary test above first. A genuinely Brain-side workflow (one that needs embeddings/pgvector/memory in-process) still uses `app/workflows/<name>_workflow.py` + `app/workflows/<name>_workflow_nodes/` + `app/schemas/<name>_schema.py` via `createworkflow` — but that should be rare. **A hybrid is never built whole here:** engine-rs runs it and hands the artifact over `POST /ingest/*`.
+5. **This repo is the Brain; `engine-rs` is the Engine.** The knowledge layer — embeddings, corpus, structural graph, memory, retrieval — stays Python and stays here. Execution workflows, business artifacts, and the SDLC harness are `engine-rs`'s (brain D42/D50/D51). `bastion` (the Console) remains a *separate layer* that reads this repo over HTTP/Postgres and never shares code with it. Do not propose Rust rewrites of anything on the Brain side of the boundary test. (See `planning/decisions/` D6, D17, **D36**; brain D24/D42/D51.)
 6. **Register every new workflow in both registries.** Add the enum member to `app/workflows/workflow_registry.py` AND add the corresponding event schema entry to `app/api/schema_registry.py`. Missing the second step causes the API dispatcher to 422 every request for that workflow. `tests/api/test_endpoint.py::TestSchemaRegistryCompleteness` enforces this automatically.
 7. **No deployment logic inside nodes.** This framework is the deployment-agnostic *brain* — it must not know where it runs. The two things that vary by deployment are **injected, never hardcoded**: model choice (per-node `model_provider` config) and persistence (always via `GenericRepository`). The first `if running_locally:` inside a node means two products have started being built. Keep deployment decisions in config and in the shell, never here. (See `planning/decisions/` D16, D18.)
 8. **The eval rubric, the validator, the test-runner, and any consolidation prompt are human-owned gates.** If self-improving / agent-contribution features are ever built, agents may *propose* changes to these by PR but never self-approve them, and never author-and-deploy new node code without human review. (See `planning/decisions/` D20. Not in scope until a node library exists to compose over — Phase 3+.)
 9. **Seed TaskContext with the real storage structure in tests.** `AgentNode` stores output via `update_node(node_name=..., result=output)`, which produces `{"result": output}` in `task_context.nodes`. Tests that seed an upstream node as `ctx.nodes["X"] = raw_dict` instead of `ctx.nodes["X"] = {"result": raw_dict}` will pass silently (agent is mocked) but prove the wrong key contract. Always mirror what the actual node writes. When in doubt, check the `update_node` call in the source node.
-10. **Every new `.md` under `docs/` or `planning/` must open with OKF YAML frontmatter.** The governing standard is [D27 in the company brain](../docs/decisions/D27-enriched-okf-frontmatter.md); the canonical authoring guide is `agentic-portfolio/docs/okf-frontmatter.md`. Required fields: `type`, `title`, `description`. Optional but strongly encouraged: `doc_id` (kebab-case, defaults to filename stem), `layer` (closed set: `brain` · `engine` · `factory` · `console` · `surface` · `infra` · `business` · `content` · `meta`), `project` (use `orchestrator` for this repo; omit for cross-cutting docs), `status` (`active` · `draft` · `deprecated` · `superseded` · `archived`), `keywords` (3–7 free-form topic terms), `related` (list of `doc_id`s). Adding a file to a directory requires updating that directory's `index.md`; propagate up the tree if the parent scope changes.
+10. **Extract on the second consumer, never on the first.** The shared `app/brain/` service layer is not designed up front — it *accretes*. Each block factors out only the slice its own feature needs (`OR.N1` → `recall`/`walk`/`health`; `OR.Q` → `ingest`; `OR.N2` → `embed`/`stale`), so **no block is a pure refactor and none gates a phase**. Every block must ship something a user or agent can do that they could not do before; if you cannot name that, the block is wrong. (Brain D51.)
+11. **Every new `.md` under `docs/` or `planning/` must open with OKF YAML frontmatter.** The governing standard is [D27 in the company brain](../docs/decisions/D27-enriched-okf-frontmatter.md); the canonical authoring guide is `agentic-portfolio/docs/okf-frontmatter.md`. Required fields: `type`, `title`, `description`. Optional but strongly encouraged: `doc_id` (kebab-case, defaults to filename stem), `layer` (closed set: `brain` · `engine` · `factory` · `console` · `surface` · `infra` · `business` · `content` · `meta`), `project` (use `orchestrator` for this repo; omit for cross-cutting docs), `status` (`active` · `draft` · `deprecated` · `superseded` · `archived`), `keywords` (3–7 free-form topic terms), `related` (list of `doc_id`s). Adding a file to a directory requires updating that directory's `index.md`; propagate up the tree if the parent scope changes.
 
 ---
 
@@ -118,7 +152,7 @@ Run `uv run python -m ruff check app/ --fix` before committing to auto-resolve m
 
 ## What NOT to touch
 
-- `app/workflows/customer_care_workflow*` — reference implementation, frozen
+- `app/workflows/customer_care_workflow*` — frozen and **queued for deletion** under `OR.X` (D51); don't invest in it either way
 - `app/core/skills/` — excluded from ruff and pylint, do not reformat
 - `app/alembic/` — migration history, excluded from pylint, never hand-edit generated files
 
