@@ -92,8 +92,16 @@ def _write_failure_marker(event_id: str, exc: Exception) -> None:
             if db_event is None:
                 return
 
-            task_context = db_event.task_context or {}
-            metadata = task_context.get("metadata") or {}
+            # Build fresh dict objects (never mutate db_event.task_context's
+            # existing dict in place before reassigning it) — SQLAlchemy's
+            # dirty-tracking for a plain JSON column compares the attribute
+            # against the value it already holds; reassigning the *same*
+            # (already-mutated) object is a same-identity no-op the ORM
+            # silently skips, so a run that already has a non-empty
+            # task_context (e.g. from persist_progress) would otherwise never
+            # actually persist this marker.
+            task_context = dict(db_event.task_context) if db_event.task_context else {}
+            metadata = dict(task_context.get("metadata") or {})
             metadata["failure"] = marker
             task_context["metadata"] = metadata
             db_event.task_context = task_context

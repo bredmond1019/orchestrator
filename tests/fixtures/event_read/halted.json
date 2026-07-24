@@ -1,0 +1,37 @@
+{
+  "event_id": "00000000-0000-0000-0000-000000000006",
+  "workflow_type": "CUSTOMER_CARE",
+  "status": "halted",
+  "created_at": "2026-07-16T09:00:00",
+  "updated_at": "2026-07-16T09:00:01",
+  "task_context": {
+    "event": {
+      "from_email": "sender@example.com",
+      "to_email": "support@example.com",
+      "sender": "Test User",
+      "subject": "Test Subject",
+      "body": "This is a test message."
+    },
+    "nodes": {},
+    "metadata": {
+      "budget": {
+        "halted": true,
+        "reason": {
+          "cap": "max_total_tokens",
+          "spent": 5000,
+          "limit": 5000
+        }
+      }
+    },
+    "node_runs": {
+      "ClassifyNode": {
+        "status": "pending",
+        "started_at": null,
+        "completed_at": null,
+        "error": null,
+        "input": null,
+        "usage": null
+      }
+    }
+  }
+}
