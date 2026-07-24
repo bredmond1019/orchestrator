@@ -73,6 +73,7 @@ def handle_event(
         content=json.dumps(
             TaskAcceptedResponse(
                 task_id=str(task.id),
+                event_id=str(event.id),
                 message=f"process_incoming_event started `{task.id}`",
             ).model_dump()
         ),

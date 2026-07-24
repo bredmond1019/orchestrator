@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class TaskAcceptedResponse(BaseModel):
     task_id: str
+    event_id: str
     message: str
 
 

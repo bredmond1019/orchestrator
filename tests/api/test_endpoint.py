@@ -1,5 +1,6 @@
 """Tests for the API endpoint layer — generic dispatch, validation, and health."""
 
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -103,6 +104,22 @@ class TestEventDispatch:
             response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
         assert response.status_code == 202
         assert session.query(Event).count() == 1
+
+    def test_202_body_contains_event_id_matching_persisted_row(self, endpoint_context):
+        client, session = endpoint_context
+        with patch.object(celery_app, "send_task", return_value=MagicMock()):
+            response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+        assert response.status_code == 202
+
+        body = response.json()
+        assert "event_id" in body
+        # Must be a parseable UUID string.
+        event_uuid = uuid.UUID(body["event_id"])
+
+        rows = session.query(Event).all()
+        assert len(rows) == 1
+        assert str(rows[0].id) == str(event_uuid)
+        assert body["event_id"] == str(rows[0].id)
 
 
 class TestHealthCheck:
