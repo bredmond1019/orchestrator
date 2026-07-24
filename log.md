@@ -11,6 +11,48 @@ timestamp: "2026-07-17T04:02:25Z"
 
 ---
 
+## [run: 2026-07-24]
+
+### `or-y-event-read-api` shipped — event read API, the async-result seam (`GET /events/{event_id}`)
+- **What:** Ran `/sdlc-flow or-y-event-read-api` end to end (Tasks 1–8, all PASS, reviewed PASS in 1
+  attempt). Task 1: pure `derive_status(task_context)` + `EventStatus` `StrEnum` in
+  `app/api/event_status.py`, implementing the queued/cancelled/halted/failed/running/succeeded
+  precedence rule, verified against §4's active-run-scan agreement rule. Task 2: `POST /events/`
+  now returns `event_id` (the persisted row's UUID) alongside `task_id` on the 202 body. Task 3: new
+  read-only `GET /events/{event_id}` route with an `EventStatusResponse` model, derived status, and
+  404-not-500 handling for unknown or malformed ids, behind the existing `require_api_key` guard.
+  Task 4: `process_incoming_event` now catches any workflow-run exception, writes a
+  `metadata.failure` marker (`{failed, error, at}`) on a fresh, independently-committed session so
+  it survives the outer `db_session` rollback, then re-raises the original exception unchanged.
+  Task 5: six golden `GET /events/{event_id}` response fixtures (one per derived status) under
+  `tests/fixtures/event_read/` plus an integration test covering submit→poll→terminal for both
+  succeeded and failed runs; this task also surfaced and fixed a genuine dirty-tracking bug in
+  task 4's `_write_failure_marker` (in-place dict mutation defeated SQLAlchemy's change detection,
+  silently dropping the marker whenever `task_context` was already non-empty) — see the spec's
+  Amendment Log. Task 6: `docs/data-contract.md` bumped 1.1.0 → 1.2.0 (changelog row, §3/§5/§7
+  updates). Task 7: re-pinned `../bastion/docs/data-contract.md` and `../engine-rs/docs/data-contract.md`
+  consumer copies to 1.2.0 (both flagged as doc-only re-pins with parity gaps noted, no Rust wiring
+  yet). Task 8: full validation suite green — ruff clean, pylint 10.00/10, all imports succeed,
+  1441 tests passed / 8 skipped, 0 failures. `planning/status.md` and `planning/state.json` (block
+  `OR.Y`, wave 5) are updated to Done/closed. Unblocks `bastion-web` `BW.1.D` (brain-rag query
+  surface) — this repo now has a working async-result read path for the first time.
+- **Why:** Every workflow this repo exposes was previously unconsumable by a UI: `POST /events/`
+  returned only a Celery `task_id`, and a crashed run's `task_context` stayed `NULL`, making it
+  indistinguishable from a queued one. `OR.Y` closes both gaps in one pass.
+- **Refs:** `planning/or-y-event-read-api/tasks.md`; block `OR.Y` (Bastion Program, Wave 5);
+  `docs/data-contract.md` v1.2.0.
+
+```
+78ff7c2 docs: update docs for or-y-event-read-api
+ce827ad feat: implement or-y-event-read-api-task6
+ee90a81 feat: implement or-y-event-read-api-task5
+6ef759f feat: implement or-y-event-read-api-task4
+3a68396 feat: implement or-y-event-read-api-task3
+cd7799b feat: implement or-y-event-read-api-task2
+61a1189 feat: implement or-y-event-read-api-task1
+3690bc1 docs: log close-out pass for or-l-answer-grounding
+```
+
 ## [2026-07-17]
 
 ### `or-l-answer-grounding` closed out — PR #9 opened, merge pending

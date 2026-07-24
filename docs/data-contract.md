@@ -12,7 +12,7 @@ related: [D28-node-level-execution-state, D30-data-contract-ownership, app-archi
 
 # Data Contract — Orchestrator Execution State
 
-**Contract Version: 1.1.0**
+**Contract Version: 1.2.0**
 
 This is the **single source of truth** for the shape any external consumer reads to observe a
 workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
@@ -57,10 +57,14 @@ contains all nodes; the graph endpoint supplies the **edges** (`node_runs` carri
 ## 3. Read path (Hybrid)
 
 - **Now:** consumers read PostgreSQL **directly** (read-only) for the live poll — cheap and
-  high-frequency. This is the supported path for v1.x.
-- **Reserved (not built):** an HTTP read API — `GET /events/{id}` and a list-active-runs endpoint
-  — is reserved for a future minor version, to be added only if direct DB-schema coupling becomes a
-  problem. Both sides should architect toward it but not depend on it yet.
+  high-frequency. This remains the supported high-frequency path.
+- **Landed in v1.2.0:** `GET /events/{event_id}` (§7) is a read-only HTTP alternative to the direct
+  Postgres poll — a single-row lookup returning the same shape a Postgres reader would assemble
+  itself (identity, workflow type, derived `status`, timestamps, raw `task_context`). It opens no
+  write transaction and adds no column to `events`.
+- **Reserved (not built):** a list-active-runs endpoint (`GET /events?status=running`) is reserved
+  for a future minor version, to be added only if direct DB-schema coupling for that query becomes
+  a problem.
 
 Consumers are **observers, never writers** of the `events` table itself — no consumer writes to
 the DB or persists execution state directly. `bastion` never opens a write connection to
@@ -149,8 +153,33 @@ Instead both are recorded as structured keys under `metadata`, per
     surfacing in `metadata.budget` only once a halt actually occurs. A run with no budget
     configured behaves exactly as it did before v1.1.0: no gate, no `metadata.budget` key.
 
-  Consumers must read these `metadata` keys — not `NodeRunStatus` — to distinguish "cancelled" or
-  "budget-halted" from a plain `failed` run.
+  - **Failed** — a run stopped because `process_incoming_event` raised an exception (as of
+    v1.2.0). This exists because the enclosing session (`app.database.session.db_session`) rolls
+    back its whole transaction on any exception raised inside it — including the terminal write and
+    any prior `persist_progress` flushes made on that same session — so a crashed run would
+    otherwise leave `task_context` looking identical to a still-`running` one. The worker
+    (`app/worker/tasks.py`) writes this marker on a **second, independently committed session**
+    opened specifically to survive that rollback, then re-raises the original exception so Celery
+    still records the task failure:
+    ```jsonc
+    {
+      "metadata": {
+        "failure": {
+          "failed": true,
+          "error": "<ExceptionType>: <message>",
+          "at": "<iso8601>"
+        }
+      }
+    }
+    ```
+    As with `cancellation` and `budget`, this is spelled in `metadata`, not a new `NodeRun.status`
+    value — `NodeRun`'s `pending|running|success|failed` vocabulary (§6) is **unchanged** by this;
+    widening it would be a MAJOR bump. A run can also derive to `failed` without this marker if any
+    individual `node_runs[*]` entry itself reached `status: "failed"` — see §7's derived-`status`
+    precedence for how a consumer combines the two signals.
+
+  Consumers must read these `metadata` keys — not `NodeRunStatus` — to distinguish "cancelled",
+  "budget-halted", or a marker-carrying "failed" from an otherwise-identical `running` run.
 
 ---
 
@@ -194,7 +223,8 @@ Mounted at `/` (`app/api/`):
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| `POST` | `/events/` | `{ "workflow_type": str, "data": object }` | `202 { "task_id": str, "message": str }` — **trigger** a run |
+| `POST` | `/events/` | `{ "workflow_type": str, "data": object }` | `202 { "task_id": str, "event_id": str, "message": str }` — **trigger** a run (`event_id` new in v1.2.0) |
+| `GET` | `/events/{event_id}` | — | `200 { "event_id": str, "workflow_type": str, "status": str, "created_at": str, "updated_at": str, "task_context": object \| null }` — **read** a run (new in v1.2.0) |
 | `GET` | `/health` | — | `{ "status": str, "version": str }` |
 | `GET` | `/workflows` | — | `{ "workflows": [str, ...] }` — registered types |
 | `GET` | `/workflows/{type}/graph` | — | `{ "nodes": [str, ...], "edges": [[from, to], ...] }` |
@@ -225,8 +255,39 @@ Postgres observer** — it never POSTs to this endpoint — so no re-pin is requ
 This endpoint triggers a write (the cancellation flag, and eventually `metadata.cancellation`) but
 the caller never performs that write itself — see the reconciled read-path note in §3.
 
-**Reserved (not implemented in v1.x):** `GET /events/{id}`, `GET /events?status=running`.
-`event_id` / result-fetch polling remain deferred; this contract version does not add them.
+**`GET /events/{event_id}` (new in v1.2.0).** Reads back a previously submitted event with a
+derived, run-level `status`. Reuses the same `X-API-Key` gate as `POST /events/`. Read-only: no
+`session.add`, no `flush`, no `commit`, and no mutation of `task_context` — this route opens no
+write transaction and adds no column to `events`.
+
+- **`401 Unauthorized`** — missing or mismatched `X-API-Key` header (no body).
+- **`404 Not Found`** — `event_id` is unknown, **or** is not a syntactically valid UUID
+  (never surfaced as a `500`) — `{ "detail": "Event not found: <event_id>" }`.
+- **`200 OK`** — `{ "event_id": str, "workflow_type": str, "status": str, "created_at": str, "updated_at": str, "task_context": object | null }`. `task_context` is the raw JSON described in §5 (`null` for a run that has not yet been persisted to at all).
+
+`status` is **derived** from `task_context` on every read (`app/api/event_status.py`), never
+stored — there is no promoted `status` column (§4). Evaluated in this precedence order, so a
+cancelled or halted run is never mislabelled `running`:
+
+| Order | Value | Rule |
+|---|---|---|
+| 1 | `queued` | `task_context` is `None` / absent. |
+| 2 | `cancelled` | `metadata.cancellation.cancelled` is truthy. |
+| 3 | `halted` | `metadata.budget.halted` is truthy. |
+| 4 | `failed` | `metadata.failure.failed` is truthy, **or** any `node_runs[*].status == "failed"`. |
+| 5 | `running` | `node_runs` is empty/absent, **or** any `node_runs[*].status` is non-terminal (`pending`/`running`). |
+| 6 | `succeeded` | every `node_runs[*].status == "success"`. |
+
+This agrees with §4's active-run scan rule: every `task_context` that rule calls active (not all
+`node_runs` entries terminal) derives to `running` here, and every inactive one derives to a
+terminal status (`succeeded`, `failed`, `cancelled`, or `halted`).
+
+Golden, byte-for-byte-on-shape fixtures for all six derived states live under
+`tests/fixtures/event_read/` (`queued.json`, `running.json`, `succeeded.json`, `failed.json`,
+`cancelled.json`, `halted.json`).
+
+**Reserved (not implemented in v1.x):** `GET /events?status=running`. A promoted indexed `status`
+column, streaming/SSE, and any change to the `NodeRun` status vocabulary remain out of scope.
 
 ---
 
@@ -249,3 +310,4 @@ checklist step prompting this.
 | 1.0.0 | 2026-06-20 | Initial contract: `events` table, `task_context`/`node_runs` (status, timing, error, **input**, usage), serializable-output rule, HTTP surface, Hybrid read path, reserved read API. |
 | 1.0.1 | 2026-06-23 | Patch clarification: `POST /events/` now requires `X-API-Key` auth (shape unchanged). `event_id`/`GET /events/{id}` remain deferred. `bastion` (read-only Postgres observer, never POSTs) needs no re-pin. |
 | 1.1.0 | 2026-07-16 | Minor: new `POST /events/{run_id}/abort` endpoint (§7) — 401/404/202, reuses the `X-API-Key` gate. New run-level `metadata.cancellation` and `metadata.budget` annotations (§5) for cancelled and budget-halted runs, spelled in `metadata` rather than a new `NodeRunStatus` value (§6 unchanged). §3's "observers, never writers" prose reconciled: consumers may trigger a runtime-owned write (the abort) without writing the row themselves (D25: bastion triggers, the Engine executes). `bastion` must re-pin — see `bastion/docs/data-contract.md`. |
+| 1.2.0 | 2026-07-24 | Minor: new `GET /events/{event_id}` read endpoint (§7) — the async-result seam; reuses the `X-API-Key` gate, `404` for unknown/malformed ids, returns `{event_id, workflow_type, status, created_at, updated_at, task_context}` with `status` derived on every read (six values, precedence documented in §7; golden fixtures under `tests/fixtures/event_read/`). `POST /events/` 202 body gains `event_id` (the `events.id` of the row just created). New run-level `metadata.failure` annotation (§5) — written on a fresh, independently committed session so it survives the enclosing `db_session` rollback on a raising workflow; `NodeRun`'s `pending|running|success|failed` vocabulary (§6) is unchanged. §3's read path reconciled: the reserved read API has landed, `GET /events?status=running` stays reserved. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |

@@ -1,4 +1,6 @@
+import logging
 from contextlib import contextmanager
+from datetime import UTC, datetime
 
 from core.task import TaskContext
 from database.event import Event
@@ -27,6 +29,10 @@ def process_incoming_event(event_id: str):
     3. Executing the workflow
     4. Storing the results
 
+    If the workflow raises, a terminal ``metadata.failure`` marker is written
+    for the run (see ``_write_failure_marker``) before the original exception
+    is re-raised, so Celery still records the task failure.
+
     Args:
         event_id: Unique identifier of the event to process
         workflow_type: Type of workflow to use for processing the event
@@ -49,8 +55,58 @@ def process_incoming_event(event_id: str):
             db_event.task_context = task_context.model_dump(mode="json")
             session.flush()
 
-        result_context = workflow.run(db_event.data, on_progress=persist_progress)
+        try:
+            result_context = workflow.run(db_event.data, on_progress=persist_progress)
+        except Exception as exc:
+            _write_failure_marker(event_id, exc)
+            raise
 
         # Terminal authoritative write (final state of the run).
         db_event.task_context = result_context.model_dump(mode="json")
         repository.update(obj=db_event)
+
+
+def _write_failure_marker(event_id: str, exc: Exception) -> None:
+    """Write a run-level ``metadata.failure`` marker in a fresh session.
+
+    The enclosing ``db_session`` used by ``process_incoming_event`` rolls back
+    its whole transaction on exception (see ``database.session.db_session``),
+    which would otherwise discard this marker along with everything else
+    written on that session (including any ``persist_progress`` flushes). This
+    function opens a second, independently committed session so the marker
+    survives that rollback.
+
+    Never lets a failure in the marker write itself mask the original
+    exception: any error here is logged and swallowed, and the caller is
+    always expected to re-raise ``exc`` regardless of this function's outcome.
+    """
+    marker = {
+        "failed": True,
+        "error": f"{type(exc).__name__}: {exc}",
+        "at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        with contextmanager(db_session)() as session:
+            repository = GenericRepository(session=session, model=Event)
+            db_event = repository.get(obj_id=event_id)
+            if db_event is None:
+                return
+
+            # Build fresh dict objects (never mutate db_event.task_context's
+            # existing dict in place before reassigning it) — SQLAlchemy's
+            # dirty-tracking for a plain JSON column compares the attribute
+            # against the value it already holds; reassigning the *same*
+            # (already-mutated) object is a same-identity no-op the ORM
+            # silently skips, so a run that already has a non-empty
+            # task_context (e.g. from persist_progress) would otherwise never
+            # actually persist this marker.
+            task_context = dict(db_event.task_context) if db_event.task_context else {}
+            metadata = dict(task_context.get("metadata") or {})
+            metadata["failure"] = marker
+            task_context["metadata"] = metadata
+            db_event.task_context = task_context
+            repository.update(obj=db_event)
+    except Exception as marker_exc:  # pylint: disable=broad-except
+        logging.error(
+            "Failed to write failure marker for event %s: %s", event_id, marker_exc
+        )

@@ -159,10 +159,20 @@ curl -X POST http://localhost:8080/events/ \
       "make_blog": false
     }
   }'
-# → 202 {"task_id": "...", "message": "process_incoming_event started `...`"}
+# → 202 {"task_id": "...", "event_id": "...", "message": "process_incoming_event started `...`"}
 ```
 
 The 202 means the event was persisted and queued. The Celery worker picks it up and runs the workflow asynchronously. See `docs/workflows.md` for payloads for each workflow.
+
+Poll the run with the returned `event_id`:
+
+```bash
+curl http://localhost:8080/events/<event_id> \
+  -H 'X-API-Key: dev-secret'
+# → 200 {"event_id": "...", "workflow_type": "...", "status": "queued|running|succeeded|failed|cancelled|halted", "created_at": "...", "updated_at": "...", "task_context": {...}}
+```
+
+`status` is derived fresh on every read — see `docs/api-reference.md` (`EventStatus` / `derive_status`) and `docs/data-contract.md` §7 for the full precedence table.
 
 ### Calling the API from another device
 
