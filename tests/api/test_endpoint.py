@@ -122,6 +122,73 @@ class TestEventDispatch:
         assert body["event_id"] == str(rows[0].id)
 
 
+class TestEventRead:
+    """Tests for `GET /events/{event_id}`."""
+
+    def _seed_event(self, session, task_context=None, workflow_type="CUSTOMER_CARE"):
+        event = Event(data={"foo": "bar"}, workflow_type=workflow_type)
+        event.task_context = task_context
+        session.add(event)
+        session.commit()
+        return event
+
+    def test_200_for_seeded_row_with_typed_fields(self, endpoint_context):
+        client, session = endpoint_context
+        task_context = {
+            "event": {"foo": "bar"},
+            "nodes": {},
+            "node_runs": {"NodeA": {"status": "success"}},
+            "metadata": {},
+        }
+        event = self._seed_event(session, task_context=task_context)
+
+        response = client.get(f"/events/{event.id}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["event_id"] == str(event.id)
+        assert body["workflow_type"] == "CUSTOMER_CARE"
+        assert body["status"] == "succeeded"
+        assert isinstance(body["created_at"], str)
+        assert isinstance(body["updated_at"], str)
+        assert body["task_context"] == task_context
+
+    def test_404_for_unknown_uuid(self, endpoint_context):
+        client, _ = endpoint_context
+        response = client.get(f"/events/{uuid.uuid4()}")
+        assert response.status_code == 404
+
+    def test_404_not_500_for_malformed_id(self, endpoint_context):
+        client, _ = endpoint_context
+        response = client.get("/events/not-a-uuid")
+        assert response.status_code == 404
+
+    def test_401_without_api_key_header(self, endpoint_context, monkeypatch):
+        client, session = endpoint_context
+        event = self._seed_event(session)
+        monkeypatch.setenv("ORCHESTRATION_API_KEY", "expected-key")
+        app.dependency_overrides.pop(require_api_key, None)
+
+        response = client.get(f"/events/{event.id}")
+
+        assert response.status_code == 401
+
+    def test_submit_then_poll_reports_queued(self, endpoint_context):
+        client, _ = endpoint_context
+        with patch.object(celery_app, "send_task", return_value=MagicMock()):
+            post_response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+        assert post_response.status_code == 202
+        event_id = post_response.json()["event_id"]
+
+        get_response = client.get(f"/events/{event_id}")
+
+        assert get_response.status_code == 200
+        body = get_response.json()
+        assert body["event_id"] == event_id
+        assert body["status"] == "queued"
+        assert body["task_context"] is None
+
+
 class TestHealthCheck:
     def test_health_returns_200(self, endpoint_context):
         client, _ = endpoint_context
