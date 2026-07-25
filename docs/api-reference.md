@@ -61,36 +61,37 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 39. [createworkflow CLI](#createworkflow-cli)
 40. [API Security and CORS](#api-security-and-cors)
 41. [API Layer](#api-layer)
-42. [DocumentIngestEventSchema](#documentingesteventschemae)
-43. [ParseDocumentNode](#parsedocumentnode)
-44. [ChunkDocumentNode](#chunkdocumentnode)
-45. [EmbedChunksNode](#embedchunksnode)
-46. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
-47. [DocumentIngestWorkflow](#documentingestworkflow)
-48. [RetrieveChunksNode](#retrievechunksnode)
-49. [DocumentQAEventSchema](#documentqaeventschemae)
-50. [EmbedQuestionNode](#embedquestionnode)
-51. [AssembleContextNode](#assemblecontextnode)
-52. [AnswerNode](#answernode)
-53. [GroundingRouterNode](#groundingrouternode)
-54. [AbstainNode](#abstainnode)
-55. [VerifyCitationsNode](#verifycitationsnode)
-56. [UpdateSessionMemoryNode](#updatesessionmemorynode)
-57. [DocumentQAWorkflow](#documentqaworkflow)
-58. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
-59. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
-60. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
-61. [decay module](#decay-module)
-62. [EpisodeWriteService](#episodewriteservice)
-63. [UpsertMemoryNode](#upsertmemorynode)
-64. [MemoryLoaderNode](#memoryloadernode)
-65. [IngestTimeExtractionNode](#ingesttimeextractionnode)
-66. [MemoryWriteNode](#memorywritenode)
-67. [MemoryIngestWorkflow](#memoryingestworkflow)
-68. [LoadMemoryContextNode](#loadmemorycontextnode)
-69. [ConsolidationNode](#consolidationnode)
-70. [ConsolidationWriteNode](#consolidationwritenode)
-71. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
+42. [Ingest API](#ingest-api-post-ingest)
+43. [DocumentIngestEventSchema](#documentingesteventschemae)
+44. [ParseDocumentNode](#parsedocumentnode)
+45. [ChunkDocumentNode](#chunkdocumentnode)
+46. [EmbedChunksNode](#embedchunksnode)
+47. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
+48. [DocumentIngestWorkflow](#documentingestworkflow)
+49. [RetrieveChunksNode](#retrievechunksnode)
+50. [DocumentQAEventSchema](#documentqaeventschemae)
+51. [EmbedQuestionNode](#embedquestionnode)
+52. [AssembleContextNode](#assemblecontextnode)
+53. [AnswerNode](#answernode)
+54. [GroundingRouterNode](#groundingrouternode)
+55. [AbstainNode](#abstainnode)
+56. [VerifyCitationsNode](#verifycitationsnode)
+57. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+58. [DocumentQAWorkflow](#documentqaworkflow)
+59. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
+60. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
+61. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
+62. [decay module](#decay-module)
+63. [EpisodeWriteService](#episodewriteservice)
+64. [UpsertMemoryNode](#upsertmemorynode)
+65. [MemoryLoaderNode](#memoryloadernode)
+66. [IngestTimeExtractionNode](#ingesttimeextractionnode)
+67. [MemoryWriteNode](#memorywritenode)
+68. [MemoryIngestWorkflow](#memoryingestworkflow)
+69. [LoadMemoryContextNode](#loadmemorycontextnode)
+70. [ConsolidationNode](#consolidationnode)
+71. [ConsolidationWriteNode](#consolidationwritenode)
+72. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
 
 ---
 
@@ -3356,6 +3357,160 @@ by looking up `payload.workflow_type` in this dict.
 that `workflow_type` return `422 Unprocessable Entity` with a descriptive error
 message. See [WorkflowRegistry — Adding a New Entry](#adding-a-new-entry) for the
 complete checklist.
+
+---
+
+## Ingest API (POST /ingest/*)
+
+**Sources:** `app/api/ingest.py`, `app/schemas/ingest_schema.py`, `app/brain/ingest.py`, `app/brain/chunking.py`
+
+The ingest seam (OR.Q) — the single door engine-rs hybrid workflows write their finished
+artifacts through, so embedding/pgvector never has to leak into engine-rs
+(`engine-rs workflow → POST /ingest/* → Synapse`). Both routes are mounted under `/ingest`
+(`app/api/router.py`), gated by the same [`require_api_key`](#require_api_key) dependency as
+`POST /events/`, and delegate to the one `ingest_artifact` chunk→embed→write path. See
+`docs/data-contract.md` §7 for the canonical contract (v1.3.0).
+
+### `ProposalIngestPayload`
+
+**Source:** `app/schemas/ingest_schema.py`
+
+```python
+class ProposalIngestPayload(BaseModel):
+    artifact_id: str
+    company_name: str
+    doc_type: str
+    section: str
+    content: str
+    roadmap: dict
+```
+
+The inbound body for `POST /ingest/proposal`. Pinned **exactly** to engine-rs's
+`PersistToBrainNode` payload (`EN.4.C`) — field names must not be renamed, reordered, or
+dropped. All `str` fields require `min_length=1`, so an empty string is rejected as `422`.
+
+| Field | Type | Description |
+|---|---|---|
+| `artifact_id` | `str` | Stable proposal artifact id; used to derive `brain_documents.file_path` provenance. |
+| `company_name` | `str` | Client company name; mapped onto the ingest slice's `project`/`title` attribution. |
+| `doc_type` | `str` | Corpus `doc_type` category. |
+| `section` | `str` | Section label stored on every chunk row produced from `content`. |
+| `content` | `str` | Raw artifact text to chunk, embed, and store. |
+| `roadmap` | `dict` | The `AutomationRoadmap` JSON produced by `proposal_generator_workflow`; carried through, not chunked separately. |
+
+### `ArtifactIngestPayload`
+
+**Source:** `app/schemas/ingest_schema.py`
+
+```python
+class ArtifactIngestPayload(BaseModel):
+    artifact_id: str
+    doc_type: str
+    content: str
+    section: str | None = None
+    project: str | None = None
+    title: str | None = None
+    description: str | None = None
+    metadata: dict | None = None
+```
+
+The inbound body for `POST /ingest/artifact` — the generic envelope for producers other than
+the proposal pipeline (`EN.5.A` content-pipeline, `EN.5.C` external-intel). `artifact_id`,
+`doc_type`, and `content` are required (`min_length=1`); all other fields default to `None`.
+
+| Field | Type | Description |
+|---|---|---|
+| `artifact_id` | `str` | Stable source artifact id; used to derive `file_path` provenance. |
+| `doc_type` | `str` | Corpus `doc_type` category. |
+| `content` | `str` | Raw artifact text to chunk, embed, and store. |
+| `section` | `str \| None` | Optional section label; omit to let `chunk_by_section` split `content` by its own headers. |
+| `project` | `str \| None` | Optional OKF project slug; scopes the upsert so two projects sharing an `artifact_id` never clobber each other. |
+| `title` | `str \| None` | Optional OKF title, stored for FTS/citation display. |
+| `description` | `str \| None` | Optional OKF description, stored for FTS/citation display and folded into the embed-text context prefix. |
+| `metadata` | `dict \| None` | Optional free-form metadata; not persisted onto `BrainDocument` today. |
+
+### `IngestResponse`
+
+**Source:** `app/schemas/ingest_schema.py`
+
+```python
+class IngestResponse(BaseModel):
+    artifact_id: str
+    chunks_written: int
+```
+
+Typed 200 response body shared by both ingest routes.
+
+| Field | Type | Description |
+|---|---|---|
+| `artifact_id` | `str` | Echoes the ingested artifact's id. |
+| `chunks_written` | `int` | Number of `brain_documents` rows written by this call. |
+
+### `POST /ingest/proposal`
+
+**Source:** `app/api/ingest.py`
+
+```
+POST /ingest/proposal  X-API-Key: <key>  {"artifact_id": "...", "company_name": "...", "doc_type": "...", "section": "...", "content": "...", "roadmap": {...}}
+  → 200 IngestResponse(artifact_id="...", chunks_written=3)
+  → 401 if X-API-Key is absent or wrong
+  → 422 if a required field is missing or empty
+```
+
+Maps `company_name` onto `ingest_artifact`'s `project`/`title` attribution fields and passes
+`content` through to be chunked, embedded, and stored under `section`; `roadmap` is accepted but
+not chunked separately. Requires the `X-API-Key` request header (see
+[`require_api_key`](#require_api_key)), reused unchanged from `POST /events/`.
+
+### `POST /ingest/artifact`
+
+**Source:** `app/api/ingest.py`
+
+```
+POST /ingest/artifact  X-API-Key: <key>  {"artifact_id": "...", "doc_type": "...", "content": "..."}
+  → 200 IngestResponse(artifact_id="...", chunks_written=1)
+  → 401 if X-API-Key is absent or wrong
+  → 422 if artifact_id, doc_type, or content is missing or empty
+```
+
+Passes its fields straight into `ingest_artifact`. Requires the `X-API-Key` request header,
+reused unchanged from `POST /events/`.
+
+### `ingest_artifact`
+
+**Source:** `app/brain/ingest.py`
+
+```python
+def ingest_artifact(
+    session: Session,
+    *,
+    artifact_id: str,
+    doc_type: str,
+    content: str,
+    section: str | None = None,
+    project: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+) -> int: ...
+```
+
+The shared ingest service slice both routes delegate to — the write-behind-the-endpoint half of
+the ingest seam. Reuses the same chunk→embed→write path as the CLI indexer
+(`scripts/index_brain.py`) rather than a second one (CLAUDE.md rule 10): derives a stable
+`file_path` provenance from `artifact_id` (`ingested/<doc_type>/<artifact_id>.md`), chunks
+`content` via `app.brain.chunking.chunk_by_section` + `_split_chunk` (splitting on the caller-
+supplied `section` when given, or on the content's own H2/H3 headers otherwise), embeds each
+chunk with `EmbeddingService.embed_batch` after prefixing embed-text with
+`build_context_prefix` (the prefix is embed-only and is never stored), and upserts
+`BrainDocument` rows via a delete-by-`file_path`+`section` (additionally scoped by `project` when
+set) then-insert pattern — so re-ingesting the same artifact+section replaces rather than
+duplicates. Never writes `content_tsv` (a Postgres-generated column). Returns the number of
+chunk rows written; the caller owns the session's commit/rollback via its own `db_session`
+dependency.
+
+The pure chunking helpers (`chunk_by_section`, `_split_chunk`, `_count_tokens`,
+`_is_header_only_chunk`, `build_context_prefix`) live in `app/brain/chunking.py` and are shared
+with `scripts/index_brain.py`, which re-exports them so existing imports keep resolving.
 
 ---
 

@@ -28,6 +28,47 @@ timestamp: "2026-07-23T19:07:08Z"
 
 ## [run: 2026-07-24]
 
+### `or-q-brain-ingest-api` shipped — Brain ingest API (`POST /ingest/*`), the D51 ingest seam
+- **What:** Ran `/sdlc-flow or-q-brain-ingest-api` end to end (Tasks 1–8, all PASS, reviewed PASS
+  in 1 attempt). Task 1: extracted the pure chunking helpers (`chunk_by_section`, `_split_chunk`,
+  `_count_tokens`, `_is_header_only_chunk`, `build_context_prefix`) from `scripts/index_brain.py`
+  into a new `app/brain/chunking.py` module, with `index_brain.py` re-exporting the same names so
+  its existing behavior and test imports are preserved. Task 2: added `app/brain/ingest.py`'s
+  `ingest_artifact()` — the reusable chunk→embed→upsert service slice, sharing the one chunking
+  path with `index_brain.py` per CLAUDE.md rule 10 (extract on the second consumer). Task 3: added
+  `ProposalIngestPayload` (pinned exactly to engine-rs's `PersistToBrainNode` payload shape),
+  `ArtifactIngestPayload` (generic envelope), and `IngestResponse` Pydantic schemas. Task 4: wired
+  `POST /ingest/proposal` and `POST /ingest/artifact` routes (`require_api_key`-gated), mounted at
+  `/ingest` in `app/api/router.py`, delegating to `ingest_artifact`; malformed payloads 422, ingest
+  failures 500. Task 5: a Docker-gated round-trip test posts engine-rs's exact proposal payload
+  through the live route (mocked embeddings) and verifies the stored row is retrievable via the
+  same pgvector cosine-distance query `RetrieveChunksNode` uses — proving fidelity end to end even
+  though `syn recall` (OR.N1) doesn't exist yet. Task 6: `docs/data-contract.md` bumped 1.2.0 →
+  1.3.0 (§7 HTTP surface rows, §8 changelog) and `docs/api-reference.md` gained a full Ingest API
+  section. Task 7: re-pinned `../bastion/docs/data-contract.md` and `../engine-rs/docs/data-contract.md`
+  consumer copies to 1.3.0, staged in their own sibling repos per the spec's cross-repo commit
+  rule (bastion needs no field-mapping change — it never calls the ingest routes). Task 8: full
+  validation suite green — ruff clean, pylint 10.00/10, all imports succeed, 1502 tests passed / 8
+  skipped (Docker-gated pgvector tests). `planning/status.md` and `planning/state.json` (block
+  `OR.Q`, wave 5) updated to Done/closed. Unblocks engine-rs `EN.4.C` (`PersistToBrainNode`), which
+  had asserted against a stub pending exactly this endpoint.
+- **Why:** Per D51's boundary test, every future engine-side hybrid workflow needs a single door to
+  hand its finished artifact across the Engine/Brain boundary instead of embedding/pgvector leaking
+  into engine-rs. `OR.Q` builds that door.
+- **Refs:** `planning/or-q-brain-ingest-api/tasks.md`; block `OR.Q` (Bastion Program, Wave 5);
+  `docs/data-contract.md` v1.3.0.
+
+```
+62af7c1 feat: implement or-q-brain-ingest-api-task6
+c864bb2 feat: implement or-q-brain-ingest-api-task5
+6392f3d feat: implement or-q-brain-ingest-api-task4
+3a0014d feat: implement or-q-brain-ingest-api-task3
+651f56a feat: implement or-q-brain-ingest-api-task2
+57d6383 feat: implement or-q-brain-ingest-api-task1
+```
+
+## [run: 2026-07-24]
+
 ### `or-y-event-read-api` shipped — event read API, the async-result seam (`GET /events/{event_id}`)
 - **What:** Ran `/sdlc-flow or-y-event-read-api` end to end (Tasks 1–8, all PASS, reviewed PASS in 1
   attempt). Task 1: pure `derive_status(task_context)` + `EventStatus` `StrEnum` in

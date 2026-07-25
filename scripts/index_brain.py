@@ -31,7 +31,6 @@ Args:
 import argparse
 import logging
 import os
-import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -40,6 +39,26 @@ from pathlib import Path
 
 import frontmatter
 from sqlalchemy import or_
+
+# Ensure app/ is importable before pulling in the shared chunking helpers below
+# (mirrors the lazy sys.path setup main() does for its own app/ imports).
+_APP_DIR = Path(__file__).resolve().parent.parent / "app"
+if str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
+
+# Re-exported for backward compatibility: these used to be defined in this
+# module. They now live in app/brain/chunking.py (OR.Q, CLAUDE.md rule 10 —
+# extract on the second consumer) so scripts/index_brain.py and
+# app/brain/ingest.py share one chunk->embed->write path instead of two.
+# `from index_brain import chunk_by_section` (etc.) still resolves via these
+# re-exports.
+from brain.chunking import (  # noqa: E402  pylint: disable=wrong-import-position
+    _count_tokens,
+    _is_header_only_chunk,
+    _split_chunk,
+    build_context_prefix,
+    chunk_by_section,
+)
 
 # ---------------------------------------------------------------------------
 # Corpus derivation (manifest-driven; HQ Restructure Block I)
@@ -164,9 +183,6 @@ def _load_brain_config(brain_path: Path) -> BrainConfig:
     )
 
 
-_HEADER_RE = re.compile(r"^(#{2,3})\s+(.+)$", re.MULTILINE)
-
-
 def parse_document(text: str) -> tuple[dict, str]:
     """Parse YAML frontmatter from a markdown document.
 
@@ -273,53 +289,6 @@ def normalize_metadata(
         "keywords": keywords,
         "related": related,
     }
-
-
-def build_context_prefix(meta: dict) -> str:
-    """Build a compact semantic context prefix to prepend to embed-text.
-
-    Includes only the semantic fields: ``type``, ``title``, ``description``,
-    ``layer``, ``project``, ``keywords``.  Excludes ``status``, ``doc_id``,
-    and ``related`` (non-semantic / relational metadata).  Returns an empty
-    string when no semantic fields are present.
-
-    The prefix is used *only* during embedding — it is never stored in the
-    ``content`` column.
-
-    Args:
-        meta: Raw metadata dict returned by ``parse_document``.
-
-    Returns:
-        A newline-terminated prefix string, or ``""`` if no semantic fields
-        are present.
-    """
-    parts: list[str] = []
-
-    if meta.get("type"):
-        parts.append(f"type: {meta['type']}")
-    if meta.get("title"):
-        parts.append(f"title: {meta['title']}")
-    if meta.get("description"):
-        parts.append(f"description: {meta['description']}")
-
-    layer = meta.get("layer")
-    if layer:
-        if isinstance(layer, str):
-            layer = [layer]
-        parts.append(f"layer: {', '.join(str(v) for v in layer)}")
-
-    if meta.get("project"):
-        parts.append(f"project: {meta['project']}")
-
-    keywords = meta.get("keywords")
-    if keywords:
-        if isinstance(keywords, str):
-            keywords = [keywords]
-        parts.append(f"keywords: {', '.join(str(v) for v in keywords)}")
-
-    if not parts:
-        return ""
-    return "\n".join(parts) + "\n\n"
 
 
 def _resolve_brain_path(raw: str) -> Path:
@@ -503,75 +472,6 @@ def _collect_workspace_files(root: Path) -> list[Path]:
                 continue
             result.append(Path(dirpath) / fname)
     return result
-
-
-def chunk_by_section(content: str) -> list[tuple[str, str]]:
-    """Split markdown content into (section, body) pairs by H2/H3 headers.
-
-    Returns a list of (section_header, body_text) tuples. If the file has no
-    H2/H3 headers the entire content is returned as a single chunk with section="".
-    The section value is the full header line including the '#' characters.
-    """
-    matches = list(_HEADER_RE.finditer(content))
-    if not matches:
-        return [("", content.strip())]
-
-    chunks: list[tuple[str, str]] = []
-
-    # Text before the first header (preamble)
-    preamble = content[: matches[0].start()].strip()
-    if preamble:
-        chunks.append(("", preamble))
-
-    for i, m in enumerate(matches):
-        section_header = m.group(0)
-        body_start = m.end()
-        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
-        body = content[body_start:body_end].strip()
-        combined = f"{section_header}\n{body}" if body else section_header
-        chunks.append((section_header, combined))
-
-    return chunks
-
-
-def _is_header_only_chunk(section_header: str, chunk_text: str) -> bool:
-    """True when a chunk is just a section header with no real body.
-
-    ``chunk_by_section`` prepends the header to every chunk's text
-    (``combined = f"{section_header}\n{body}"``), so a naive
-    ``chunk_text.startswith("#")`` would flag *every* chunk. The flag must be
-    measured on the **header-stripped body**: strip the leading header span,
-    then treat the chunk as a section title only when what remains is empty or
-    trivially short (< 40 chars). This feeds the 2x section-title weight in
-    ``RetrieveChunksNode._fuse_and_rank`` — if it fired on every chunk the
-    weight would be pure noise.
-    """
-    body = chunk_text[len(section_header):].strip()
-    return body == "" or len(body) < 40
-
-
-def _count_tokens(text: str) -> int:
-    """Estimate token count using tiktoken cl100k_base encoding."""
-    import tiktoken  # local import — not always needed (e.g. dry-run without split)
-
-    enc = tiktoken.get_encoding("cl100k_base")
-    return len(enc.encode(text))
-
-
-def _split_chunk(text: str, max_tokens: int = 500, overlap: int = 50) -> list[str]:
-    """Further split a chunk that exceeds max_tokens using ChunkingService."""
-    import sys
-    from pathlib import Path
-
-    # Ensure app/ is on the path when called from scripts/
-    app_dir = Path(__file__).resolve().parent.parent / "app"
-    if str(app_dir) not in sys.path:
-        sys.path.insert(0, str(app_dir))
-
-    from services.chunking_service import ChunkingService
-
-    svc = ChunkingService()
-    return svc.chunk_text(text, chunk_size=max_tokens, overlap=overlap)
 
 
 def _get_doc_type_for_path(file_path: str, brain_path: Path) -> str:
