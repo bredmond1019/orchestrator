@@ -311,7 +311,6 @@ structural retrieval architecture.
 This script was a thin shim over `app.brain.ops.refresh`, kept only for backward
 compatibility while `syn` bedded in. With the delete/rename freshness hook migrated onto
 `syn prune` and no remaining callers, the shim added no value over calling `syn refresh`
-(or `python -m app.brain.cli refresh` — see the console-script caveat under `syn` below)
 directly, so it was deleted rather than kept as a second entry point. There is exactly one
 implementation, in `app/brain/ops.py::refresh`; runs the content-index step
 (`index_brain.py`, `brain_documents`) then the edge-reload step
@@ -323,9 +322,9 @@ corpus, and `RetrieveChunksNode`'s structural-expansion stage silently returned 
 `via="structural"` results the entire time, with no error).
 
 ```bash
-python -m app.brain.cli refresh
-python -m app.brain.cli refresh --rebuild
-python -m app.brain.cli refresh --brain-path ~/Dev/agentic-portfolio --dry-run
+syn refresh
+syn refresh --rebuild
+syn refresh --brain-path ~/Dev/agentic-portfolio --dry-run
 ```
 
 Requires the `mev` CLI on `PATH` for the edge-refresh step. Exits non-zero (propagates
@@ -522,14 +521,19 @@ syn routine refresh               # runs a registered ROUTINES entry (OR.J cron 
 | `stale [--assert-clean] [--brain-path PATH] [--json]` | Read-only drift report via `brain.ops.stale`: content axis (file mtime newer than its indexed `brain_documents` row) and structure axis (`pulse()`'s `edges_empty_but_related_exists`). `--assert-clean` turns any drift into a non-zero exit — the flag `OR.J`'s cron uses to fail loudly; a plain `syn stale` always exits `0`. |
 | `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh` and `stale`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. |
 
-**Note:** console-script installation (`uv run syn ...`) is currently broken for this project
-independent of this addition — `pyproject.toml` has no `[build-system]`/`tool.uv.package = true`
-(same pre-existing condition affects `createworkflow`). Until that's fixed, invoke the dispatcher
-directly:
+**Invoking from outside this repo:** `syn` is a real console script (`pyproject.toml` declares
+`[build-system]`/`[tool.setuptools.packages.find]` with `namespaces = true`, since `app/` has no
+`__init__.py` anywhere — a plain `packages = ["app"]` can't discover it). From within this repo,
+`uv run syn ...` just works. To call it from any other directory without `cd`-ing here first, use
+`uv run --project /path/to/core/orchestrator syn ...`, or alias it:
 
 ```bash
-cd app && uv run python -m app.brain.cli recall "some question"
+alias syn='uv run --project /path/to/core/orchestrator syn'
 ```
+
+(`uv tool install --editable .` also puts a bare `syn` on `PATH`, but resolves its own
+independent, unpinned dependency set rather than reusing this project's `.venv`/`uv.lock` — the
+alias avoids that drift and is the recommended approach.)
 
 See `docs/api-reference.md` §
 [Brain Read Core](api-reference.md#brain-read-core-recall--walk--pulse--syn-cli) for the full

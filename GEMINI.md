@@ -114,8 +114,7 @@ cd docker && ./stop.sh     # down
 
 # Refresh the brain corpus (brain_documents) + structural graph (brain_edges) — prefer this
 # over running the two underlying scripts by hand; see docs/scripts.md for the full reference.
-# (`syn` isn't installed as a console script yet, so invoke the dispatcher as a module.)
-uv run python -m app.brain.cli refresh
+uv run syn refresh
 ```
 
 ---
