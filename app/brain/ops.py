@@ -1,9 +1,9 @@
-"""app/brain/ops.py — the Brain write/ops core (embed, ingest, refresh, stale, routine).
+"""app/brain/ops.py — the Brain write/ops core (embed, ingest, prune, refresh, stale, routine).
 
 Wraps `scripts/index_brain.py`'s incremental content-index path and the
 `mev emit-graph | scripts/load_brain_edges.py::load_edges` structural-edge path
-behind one set of typed functions, so `syn` (`app/brain/cli.py`) and the
-`scripts/refresh_brain.py` shim share a single implementation. No second
+behind one set of typed functions, so `syn` (`app/brain/cli.py`) and the brain
+repo's post-commit freshness hook share a single implementation. No second
 chunk->embed->write path is introduced here (CLAUDE.md rule 10).
 """
 
@@ -91,6 +91,33 @@ def ingest_dir(directory: str, *, force: bool = False, brain_path: str | None = 
 
     embed_paths(files, force=force, brain_path=brain_path)
     return {"ingested": files, "forced": force}
+
+
+def prune_paths(paths: list[str], *, dry_run: bool = False, brain_path: str | None = None) -> dict:
+    """Delete `brain_documents` rows for deleted/renamed-away file paths.
+
+    Surgical cleanup — shells into `index_brain`'s `--prune-paths` mode (no
+    embedding, no API call). The single implementation shared by `syn prune`
+    and the brain repo's post-commit delete/rename freshness hook, which
+    previously called `scripts/index_brain.py --prune-paths` directly.
+
+    Args:
+        paths: File paths (brain-root-relative or absolute) to prune.
+        dry_run: Report what would be deleted without writing.
+        brain_path: Optional brain root override (forwarded to `--brain-path`).
+
+    Returns:
+        A summary dict: `{"pruned": [...], "dry_run": bool}`.
+    """
+    import index_brain  # pylint: disable=import-outside-toplevel,import-error
+
+    argv: list[str] = ["--prune-paths", *paths]
+    if dry_run:
+        argv.append("--dry-run")
+    if brain_path:
+        argv += ["--brain-path", brain_path]
+    index_brain.main(argv)
+    return {"pruned": list(paths), "dry_run": dry_run}
 
 
 def refresh_edges(brain_path: Path) -> int:

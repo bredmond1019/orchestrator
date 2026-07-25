@@ -1,14 +1,14 @@
 """Tests for app/brain/ops.py — the Brain write/ops core (OR.N2 task 2).
 
 Mocks `index_brain.main`, the `mev` subprocess, and `load_brain_edges.load_edges`
-(mirroring `tests/test_refresh_brain.py`'s conventions) rather than requiring a
-live/Docker-gated DB — `stale()`'s DB read is exercised against a MagicMock
-session built the same way `tests/test_index_brain.py`'s incremental-skip tests
-do. Covers: `refresh()` step ordering + `--dry-run` skip, `refresh_edges()`
-subprocess parsing + `MevUnavailableError`, `stale()`'s content/structure axes
-(clean corpus -> zero drift; a changed file -> named; pulse's
-`edges_empty_but_related_exists` -> `edges_stale`), `run_routine` dispatch +
-`UnknownRoutineError`, and `embed_paths`/`ingest_dir` argument forwarding.
+rather than requiring a live/Docker-gated DB — `stale()`'s DB read is exercised
+against a MagicMock session built the same way `tests/test_index_brain.py`'s
+incremental-skip tests do. Covers: `refresh()` step ordering + `--dry-run` skip,
+`refresh_edges()` subprocess parsing + `MevUnavailableError`, `stale()`'s
+content/structure axes (clean corpus -> zero drift; a changed file -> named;
+pulse's `edges_empty_but_related_exists` -> `edges_stale`), `run_routine`
+dispatch + `UnknownRoutineError`, and `embed_paths`/`ingest_dir`/`prune_paths`
+argument forwarding.
 """
 
 import json
@@ -21,6 +21,7 @@ from brain.ops import (
     UnknownRoutineError,
     embed_paths,
     ingest_dir,
+    prune_paths,
     refresh,
     refresh_edges,
     run_routine,
@@ -105,6 +106,26 @@ class TestIngestDir:
 
         mock_embed_paths.assert_not_called()
         assert result == {"ingested": [], "forced": False}
+
+
+class TestPrunePaths:
+    """`prune_paths` forwards to `index_brain.main` with `--prune-paths`."""
+
+    @patch("index_brain.main")
+    def test_forwards_paths(self, mock_main):
+        result = prune_paths(["docs/old.md", "docs/gone.md"])
+
+        mock_main.assert_called_once_with(["--prune-paths", "docs/old.md", "docs/gone.md"])
+        assert result == {"pruned": ["docs/old.md", "docs/gone.md"], "dry_run": False}
+
+    @patch("index_brain.main")
+    def test_forwards_dry_run_and_brain_path(self, mock_main):
+        result = prune_paths(["docs/old.md"], dry_run=True, brain_path="/tmp/brain")
+
+        mock_main.assert_called_once_with(
+            ["--prune-paths", "docs/old.md", "--dry-run", "--brain-path", "/tmp/brain"]
+        )
+        assert result["dry_run"] is True
 
 
 class TestRefreshEdges:

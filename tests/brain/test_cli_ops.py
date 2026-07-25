@@ -1,6 +1,6 @@
 """Tests for app/brain/cli.py's OR.N2 write/ops subcommands (task 3).
 
-Dispatches `embed`/`ingest`/`refresh`/`stale`/`routine` via `main([...])` with
+Dispatches `embed`/`ingest`/`prune`/`refresh`/`stale`/`routine` via `main([...])` with
 `app.brain.ops` patched, asserting argument wiring, that `--json` output
 parses as JSON and is the sole stdout payload, deterministic exit codes
 (`stale --assert-clean` non-zero on drift, 0 when clean; unknown `routine`
@@ -81,6 +81,36 @@ class TestIngestDispatch:
     def test_ingest_error_returns_nonzero_no_traceback(self, capsys):
         with patch("brain.ops.ingest_dir", side_effect=NotADirectoryError("nope")):
             code = main(["ingest", "--dir", "d", "--json"])
+
+        assert code != 0
+        payload = json.loads(_read_stdout(capsys))
+        assert "error" in payload
+
+
+class TestPruneDispatch:
+    """`syn prune` wires argparse args to `brain.ops.prune_paths`."""
+
+    def test_prune_json_forwards_paths(self, capsys):
+        fake_result = {"pruned": ["a.md", "b.md"], "dry_run": False}
+        with patch("brain.ops.prune_paths", return_value=fake_result) as mock_prune:
+            code = main(["prune", "a.md", "b.md", "--json"])
+
+        assert code == 0
+        mock_prune.assert_called_once_with(["a.md", "b.md"], dry_run=False, brain_path=None)
+        out = _read_stdout(capsys)
+        assert json.loads(out) == fake_result
+
+    def test_prune_dry_run_forwards_true(self, capsys):
+        fake_result = {"pruned": ["a.md"], "dry_run": True}
+        with patch("brain.ops.prune_paths", return_value=fake_result) as mock_prune:
+            code = main(["prune", "a.md", "--dry-run", "--json"])
+
+        assert code == 0
+        mock_prune.assert_called_once_with(["a.md"], dry_run=True, brain_path=None)
+
+    def test_prune_error_returns_nonzero_no_traceback(self, capsys):
+        with patch("brain.ops.prune_paths", side_effect=RuntimeError("boom")):
+            code = main(["prune", "a.md", "--json"])
 
         assert code != 0
         payload = json.loads(_read_stdout(capsys))
