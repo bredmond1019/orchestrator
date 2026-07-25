@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-23T19:07:08Z"
+timestamp: "2026-07-25T14:30:21Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,41 @@ timestamp: "2026-07-23T19:07:08Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
+
+## [run: 2026-07-25]
+
+### `or-n2-syn-write-ops-commands` shipped — `syn` write + ops commands (embed, ingest, refresh, stale, routine) + the `app/brain` write/ops core
+- **What:** Ran `/sdlc-flow or-n2-syn-write-ops-commands` end to end (Tasks 1–5, all PASS, reviewed
+  PASS in 1 attempt). Task 1: `scripts/index_brain.py` gained additive `--only-paths` (restrict
+  corpus to named files) and `--force` (bypass incremental skip) flags, reused by the later ops/CLI
+  wiring. Task 2: added `app/brain/ops.py` — the write/ops core with `embed_paths`, `ingest_dir`,
+  `refresh` (+ `refresh_edges`), `stale`, and a routine registry (`run_routine`/`ROUTINES`), all
+  wrapping `index_brain.py` and `load_brain_edges.load_edges` over one shared path, with a matching
+  typed-error contract (`UnknownRoutineError`, `MevUnavailableError`) and full test coverage. Task 3:
+  `syn` gained `embed`/`ingest`/`refresh`/`stale`/`routine` subcommands wired to `app/brain/ops.py`,
+  each with `--json` output, deterministic exit codes (`stale --assert-clean` gates on drift, unknown
+  routine name is a typed non-zero exit), and no interactive prompts. Task 4: `scripts/refresh_brain.py`
+  is now a thin shim delegating to `app.brain.ops.refresh()`, re-exporting `refresh`/`refresh_edges`
+  for backward compatibility; tests updated to assert delegation instead of the old duplicated
+  implementation. Task 5: validated the full gate — ruff clean, pylint 10.00/10, full suite green, no
+  code changes needed. No data-contract or workspace-contract change (local CLI/ops surface only).
+  `docs/scripts.md`, `docs/api-reference.md`, `docs/index.md` patched.
+- **Why:** Wave 5 (Bastion program) — makes corpus freshness one command (`syn refresh`, both paths,
+  one pass) plus `embed`/`ingest`/`stale`/`routine`, superseding the manual `refresh_brain.py`
+  two-script step that silently lapsed for 12 days, and defines the named-chore convention `OR.J`'s
+  cron will invoke. Unblocks `OR.W` (external-intelligence loop) and `OR.R` (Brain-as-MCP-server).
+- **Refs:** `planning/or-n2-syn-write-ops-commands/tasks.md`; block `OR.N2` (now closed in
+  `state.json`). Next: `OR.W` (external-intelligence loop + external-knowledge memory, Wave 5,
+  Bastion program).
+
+```
+767103a docs: update docs for or-n2-syn-write-ops-commands
+4a4b97c feat: implement or-n2-syn-write-ops-commands-task4
+a9f6d49 chore: flow state — task 3 passed
+fbea384 feat: implement or-n2-syn-write-ops-commands-task3
+f943bbd feat: implement or-n2-syn-write-ops-commands-task2
+fe152a9 feat: implement or-n2-syn-write-ops-commands-task1
+```
 
 ## [run: 2026-07-24]
 
