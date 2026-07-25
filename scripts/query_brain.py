@@ -9,109 +9,33 @@ after `scripts/index_brain.py --rebuild` without standing up the API/Celery
 stack and driving the full `DOCUMENT_QA` workflow (see `docs/brain-rag.md` for
 that fuller pipeline).
 
+This script is a thin caller over the extracted `app/brain/retrieval.py` read
+core (OR.N1, CLAUDE.md rule 10 — extract on the second consumer): the
+exact-id / semantic / hybrid search functions live there and are re-exported
+here so `main()` and existing callers/tests keep working unchanged. Only the
+`main()` CLI and the `format_*` display helpers (not part of the read core)
+stay in this script.
+
 Usage:
     python scripts/query_brain.py "What is the Bastion program?"
     python scripts/query_brain.py "some question" --limit 10 --show-content
 """
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
-# Matches structured brain identifiers like "D20", "OR.V", "MV.3B.Q": one to
-# five uppercase letters, followed by either a run of digits (D20) or one or
-# more dot-separated alphanumeric segments (OR.V, MV.3B.Q). Requiring digits
-# or a dot segment (rather than bare letters) keeps this from matching
-# ordinary capitalized words like "I" or "What".
-ID_PATTERN = re.compile(r"\b[A-Z]{1,5}(?:[0-9]{1,4}|(?:\.[A-Z0-9]{1,5})+)\b")
+_APP_DIR = Path(__file__).resolve().parent.parent / "app"
+if str(_APP_DIR) not in sys.path:
+    sys.path.insert(0, str(_APP_DIR))
 
-
-def find_exact_id(query: str) -> str | None:
-    """Return the first structured-ID token in `query`, or None if absent.
-
-    Recognizes bare codes such as `D20`, `OR.V`, `MV.3B.Q` — identifiers that
-    embeddings don't reliably encode as semantically distinct from ordinary
-    prose (see planning/ticket-brain-retrieval-improvements/tasks.md Finding B).
-    """
-    match = ID_PATTERN.search(query)
-    return match.group(0) if match else None
-
-
-def exact_id_lookup(id_str: str, session, limit: int = 5) -> list:
-    """Resolve `id_str` via a deterministic doc_id/file_path ILIKE lookup.
-
-    Args:
-        id_str: The structured ID token (e.g. "D20") to look up.
-        session: An open SQLAlchemy session (injected by the caller).
-        limit: Maximum number of rows to return.
-
-    Returns:
-        A list of `BrainDocument` rows matching `id_str` in either `doc_id`
-        or `file_path`, most-relevant first (doc_id exact-ish matches before
-        file_path substring matches).
-    """
-    # local import: app/ only on sys.path at call time
-    from database.brain_document import BrainDocument
-    from sqlalchemy import or_
-
-    pattern = f"%{id_str}%"
-    return (
-        session.query(BrainDocument)
-        .filter(or_(BrainDocument.doc_id.ilike(pattern), BrainDocument.file_path.ilike(pattern)))
-        .limit(limit)
-        .all()
-    )
-
-
-def semantic_search(query: str, session, embedding_service, limit: int = 5) -> list[tuple]:
-    """Embed `query` and return the `limit` nearest `BrainDocument` rows.
-
-    Args:
-        query: Natural-language question to embed and search for.
-        session: An open SQLAlchemy session (injected by the caller via
-            `database.session.db_session` — never constructed here).
-        embedding_service: An `EmbeddingService` instance (injected so tests
-            can substitute a fake without a live Ollama/Voyage call).
-        limit: Maximum number of rows to return.
-
-    Returns:
-        A list of `(BrainDocument, distance)` tuples ordered nearest-first
-        (cosine distance — 0.0 is identical, larger is less similar).
-    """
-    # local import: app/ only on sys.path at call time
-    from database.brain_document import BrainDocument
-
-    vector = embedding_service.embed_text(query)
-    distance = BrainDocument.embedding.cosine_distance(vector).label("distance")
-    return session.query(BrainDocument, distance).order_by(distance).limit(limit).all()
-
-
-def hybrid_search(query: str, limit: int = 5) -> list[dict]:
-    """Run RetrieveChunksNode's keyword+semantic fusion pipeline over the brain corpus.
-
-    Reuses the production `_keyword_search_fts` + `_fuse_and_rank` logic
-    (`app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`)
-    instead of the raw cosine-distance-only `semantic_search` above, so a
-    manual test session sees the same ranking the production `DOCUMENT_QA`
-    workflow would produce.
-
-    Args:
-        query: Natural-language question to search for.
-        limit: Maximum number of fused results to return (`k`).
-
-    Returns:
-        A list of up to `limit` normalized chunk dicts (see
-        `RetrieveChunksNode._fuse_and_rank`), sorted by fused score
-        descending.
-    """
-    # local import: app/ only on sys.path at call time
-    from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
-        RetrieveChunksNode,
-    )
-
-    node = RetrieveChunksNode()
-    return node.retrieve(query, corpus="brain", k=limit)
+from brain.retrieval import (  # noqa: E402
+    ID_PATTERN,  # noqa: F401 - re-exported for callers importing from this module
+    exact_id_lookup,
+    find_exact_id,
+    hybrid_search,
+    semantic_search,
+)
 
 
 def format_hybrid_result(

@@ -6,7 +6,7 @@ doc_id: scripts
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, refresh_brain, developer scripts, run_eval, workspace mode]
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, refresh_brain, developer scripts, run_eval, workspace mode, syn CLI, recall, walk, pulse]
 related: [getting-started, brain-rag, configuration, evals, workspace-contract]
 ---
 
@@ -325,6 +325,16 @@ no LLM answer synthesis — so you can eyeball indexing/retrieval quality right 
 `scripts/index_brain.py --rebuild` without standing up the API/Celery stack and driving the
 full `DOCUMENT_QA` workflow.
 
+**OR.N1:** the exact-id / semantic / hybrid search functions (`find_exact_id`,
+`exact_id_lookup`, `semantic_search`, `hybrid_search`) were extracted into
+`app/brain/retrieval.py` — the Brain's shared recall read core — once the `syn recall` console
+command (see below) needed the same dispatch this script already had. This script is now a thin
+caller that imports and re-exports those functions unchanged; only `main()` and the
+`format_result`/`format_hybrid_result` display helpers stay here. Behavior and output are
+byte-for-byte identical to before the extraction. See `docs/api-reference.md` §
+[Brain Read Core](api-reference.md#brain-read-core-recall--walk--pulse--syn-cli) for the
+extracted functions' reference.
+
 A query that is (or contains) a bare structured code — e.g. `D20`, `OR.V`, `MV.3B.Q` — skips
 embedding entirely and resolves via a deterministic `doc_id`/`file_path` ILIKE lookup instead,
 since short alphanumeric identifiers aren't reliably distinct in embedding space.
@@ -449,6 +459,46 @@ python scripts/run_eval.py --slice coding --emit-routing PATH [--quality-floor F
 | `--quality-floor F` | Minimum pass-rate a model must meet to be eligible for `--emit-routing`'s cheapest-model selection (default: `0.0`). |
 
 This script runs from the CLI only — it is **not** a workflow node and is **not** run by Celery.
+
+---
+
+## `syn` — Brain read-command console script (OR.N1)
+
+Agent-callable console script (registered `[project.scripts]` entry in `pyproject.toml`, `syn =
+"app.brain.cli:main"`, mirroring `createworkflow`) wiring the three Brain read cores
+(`app/brain/retrieval.py::recall`, `app/brain/graph.py::walk`, `app/brain/pulse.py::pulse`)
+behind short, deterministic verbs: `recall`, `walk`, `pulse`. Every command supports `--json` for
+a machine-parseable payload and nothing else on stdout, has a deterministic exit code (`0` on
+success; non-zero on an unhealthy `pulse` verdict or a typed `--workspace` resolution error), and
+never prompts interactively.
+
+```bash
+syn recall "What is decision D20 about?"
+syn recall "How does structural graph retrieval work?" --limit 10 --hybrid --json
+
+syn walk D20 --depth 2
+
+syn pulse --json
+```
+
+| Command | Description |
+|---|---|
+| `recall QUERY [--limit N] [--hybrid] [--workspace NAME] [--json]` | Exact-id / semantic / hybrid search over `brain_documents`, dispatched the same way `query_brain.py`'s `main()` does. |
+| `walk DOC_ID [--depth N] [--workspace NAME] [--json]` | BFS-traverses `brain_edges` from `DOC_ID` out to `N` hops. `--workspace` is accepted but currently unused (reserved). |
+| `pulse [--json]` | Reports corpus/substrate health (pgvector + embedding reachability, row counts, staleness, `edges_empty_but_related_exists`). Exits non-zero when unhealthy. |
+
+**Note:** console-script installation (`uv run syn ...`) is currently broken for this project
+independent of this addition — `pyproject.toml` has no `[build-system]`/`tool.uv.package = true`
+(same pre-existing condition affects `createworkflow`). Until that's fixed, invoke the dispatcher
+directly:
+
+```bash
+cd app && uv run python -m app.brain.cli recall "some question"
+```
+
+See `docs/api-reference.md` §
+[Brain Read Core](api-reference.md#brain-read-core-recall--walk--pulse--syn-cli) for the full
+reference.
 
 ---
 

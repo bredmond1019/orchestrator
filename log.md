@@ -11,6 +11,48 @@ timestamp: "2026-07-23T19:07:08Z"
 
 ---
 
+## [run: 2026-07-24]
+
+### `or-n1-syn-read-commands` shipped — `syn` read commands (recall, walk, pulse) + the `app/brain` read core
+- **What:** Ran `/sdlc-flow or-n1-syn-read-commands` end to end (Tasks 1–5, all PASS, reviewed PASS
+  in 1 attempt). Task 1: extracted `find_exact_id`/`exact_id_lookup`/`semantic_search`/`hybrid_search`
+  plus a new typed `recall()` dispatcher into `app/brain/retrieval.py`; `scripts/query_brain.py` is
+  now a thin caller that imports and re-exports the same public names, so its own `main()` and
+  `tests/test_query_brain.py` keep passing unchanged. Task 2: added `app/brain/graph.py::walk()` — an
+  independent BFS over `brain_edges` (deliberately not touching `retrieve_chunks_node.py`'s own
+  `_structural_expand`/`_resolve_neighbor_doc_ids`, so DOCUMENT_QA ranking stays byte-identical) —
+  proven with single/multi-hop, cycle-dedup, and no-edges tests against the real pgvector fixture.
+  Task 3: added `app/brain/pulse.py::pulse()` — a `PulseReport` dataclass health probe covering
+  pgvector + guarded embedding-backend reachability, `brain_documents`/`brain_edges` row counts, a
+  staleness watermark, and the load-bearing `edges_empty_but_related_exists` flag (the exact silent
+  structural-expansion failure that has bitten twice before). Task 4: added `app/brain/cli.py` — the
+  `syn` argparse dispatcher wiring `recall`/`walk`/`pulse` behind deterministic `--json`, exit-code,
+  no-prompt verbs, registered as `syn = "app.brain.cli:main"` in `pyproject.toml`; a recall-parity
+  test proves `cli -> brain.retrieval.recall -> brain.retrieval.hybrid_search ->
+  RetrieveChunksNode.retrieve -> --json stdout` is one implementation, not two. Task 5: validated —
+  ruff clean, pylint 10.00/10, all import checks pass, full suite 1533 passed / 8 skipped. Notable
+  decision: the `syn` console-script *invocation* itself is currently broken independent of this
+  work (`pyproject.toml` has no `[build-system]`/`tool.uv.package = true`, a pre-existing condition
+  also seen with `uv run createworkflow`); the dispatcher itself was verified correct via
+  `python -m app.brain.cli <cmd>` and the test suite asserts the entry-point registration + module
+  importability rather than a live shell invocation. This establishes the D52 agent tool-call
+  surface (`--json`, deterministic exit codes, no prompts) that `OR.R`'s MCP tools will later mirror.
+  `docs/api-reference.md`, `docs/brain-rag.md`, `docs/index.md`, `docs/scripts.md` patched. No
+  data-contract or workspace-contract change — this is a local CLI surface only.
+- **Why:** Wave 5 (Bastion program) — gives the Brain a discoverable, agent-callable terminal
+  surface with one implementation behind `recall`/`walk`/`pulse`, unblocking `OR.N2` (write/ops
+  verbs) and `OR.R` (Brain-as-MCP-server).
+- **Refs:** `planning/or-n1-syn-read-commands/tasks.md`; block `OR.N1` (now closed in `state.json`).
+  Next: `OR.W` (external-intelligence loop + external-knowledge memory, Wave 5, Bastion program).
+
+```
+27de314 docs: update docs for or-n1-syn-read-commands
+1c3cb4f feat: implement or-n1-syn-read-commands-task4
+87a858f feat: implement or-n1-syn-read-commands-task3
+84940ee feat: implement or-n1-syn-read-commands-task2
+6b3c081 feat: implement or-n1-syn-read-commands-task1
+```
+
 ## [2026-07-23]
 
 ### Documented 8 production workflows for bastion-web UI integration; set OR.W as next focus
