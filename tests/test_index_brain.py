@@ -1261,6 +1261,119 @@ class TestDefaultBrainPath:
 
 
 # ---------------------------------------------------------------------------
+# --only-paths / --force tests
+# ---------------------------------------------------------------------------
+
+
+class TestOnlyPathsAndForce:
+    """--only-paths restricts the corpus; --force bypasses the incremental skip."""
+
+    def _make_mock_session(self, mock_doc: MagicMock = None) -> MagicMock:
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.first.return_value = mock_doc
+        mock_query.delete.return_value = 0
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session
+
+    def test_only_paths_indexes_named_file_only(self, tmp_path):
+        """--only-paths <file> writes only that file's rows; a sibling is untouched."""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        career = docs / "career.md"
+        career.write_text("## Section\nContent.", encoding="utf-8")
+        brand = docs / "brand.md"
+        brand.write_text("## Brand\nOther content.", encoding="utf-8")
+
+        indexed_paths: list[str] = []
+
+        def fake_db_session():
+            mock_session = self._make_mock_session(mock_doc=None)
+
+            def capturing_add(obj):
+                indexed_paths.append(obj.file_path)
+
+            mock_session.add = capturing_add
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            main(["--brain-path", str(tmp_path), "--only-paths", str(career)])
+
+        assert indexed_paths
+        assert all(p == "docs/career.md" for p in indexed_paths)
+        assert "docs/brand.md" not in indexed_paths
+
+    def test_force_reembeds_file_newer_indexed_at(self, tmp_path):
+        """--force bypasses the incremental skip even when indexed_at > mtime."""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        career = docs / "career.md"
+        career.write_text("## Section\nContent.", encoding="utf-8")
+
+        # indexed_at is newer than the file's mtime — a default run would skip it.
+        future_indexed = datetime.now() + timedelta(hours=1)
+        mock_doc = MagicMock()
+        mock_doc.indexed_at = future_indexed
+        mock_session = self._make_mock_session(mock_doc)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            main(
+                [
+                    "--brain-path",
+                    str(tmp_path),
+                    "--only-paths",
+                    str(career),
+                    "--force",
+                ]
+            )
+            mock_embed.embed_batch.assert_called()
+
+    def test_default_run_still_skips_unchanged(self, tmp_path):
+        """Regression: a bare run over an unchanged corpus still skips (no --force)."""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (tmp_path / "MEMORY.md").write_text("# Memory\n", encoding="utf-8")
+        (docs / "career.md").write_text("## Section\nContent.", encoding="utf-8")
+
+        future_indexed = datetime.now() + timedelta(hours=1)
+        mock_doc = MagicMock()
+        mock_doc.indexed_at = future_indexed
+        mock_session = self._make_mock_session(mock_doc)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = []
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            main(["--brain-path", str(tmp_path)])
+            mock_embed.embed_batch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # --prune-paths tests
 # ---------------------------------------------------------------------------
 

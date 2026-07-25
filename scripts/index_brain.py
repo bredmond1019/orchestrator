@@ -685,6 +685,21 @@ def main(argv: list[str] | None = None) -> None:
         "re-embedding — a stat() call per file, no embedding API call. "
         "Exits after backfilling; combine with --dry-run to preview.",
     )
+    parser.add_argument(
+        "--only-paths",
+        nargs="+",
+        default=None,
+        metavar="PATH",
+        help="Restrict indexing to the named file paths (still flows through the same "
+        "chunk->embed->write + incremental-skip pipeline). Paths not part of the corpus "
+        "are warned and skipped.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Disable the per-file incremental skip so the targeted files fully re-embed "
+        "(distinct from --rebuild, which deletes all non-diagnostic rows corpus-wide).",
+    )
     args = parser.parse_args(argv)
 
     workspace_mode = bool(args.workspace or args.root)
@@ -762,6 +777,19 @@ def main(argv: list[str] | None = None) -> None:
         files = files[: args.limit]
         logger.info("--limit %d: processing first %d file(s) only", args.limit, len(files))
 
+    if args.only_paths:
+        requested = set()
+        for raw in args.only_paths:
+            p = Path(raw)
+            requested.add(p.resolve())
+            requested.add((brain_path / raw).resolve())
+        filtered = [t for t in files if t[0].resolve() in requested]
+        matched = {t[0].resolve() for t in filtered}
+        for raw in args.only_paths:
+            if Path(raw).resolve() not in matched and (brain_path / raw).resolve() not in matched:
+                logger.warning("--only-paths: %s is not part of the corpus; skipping", raw)
+        files = filtered
+
     # --backfill-dates: surgical authored_at population, exits before any
     # embedding work (no VOYAGE_API_KEY needed, no full-corpus re-index).
     if args.backfill_dates:
@@ -824,8 +852,9 @@ def main(argv: list[str] | None = None) -> None:
         authored_at = datetime.fromtimestamp(file_path.stat().st_mtime)
 
         try:
-            # Incremental skip check (skip --rebuild because we already cleared)
-            if not args.rebuild:
+            # Incremental skip check (skip --rebuild because we already cleared;
+            # skip when --force disables the skip so targeted files fully re-embed)
+            if not args.rebuild and not args.force:
                 with next(db_session()) as session:  # type: ignore[arg-type]
                     existing_query = session.query(BrainDocument).filter(
                         BrainDocument.file_path == rel_str

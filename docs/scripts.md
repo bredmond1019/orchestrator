@@ -124,7 +124,26 @@ python scripts/index_brain.py --prune-paths docs/old.md docs/decisions/gone.md
 # Custom brain path (defaults to the parent of the orchestration repo, resolved
 # from the script's own location — so it works from any working directory)
 python scripts/index_brain.py --brain-path /path/to/agentic-portfolio
+
+# Restrict indexing to specific files (still flows through the same
+# chunk->embed->write + incremental-skip pipeline; unmatched paths are warned and skipped)
+python scripts/index_brain.py --only-paths docs/decisions/D52-foo.md docs/scripts.md
+
+# Force a full re-embed of the targeted files, bypassing the incremental skip
+# (narrower than --rebuild, which clears all non-diagnostic rows corpus-wide)
+python scripts/index_brain.py --only-paths docs/scripts.md --force
 ```
+
+**OR.N2 — `--only-paths` / `--force`:** these two flags are the reusable primitive
+`app/brain/ops.py::embed_paths` shells into (no second chunk->embed->write implementation) — the
+`syn embed`/`syn ingest` commands and `app.brain.ops.embed_paths`/`ingest_dir` are thin callers
+over this exact path. `--only-paths` accepts one or more paths (absolute or brain-root-relative)
+and filters the collected corpus down to just those files before the embed loop runs; a path
+that isn't part of the collected corpus is logged as a warning and skipped, not an error.
+`--force` disables the per-file incremental skip (the `indexed_at`-vs-mtime check) so the
+targeted files re-embed unconditionally — it is scoped to whichever files are being processed
+that run (all of them, or just `--only-paths`'s subset), unlike `--rebuild`, which deletes all
+non-diagnostic rows corpus-wide before re-indexing from scratch.
 
 ### Workspace mode — indexing an arbitrary OKF directory (OR.C)
 
@@ -289,14 +308,23 @@ structural retrieval architecture.
 
 ## `scripts/refresh_brain.py` — Refresh both brain freshness paths in one command
 
-Stopgap wrapper that runs `index_brain.py` (`brain_documents`) and then
-`mev emit-graph | load_brain_edges.py` (`brain_edges`) in sequence, until `OR.J` (Brain
-freshness loop) wires both into a cron / `bastion brain reindex`. The two underlying scripts
-have no shared entry point today — running only `index_brain.py` leaves `brain_edges` exactly
-as stale as never running anything at all (confirmed 2026-07-15: `brain_edges` sat at 0 rows
-through an actively re-indexed 4749-row `brain_documents` corpus, and `RetrieveChunksNode`'s
-structural-expansion stage silently returned zero `via="structural"` results the entire time,
-with no error). Prefer this script over running the two underlying scripts by hand.
+**OR.N2:** this script is now a thin shim over `app.brain.ops.refresh` — the sequencing
+(content-index step, then edge-reload step) and the `mev emit-graph | load_brain_edges.py`
+implementation both moved to `app/brain/ops.py`, reused verbatim by this script, the `syn
+refresh` CLI command, and `syn routine refresh`. `refresh_brain.refresh` / `refresh_brain.
+refresh_edges` are re-exported at module level for backward compatibility with existing
+callers/tests; there is exactly one implementation underneath. Prefer `syn refresh` for new
+agent-facing call sites — this script remains the plain-Python entry point (no console-script
+install required) and stays the documented fallback until `OR.J` (Brain freshness loop) wires
+this into a cron / `bastion brain reindex`.
+
+Runs `index_brain.py` (`brain_documents`) and then `mev emit-graph | load_brain_edges.py`
+(`brain_edges`) in sequence — the two underlying scripts have no shared entry point on their
+own, so running only `index_brain.py` leaves `brain_edges` exactly as stale as never running
+anything at all (confirmed 2026-07-15: `brain_edges` sat at 0 rows through an actively
+re-indexed 4749-row `brain_documents` corpus, and `RetrieveChunksNode`'s structural-expansion
+stage silently returned zero `via="structural"` results the entire time, with no error). Prefer
+this script (or `syn refresh`) over running the two underlying scripts by hand.
 
 ```bash
 python scripts/refresh_brain.py
@@ -462,15 +490,17 @@ This script runs from the CLI only — it is **not** a workflow node and is **no
 
 ---
 
-## `syn` — Brain read-command console script (OR.N1)
+## `syn` — Brain console script (OR.N1 read commands + OR.N2 write/ops commands)
 
 Agent-callable console script (registered `[project.scripts]` entry in `pyproject.toml`, `syn =
-"app.brain.cli:main"`, mirroring `createworkflow`) wiring the three Brain read cores
-(`app/brain/retrieval.py::recall`, `app/brain/graph.py::walk`, `app/brain/pulse.py::pulse`)
-behind short, deterministic verbs: `recall`, `walk`, `pulse`. Every command supports `--json` for
-a machine-parseable payload and nothing else on stdout, has a deterministic exit code (`0` on
-success; non-zero on an unhealthy `pulse` verdict or a typed `--workspace` resolution error), and
-never prompts interactively.
+"app.brain.cli:main"`, mirroring `createworkflow`) wiring the Brain read cores
+(`app/brain/retrieval.py::recall`, `app/brain/graph.py::walk`, `app/brain/pulse.py::pulse`) and
+the Brain write/ops core (`app/brain/ops.py::embed_paths`, `ingest_dir`, `refresh`, `stale`,
+`run_routine`) behind short, deterministic verbs: `recall`, `walk`, `pulse`, `embed`, `ingest`,
+`refresh`, `stale`, `routine`. Every command supports `--json` for a machine-parseable payload
+and nothing else on stdout, has a deterministic exit code (`0` on success; non-zero on an
+unhealthy `pulse` verdict, a typed `--workspace` resolution error, an unknown `routine` name, or
+`stale --assert-clean` finding drift), and never prompts interactively.
 
 ```bash
 syn recall "What is decision D20 about?"
@@ -479,6 +509,13 @@ syn recall "How does structural graph retrieval work?" --limit 10 --hybrid --jso
 syn walk D20 --depth 2
 
 syn pulse --json
+
+# OR.N2 write/ops verbs
+syn embed docs/scripts.md --force
+syn ingest --dir docs/decisions --json
+syn refresh --rebuild
+syn stale --assert-clean          # non-zero exit if content or structure drift is found
+syn routine refresh               # runs a registered ROUTINES entry (OR.J cron convention)
 ```
 
 | Command | Description |
@@ -486,6 +523,11 @@ syn pulse --json
 | `recall QUERY [--limit N] [--hybrid] [--workspace NAME] [--json]` | Exact-id / semantic / hybrid search over `brain_documents`, dispatched the same way `query_brain.py`'s `main()` does. |
 | `walk DOC_ID [--depth N] [--workspace NAME] [--json]` | BFS-traverses `brain_edges` from `DOC_ID` out to `N` hops. `--workspace` is accepted but currently unused (reserved). |
 | `pulse [--json]` | Reports corpus/substrate health (pgvector + embedding reachability, row counts, staleness, `edges_empty_but_related_exists`). Exits non-zero when unhealthy. |
+| `embed FILE [--force] [--brain-path PATH] [--json]` | Re-embeds a single file via `brain.ops.embed_paths` (which shells into `index_brain.py --only-paths`). `--force` bypasses the incremental skip. |
+| `ingest --dir DIRECTORY [--force] [--brain-path PATH] [--json]` | Indexes every on-disk `*.md` file under `DIRECTORY` via `brain.ops.ingest_dir` (collects the file list, then calls `embed_paths`). Not the OR.Q artifact-ingest API path — this is on-disk file indexing only. |
+| `refresh [--rebuild] [--dry-run] [--brain-path PATH] [--json]` | Runs the content-index step then the edge-reload step via `brain.ops.refresh` — the same sequencing `scripts/refresh_brain.py` now delegates to. `--dry-run` skips the edge-reload step entirely. |
+| `stale [--assert-clean] [--brain-path PATH] [--json]` | Read-only drift report via `brain.ops.stale`: content axis (file mtime newer than its indexed `brain_documents` row) and structure axis (`pulse()`'s `edges_empty_but_related_exists`). `--assert-clean` turns any drift into a non-zero exit — the flag `OR.J`'s cron uses to fail loudly; a plain `syn stale` always exits `0`. |
+| `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh` and `stale`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. |
 
 **Note:** console-script installation (`uv run syn ...`) is currently broken for this project
 independent of this addition — `pyproject.toml` has no `[build-system]`/`tool.uv.package = true`
