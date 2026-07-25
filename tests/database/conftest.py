@@ -6,6 +6,9 @@ enabled and the ``brain_documents`` + ``content_chunks`` schema (the two models
 the in-memory SQLite suite in ``tests/conftest.py`` cannot fully exercise) is
 created against the real database.
 
+The ``brain_edges`` table (``BrainEdge``) is also created, so structural
+neighborhood-expansion / graph-traversal tests can seed real edge rows.
+
 Container startup only happens lazily, inside the ``pgvector_engine`` fixture,
 so a plain collection pass (e.g. ``pytest -m "not integration"``) never spins
 up Docker. When Docker is unavailable the fixture ``pytest.skip``s, which
@@ -17,6 +20,7 @@ from collections.abc import Generator
 
 import pytest
 from database.brain_document import BrainDocument
+from database.brain_edge import BrainEdge
 from database.content_chunk import ContentChunk
 from database.session import Base
 from sqlalchemy import create_engine, text
@@ -53,7 +57,7 @@ def pgvector_engine() -> Generator:
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
-        tables = [BrainDocument.__table__, ContentChunk.__table__]
+        tables = [BrainDocument.__table__, ContentChunk.__table__, BrainEdge.__table__]
         Base.metadata.create_all(engine, tables=tables)
 
         yield engine
