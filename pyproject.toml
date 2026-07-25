@@ -112,6 +112,7 @@ disable = [
 
 [project.scripts]
 createworkflow = "app.core.commands.init_workflow:main"
+syn = "app.brain.cli:main"
 
 [tool.setuptools]
 packages = ["app"]
