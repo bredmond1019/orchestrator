@@ -92,6 +92,7 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 70. [ConsolidationNode](#consolidationnode)
 71. [ConsolidationWriteNode](#consolidationwritenode)
 72. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
+73. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
 
 ---
 
@@ -4878,3 +4879,150 @@ LoadMemoryContextNode
   consolidation output schema validity.
 - `tests/workflows/test_memory_e2e.py` — end-to-end accumulation across interactions + cited
   "status with client X" answer (agent seam mocked).
+
+---
+
+## Brain Read Core (recall / walk / pulse / syn CLI)
+
+**Sources:** `app/brain/retrieval.py`, `app/brain/graph.py`, `app/brain/pulse.py`, `app/brain/cli.py`
+
+Block **OR.N1**. Three typed, agent-callable read cores over the Brain corpus and its structural
+graph — `recall` (exact-id / semantic / hybrid search), `walk` (BFS over `brain_edges`), and
+`pulse` (corpus/substrate health) — plus a `syn` argparse dispatcher exposing all three as short
+console verbs. Per CLAUDE.md rule 10 (extract on the second consumer), `recall`'s underlying
+functions were extracted out of `scripts/query_brain.py`'s exact-id/semantic dispatch once both
+the manual smoke-test script and `syn recall` needed the same paths; `scripts/query_brain.py` now
+imports and re-exports them unchanged (see `docs/scripts.md` § `query_brain.py`). `walk` and
+`pulse` are new, standalone read cores — `walk` deliberately does not import or modify
+`RetrieveChunksNode._resolve_neighbor_doc_ids`, so `DOCUMENT_QA`'s structural-expansion ranking
+stays byte-identical while this module evolves independently.
+
+### `app/brain/retrieval.py`
+
+```python
+ID_PATTERN: re.Pattern  # matches structured ids like "D20", "OR.V", "MV.3B.Q"
+
+def find_exact_id(query: str) -> str | None: ...
+def exact_id_lookup(id_str: str, session, limit: int = 5) -> list: ...
+def semantic_search(query: str, session, embedding_service, limit: int = 5) -> list[tuple]: ...
+def hybrid_search(query: str, limit: int = 5) -> list[dict]: ...
+
+def recall(
+    query: str,
+    *,
+    limit: int = 5,
+    hybrid: bool = False,
+    workspace: str | None = None,
+    session=None,
+    embedding_service=None,
+) -> list[dict]: ...
+```
+
+| Function | Description |
+|---|---|
+| `find_exact_id(query)` | Returns the first structured-ID token in `query` (e.g. `D20`, `OR.V`, `MV.3B.Q`) via `ID_PATTERN`, or `None`. Structured ids aren't reliably distinct in embedding space, so `recall` short-circuits to a deterministic lookup instead of semantic search when one is present. |
+| `exact_id_lookup(id_str, session, limit=5)` | Resolves `id_str` via an `ILIKE` match on `BrainDocument.doc_id` or `file_path`, doc_id matches first. |
+| `semantic_search(query, session, embedding_service, limit=5)` | Embeds `query` via the injected `embedding_service` and returns the `limit` nearest `(BrainDocument, distance)` tuples by pgvector cosine distance, nearest first. |
+| `hybrid_search(query, limit=5)` | Reuses `RetrieveChunksNode.retrieve(query, corpus="brain", k=limit)` — the same keyword+semantic fusion ranking the production `DOCUMENT_QA` workflow produces — instead of raw cosine distance. |
+| `recall(query, *, limit=5, hybrid=False, workspace=None, session=None, embedding_service=None)` | The single typed dispatcher: `hybrid=True` delegates straight to `hybrid_search`; otherwise tries `find_exact_id` → `exact_id_lookup` first, falling back to `semantic_search`. Opens its own session via `database.session.db_session` and constructs a default `EmbeddingService` when not injected. Returns a list of normalized dicts (`doc_id`, `file_path`, `title`, `section`, `content`, `score`, `via` — `via` is `"exact-id"` or `"semantic"`, distinct from `hybrid_search`'s own passthrough `via`). `workspace` is accepted but currently **unapplied** — reserved for the CLI layer's `--workspace` resolution, not yet wired into the query itself. |
+
+### `app/brain/graph.py`
+
+```python
+def walk(doc_id: str, *, depth: int = 1, session=None) -> dict: ...
+```
+
+BFS-traverses `brain_edges` from `doc_id` out to `depth` hops, using the same
+`source_doc_id IN <frontier> AND target_doc_id IS NOT NULL` filter shape as
+`RetrieveChunksNode._resolve_neighbor_doc_ids` (authored independently, not shared code).
+Dedupes against already-visited doc ids so cycles never revisit a node, and stops early (without
+erroring) once a hop discovers no new unvisited neighbors — a doc with no edges returns
+`levels: []` rather than an error. Opens its own session via `database.session.db_session` when
+not injected, and does not close a self-opened session (matches `recall`'s pattern). Returns:
+
+```python
+{
+    "root": doc_id,
+    "depth": depth,
+    "levels": [["neighbor_id", ...], ...],   # one entry per hop that added new neighbors
+    "nodes": {"neighbor_id": {"doc_id", "file_path", "title"}, ...},
+}
+```
+
+### `app/brain/pulse.py`
+
+```python
+@dataclass
+class PulseReport:
+    pgvector_reachable: bool
+    embedding_reachable: bool
+    embedding_error: str | None
+    brain_documents_count: int
+    brain_edges_count: int
+    max_indexed_at: datetime | None
+    max_authored_at: datetime | None
+    edges_empty_but_related_exists: bool
+    healthy: bool
+    errors: list[str]
+
+    def to_dict(self) -> dict: ...  # ISO-serializes the two datetime fields
+
+def pulse(*, session=None, embedding_service=None) -> PulseReport: ...
+```
+
+Probes pgvector reachability (row counts for `brain_documents`/`brain_edges`, the
+`indexed_at`/`authored_at` staleness watermarks) and embedding-backend reachability
+(`embedding_service.embed_text("pulse")`) via two isolated, never-raising helpers
+(`_probe_pgvector`, `_probe_embedding`). The load-bearing signal is
+`edges_empty_but_related_exists` — `True` when `brain_edges` is empty but at least one
+`brain_documents` row has a non-empty `related` array (via `func.cardinality(...) > 0`), the
+exact silent failure documented in `scripts/refresh_brain.py` (structural expansion no-oping on
+every query with no error). `healthy` is `False` when pgvector is unreachable, the embedding
+backend is unreachable, or `edges_empty_but_related_exists` is `True`. `pulse()` never raises for
+a degraded backend and never calls `sys.exit` — exit-code mapping is the CLI's job.
+
+### `app/brain/cli.py` — the `syn` console script
+
+```python
+def main(argv: list[str] | None = None) -> int: ...
+```
+
+Registered in `pyproject.toml` (`[project.scripts]`, `syn = "app.brain.cli:main"`, mirroring
+[`createworkflow`](#createworkflow-cli)). An `argparse` dispatcher wiring `recall` / `walk` /
+`pulse` behind short, deterministic, agent-callable verbs: every command accepts `--json` (emits
+one machine-parseable payload and nothing else on stdout), exit codes are deterministic (`0` on
+success; non-zero on a typed `--workspace` resolution error or an unhealthy `pulse` verdict), and
+none of the three commands ever prompts interactively. Mirrors `scripts/query_brain.py`'s
+`sys.path` shim so `app`-relative imports resolve identically whether invoked as the `syn`
+console script or as `python -m app.brain.cli`.
+
+| Subcommand | Arguments | Behavior |
+|---|---|---|
+| `recall QUERY` | `--limit N` (default 5), `--hybrid`, `--workspace NAME`, `--json` | Validates `--workspace` (when given) via `services.workspace_resolver.resolve_workspace_root`, then calls `brain.retrieval.recall`. |
+| `walk DOC_ID` | `--depth N` (default 1), `--workspace NAME` (reserved; unused by `walk`), `--json` | Same `--workspace` validation, then calls `brain.graph.walk`. |
+| `pulse` | `--json` | Calls `brain.pulse.pulse`; exit code is `0` if `report.healthy` else `1`. |
+
+`--workspace` validation is shared across `recall`/`walk` via `_resolve_workspace` (same
+typed-error/exit-code parity), even though `walk` does not yet apply the resolved scope to its
+query — `graph.walk()` in this block takes no `workspace` parameter.
+
+**Known limitation:** console-script installation (`uv run syn ...`) does not currently work for
+this project — `pyproject.toml` has no `[build-system]`/`tool.uv.package = true` (the same
+pre-existing condition also breaks `uv run createworkflow`, unrelated to this block). Invoke the
+dispatcher directly instead: `python -m app.brain.cli <command>`.
+
+### Test coverage
+
+- `tests/brain/test_retrieval.py` — exact-id/semantic/hybrid dispatch parity with the original
+  `scripts/query_brain.py` behavior, `recall`'s normalized dict shape and `via` tagging.
+- `tests/brain/test_graph.py` — single/multi-hop traversal, cycle dedup, no-edges case, against
+  the real pgvector fixture (`tests/database/conftest.py`, extended to also create
+  `BrainEdge.__table__`).
+- `tests/brain/test_pulse.py` — all six health scenarios (reachable/unreachable pgvector,
+  reachable/unreachable embedding backend, `edges_empty_but_related_exists` true/false) against
+  the Docker-gated pgvector fixture.
+- `tests/brain/test_cli.py` — argument parsing, `--json` output shape, exit codes per command,
+  and an end-to-end recall-parity test proving `cli → brain.retrieval.recall →
+  brain.retrieval.hybrid_search → RetrieveChunksNode.retrieve → --json stdout` is one
+  implementation (mocks `RetrieveChunksNode.retrieve`, the same seam
+  `tests/brain/test_retrieval.py` uses).

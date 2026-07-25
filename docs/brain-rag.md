@@ -317,6 +317,13 @@ Each line shows cosine distance (`0.0` = identical, larger = less similar), the 
 its OKF `title`, and the section header. See `docs/scripts.md` § `query_brain.py` for the full
 flag reference. Requires only Postgres + Ollama running (no API server, no Celery worker).
 
+The exact-id/semantic/hybrid dispatch this script uses now lives in `app/brain/retrieval.py`
+(block OR.N1) — this script is a thin caller over it. The same read core also powers the `syn
+recall` console command (`syn recall "..." --json`), and `app/brain/graph.py::walk` / `app/brain/
+pulse.py::pulse` add BFS graph traversal and corpus-health checks behind `syn walk` / `syn
+pulse`. See `docs/scripts.md` § `syn` and `docs/api-reference.md` §
+[Brain Read Core](api-reference.md#brain-read-core-recall--walk--pulse--syn-cli).
+
 A query matching a bare structured code (`D20`, `OR.V`, `MV.3B.Q`) short-circuits straight to
 a `doc_id`/`file_path` lookup — no embedding call. Pass `--hybrid` to run the same
 keyword+semantic fusion `RetrieveChunksNode` uses in production (including the diversity cap
