@@ -114,5 +114,11 @@ disable = [
 createworkflow = "app.core.commands.init_workflow:main"
 syn = "app.brain.cli:main"
 
-[tool.setuptools]
-packages = ["app"]
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+namespaces = true

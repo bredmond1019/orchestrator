@@ -5034,8 +5034,7 @@ Registered in `pyproject.toml` (`[project.scripts]`, `syn = "app.brain.cli:main"
 deterministic (`0` on success; non-zero on a typed `--workspace` resolution error, an unhealthy
 `pulse` verdict, an unregistered `routine` name, or `stale --assert-clean` finding drift), and none
 of the nine commands ever prompts interactively. Mirrors `scripts/query_brain.py`'s `sys.path`
-shim so `app`-relative imports resolve identically whether invoked as the `syn` console script or
-as `python -m app.brain.cli`.
+shim so `app`-relative imports resolve identically regardless of invocation form.
 
 | Subcommand | Arguments | Behavior |
 |---|---|---|
@@ -5056,10 +5055,13 @@ share a uniform error path (`_emit_error`): any exception raised by the underlyi
 call is caught, rendered as `{"error": "..."}` (`--json`) or `error: ...` on stderr, logged via
 `logging.warning`, and mapped to exit code `1` — never a raw traceback.
 
-**Known limitation:** console-script installation (`uv run syn ...`) does not currently work for
-this project — `pyproject.toml` has no `[build-system]`/`tool.uv.package = true` (the same
-pre-existing condition also breaks `uv run createworkflow`, unrelated to this block). Invoke the
-dispatcher directly instead: `python -m app.brain.cli <command>`.
+**Console-script installation:** `pyproject.toml` declares `[build-system]` (setuptools) plus
+`[tool.setuptools.packages.find]` with `namespaces = true` — required because `app/` has no
+`__init__.py` anywhere (implicit PEP 420 namespace packages throughout), so the classic
+`packages = ["app"]` form can't discover it. With that in place, `uv run syn ...` and
+`uv run createworkflow` both resolve as real console scripts from within this repo. To call `syn`
+from another directory without `cd`-ing here, use `uv run --project <path-to-this-repo> syn ...`
+(see `docs/scripts.md` § `syn` for the recommended shell alias).
 
 ### Test coverage
 
