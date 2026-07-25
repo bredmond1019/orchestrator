@@ -1,11 +1,11 @@
-"""Unit tests for scripts/refresh_brain.py.
+"""Unit tests for scripts/refresh_brain.py — the thin shim over app.brain.ops.refresh.
 
 Tests cover:
-- main(): forwards --brain-path/--rebuild/--dry-run to index_brain.main, then
-  calls refresh_edges (skipped entirely on --dry-run, which has no
-  brain_edges equivalent)
-- refresh_edges: shells out to `mev emit-graph --json`, parses the payload,
-  and delegates to load_brain_edges.load_edges (mocked session/DB, no live DB)
+- main(): forwards --brain-path/--rebuild/--dry-run to app.brain.ops.refresh
+  and logs the outcome (delegation asserted by patching `refresh_brain.refresh`)
+- refresh_edges: re-exported from app.brain.ops for backward compatibility —
+  still shells out to `mev emit-graph --json`, parses the payload, and
+  delegates to load_brain_edges.load_edges (mocked session/DB, no live DB)
 """
 
 import json
@@ -32,47 +32,38 @@ FAKE_PAYLOAD = {
 
 
 class TestMain:
-    """main() sequencing: index_brain first, then brain_edges — unless --dry-run."""
+    """main() delegates to app.brain.ops.refresh with the parsed args."""
 
-    @patch("refresh_brain.refresh_edges")
-    @patch("index_brain.main")
-    def test_default_run_calls_both_steps(self, mock_index_main, mock_refresh_edges):
-        mock_refresh_edges.return_value = 3
+    @patch("refresh_brain.refresh")
+    def test_default_run_delegates_to_ops_refresh(self, mock_refresh):
+        mock_refresh.return_value = {"documents": {"dry_run": False}, "edges": {"loaded": 3}}
         main([])
 
-        mock_index_main.assert_called_once_with([])
-        mock_refresh_edges.assert_called_once()
+        mock_refresh.assert_called_once_with(rebuild=False, dry_run=False, brain_path=None)
 
-    @patch("refresh_brain.refresh_edges")
-    @patch("index_brain.main")
-    def test_forwards_rebuild_and_brain_path_to_index_brain(
-        self, mock_index_main, mock_refresh_edges
-    ):
-        mock_refresh_edges.return_value = 0
+    @patch("refresh_brain.refresh")
+    def test_forwards_rebuild_and_brain_path(self, mock_refresh):
+        mock_refresh.return_value = {"documents": {"dry_run": False}, "edges": {"loaded": 0}}
         main(["--brain-path", "/tmp/some-brain", "--rebuild"])
 
-        mock_index_main.assert_called_once_with(
-            ["--brain-path", "/tmp/some-brain", "--rebuild"]
+        mock_refresh.assert_called_once_with(
+            rebuild=True, dry_run=False, brain_path="/tmp/some-brain"
         )
-        # brain_path forwarded through to the edge-refresh step too
-        called_path = mock_refresh_edges.call_args[0][0]
-        assert str(called_path) == "/tmp/some-brain"
 
-    @patch("refresh_brain.refresh_edges")
-    @patch("index_brain.main")
-    def test_dry_run_skips_edge_refresh_entirely(self, mock_index_main, mock_refresh_edges):
+    @patch("refresh_brain.refresh")
+    def test_dry_run_forwarded_and_no_edge_logging_crash(self, mock_refresh):
+        mock_refresh.return_value = {"documents": {"dry_run": True}, "edges": {"skipped": True}}
         main(["--dry-run"])
 
-        mock_index_main.assert_called_once_with(["--dry-run"])
-        mock_refresh_edges.assert_not_called()
+        mock_refresh.assert_called_once_with(rebuild=False, dry_run=True, brain_path=None)
 
 
 class TestRefreshEdges:
-    """refresh_edges: mev emit-graph subprocess -> load_edges, no live DB."""
+    """refresh_edges (re-exported from app.brain.ops): mev subprocess -> load_edges, no live DB."""
 
     @patch("load_brain_edges.load_edges")
     @patch("database.session.db_session")
-    @patch("refresh_brain.subprocess.run")
+    @patch("brain.ops.subprocess.run")
     def test_parses_mev_output_and_delegates_to_load_edges(
         self, mock_run, mock_db_session, mock_load_edges
     ):
@@ -91,7 +82,7 @@ class TestRefreshEdges:
 
     @patch("load_brain_edges.load_edges")
     @patch("database.session.db_session")
-    @patch("refresh_brain.subprocess.run")
+    @patch("brain.ops.subprocess.run")
     def test_propagates_mev_subprocess_failure(self, mock_run, mock_db_session, mock_load_edges):
         import subprocess
 

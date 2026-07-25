@@ -1,9 +1,11 @@
-"""app/brain/cli.py — the `syn` console-script dispatcher (recall, walk, pulse).
+"""app/brain/cli.py — the `syn` console-script dispatcher.
 
 Registered as the `syn` console script (`[project.scripts]` in
 `pyproject.toml`, `syn = "app.brain.cli:main"`), mirroring `createworkflow`.
-Wires the three OR.N1 read cores (`brain.retrieval.recall`, `brain.graph.walk`,
-`brain.pulse.pulse`) behind short, deterministic, agent-callable verbs (D52):
+Wires the OR.N1 read cores (`brain.retrieval.recall`, `brain.graph.walk`,
+`brain.pulse.pulse`) and the OR.N2 write/ops core (`brain.ops.embed_paths`,
+`ingest_dir`, `refresh`, `stale`, `run_routine`) behind short, deterministic,
+agent-callable verbs (D52):
 `--json` on every command emits a machine-parseable payload and nothing else
 on stdout, exit codes are deterministic (0 success; non-zero on an unhealthy
 `pulse` verdict or a typed `--workspace` resolution error), and there are no
@@ -26,7 +28,9 @@ if str(_APP_DIR) not in sys.path:
 def _build_parser() -> argparse.ArgumentParser:
     """Construct the `syn` argparse dispatcher (recall, walk, pulse)."""
     parser = argparse.ArgumentParser(
-        prog="syn", description="Synapse Brain read commands: recall, walk, pulse."
+        prog="syn",
+        description="Synapse Brain commands: recall, walk, pulse, embed, ingest, refresh, "
+        "stale, routine.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -51,6 +55,55 @@ def _build_parser() -> argparse.ArgumentParser:
 
     pulse_parser = subparsers.add_parser("pulse", help="Report brain corpus/substrate health.")
     pulse_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    embed_parser = subparsers.add_parser(
+        "embed", help="Re-embed a single file into brain_documents."
+    )
+    embed_parser.add_argument("file", help="Path to the markdown file to embed.")
+    embed_parser.add_argument(
+        "--force", action="store_true", help="Full re-embed (bypass incremental skip)."
+    )
+    embed_parser.add_argument("--brain-path", default=None, help="Brain repo root override.")
+    embed_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    ingest_parser = subparsers.add_parser(
+        "ingest", help="Index on-disk markdown files under a directory."
+    )
+    ingest_parser.add_argument(
+        "--dir", required=True, dest="directory", help="Directory to index."
+    )
+    ingest_parser.add_argument(
+        "--force", action="store_true", help="Full re-embed (bypass incremental skip)."
+    )
+    ingest_parser.add_argument("--brain-path", default=None, help="Brain repo root override.")
+    ingest_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    refresh_parser = subparsers.add_parser(
+        "refresh", help="Refresh both brain_documents and brain_edges."
+    )
+    refresh_parser.add_argument(
+        "--rebuild", action="store_true", help="Corpus-wide re-index from scratch."
+    )
+    refresh_parser.add_argument(
+        "--dry-run", action="store_true", help="Index dry-run; skip edge reload."
+    )
+    refresh_parser.add_argument("--brain-path", default=None, help="Brain repo root override.")
+    refresh_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    stale_parser = subparsers.add_parser(
+        "stale", help="Report corpus drift (content + structure axes)."
+    )
+    stale_parser.add_argument(
+        "--assert-clean", action="store_true", help="Exit non-zero if any drift is found."
+    )
+    stale_parser.add_argument("--brain-path", default=None, help="Brain repo root override.")
+    stale_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    routine_parser = subparsers.add_parser(
+        "routine", help="Run a named chore (OR.J cron convention)."
+    )
+    routine_parser.add_argument("name", help="Registered routine name (e.g. refresh, stale).")
+    routine_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
     return parser
 
@@ -138,6 +191,101 @@ def _run_pulse(args: argparse.Namespace) -> int:
     return 0 if report.healthy else 1
 
 
+def _run_embed(args: argparse.Namespace) -> int:
+    """Execute `syn embed` and print its result; return the exit code."""
+    from brain.ops import embed_paths  # pylint: disable=import-outside-toplevel
+
+    try:
+        result = embed_paths([args.file], force=args.force, brain_path=args.brain_path)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        print(f"embedded: {args.file}")
+
+    return 0
+
+
+def _run_ingest(args: argparse.Namespace) -> int:
+    """Execute `syn ingest` and print its result; return the exit code."""
+    from brain.ops import ingest_dir  # pylint: disable=import-outside-toplevel
+
+    try:
+        result = ingest_dir(args.directory, force=args.force, brain_path=args.brain_path)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        print(f"ingested: {len(result['ingested'])} file(s)")
+
+    return 0
+
+
+def _run_refresh(args: argparse.Namespace) -> int:
+    """Execute `syn refresh` and print its result; return the exit code."""
+    from brain.ops import refresh  # pylint: disable=import-outside-toplevel
+
+    try:
+        result = refresh(rebuild=args.rebuild, dry_run=args.dry_run, brain_path=args.brain_path)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        print(f"refresh: {result}")
+
+    return 0
+
+
+def _run_stale(args: argparse.Namespace) -> int:
+    """Execute `syn stale` and print its result; return the exit code.
+
+    Exits non-zero only when `--assert-clean` is passed and drift is found,
+    so `OR.J`'s cron can fail on drift while an ad-hoc report stays exit 0.
+    """
+    from brain.ops import stale  # pylint: disable=import-outside-toplevel
+
+    try:
+        result = stale(brain_path=args.brain_path)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        print(
+            f"drift: {result['drift']}  changed: {len(result['changed_files'])}  "
+            f"edges_stale: {result['edges_stale']}"
+        )
+
+    if args.assert_clean and result["drift"]:
+        return 1
+
+    return 0
+
+
+def _run_routine(args: argparse.Namespace) -> int:
+    """Execute `syn routine <name>` and print its result; return the exit code."""
+    from brain.ops import run_routine  # pylint: disable=import-outside-toplevel
+
+    try:
+        result = run_routine(args.name)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        print(f"routine {args.name}: {result}")
+
+    return 0
+
+
 def _emit_error(exc: Exception, *, as_json: bool) -> int:
     """Render a typed error and return a non-zero exit code (never a prompt/traceback)."""
     message = str(exc)
@@ -163,6 +311,11 @@ def main(argv: list[str] | None = None) -> int:
         "recall": _run_recall,
         "walk": _run_walk,
         "pulse": _run_pulse,
+        "embed": _run_embed,
+        "ingest": _run_ingest,
+        "refresh": _run_refresh,
+        "stale": _run_stale,
+        "routine": _run_routine,
     }
     return dispatch[args.command](args)
 
