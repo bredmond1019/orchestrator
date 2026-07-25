@@ -6,7 +6,7 @@ doc_id: scripts
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, refresh_brain, developer scripts, run_eval, workspace mode, syn CLI, recall, walk, pulse]
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, developer scripts, run_eval, workspace mode, syn CLI, recall, walk, pulse, prune]
 related: [getting-started, brain-rag, configuration, evals, workspace-contract]
 ---
 
@@ -306,37 +306,27 @@ structural retrieval architecture.
 
 ---
 
-## `scripts/refresh_brain.py` — Refresh both brain freshness paths in one command
+## `scripts/refresh_brain.py` — removed (use `syn refresh`)
 
-**OR.N2:** this script is now a thin shim over `app.brain.ops.refresh` — the sequencing
-(content-index step, then edge-reload step) and the `mev emit-graph | load_brain_edges.py`
-implementation both moved to `app/brain/ops.py`, reused verbatim by this script, the `syn
-refresh` CLI command, and `syn routine refresh`. `refresh_brain.refresh` / `refresh_brain.
-refresh_edges` are re-exported at module level for backward compatibility with existing
-callers/tests; there is exactly one implementation underneath. Prefer `syn refresh` for new
-agent-facing call sites — this script remains the plain-Python entry point (no console-script
-install required) and stays the documented fallback until `OR.J` (Brain freshness loop) wires
-this into a cron / `bastion brain reindex`.
-
-Runs `index_brain.py` (`brain_documents`) and then `mev emit-graph | load_brain_edges.py`
-(`brain_edges`) in sequence — the two underlying scripts have no shared entry point on their
-own, so running only `index_brain.py` leaves `brain_edges` exactly as stale as never running
-anything at all (confirmed 2026-07-15: `brain_edges` sat at 0 rows through an actively
-re-indexed 4749-row `brain_documents` corpus, and `RetrieveChunksNode`'s structural-expansion
-stage silently returned zero `via="structural"` results the entire time, with no error). Prefer
-this script (or `syn refresh`) over running the two underlying scripts by hand.
+This script was a thin shim over `app.brain.ops.refresh`, kept only for backward
+compatibility while `syn` bedded in. With the delete/rename freshness hook migrated onto
+`syn prune` and no remaining callers, the shim added no value over calling `syn refresh`
+(or `python -m app.brain.cli refresh` — see the console-script caveat under `syn` below)
+directly, so it was deleted rather than kept as a second entry point. There is exactly one
+implementation, in `app/brain/ops.py::refresh`; runs the content-index step
+(`index_brain.py`, `brain_documents`) then the edge-reload step
+(`mev emit-graph | load_brain_edges.py`, `brain_edges`) in sequence — the two underlying
+scripts have no shared entry point on their own, so running only `index_brain.py` leaves
+`brain_edges` exactly as stale as never running anything at all (confirmed 2026-07-15:
+`brain_edges` sat at 0 rows through an actively re-indexed 4749-row `brain_documents`
+corpus, and `RetrieveChunksNode`'s structural-expansion stage silently returned zero
+`via="structural"` results the entire time, with no error).
 
 ```bash
-python scripts/refresh_brain.py
-python scripts/refresh_brain.py --rebuild
-python scripts/refresh_brain.py --brain-path ~/Dev/agentic-portfolio --dry-run
+python -m app.brain.cli refresh
+python -m app.brain.cli refresh --rebuild
+python -m app.brain.cli refresh --brain-path ~/Dev/agentic-portfolio --dry-run
 ```
-
-| Argument | Description |
-|---|---|
-| `--brain-path` | Path to the brain repo root. Forwarded to both steps. Defaults to the nearest ancestor containing `brain.toml`. |
-| `--rebuild` | Forwarded to `index_brain.py` only — drop all non-diagnostic rows and re-index from scratch. `brain_edges` has no rebuild distinction; every run is already a full clear-then-reload. |
-| `--dry-run` | Forwarded to `index_brain.py` only. `brain_edges` has no dry-run mode, so **the edge-refresh step is skipped entirely** when set — nothing would be written either way, but don't read a dry-run's clean exit as proof `brain_edges` is current. |
 
 Requires the `mev` CLI on `PATH` for the edge-refresh step. Exits non-zero (propagates
 `subprocess.CalledProcessError`) if `mev emit-graph` fails, before any `brain_edges` write is
@@ -495,9 +485,10 @@ This script runs from the CLI only — it is **not** a workflow node and is **no
 Agent-callable console script (registered `[project.scripts]` entry in `pyproject.toml`, `syn =
 "app.brain.cli:main"`, mirroring `createworkflow`) wiring the Brain read cores
 (`app/brain/retrieval.py::recall`, `app/brain/graph.py::walk`, `app/brain/pulse.py::pulse`) and
-the Brain write/ops core (`app/brain/ops.py::embed_paths`, `ingest_dir`, `refresh`, `stale`,
-`run_routine`) behind short, deterministic verbs: `recall`, `walk`, `pulse`, `embed`, `ingest`,
-`refresh`, `stale`, `routine`. Every command supports `--json` for a machine-parseable payload
+the Brain write/ops core (`app/brain/ops.py::embed_paths`, `ingest_dir`, `prune_paths`,
+`refresh`, `stale`, `run_routine`) behind short, deterministic verbs: `recall`, `walk`, `pulse`,
+`embed`, `ingest`, `prune`, `refresh`, `stale`, `routine`. Every command supports `--json` for a
+machine-parseable payload
 and nothing else on stdout, has a deterministic exit code (`0` on success; non-zero on an
 unhealthy `pulse` verdict, a typed `--workspace` resolution error, an unknown `routine` name, or
 `stale --assert-clean` finding drift), and never prompts interactively.
@@ -513,6 +504,7 @@ syn pulse --json
 # OR.N2 write/ops verbs
 syn embed docs/scripts.md --force
 syn ingest --dir docs/decisions --json
+syn prune docs/old.md docs/decisions/gone.md    # the brain repo's post-commit hook calls this
 syn refresh --rebuild
 syn stale --assert-clean          # non-zero exit if content or structure drift is found
 syn routine refresh               # runs a registered ROUTINES entry (OR.J cron convention)
@@ -525,7 +517,8 @@ syn routine refresh               # runs a registered ROUTINES entry (OR.J cron 
 | `pulse [--json]` | Reports corpus/substrate health (pgvector + embedding reachability, row counts, staleness, `edges_empty_but_related_exists`). Exits non-zero when unhealthy. |
 | `embed FILE [--force] [--brain-path PATH] [--json]` | Re-embeds a single file via `brain.ops.embed_paths` (which shells into `index_brain.py --only-paths`). `--force` bypasses the incremental skip. |
 | `ingest --dir DIRECTORY [--force] [--brain-path PATH] [--json]` | Indexes every on-disk `*.md` file under `DIRECTORY` via `brain.ops.ingest_dir` (collects the file list, then calls `embed_paths`). Not the OR.Q artifact-ingest API path — this is on-disk file indexing only. |
-| `refresh [--rebuild] [--dry-run] [--brain-path PATH] [--json]` | Runs the content-index step then the edge-reload step via `brain.ops.refresh` — the same sequencing `scripts/refresh_brain.py` now delegates to. `--dry-run` skips the edge-reload step entirely. |
+| `prune PATH [PATH ...] [--dry-run] [--brain-path PATH] [--json]` | Deletes `brain_documents` rows for the named (deleted/renamed-away) file paths via `brain.ops.prune_paths` (shells into `index_brain.py --prune-paths`) — no embedding, no API call. The brain repo's post-commit delete/rename freshness hook calls this. |
+| `refresh [--rebuild] [--dry-run] [--brain-path PATH] [--json]` | Runs the content-index step then the edge-reload step via `brain.ops.refresh`. `--dry-run` skips the edge-reload step entirely. |
 | `stale [--assert-clean] [--brain-path PATH] [--json]` | Read-only drift report via `brain.ops.stale`: content axis (file mtime newer than its indexed `brain_documents` row) and structure axis (`pulse()`'s `edges_empty_but_related_exists`). `--assert-clean` turns any drift into a non-zero exit — the flag `OR.J`'s cron uses to fail loudly; a plain `syn stale` always exits `0`. |
 | `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh` and `stale`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. |
 

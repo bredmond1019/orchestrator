@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-# Ensure scripts/ and app/ are importable, mirroring tests/test_refresh_brain.py
+# Ensure scripts/ and app/ are importable, mirroring tests/brain/test_ops.py
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 for path in (SCRIPTS_DIR, APP_DIR):

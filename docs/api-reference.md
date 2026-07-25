@@ -4889,19 +4889,20 @@ LoadMemoryContextNode
 Block **OR.N1** (read core) + **OR.N2** (write/ops core). Three typed, agent-callable read cores
 over the Brain corpus and its structural graph — `recall` (exact-id / semantic / hybrid search),
 `walk` (BFS over `brain_edges`), and `pulse` (corpus/substrate health) — plus a typed write/ops
-core (`embed_paths`, `ingest_dir`, `refresh`, `stale`, `run_routine`) and a `syn` argparse
-dispatcher exposing all eight as short console verbs. Per CLAUDE.md rule 10 (extract on the
+core (`embed_paths`, `ingest_dir`, `prune_paths`, `refresh`, `stale`, `run_routine`) and a `syn`
+argparse dispatcher exposing all nine as short console verbs. Per CLAUDE.md rule 10 (extract on the
 second consumer), `recall`'s underlying functions were extracted out of `scripts/query_brain.py`'s
 exact-id/semantic dispatch once both the manual smoke-test script and `syn recall` needed the same
 paths; `scripts/query_brain.py` now imports and re-exports them unchanged (see `docs/scripts.md` §
 `query_brain.py`). `walk` and `pulse` are standalone read cores — `walk` deliberately does not
 import or modify `RetrieveChunksNode._resolve_neighbor_doc_ids`, so `DOCUMENT_QA`'s
 structural-expansion ranking stays byte-identical while this module evolves independently. The
-write/ops core (`app/brain/ops.py`) is likewise the single shared implementation behind
-`scripts/refresh_brain.py` (now a thin shim, see `docs/scripts.md` § `refresh_brain.py`), the
-`syn embed`/`ingest`/`refresh`/`stale`/`routine` CLI verbs, and `index_brain.py`'s new
-`--only-paths`/`--force` flags — no second chunk->embed->write implementation exists anywhere in
-this block.
+write/ops core (`app/brain/ops.py`) is the single shared implementation behind the
+`syn embed`/`ingest`/`prune`/`refresh`/`stale`/`routine` CLI verbs, the brain repo's post-commit
+delete/rename freshness hook (`prune_paths`), and `index_brain.py`'s `--only-paths`/`--force`
+flags — no second chunk->embed->write implementation exists anywhere in this block. The former
+`scripts/refresh_brain.py` compat shim was retired once `syn refresh` had no remaining callers
+that needed it (see `docs/scripts.md` § `refresh_brain.py`).
 
 ### `app/brain/retrieval.py`
 
@@ -4982,8 +4983,8 @@ Probes pgvector reachability (row counts for `brain_documents`/`brain_edges`, th
 (`_probe_pgvector`, `_probe_embedding`). The load-bearing signal is
 `edges_empty_but_related_exists` — `True` when `brain_edges` is empty but at least one
 `brain_documents` row has a non-empty `related` array (via `func.cardinality(...) > 0`), the
-exact silent failure documented in `scripts/refresh_brain.py` (structural expansion no-oping on
-every query with no error). `healthy` is `False` when pgvector is unreachable, the embedding
+exact silent failure `syn refresh`/`app.brain.ops.refresh` exists to close (structural expansion
+no-oping on every query with no error). `healthy` is `False` when pgvector is unreachable, the embedding
 backend is unreachable, or `edges_empty_but_related_exists` is `True`. `pulse()` never raises for
 a degraded backend and never calls `sys.exit` — exit-code mapping is the CLI's job.
 
@@ -4995,6 +4996,7 @@ class MevUnavailableError(Exception): ...   # `mev` binary not on PATH
 
 def embed_paths(paths: list[str], *, force: bool = False, brain_path: str | None = None) -> dict: ...
 def ingest_dir(directory: str, *, force: bool = False, brain_path: str | None = None) -> dict: ...
+def prune_paths(paths: list[str], *, dry_run: bool = False, brain_path: str | None = None) -> dict: ...
 def refresh_edges(brain_path: Path) -> int: ...
 def refresh(*, rebuild: bool = False, dry_run: bool = False, brain_path: str | None = None) -> dict: ...
 def stale(*, brain_path: str | None = None) -> dict: ...
@@ -5008,15 +5010,15 @@ def run_routine(name: str) -> dict: ...
 |---|---|
 | `embed_paths(paths, *, force=False, brain_path=None)` | Re-embeds exactly the named files by shelling into `index_brain.main(["--only-paths", *paths, ...])` — no second chunk->embed->write implementation. `force=True` forwards `--force` (bypass the incremental skip). Returns `{"embedded": [...], "forced": bool}`. |
 | `ingest_dir(directory, *, force=False, brain_path=None)` | Collects every `*.md` file under `directory` (`Path.rglob`, sorted) and calls `embed_paths` on the full list. Raises `NotADirectoryError` when `directory` doesn't exist or isn't a directory. A directory with no matching files returns `{"ingested": [], "forced": force}` without calling `embed_paths`. This is on-disk *file* indexing (frontmatter parsing, `doc_type` classification, `authored_at` from mtime) — a different concern from `app/brain/ingest.py::ingest_artifact`'s arbitrary-content API path; do not route through the OR.Q ingest core. |
-| `refresh_edges(brain_path)` | Runs `mev emit-graph --json <brain_path>`, parses the JSON payload, and loads it into `brain_edges` via `load_brain_edges.load_edges`. Raises `MevUnavailableError` when the `mev` binary isn't on `PATH`. Moved here (task 2) so `syn refresh`, the `refresh_brain.py` shim, and `syn routine refresh` share one edge-reload implementation. |
-| `refresh(*, rebuild=False, dry_run=False, brain_path=None)` | Runs the content-index step (`index_brain.main`) then the edge-reload step (`refresh_edges`), in that order — supersedes `scripts/refresh_brain.py`'s old inline `main()` sequencing. `dry_run=True` skips the edge step entirely (`brain_edges` has no dry-run equivalent) and returns `{"documents": {"dry_run": True}, "edges": {"skipped": True}}`; otherwise returns `{"documents": {"dry_run": False}, "edges": {"loaded": N}}`. |
+| `prune_paths(paths, *, dry_run=False, brain_path=None)` | Deletes `brain_documents` rows for deleted/renamed-away file paths by shelling into `index_brain.main(["--prune-paths", *paths, ...])` — no embedding, no API call. The single implementation shared by `syn prune` and the brain repo's post-commit delete/rename freshness hook (which previously called `scripts/index_brain.py --prune-paths` directly). Returns `{"pruned": [...], "dry_run": bool}`. |
+| `refresh_edges(brain_path)` | Runs `mev emit-graph --json <brain_path>`, parses the JSON payload, and loads it into `brain_edges` via `load_brain_edges.load_edges`. Raises `MevUnavailableError` when the `mev` binary isn't on `PATH`. The single edge-reload implementation shared by `syn refresh` and `syn routine refresh`. |
+| `refresh(*, rebuild=False, dry_run=False, brain_path=None)` | Runs the content-index step (`index_brain.main`) then the edge-reload step (`refresh_edges`), in that order. `dry_run=True` skips the edge step entirely (`brain_edges` has no dry-run equivalent) and returns `{"documents": {"dry_run": True}, "edges": {"skipped": True}}`; otherwise returns `{"documents": {"dry_run": False}, "edges": {"loaded": N}}`. |
 | `stale(*, brain_path=None)` | Read-only drift report — never writes. Content axis: reuses `index_brain._collect_files`/`_load_brain_config` and, per file, compares its mtime to the newest matching `brain_documents.indexed_at` row (the same comparison the incremental skip makes, but non-destructive). Structure axis: reuses `brain.pulse.pulse()`'s `edges_empty_but_related_exists` flag rather than re-deriving it. Returns `{"changed_files": [...], "edges_stale": bool, "drift": bool}` — `drift` is `False` on an untouched, fully-loaded corpus. |
 | `run_routine(name)` | Dispatches to `ROUTINES[name]()`. Raises `UnknownRoutineError` (listing the known names) for an unregistered name. `ROUTINES` currently registers `"refresh"` and `"stale"`; entries are lambdas (not direct function references) specifically so `patch("app.brain.ops.refresh", ...)` / `patch("app.brain.ops.stale", ...)` affects dispatch — a direct reference would bind the original function object at import time. This is the convention `OR.J`'s cron invokes. |
 
-`embed_paths`, `ingest_dir`, `refresh`, and `stale` each locally import `index_brain` (and, for
-the edge step, `load_brain_edges`/`database.session`) at call time, with `app/` and `scripts/`
-inserted into `sys.path` at module load — mirroring `scripts/refresh_brain.py`'s pre-existing
-`sys.path` pattern.
+`embed_paths`, `ingest_dir`, `prune_paths`, `refresh`, and `stale` each locally import
+`index_brain` (and, for the edge step, `load_brain_edges`/`database.session`) at call time, with
+`app/` and `scripts/` inserted into `sys.path` at module load.
 
 ### `app/brain/cli.py` — the `syn` console script
 
@@ -5026,14 +5028,14 @@ def main(argv: list[str] | None = None) -> int: ...
 
 Registered in `pyproject.toml` (`[project.scripts]`, `syn = "app.brain.cli:main"`, mirroring
 [`createworkflow`](#createworkflow-cli)). An `argparse` dispatcher wiring `recall` / `walk` /
-`pulse` (OR.N1 read core) and `embed` / `ingest` / `refresh` / `stale` / `routine` (OR.N2
-write/ops core) behind short, deterministic, agent-callable verbs: every command accepts `--json`
-(emits one machine-parseable payload and nothing else on stdout), exit codes are deterministic
-(`0` on success; non-zero on a typed `--workspace` resolution error, an unhealthy `pulse`
-verdict, an unregistered `routine` name, or `stale --assert-clean` finding drift), and none of the
-eight commands ever prompts interactively. Mirrors `scripts/query_brain.py`'s `sys.path` shim so
-`app`-relative imports resolve identically whether invoked as the `syn` console script or as
-`python -m app.brain.cli`.
+`pulse` (OR.N1 read core) and `embed` / `ingest` / `prune` / `refresh` / `stale` / `routine`
+(OR.N2 write/ops core) behind short, deterministic, agent-callable verbs: every command accepts
+`--json` (emits one machine-parseable payload and nothing else on stdout), exit codes are
+deterministic (`0` on success; non-zero on a typed `--workspace` resolution error, an unhealthy
+`pulse` verdict, an unregistered `routine` name, or `stale --assert-clean` finding drift), and none
+of the nine commands ever prompts interactively. Mirrors `scripts/query_brain.py`'s `sys.path`
+shim so `app`-relative imports resolve identically whether invoked as the `syn` console script or
+as `python -m app.brain.cli`.
 
 | Subcommand | Arguments | Behavior |
 |---|---|---|
@@ -5042,6 +5044,7 @@ eight commands ever prompts interactively. Mirrors `scripts/query_brain.py`'s `s
 | `pulse` | `--json` | Calls `brain.pulse.pulse`; exit code is `0` if `report.healthy` else `1`. |
 | `embed FILE` | `--force`, `--brain-path PATH`, `--json` | Calls `brain.ops.embed_paths([FILE], ...)`. Typed errors are caught and rendered via `_emit_error` (exit `1`), never a raw traceback. |
 | `ingest` | `--dir DIRECTORY` (required, dest `directory`), `--force`, `--brain-path PATH`, `--json` | Calls `brain.ops.ingest_dir(DIRECTORY, ...)`. |
+| `prune PATH [PATH ...]` | `--dry-run`, `--brain-path PATH`, `--json` | Calls `brain.ops.prune_paths(PATHS, ...)`. The brain repo's post-commit delete/rename freshness hook calls this. |
 | `refresh` | `--rebuild`, `--dry-run`, `--brain-path PATH`, `--json` | Calls `brain.ops.refresh(...)`. |
 | `stale` | `--assert-clean`, `--brain-path PATH`, `--json` | Calls `brain.ops.stale(...)`; always prints the report and returns `0` unless `--assert-clean` is set and `result["drift"]` is `True`, in which case it returns `1`. |
 | `routine NAME` | `--json` | Calls `brain.ops.run_routine(NAME)`; an `UnknownRoutineError` is caught by the same `_emit_error` path as the other write/ops commands. |
@@ -5075,14 +5078,13 @@ dispatcher directly instead: `python -m app.brain.cli <command>`.
   `tests/brain/test_retrieval.py` uses).
 - `tests/brain/test_ops.py` — pure-mock coverage (mocked session, mocked `subprocess`/
   `index_brain.main`) of `embed_paths`, `ingest_dir` (including the not-a-directory and
-  no-matching-files cases), `refresh_edges` (including `MevUnavailableError`), `refresh`
-  (including the `dry_run` short-circuit), `stale`'s content/structure drift detection against
-  `tmp_path` fixtures, and `run_routine`/`ROUTINES` dispatch (including `UnknownRoutineError`).
+  no-matching-files cases), `prune_paths`, `refresh_edges` (including `MevUnavailableError`),
+  `refresh` (including the `dry_run` short-circuit), `stale`'s content/structure drift detection
+  against `tmp_path` fixtures, and `run_routine`/`ROUTINES` dispatch (including
+  `UnknownRoutineError`).
 - `tests/brain/test_cli_ops.py` — argument parsing and `--json`/exit-code behavior for the
-  `embed`/`ingest`/`refresh`/`stale`/`routine` subcommands, including `stale --assert-clean`'s
-  drift-dependent exit code and the shared `_emit_error` typed-exception path.
+  `embed`/`ingest`/`prune`/`refresh`/`stale`/`routine` subcommands, including
+  `stale --assert-clean`'s drift-dependent exit code and the shared `_emit_error` typed-exception
+  path.
 - `tests/test_index_brain.py` — `--only-paths` filtering (matched/unmatched/mixed paths, warning
-  on unmatched) and `--force`'s incremental-skip bypass.
-- `tests/test_refresh_brain.py` — updated to assert delegation to `app.brain.ops.refresh`/
-  `refresh_edges` (re-exported at module level) instead of asserting against the old
-  duplicated inline implementation.
+  on unmatched), `--force`'s incremental-skip bypass, and `--prune-paths` (`TestPrunePaths`).

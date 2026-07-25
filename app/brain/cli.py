@@ -4,7 +4,7 @@ Registered as the `syn` console script (`[project.scripts]` in
 `pyproject.toml`, `syn = "app.brain.cli:main"`), mirroring `createworkflow`.
 Wires the OR.N1 read cores (`brain.retrieval.recall`, `brain.graph.walk`,
 `brain.pulse.pulse`) and the OR.N2 write/ops core (`brain.ops.embed_paths`,
-`ingest_dir`, `refresh`, `stale`, `run_routine`) behind short, deterministic,
+`ingest_dir`, `prune_paths`, `refresh`, `stale`, `run_routine`) behind short, deterministic,
 agent-callable verbs (D52):
 `--json` on every command emits a machine-parseable payload and nothing else
 on stdout, exit codes are deterministic (0 success; non-zero on an unhealthy
@@ -29,8 +29,8 @@ def _build_parser() -> argparse.ArgumentParser:
     """Construct the `syn` argparse dispatcher (recall, walk, pulse)."""
     parser = argparse.ArgumentParser(
         prog="syn",
-        description="Synapse Brain commands: recall, walk, pulse, embed, ingest, refresh, "
-        "stale, routine.",
+        description="Synapse Brain commands: recall, walk, pulse, embed, ingest, prune, "
+        "refresh, stale, routine.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -77,6 +77,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ingest_parser.add_argument("--brain-path", default=None, help="Brain repo root override.")
     ingest_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    prune_parser = subparsers.add_parser(
+        "prune", help="Delete brain_documents rows for deleted/renamed-away paths."
+    )
+    prune_parser.add_argument("paths", nargs="+", help="File path(s) to prune.")
+    prune_parser.add_argument(
+        "--dry-run", action="store_true", help="Report what would be deleted without writing."
+    )
+    prune_parser.add_argument("--brain-path", default=None, help="Brain repo root override.")
+    prune_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
     refresh_parser = subparsers.add_parser(
         "refresh", help="Refresh both brain_documents and brain_edges."
@@ -225,6 +235,24 @@ def _run_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_prune(args: argparse.Namespace) -> int:
+    """Execute `syn prune` and print its result; return the exit code."""
+    from brain.ops import prune_paths  # pylint: disable=import-outside-toplevel
+
+    try:
+        result = prune_paths(args.paths, dry_run=args.dry_run, brain_path=args.brain_path)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        suffix = " (dry-run)" if result["dry_run"] else ""
+        print(f"pruned: {len(result['pruned'])} path(s){suffix}")
+
+    return 0
+
+
 def _run_refresh(args: argparse.Namespace) -> int:
     """Execute `syn refresh` and print its result; return the exit code."""
     from brain.ops import refresh  # pylint: disable=import-outside-toplevel
@@ -313,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         "pulse": _run_pulse,
         "embed": _run_embed,
         "ingest": _run_ingest,
+        "prune": _run_prune,
         "refresh": _run_refresh,
         "stale": _run_stale,
         "routine": _run_routine,
