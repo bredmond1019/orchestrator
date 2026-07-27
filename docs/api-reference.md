@@ -62,37 +62,38 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 40. [API Security and CORS](#api-security-and-cors)
 41. [API Layer](#api-layer)
 42. [Ingest API](#ingest-api-post-ingest)
-43. [DocumentIngestEventSchema](#documentingesteventschemae)
-44. [ParseDocumentNode](#parsedocumentnode)
-45. [ChunkDocumentNode](#chunkdocumentnode)
-46. [EmbedChunksNode](#embedchunksnode)
-47. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
-48. [DocumentIngestWorkflow](#documentingestworkflow)
-49. [RetrieveChunksNode](#retrievechunksnode)
-50. [DocumentQAEventSchema](#documentqaeventschemae)
-51. [EmbedQuestionNode](#embedquestionnode)
-52. [AssembleContextNode](#assemblecontextnode)
-53. [AnswerNode](#answernode)
-54. [GroundingRouterNode](#groundingrouternode)
-55. [AbstainNode](#abstainnode)
-56. [VerifyCitationsNode](#verifycitationsnode)
-57. [UpdateSessionMemoryNode](#updatesessionmemorynode)
-58. [DocumentQAWorkflow](#documentqaworkflow)
-59. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
-60. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
-61. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
-62. [decay module](#decay-module)
-63. [EpisodeWriteService](#episodewriteservice)
-64. [UpsertMemoryNode](#upsertmemorynode)
-65. [MemoryLoaderNode](#memoryloadernode)
-66. [IngestTimeExtractionNode](#ingesttimeextractionnode)
-67. [MemoryWriteNode](#memorywritenode)
-68. [MemoryIngestWorkflow](#memoryingestworkflow)
-69. [LoadMemoryContextNode](#loadmemorycontextnode)
-70. [ConsolidationNode](#consolidationnode)
-71. [ConsolidationWriteNode](#consolidationwritenode)
-72. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
-73. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
+43. [Read API](#read-api-get-recall-walk-pulse)
+44. [DocumentIngestEventSchema](#documentingesteventschemae)
+45. [ParseDocumentNode](#parsedocumentnode)
+46. [ChunkDocumentNode](#chunkdocumentnode)
+47. [EmbedChunksNode](#embedchunksnode)
+48. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
+49. [DocumentIngestWorkflow](#documentingestworkflow)
+50. [RetrieveChunksNode](#retrievechunksnode)
+51. [DocumentQAEventSchema](#documentqaeventschemae)
+52. [EmbedQuestionNode](#embedquestionnode)
+53. [AssembleContextNode](#assemblecontextnode)
+54. [AnswerNode](#answernode)
+55. [GroundingRouterNode](#groundingrouternode)
+56. [AbstainNode](#abstainnode)
+57. [VerifyCitationsNode](#verifycitationsnode)
+58. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+59. [DocumentQAWorkflow](#documentqaworkflow)
+60. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
+61. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
+62. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
+63. [decay module](#decay-module)
+64. [EpisodeWriteService](#episodewriteservice)
+65. [UpsertMemoryNode](#upsertmemorynode)
+66. [MemoryLoaderNode](#memoryloadernode)
+67. [IngestTimeExtractionNode](#ingesttimeextractionnode)
+68. [MemoryWriteNode](#memorywritenode)
+69. [MemoryIngestWorkflow](#memoryingestworkflow)
+70. [LoadMemoryContextNode](#loadmemorycontextnode)
+71. [ConsolidationNode](#consolidationnode)
+72. [ConsolidationWriteNode](#consolidationwritenode)
+73. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
+74. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
 
 ---
 
@@ -3512,6 +3513,143 @@ dependency.
 The pure chunking helpers (`chunk_by_section`, `_split_chunk`, `_count_tokens`,
 `_is_header_only_chunk`, `build_context_prefix`) live in `app/brain/chunking.py` and are shared
 with `scripts/index_brain.py`, which re-exports them so existing imports keep resolving.
+
+---
+
+## Read API (GET /recall, /walk, /pulse)
+
+**Sources:** `app/api/read.py`, `app/schemas/read_schema.py`, `app/brain/retrieval.py`,
+`app/brain/graph.py`, `app/brain/pulse.py`
+
+The read half of the D51 HTTP adapter (OR.Q2) whose write half is the [Ingest
+API](#ingest-api-post-ingest) (OR.Q) — three thin, authenticated `GET` routes over the
+[Brain Read Core](#brain-read-core-recall--walk--pulse--syn-cli) (OR.N1) that `syn recall` /
+`syn walk` / `syn pulse` already call, so every non-local consumer can read the corpus over HTTP
+instead of opening its own Postgres connection. All three are mounted at the router root
+(`app/api/router.py`, no `/recall`/`/walk`/`/pulse` prefix), gated by the same
+[`require_api_key`](#require_api_key) dependency as `POST /events/` and `POST /ingest/*`, and
+delegate to the read core unchanged — no filtering, re-ranking, or reshaping beyond building the
+typed response model. Ranking, fusion, and traversal output stay byte-identical to what the `syn`
+CLI returns today. See `docs/data-contract.md` §7 for the canonical contract (v1.4.0).
+
+### `RecallResult` / `RecallResponse`
+
+**Source:** `app/schemas/read_schema.py`
+
+```python
+class RecallResult(BaseModel):
+    doc_id: str | None
+    file_path: str
+    title: str | None
+    section: str | None
+    content: str
+    score: float
+    via: str
+
+
+class RecallResponse(BaseModel):
+    query: str
+    count: int
+    results: list[RecallResult]
+```
+
+Pure serialization mirrors of `retrieval.recall()`'s normalized dict list (`_normalize_doc_row`) —
+not a new shape. `RecallResponse.results` is the same list `recall()` returns, `count` is its
+length, and `query` echoes the searched string.
+
+### `WalkNode` / `WalkResponse`
+
+**Source:** `app/schemas/read_schema.py`
+
+```python
+class WalkNode(BaseModel):
+    doc_id: str
+    file_path: str | None
+    title: str | None
+
+
+class WalkResponse(BaseModel):
+    root: str
+    depth: int
+    levels: list[list[str]]
+    nodes: dict[str, WalkNode]
+```
+
+Mirrors `graph.walk()`'s return dict field-for-field. A `doc_id` with no outgoing/incoming edges
+still validates — `levels: []`, `nodes: {}` — the route returns `200`, not `404`.
+
+### `PulseResponse`
+
+**Source:** `app/schemas/read_schema.py`
+
+```python
+class PulseResponse(BaseModel):
+    pgvector_reachable: bool
+    embedding_reachable: bool
+    embedding_error: str | None
+    brain_documents_count: int
+    brain_edges_count: int
+    max_indexed_at: str | None
+    max_authored_at: str | None
+    edges_empty_but_related_exists: bool
+    healthy: bool
+    errors: list[str]
+```
+
+One field per `pulse.PulseReport` attribute, built from `PulseReport.to_dict()` — the two
+timestamp fields are already ISO-8601 strings (or `None`) by the time they reach this model, since
+`to_dict()` performs that serialization.
+
+### `GET /recall`
+
+**Source:** `app/api/read.py`
+
+```
+GET /recall?q=<str>&limit=<int>&hybrid=<bool>  X-API-Key: <key>
+  → 200 RecallResponse(query="...", count=2, results=[...])
+  → 401 if X-API-Key is absent or wrong
+  → 422 if q is missing/empty, or limit/hybrid fail their type/range constraints
+```
+
+`q` is required (`Query(..., min_length=1)`); `limit` defaults to `5` (`ge=1, le=50`); `hybrid`
+defaults to `False`. Calls `retrieval.recall(q, limit=limit, hybrid=hybrid, session=session)` with
+the request's injected `Session` — the route opens no session of its own. `recall()`'s `workspace`
+argument is **not** wired to a query param; passing `?workspace=...` has no effect (explicitly out
+of scope for OR.Q2).
+
+### `GET /walk`
+
+**Source:** `app/api/read.py`
+
+```
+GET /walk?doc_id=<str>&depth=<int>  X-API-Key: <key>
+  → 200 WalkResponse(root="D20", depth=1, levels=[], nodes={})
+  → 401 if X-API-Key is absent or wrong
+  → 422 if doc_id is missing/empty, or depth fails its type/range constraint
+```
+
+`doc_id` is required (`Query(..., min_length=1)`); `depth` defaults to `1` (`ge=1, le=5`). Calls
+`graph.walk(doc_id, depth=depth, session=session)`; a `doc_id` with no edges still returns `200`
+with `levels: []`, never a `404`.
+
+### `GET /pulse`
+
+**Source:** `app/api/read.py`
+
+```
+GET /pulse  X-API-Key: <key>
+  → 200 PulseResponse(pgvector_reachable=True, ..., healthy=True, errors=[])
+  → 401 if X-API-Key is absent or wrong
+```
+
+No query params. Calls `pulse_core.pulse(session=session)` and returns `PulseResponse(**report.to_dict())`
+— `200` even when `healthy` is `False`; the flag is the signal, callers branch on it rather than on
+status code.
+
+All three routes wrap their core call so an underlying exception surfaces as
+`HTTPException(status_code=500, detail=...)` via `raise ... from e`, mirroring
+`app/api/ingest.py`; `503` is returned instead of `401`/`200` when `ORCHESTRATION_API_KEY` is
+unset (see [`require_api_key`](#require_api_key), reused unchanged).
 
 ---
 
