@@ -11,6 +11,44 @@ timestamp: "2026-07-25T14:30:21Z"
 
 ---
 
+## [run: 2026-07-27]
+
+### `or-q2-brain-read-api` shipped — Brain read API (`GET /recall`, `/walk`, `/pulse`) — the read half of the D51 HTTP adapter
+- **What:** Ran `/sdlc-flow or-q2-brain-read-api` end to end (Tasks 1–6, all PASS, reviewed PASS in 1
+  attempt). Task 1: added `RecallResult`/`RecallResponse`, `WalkNode`/`WalkResponse`, and
+  `PulseResponse` Pydantic models in `app/schemas/read_schema.py` mirroring the `app/brain/` read
+  core's exact return shapes. Task 2: added `GET /recall`, `/walk`, `/pulse` in `app/api/read.py` as
+  thin authenticated adapters over `app.brain.retrieval.recall()` / `app.brain.graph.walk()` /
+  `app.brain.pulse.pulse()`, mounted in `app/api/router.py` behind the existing `require_api_key`
+  guard. Task 3: added core-vs-route parity tests (`tests/api/test_read_parity.py`, plus a new
+  `tests/api/conftest.py` to surface the Docker-gated pgvector fixtures under `tests/api/`) proving
+  the three routes are byte-identical thin adapters, including the workspace-not-wired negative
+  guard. Task 4: `docs/data-contract.md` bumped 1.3.0 → 1.4.0 (§3/§7 + changelog) and
+  `docs/api-reference.md` gained a Read API section cross-referencing Ingest API and Brain Read Core.
+  Task 5: re-pinned `bastion`/`engine-rs` consumer `data-contract.md` copies to 1.4.0 in their own
+  sibling repos (staged there, not committable from this repo) — neither wires a consumer yet. Task
+  6: validated the full gate — ruff clean, pylint 10.00/10, import checks clean, full pytest suite
+  green — no code changes needed.
+- **Why:** Completes the read half of the D51 HTTP adapter seam that `POST /ingest/*` (`OR.Q`) opened
+  on the write side, so every non-local Bastion consumer can read the corpus (recall/walk/pulse)
+  through one authenticated door instead of opening its own Postgres connection.
+- **Refs:** `planning/or-q2-brain-read-api/tasks.md`; block `OR.Q2` (now closed in `state.json`).
+  Next: `OR.W` (external-intelligence loop) or `OR.R` (Brain-as-MCP-server), both Wave 5, Bastion
+  program.
+
+```
+785662e docs: bump data-contract to 1.4.0 for GET /recall, /walk, /pulse
+aa9b801 test: add core-vs-route parity tests for GET /recall, /walk, /pulse
+8835e9e feat: implement or-q2-brain-read-api-task2
+f3edd5f feat: implement or-q2-brain-read-api-task1
+7ca4ded updated docs
+8451810 chore: inline /handoff — no subagents
+0c9ff86 fix(packaging): make syn/createworkflow real console scripts
+19cfa45 chore(brain): add syn prune, retire refresh_brain.py shim
+```
+
+---
+
 ## [run: 2026-07-25]
 
 ### `or-n2-syn-write-ops-commands` shipped — `syn` write + ops commands (embed, ingest, refresh, stale, routine) + the `app/brain` write/ops core
