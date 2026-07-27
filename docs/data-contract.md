@@ -12,7 +12,7 @@ related: [D28-node-level-execution-state, D30-data-contract-ownership, app-archi
 
 # Data Contract — Orchestrator Execution State
 
-**Contract Version: 1.3.0**
+**Contract Version: 1.4.0**
 
 This is the **single source of truth** for the shape any external consumer reads to observe a
 workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
@@ -71,6 +71,11 @@ contains all nodes; the graph endpoint supplies the **edges** (`node_runs` carri
 - **Reserved (not built):** a list-active-runs endpoint (`GET /events?status=running`) is reserved
   for a future minor version, to be added only if direct DB-schema coupling for that query becomes
   a problem.
+- **Landed in v1.4.0:** `GET /recall`, `GET /walk`, `GET /pulse` (§7) — the read half of the D51
+  HTTP adapter whose write half (`POST /ingest/*`) landed in v1.3.0. A consumer that wants to query
+  the corpus (semantic/hybrid search, structural-graph traversal, or a health snapshot) no longer
+  needs its own direct `brain_documents`/`brain_edges` coupling; it can go through this HTTP door
+  instead, the same way `POST /ingest/*` closed that gap for writes.
 
 Consumers are **observers, never writers** of the `events` table itself — no consumer writes to
 the DB or persists execution state directly. `bastion` never opens a write connection to
@@ -239,6 +244,9 @@ Mounted at `/` (`app/api/`):
 | `POST` | `/events/{run_id}/abort` | — (no body) | `202 { "run_id": str, "status": "aborting" }` — **abort** a live run (new in v1.1.0; **not yet implemented in orchestrator's own API** — see "Known gap" above; live in `engine-rs` today) |
 | `POST` | `/ingest/proposal` | `{ "artifact_id": str, "company_name": str, "doc_type": str, "section": str, "content": str, "roadmap": object }` | `200 { "artifact_id": str, "chunks_written": int }` — **ingest** an engine-rs proposal artifact (new in v1.3.0) |
 | `POST` | `/ingest/artifact` | `{ "artifact_id": str, "doc_type": str, "content": str, "section": str \| null, "project": str \| null, "title": str \| null, "description": str \| null, "metadata": object \| null }` | `200 { "artifact_id": str, "chunks_written": int }` — **ingest** a generic artifact (new in v1.3.0) |
+| `GET` | `/recall?q=<str>&limit=<int>&hybrid=<bool>` | — | `200 { "query": str, "count": int, "results": [ { "doc_id": str \| null, "file_path": str, "title": str \| null, "section": str \| null, "content": str, "score": float, "via": str }, ... ] }` — **recall** corpus results (new in v1.4.0) |
+| `GET` | `/walk?doc_id=<str>&depth=<int>` | — | `200 { "root": str, "depth": int, "levels": [[str, ...], ...], "nodes": { "<doc_id>": { "doc_id": str, "file_path": str \| null, "title": str \| null } } }` — **walk** the structural graph (new in v1.4.0) |
+| `GET` | `/pulse` | — | `200 { "pgvector_reachable": bool, "embedding_reachable": bool, "embedding_error": str \| null, "brain_documents_count": int, "brain_edges_count": int, "max_indexed_at": str \| null, "max_authored_at": str \| null, "edges_empty_but_related_exists": bool, "healthy": bool, "errors": [str, ...] }` — **pulse** health snapshot (new in v1.4.0) |
 
 `GET /workflows/{type}/graph` returns `404` for an unknown type. Node names in `nodes`/`edges` are
 class names (§1).
@@ -323,6 +331,38 @@ with §3's "observers, never writers" rule for `events`: `bastion` never calls t
 artifacts to ingest); only engine-rs's hybrid workflows POST here, and doing so does not make
 `bastion` — or any other read-only consumer — a writer of `events`.
 
+**`GET /recall`, `GET /walk`, `GET /pulse` (new in v1.4.0).** The read half of the D51 HTTP adapter
+whose write half (`POST /ingest/*`) landed in v1.3.0 — three thin, authenticated adapters over the
+one `app/brain/` read core (`retrieval.recall`, `graph.walk`, `pulse.pulse`) that the `syn recall`
+/ `syn walk` / `syn pulse` CLI commands already call, so every non-local consumer can read the
+corpus through one door instead of opening its own Postgres connection. All three reuse the same
+`X-API-Key` gate as `POST /events/`, change no retrieval/traversal/health-probe behavior, and read
+only `brain_documents`/`brain_edges` — outside this contract's `events` scope, documented here
+because they share the same HTTP surface and auth gate (the same framing v1.3.0 used for
+`/ingest/*`).
+
+- **`GET /recall`** — `q` (required, non-empty), `limit` (default `5`, `1`–`50`), `hybrid` (default
+  `false`). Delegates to `app.brain.retrieval.recall()` unchanged; response `results` matches that
+  function's normalized dict list exactly. The `workspace` argument `recall()` accepts is **not**
+  wired to a query param — deliberately out of scope for this block.
+- **`GET /walk`** — `doc_id` (required, non-empty), `depth` (default `1`, `1`–`5`). Delegates to
+  `app.brain.graph.walk()` unchanged. A `doc_id` with no edges returns `200` with `levels: []`, not
+  a `404`.
+- **`GET /pulse`** — no params. Delegates to `app.brain.pulse.pulse().to_dict()` unchanged. Returns
+  `200` even when `healthy` is `false` — the flag is the signal, not the status code.
+- **`401 Unauthorized`** — missing or mismatched `X-API-Key` header (no body), same gate as
+  `POST /events/`. `503` if `ORCHESTRATION_API_KEY` is unset (fail-closed).
+- **`422 Unprocessable Entity`** — a missing required query param (`q` on `/recall`, `doc_id` on
+  `/walk`) or a malformed one (non-integer `limit`/`depth`, or an out-of-range value) is rejected
+  as a typed Pydantic validation error; it is never surfaced as a `500`.
+- **`200 OK`** — the success bodies in the §7 table above, built from
+  `app/schemas/read_schema.py`'s `RecallResponse` / `WalkResponse` / `PulseResponse` models, pure
+  serialization mirrors of the core's existing return shapes.
+
+These are **reader** endpoints, consistent with §3's "observers, never writers" rule: they open no
+write transaction, add no column, and add no second retrieval/traversal implementation — the
+routes stay thin adapters over the one `app/brain/` read core.
+
 **Reserved (not implemented in v1.x):** `GET /events?status=running`. A promoted indexed `status`
 column, streaming/SSE, and any change to the `NodeRun` status vocabulary remain out of scope.
 
@@ -349,3 +389,4 @@ checklist step prompting this.
 | 1.1.0 | 2026-07-16 | Minor: new `POST /events/{run_id}/abort` endpoint (§7) — 401/404/202, reuses the `X-API-Key` gate. New run-level `metadata.cancellation` and `metadata.budget` annotations (§5) for cancelled and budget-halted runs, spelled in `metadata` rather than a new `NodeRunStatus` value (§6 unchanged). §3's "observers, never writers" prose reconciled: consumers may trigger a runtime-owned write (the abort) without writing the row themselves (D25: bastion triggers, the Engine executes). `bastion` must re-pin — see `bastion/docs/data-contract.md`. |
 | 1.2.0 | 2026-07-24 | Minor: new `GET /events/{event_id}` read endpoint (§7) — the async-result seam; reuses the `X-API-Key` gate, `404` for unknown/malformed ids, returns `{event_id, workflow_type, status, created_at, updated_at, task_context}` with `status` derived on every read (six values, precedence documented in §7; golden fixtures under `tests/fixtures/event_read/`). `POST /events/` 202 body gains `event_id` (the `events.id` of the row just created). New run-level `metadata.failure` annotation (§5) — written on a fresh, independently committed session so it survives the enclosing `db_session` rollback on a raising workflow; `NodeRun`'s `pending|running|success|failed` vocabulary (§6) is unchanged. §3's read path reconciled: the reserved read API has landed, `GET /events?status=running` stays reserved. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.3.0 | 2026-07-24 | Minor: new `POST /ingest/proposal` and `POST /ingest/artifact` endpoints (§7) — the ingest seam engine-rs hybrid workflows (`EN.4.C`/`EN.5.A`/`EN.5.C`) POST their finished artifacts through instead of embedding pgvector into engine-rs. Both reuse the `X-API-Key` gate, reject malformed bodies with a typed `422` (never `500`), delegate to the one `app/brain/ingest.py::ingest_artifact` chunk→embed→write path, and return `{artifact_id, chunks_written}` on success. `/ingest/proposal` is pinned exactly to engine-rs's `PersistToBrainNode` payload; `/ingest/artifact` is the generic envelope for other producers. Does not change any `events`/`task_context` shape — these routes write only to `brain_documents`, outside this contract's `events` scope, and are documented here because they share the same HTTP surface and auth gate. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
+| 1.4.0 | 2026-07-27 | Minor: new `GET /recall`, `GET /walk`, `GET /pulse` endpoints (§7) — the read half of the D51 HTTP adapter whose write half (`POST /ingest/*`) landed in v1.3.0. All three reuse the `X-API-Key` gate, reject missing/malformed query params with a typed `422` (never a `500`), and delegate unchanged to the one `app/brain/` read core (`retrieval.recall` / `graph.walk` / `pulse.pulse`) that the `syn recall`/`walk`/`pulse` CLI already calls — no retrieval, traversal, or health-probe behavior changes. `recall()`'s `workspace` argument is not wired to a query param (out of scope). Does not change any `events`/`task_context` shape — these routes read only `brain_documents`/`brain_edges`, outside this contract's `events` scope, and are documented here because they share the same HTTP surface and auth gate (the same framing v1.3.0 used for `/ingest/*`). §3's read-path narrative reconciled: a consumer no longer needs direct `brain_documents` coupling to query the corpus. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
