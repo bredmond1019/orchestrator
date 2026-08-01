@@ -287,7 +287,13 @@ def test_hybrid_search_delegates_to_retrieval_engine():
         results = hybrid_search("What is decision D20 about?", limit=3)
 
     mock_retrieve.assert_called_once_with(
-        "What is decision D20 about?", corpus="brain", k=3, filters=None, session=None
+        "What is decision D20 about?",
+        corpus="brain",
+        k=3,
+        filters=None,
+        workspace_id=None,
+        session=None,
+        surface=None,
     )
     assert results == [_fake_chunk()]
 
@@ -321,7 +327,13 @@ def test_main_hybrid_flag_invokes_fusion_path_and_skips_semantic_search(capsys):
         main(["What is the Bastion program?", "--hybrid"])
 
     mock_retrieve.assert_called_once_with(
-        "What is the Bastion program?", corpus="brain", k=5, filters=None, session=None
+        "What is the Bastion program?",
+        corpus="brain",
+        k=5,
+        filters=None,
+        workspace_id=None,
+        session=None,
+        surface=None,
     )
     fake_service_cls.assert_not_called()
     fake_db_session.assert_not_called()

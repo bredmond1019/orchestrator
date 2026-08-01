@@ -4,6 +4,20 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 
+@pytest.fixture(autouse=True)
+def _disable_query_log(monkeypatch):
+    """Force the OR.K1 retrieval query log off for the whole suite.
+
+    `app/brain/query_log.py::log_retrieval` defaults to enabled (so
+    production entry points log without extra configuration); this autouse
+    fixture keeps the test suite inert by default so a plain `recall()` call
+    in an unrelated test never writes a `retrieval_queries` row. Tests that
+    actually exercise logging opt back in via the `enable_query_log`
+    fixture (`tests/brain/conftest.py`).
+    """
+    monkeypatch.setenv("BRAIN_QUERY_LOG_ENABLED", "0")
+
+
 @pytest.fixture(scope="session")
 def db_engine():
     engine = create_engine("sqlite:///:memory:")
