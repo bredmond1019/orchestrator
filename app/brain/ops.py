@@ -374,6 +374,28 @@ def _reconcile_routine() -> dict:
     return deep_stale().to_dict()
 
 
+def _eval_routine() -> dict:
+    """`ROUTINES["eval"]` body (OR.K2 task 3) — report-only, cron-safe.
+
+    Scores the default golden set (`planning/retrieval-golden-set.yaml`)
+    against the live corpus, writes a dated JSON report to
+    `planning/retrieval-eval-runs/`, and returns that report as a dict (the
+    routine's return contract, mirroring `_reconcile_routine`). No
+    `--baseline` regression gate here — that is `syn eval --baseline`'s job,
+    invoked deliberately, not from an unattended cron routine.
+    """
+    from brain.eval import (  # pylint: disable=import-outside-toplevel
+        load_cases,
+        run_eval,
+        write_report,
+    )
+
+    cases = load_cases()
+    report = run_eval(cases)
+    write_report(report)
+    return report.to_dict()
+
+
 ROUTINES: dict[str, Callable[[], dict]] = {
     # Lambdas (not direct function refs) so tests can `patch("app.brain.ops.refresh", ...)`
     # / `patch("app.brain.ops.stale", ...)` and have the registry dispatch to the patch —
@@ -383,6 +405,7 @@ ROUTINES: dict[str, Callable[[], dict]] = {
     "stale": lambda: stale(),  # pylint: disable=unnecessary-lambda
     # Deep drift check, report-only — no `--repair` dispatch from a cron routine.
     "reconcile": lambda: _reconcile_routine(),  # pylint: disable=unnecessary-lambda
+    "eval": lambda: _eval_routine(),  # pylint: disable=unnecessary-lambda
 }
 
 
