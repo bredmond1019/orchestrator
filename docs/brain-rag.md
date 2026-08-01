@@ -361,6 +361,14 @@ The incremental upsert keys on `file_path + section`, so it only ever *adds or r
 
 Note this is **file-level** cleanup only. A section renamed or removed *inside* a still-existing file leaves an orphan row that neither incremental indexing nor `--prune-paths` removes — run `--rebuild` after structural edits within files.
 
+`syn stale --deep` now detects both cases in one command — file-level orphans (this section's
+"deleted-but-embedded" case) *and* section-level orphans (a header renamed or removed inside a
+still-existing file) — plus three more drift axes (orphaned `content_chunks`, dangling
+`brain_edges`, and `embedding_model` mismatches). `--repair` clears what it can with existing
+primitives and reports a manual `--rebuild` follow-up for the rest (section-orphans and model
+mismatches have no targeted delete primitive). See `docs/scripts.md` § `syn` for the full
+`stale --deep [--json] [--repair]` reference.
+
 ---
 
 ## Resetting and tearing down the store
