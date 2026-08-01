@@ -12,7 +12,7 @@ def test_list_workflows_contains_registered_types():
     assert response.status_code == 200
     workflows = response.json()["workflows"]
     assert "MEMORY_INGEST" in workflows
-    assert "CONTENT_PIPELINE" in workflows
+    assert "DOCUMENT_INGEST" in workflows
 
 
 def test_memory_ingest_graph_nodes_and_edges():

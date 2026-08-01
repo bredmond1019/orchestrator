@@ -6,13 +6,13 @@ doc_id: workflows
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [workflow catalog, CONTENT_PIPELINE, DOCUMENT_QA, SDLC_FLOW, PRICE_SCOUT, MEMORY_INGEST, MEMORY_CONSOLIDATION, event payload, curl]
+keywords: [workflow catalog, DOCUMENT_INGEST, DOCUMENT_QA, SDLC_FLOW, MEMORY_INGEST, MEMORY_CONSOLIDATION, event payload, curl]
 related: [api-reference, app-architecture-overview, data-contract, sdlc-flow-workflow, memory]
 ---
 
 # Workflow Catalog
 
-Six production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
+Five production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
 
 **All requests require the `X-API-Key` header:**
 
@@ -22,74 +22,7 @@ Six production workflows ship with the framework. All are triggered by posting t
 
 ---
 
-## 1. Content Pipeline (`CONTENT_PIPELINE`)
-
-**What it does:** Takes a YouTube or article URL, fetches and summarizes the content, embeds it, persists it as a `LearningArtifact`, and renders a static HTML digest. Optionally generates a self-corrected blog post in English + PT-BR.
-
-**When to use:** Whenever you want to add a piece of content to your personal knowledge feed — a YouTube talk, a blog post, a technical article.
-
-**Node DAG:**
-
-```
-SourceRouterNode
-  ├── FetchTranscriptNode (YouTube)  →  SummarizerNode
-  └── FetchArticleNode   (article)  →  SummarizerNode
-                                         │
-                                      StorageNode (embed + persist + render digest)
-                                         │
-                                   BlogDecisionRouterNode
-                                         │ (only if make_blog=true)
-                                      BlogWriterNode
-                                         │
-                                      SelfCriticNode
-                                         │
-                                      ReviseNode
-                                         │
-                                      TranslatePtBrNode (pt-BR translation)
-```
-
-If `make_blog` is `false`, the run ends after `StorageNode` — digest only, no LLM blog generation.
-
-**Event payload:**
-
-```json
-{
-  "workflow_type": "CONTENT_PIPELINE",
-  "data": {
-    "url": "https://www.youtube.com/watch?v=...",
-    "make_blog": false
-  }
-}
-```
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `url` | string | yes | YouTube URL or any article URL |
-| `make_blog` | bool | no (default: false) | Set true to generate a blog post |
-| `artifact_id` | UUID | no | Auto-generated if omitted |
-| `timestamp` | datetime | no | Auto-generated if omitted |
-
-**Trigger:**
-
-```bash
-# Digest only
-curl -X POST http://localhost:8080/events/ \
-  -H 'Content-Type: application/json' \
-  -H 'X-API-Key: dev-secret' \
-  -d '{"workflow_type": "CONTENT_PIPELINE", "data": {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "make_blog": false}}'
-
-# With blog post
-curl -X POST http://localhost:8080/events/ \
-  -H 'Content-Type: application/json' \
-  -H 'X-API-Key: dev-secret' \
-  -d '{"workflow_type": "CONTENT_PIPELINE", "data": {"url": "https://example.com/some-article", "make_blog": true}}'
-```
-
-**What gets stored:** A `LearningArtifact` row with title, summary, category, embedding vector, and optional blog text. Inspect with `scripts/inspect_run.py`.
-
----
-
-## 2. Document Ingest (`DOCUMENT_INGEST`)
+## 1. Document Ingest (`DOCUMENT_INGEST`)
 
 **What it does:** Parses a document (plain text or PDF), splits it into section-aware overlapping token chunks, embeds all chunks in a single batched Voyage call, and persists them as `ContentChunk` rows with vectors. Creates the searchable corpus that `DOCUMENT_QA` queries against.
 
@@ -155,7 +88,7 @@ Note the `doc_id` from the payload (or generate one before sending): you'll need
 
 ---
 
-## 3. Document Q&A (`DOCUMENT_QA`)
+## 2. Document Q&A (`DOCUMENT_QA`)
 
 **What it does:** Embeds a question, retrieves the most relevant chunks from a previously ingested document via two-stage hybrid retrieval (semantic candidate set → keyword re-rank → score fusion), assembles the RAG context alongside prior session turns, generates a grounded answer, and persists the Q&A turn to the chat session.
 
@@ -223,7 +156,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 4. Memory Ingest (`MEMORY_INGEST`)
+## 3. Memory Ingest (`MEMORY_INGEST`)
 
 **What it does:** Fast, per-interaction memory extraction — the first stage of the two-stage block OR.S memory pipeline (Honcho reference architecture, D25). Extracts an episode summary, outcome, tags, and candidate facts from a single interaction via Claude, then writes the episode (upserting the owning `Peer`) and upserts the extracted facts as `SemanticMemory` rows.
 
@@ -281,7 +214,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 5. Memory Consolidation (`MEMORY_CONSOLIDATION`)
+## 4. Memory Consolidation (`MEMORY_CONSOLIDATION`)
 
 **What it does:** Dream-time consolidation — the second stage of the two-stage block OR.S memory pipeline. Reasons deeply (Claude only, D35 frontier-only rule) across a peer's (or every peer's, in a workspace) recently accumulated episodes and current facts to distill durable `SemanticMemory` rows, resolve contradictions (lower-and-insert, never overwrite/delete), and refresh `Peer.representation`.
 
@@ -332,7 +265,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 6. SDLC Flow (`SDLC_FLOW`)
+## 5. SDLC Flow (`SDLC_FLOW`)
 
 **What it does:** Drives a structured spec (`SDLCTask` list persisted as JSON) through a sequential implement → test → triage → review loop, task by task, in one shared git worktree — then patches docs, writes a wrap-up log, and opens a PR. Replaces markdown-based task parsing with the `SDLCState`/`SDLCTask` schema in `app/schemas/sdlc_schema.py`.
 
@@ -408,7 +341,7 @@ The API exposes workflow graphs as JSON — useful for seeing node connections w
 curl http://localhost:8080/workflows
 
 # Get the node graph for a specific workflow
-curl http://localhost:8080/workflows/CONTENT_PIPELINE/graph
+curl http://localhost:8080/workflows/DOCUMENT_INGEST/graph
 curl http://localhost:8080/workflows/DOCUMENT_QA/graph
 ```
 
