@@ -1,8 +1,17 @@
 """Eval Record Database Model Module
 
-This module defines the SQLAlchemy models for persisting offline eval results
-produced by the Block OR.U eval harness (``scripts/run_eval.py`` and
-``app/evals/``). Two tables back the regression-history primitive:
+This module defines the SQLAlchemy models for the ``eval_runs``/``eval_results``
+tables. Originally written for the Block OR.U eval harness
+(``scripts/run_eval.py`` and ``app/evals/``), that Python consumer was deleted
+under **OR.X2** (SDLC_FLOW + app/evals retirement) — engine-rs now owns these
+tables in the shared Postgres (``EN.5.B1``). The models stay defined here,
+still registered in ``Base.metadata`` and still imported by
+``app/alembic/env.py``, **solely so ``alembic revision --autogenerate`` never
+proposes a ``DROP TABLE`` against ``eval_runs``/``eval_results``** — dropping
+this module would delete the tables out from under engine-rs on the next
+autogenerate run. Do not remove this module or its Alembic revision
+(``f6a7b8c9d0e1``) even though nothing in this repo writes to these tables
+anymore.
 
 - ``EvalRun``: one row per (slice, model) execution of an eval slice, carrying
   the aggregated pass-rate and case counts for that run.
@@ -36,11 +45,12 @@ from database.session import Base
 class EvalRun(Base):
     """SQLAlchemy model for one aggregated run of an eval slice against one model.
 
-    A single invocation of ``run_slice`` (see ``app/evals/runner.py``) produces
-    exactly one ``EvalRun`` row per model under test, aggregating the pass-rate
-    across every case in the slice. Successive runs of the same
-    ``slice_name``/``model_name`` form the regression history that the
-    one-change gate (``app/evals/gate.py``) compares against.
+    A single invocation of the (now-deleted) eval harness's ``run_slice``
+    produced exactly one ``EvalRun`` row per model under test, aggregating the
+    pass-rate across every case in the slice. Successive runs of the same
+    ``slice_name``/``model_name`` formed the regression history that the
+    one-change gate compared against. See the module docstring for why this
+    model still exists.
     """
 
     __tablename__ = "eval_runs"
@@ -108,7 +118,8 @@ class EvalResult(Base):
 
     Each row records the outcome of applying one scorer to one case's output
     within a parent run, mirroring the ``ScoreResult`` shape produced by the
-    scorer library (``app/evals/scorers.py``).
+    (now-deleted) eval harness's scorer library. See the module docstring for
+    why this model still exists.
     """
 
     __tablename__ = "eval_results"
