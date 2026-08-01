@@ -19,7 +19,7 @@ related: [api-reference, brain-rag, D36-bastion-engine-brain-role]
 
 ## High-Level Summary
 
-This codebase is a **production-ready event-driven AI pipeline framework**. It is not a demo — it is infrastructure. The core abstractions (Workflow, Node, TaskContext, AgentNode) are clean, composable, and directly applicable to every project in the learning plan. The domain-specific code (Customer Care workflow) is just one example sitting on top of that infrastructure and is fully replaceable.
+This codebase is a **production-ready event-driven AI pipeline framework**. It is not a demo — it is infrastructure. The core abstractions (Workflow, Node, TaskContext, AgentNode) are clean, composable, and directly applicable to every project in the learning plan. The domain-specific example workflows this document originally analyzed (Customer Care, Content Pipeline, Research Agent, Proposal Generator) have since been divested to `engine-rs` under `OR.X` (D51) — the surviving workflows are `DOCUMENT_INGEST`, `DOCUMENT_QA`, `MEMORY_INGEST`, `MEMORY_CONSOLIDATION` (+ `SDLC_FLOW` until `OR.X2`).
 
 The mental model: **this is the scaffold, not the content**. Every project in the learning plan is a new workflow you build using these building blocks.
 
@@ -75,7 +75,7 @@ In the Bastion program this repo is the **Engine** (the workflow runtime below) 
 
 ## Component-by-Component Analysis
 
-### ✅ CORE ENGINE — Keep and extend aggressively
+### CORE ENGINE — Keep and extend aggressively
 
 #### `core/workflow.py` — `Workflow` class
 The orchestrator. Reads a `WorkflowSchema` (a DAG declaration), walks it node by node, passes `TaskContext` through the chain, handles routing. Validates the graph before running.
@@ -119,7 +119,9 @@ See its entry under "Shared Services Layer" below and the signature in [api-refe
 ---
 
 #### `core/nodes/parallel.py` — `ParallelNode`
-Runs multiple nodes concurrently via `ThreadPoolExecutor`. Used in the Customer Care workflow to run FilterSpam, DetermineIntent, and ValidateTicket simultaneously.
+Runs multiple nodes concurrently via `ThreadPoolExecutor`. Formerly used by the (now-divested,
+`OR.X` cut 1) Customer Care workflow to run FilterSpam, DetermineIntent, and ValidateTicket
+simultaneously — kept as dead-but-tested framework machinery (see `CLAUDE.md` standing rule 3).
 
 **Why it's excellent:** Directly maps to Project 2's research agent (parallel web search + arXiv search), Project 4's multi-agent pipeline (parallel analysis passes), and the Socratic Tutor's curiosity threads running while the spine continues.
 
@@ -152,7 +154,7 @@ DFS cycle detection + BFS reachability check. Runs on every `Workflow.__init__()
 
 ---
 
-### ✅ INFRASTRUCTURE — Solid foundation, needs targeted extensions
+### INFRASTRUCTURE — Solid foundation, needs targeted extensions
 
 #### `database/` — SQLAlchemy + PostgreSQL
 - `DatabaseUtils`: env-var-driven connection string
@@ -198,27 +200,29 @@ Scaffolds a new workflow directory, workflow class, and schema in seconds. Run `
 
 ---
 
-### ❌ DOMAIN CODE — Do not extend; treat as reference implementation only
+### DOMAIN CODE — removed under `OR.X` (D51)
 
-The Customer Care workflow is a **worked example**, not a foundation to build on. Its only value is showing you how the core abstractions are used in practice:
-
-| File | Status | Notes |
-|---|---|---|
-| `workflows/customer_care_workflow.py` | Reference only | Shows WorkflowSchema + parallel + router composition |
-| `workflows/customer_care_workflow_nodes/*.py` | Reference only | Shows AgentNode, ParallelNode, RouterNode implementations |
-| `schemas/customer_care_schema.py` | Reference only | Shows event schema pattern |
-| `prompts/*.j2` | Reference only | Shows PromptManager template format |
-| `api/endpoint.py` | Modify | Replace `CustomerCareEventSchema` with a generic event dispatcher |
+The Customer Care workflow was a **worked example**, not a foundation to build on — it showed how
+the core abstractions (WorkflowSchema + parallel + router composition, AgentNode/ParallelNode/
+RouterNode implementations, event schema pattern, PromptManager template format) are used in
+practice. It had no `engine-rs` counterpart to wait for, so it was the first `OR.X` cut and is now
+fully deleted (`workflows/customer_care_workflow.py`, its nodes package, `schemas/customer_care_schema.py`,
+its `.j2` prompts, its tests). See `CLAUDE.md` standing rule 3.
 
 ---
 
-### ✅ SHARED SERVICES LAYER — built in Phase 0, Block D
+### SHARED SERVICES LAYER — built in Phase 0, Block D
 
 Most of what this section originally listed as "to build" now exists. Phase 0 Block D added a
 first-class **services layer** (`app/services/`) alongside the core engine, plus a raw-SDK node type,
 the pgvector extension, the first project scaffold, and a clean generic API contract. Precise
 class-level signatures live in [api-reference.md](api-reference.md); env vars in
 [configuration.md](configuration.md). What shipped:
+
+**Historical note:** the Project A (`CONTENT_PIPELINE`), Project B (`RESEARCH_AGENT`), and Project C
+(`PROPOSAL_GENERATOR`) rows below document workflows that shipped here and were later divested to
+`engine-rs` under `OR.X` (D51) — the code no longer exists in this repo. The rows are kept as a build
+log, not as current documentation; only Project D (`DOCUMENT_INGEST` / `DOCUMENT_QA`) survives.
 
 | Built | Where | Notes |
 |---|---|---|
@@ -230,8 +234,8 @@ class-level signatures live in [api-reference.md](api-reference.md); env vars in
 | `ChunkingService` | `services/chunking_service.py` | `tiktoken` token-boundary chunking; PDF via `pymupdf` |
 | `ToolUseNode` | `core/nodes/tool_use.py` | raw Anthropic SDK tool loop (the "educational loop" below) — abstract base; subclass + implement `handle_tool_call`; bounded by `max_iterations`; model from `TOOL_USE_MODEL` env |
 | Generic API contract | `api/endpoint.py`, `api/health.py`, `api/schema_registry.py`, `api/models.py`, `api/security.py` | `EventPayload` dispatcher (schema looked up by `workflow_type`, `422` on unknown), `GET /health`, typed `TaskAcceptedResponse` — the brain's HTTP surface that shells drive (D16 Layer 3). `api/security.py` provides `require_api_key` (`X-API-Key` header, `hmac.compare_digest`, fail-closed `503` when `ORCHESTRATION_API_KEY` is unset) applied to `POST /events/`. `CORSMiddleware` is configured in `main.py` via `ALLOWED_ORIGINS` (default `https://learn-agentic-ai.com`). |
-| Telegram bot | `integrations/telegram/bot.py`, `integrations/telegram/client.py`, `integrations/telegram/config.py` | Long-poll Telegram bot (`python-telegram-bot`) that accepts commands and forwards them to `POST /events/` as `EventPayload` requests authenticated with `X-API-Key`. `TelegramConfig` reads `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_CHAT_IDS`, `ORCHESTRATION_API_BASE_URL`, `CF_ACCESS_CLIENT_ID`, and `CF_ACCESS_CLIENT_SECRET` from the environment. Runs as a standalone container (`docker/Dockerfile.telegram`) or as a launchd service on the Mac Mini; depends on `api` but is not part of the core framework. See `integrations/telegram/README.md` for operator instructions. |
-| Project A — Task 1 | `workflows/content_pipeline_workflow*`, `schemas/content_pipeline_schema.py` | `ContentPipelineEventSchema` has real fields: `url: str` (required), `make_blog: bool = False`, `artifact_id: UUID` (auto-generated), `timestamp: datetime` (UTC auto-set); registered as `WorkflowRegistry.CONTENT_PIPELINE` |
+| ~~Telegram bot~~ | *(removed)* | Was `integrations/telegram/{bot,client,config}.py` — a long-poll Telegram bot forwarding commands to `POST /events/`. Removed entirely under `OR.X` cut 4 (D51) alongside `CONTENT_PIPELINE`, its only caller: the docker `telegram_bot` service, `docker/Dockerfile.telegram`, and the `telegram` pyproject extra are all gone. |
+| Project A — Task 1 *(historical; `CONTENT_PIPELINE` removed under `OR.X` cut 4)* | `workflows/content_pipeline_workflow*`, `schemas/content_pipeline_schema.py` | `ContentPipelineEventSchema` has real fields: `url: str` (required), `make_blog: bool = False`, `artifact_id: UUID` (auto-generated), `timestamp: datetime` (UTC auto-set); registered as `WorkflowRegistry.CONTENT_PIPELINE` |
 | Project A — Task 3 | `workflows/content_pipeline_workflow_nodes/source_router_node.py`, `fetch_transcript_node.py`, `fetch_article_node.py` | `SourceRouterNode(BaseRouter)` routes by URL hostname: YouTube (`youtube.com`/`youtu.be`) → `FetchTranscriptNode`; all others → `FetchArticleNode` (fallback). `FetchTranscriptNode` calls `TranscriptService.fetch_transcript`, catches `ValueError`/`RuntimeError`, sets `fetch_status="failed"` without crashing. `FetchArticleNode` calls `ArticleExtractionService.extract` (trafilatura-first/Firecrawl-fallback, D24) and propagates `text`/`title`/`fetch_status` from `ArticleResult`. |
 | Project A — Task 4 | `workflows/content_pipeline_workflow_nodes/summarizer_node.py`, `prompts/content_summarizer.j2` | `SummarizerNode(AgentNode)` with `SummaryOutput` (9-field Pydantic schema: `title`, `category`, `tl_dr`, `read_time_estimate`, `core_concepts`, `key_insights`, `questions_raised`, `connections_to_my_work`, `further_exploration`). Loads system prompt from `content_summarizer.j2` via `PromptManager`; uses `ModelProvider.CLAUDE_CODE_SDK` / `"sonnet"` (subscription-billing default; revert to `ANTHROPIC` / `claude-opus-4-8` per-node for metered API billing). Calls `run_agent_recorded()` for per-node telemetry. Reads upstream text from `FetchTranscriptNode` or `FetchArticleNode` defensively (empty string on fetch failure). `SummaryOutput` exported for `StorageNode` (Task 5) import. |
 | Project A — Task 5 | `workflows/content_pipeline_workflow_nodes/storage_node.py`, `workflows/content_pipeline_workflow_nodes/digest_renderer.py` | `StorageNode(Node)`: embeds summary text at write time via `EmbeddingService().embed_text(...)` (title + tl_dr + core_concepts), persists a `LearningArtifact` row via `GenericRepository` + `db_session` factory (single deployment-agnostic seam, rule 7), writes a static HTML artifact page, and regenerates the category index. Output dir from `CONTENT_DIGEST_DIR` env. `digest_renderer` is a pure-function module: `render_artifact_page` writes `output_dir/<category>/<artifact_id>.html`; `regenerate_category_index` rewrites `output_dir/<category>/index.html`. No JS/search/tagging (D22). |
@@ -249,16 +253,20 @@ class-level signatures live in [api-reference.md](api-reference.md); env vars in
 | Project D — Task 2 | `workflows/document_ingest_workflow.py`, `workflows/document_ingest_workflow_nodes/{parse_document_node,chunk_document_node,embed_chunks_node,store_chunks_node}.py`, `schemas/document_ingest_schema.py` | `DocumentIngestWorkflow` — linear DAG (no router): `ParseDocumentNode → ChunkDocumentNode → EmbedChunksNode → StoreChunksNode`. `DocumentIngestEventSchema` accepts `content` (raw text) or `content_b64` + `mime_type` (PDF/binary); `doc_id` auto-generated; `chunk_size=500`, `overlap=50` defaults. `ParseDocumentNode`: text pass-through or base64-decode + `fitz.open` PDF extraction; output `{"text": ...}`. `ChunkDocumentNode`: section-aware split on `^#{1,3}` headers via `re.MULTILINE`; emits a standalone `is_section_title=True` chunk per header, then token-window body chunks via `ChunkingService`; global `position` counter; output `{"chunks": [...]}`. `EmbedChunksNode`: single batched `EmbeddingService.embed_batch` call; zips vectors back with `zip(..., strict=True)`; output `{"chunks": [... + "embedding"]}`. `StoreChunksNode`: builds `ContentChunk` ORM objects; captures `doc_id` from event before persist (avoid `DetachedInstanceError`); `_persist` seam uses `GenericRepository` + `db_session` (rule 7); output `{"doc_id", "chunks_stored", "embedded": True}`. 34 tests (22 node-level + 12 workflow/schema). |
 | Project D — Task 5 | `app/workflows/workflow_registry.py`, `app/api/schema_registry.py` | Dual-registry registration for both Project D workflows. `DOCUMENT_INGEST = DocumentIngestWorkflow` and `DOCUMENT_QA = DocumentQAWorkflow` added as enum members in `WorkflowRegistry`. `DocumentIngestEventSchema` and `DocumentQAEventSchema` added to `SCHEMA_MAP` in `schema_registry.py`. `TestSchemaRegistryCompleteness` passes; all 674 tests collected with no failures. |
 
-The `WorkflowRegistry` enum scaling concern is resolved in practice: each project adds one entry
-(`CONTENT_PIPELINE` is the first beyond `customer_care`; `RESEARCH_AGENT` is the second; `PROPOSAL_GENERATOR` is the third; `DOCUMENT_INGEST` and `DOCUMENT_QA` are the fourth and fifth, completing Phase 1 Project D).
+The `WorkflowRegistry` enum scaling concern is resolved in practice: each project adds one entry.
+`CONTENT_PIPELINE`, `RESEARCH_AGENT`, and `PROPOSAL_GENERATOR` were the first three beyond
+`customer_care`; all four are now removed under `OR.X` (D51). The registry that survives holds
+`DOCUMENT_INGEST`, `DOCUMENT_QA`, `SDLC_FLOW` (until `OR.X2`), `MEMORY_INGEST`, and
+`MEMORY_CONSOLIDATION`.
 | Project D — Task 2 | `workflows/document_ingest_workflow.py`, `workflows/document_ingest_workflow_nodes/{parse_document_node,chunk_document_node,embed_chunks_node,store_chunks_node}.py`, `schemas/document_ingest_schema.py` | `DocumentIngestWorkflow` — linear DAG (no router): `ParseDocumentNode → ChunkDocumentNode → EmbedChunksNode → StoreChunksNode`. `DocumentIngestEventSchema` accepts `content` (raw text) or `content_b64` + `mime_type` (PDF/binary); `doc_id` auto-generated; `chunk_size=500`, `overlap=50` defaults. `ParseDocumentNode`: text pass-through or base64-decode + `fitz.open` PDF extraction; output `{"text": ...}`. `ChunkDocumentNode`: section-aware split on `^#{1,3}` headers via `re.MULTILINE`; emits a standalone `is_section_title=True` chunk per header, then token-window body chunks via `ChunkingService`; global `position` counter; output `{"chunks": [...]}`. `EmbedChunksNode`: single batched `EmbeddingService.embed_batch` call; zips vectors back with `zip(..., strict=True)`; output `{"chunks": [... + "embedding"]}`. `StoreChunksNode`: builds `ContentChunk` ORM objects; captures `doc_id` from event before persist (avoid `DetachedInstanceError`); `_persist` seam uses `GenericRepository` + `db_session` (rule 7); output `{"doc_id", "chunks_stored", "embedded": True}`. Registration in `workflow_registry.py` / `schema_registry.py` deferred to Task 5. 34 tests (22 node-level + 12 workflow/schema). |
 | Project D — Task 3 | `workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`, `tests/workflows/test_retrieve_chunks_node.py` | `RetrieveChunksNode(Node)` — two-stage hybrid retrieval, reused verbatim by downstream workflows. **Stage 1 (semantic):** pgvector cosine-distance ORDER BY against the corpus table (top-20 candidates). **Stage 2 (keyword re-rank):** ILIKE scoped to stage-1 candidate IDs; scores fused additively (`score = (1 - distance) * title_weight + keyword_boost`). **Section-title weighting:** `is_section_title=True` chunks receive 2x multiplier on the semantic similarity component (ported from rag-engine-rs `process_results`). **Corpus dispatch:** `corpus="content"` queries `content_chunks` (this project's ingested documents); `corpus="brain"` queries `brain_documents` (company brain corpus). **Brain keyword OR-in:** brain corpus ORs the `keywords` OKF column into Stage 2 scoring, so tagged documents surface even when section body doesn't match. **Metadata filters:** optional `filters` dict restricts Stage 1 search to documents matching `layer` (array overlap), `project` (scalar ==), `status` (scalar ==). NaN-safe sort (Rust `total_cmp` guard). `k` and `threshold` params honored. `_semantic_search` and `_keyword_search` are isolated mockable seams (no live pgvector in unit tests). 32 tests covering retrieval ordering, keyword fusion rank change, section-title boost, corpus switch, brain keyword OR-in, metadata filters, and k/threshold boundary. |
 | Project D — Task 4 | `workflows/document_qa_workflow.py`, `workflows/document_qa_workflow_nodes/{embed_question_node,assemble_context_node,answer_node,update_session_memory_node}.py`, `schemas/document_qa_schema.py`, `prompts/document_qa_answer.j2` | `DocumentQAWorkflow` — linear DAG: `EmbedQuestionNode → RetrieveChunksNode → AssembleContextNode → AnswerNode → UpdateSessionMemoryNode`. `DocumentQAEventSchema` fields: `doc_id`, `question`, `session_id` (auto-UUID), `corpus` (default `"content"`), `filters` (optional, brain corpus only). `EmbedQuestionNode`: embeds the question via `EmbeddingService` and stashes the vector in `TaskContext`. `AssembleContextNode`: builds the grounded context including each chunk's `section_title` + normalized relevance score (ported from rag-engine-rs `build_rag_prompt`), then prepends prior `ChatSession.turns` as a message array — both RAG context and session memory assembled in one node. `AnswerNode(AgentNode)`: generates the grounded answer using `document_qa_answer.j2` via `PromptManager`; calls `run_agent_recorded` (not `run_sync`) so per-node telemetry is captured by the framework (D30). `UpdateSessionMemoryNode`: loads or creates the `ChatSession` via `_load_session` seam; appends user + assistant turn pair; extends `topics_covered` with `cited_sections` (deduplicated); persists via `GenericRepository` (rule 7). Registration in `workflow_registry.py` / `schema_registry.py` deferred to Task 5. 34 tests (20 node-level + 14 workflow/integration). |
 
-The `WorkflowRegistry` enum scaling concern is resolved in practice: each project adds one entry
-(`CONTENT_PIPELINE` is the first beyond `customer_care`; `RESEARCH_AGENT` is the second; `PROPOSAL_GENERATOR` is the third; `DOCUMENT_INGEST` and `DOCUMENT_QA` are fourth and fifth, registered by Project D Task 5).
+The `WorkflowRegistry` enum scaling concern is resolved in practice: each project adds one entry.
+`DOCUMENT_INGEST` and `DOCUMENT_QA` were registered by Project D Task 5; `CONTENT_PIPELINE`,
+`RESEARCH_AGENT`, and `PROPOSAL_GENERATOR` are now removed under `OR.X` (D51).
 
-### ⚠️ STILL TO BUILD (per project, just-in-time)
+### STILL TO BUILD (per project, just-in-time)
 
 Deliberately **not** built yet — these arrive with the project that needs them, not before:
 

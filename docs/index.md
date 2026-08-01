@@ -57,13 +57,6 @@ Developer reference for the orchestration framework. Start here, then open the d
 | [architecture_review/router_node.md](architecture_review/router_node.md) | `RouterNode` & `BaseRouter` — conditional branching. |
 | [architecture_review/prompt_manager.md](architecture_review/prompt_manager.md) | `PromptManager` — loading `.j2` system prompts from `app/prompts/`. |
 
-## Integrations
-
-| Doc | Contents |
-|---|---|
-| [../integrations/telegram/README.md](../integrations/telegram/README.md) | Telegram bot — setup, Docker Compose deployment, launchd (Mac Mini), network topology (Cloudflare/Tailscale/localhost). |
-
-
 <!--
 Validator links:
 [node-model-comparison.md](./node-model-comparison.md)

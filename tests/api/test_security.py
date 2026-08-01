@@ -26,9 +26,9 @@ from workflows.workflow_registry import WorkflowRegistry
 
 _VALID_KEY = "test-secret-key"
 
-_CONTENT_PIPELINE_PAYLOAD = {
-    "workflow_type": "CONTENT_PIPELINE",
-    "data": {"url": "https://example.com/article", "make_blog": False},
+_DOCUMENT_INGEST_PAYLOAD = {
+    "workflow_type": "DOCUMENT_INGEST",
+    "data": {"title": "Test Document", "content": "Some document text."},
 }
 
 
@@ -100,7 +100,7 @@ class TestEventsAuthGate:
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.post(
                 "/events/",
-                json=_CONTENT_PIPELINE_PAYLOAD,
+                json=_DOCUMENT_INGEST_PAYLOAD,
                 headers={"X-API-Key": "anything"},
             )
         assert resp.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
@@ -111,7 +111,7 @@ class TestEventsAuthGate:
         from main import app
 
         with TestClient(app, raise_server_exceptions=False) as c:
-            resp = c.post("/events/", json=_CONTENT_PIPELINE_PAYLOAD)
+            resp = c.post("/events/", json=_DOCUMENT_INGEST_PAYLOAD)
         assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_401_when_key_wrong(self, monkeypatch):
@@ -122,7 +122,7 @@ class TestEventsAuthGate:
         with TestClient(app, raise_server_exceptions=False) as c:
             resp = c.post(
                 "/events/",
-                json=_CONTENT_PIPELINE_PAYLOAD,
+                json=_DOCUMENT_INGEST_PAYLOAD,
                 headers={"X-API-Key": "wrong-key"},
             )
         assert resp.status_code == status.HTTP_401_UNAUTHORIZED
@@ -148,7 +148,7 @@ class TestEventsAuthGate:
                 with TestClient(app, raise_server_exceptions=False) as c:
                     resp = c.post(
                         "/events/",
-                        json=_CONTENT_PIPELINE_PAYLOAD,
+                        json=_DOCUMENT_INGEST_PAYLOAD,
                         headers={"X-API-Key": _VALID_KEY},
                     )
             assert resp.status_code == status.HTTP_202_ACCEPTED

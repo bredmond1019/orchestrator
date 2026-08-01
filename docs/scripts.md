@@ -67,40 +67,14 @@ The session is named `orchestration`. After detaching (`Ctrl-b d`), re-attach wi
 
 ---
 
-## `scripts/inspect_run.py` — Inspect the latest content pipeline run
+## `scripts/inspect_run.py` — removed (`OR.X` cut 4)
 
-Reads the most recent `CONTENT_PIPELINE` event from the database and prints a per-node execution report plus the stored `LearningArtifact`.
-
-```bash
-# Run from the repo root, with the env loaded
-cd app && uv run python ../scripts/inspect_run.py
-```
-
-**What it prints:**
-
-```
-EVENT  id=...  created=...
-PER-NODE EXECUTION ENVELOPE
-  SourceRouterNode     status=completed  usage=—
-  FetchTranscriptNode  status=completed  usage=in=1203 out=42 model=claude-sonnet-4-6
-  SummarizerNode       status=completed  usage=...
-  ...
-SUMMARIZER OUTPUT (structured)
-  { "title": "...", "summary": "..." }
-STORAGE OUTPUT
-  { "artifact_id": "...", ... }
-LEARNING ARTIFACT (persisted row)
-  id          : <uuid>
-  source_url  : https://...
-  title       : ...
-  category    : ...
-  tl_dr       : ...
-  embedding   : 1024-dim vector
-```
-
-Useful after a test run to verify node execution, check token usage, and confirm the artifact was persisted correctly.
-
-**Note:** Reads from the live database using the connection strings in `app/.env`. The Celery worker must have already completed the run before this shows useful data.
+This script inspected the most recent `CONTENT_PIPELINE` event and printed a per-node execution
+report plus the stored `LearningArtifact`. It never generalized beyond `content_pipeline` (its
+docstring named that workflow specifically), so per the `OR.X` cut-4 pre-flight it was deleted
+alongside the workflow rather than re-pointed. Use `docs/api-reference.md`'s `TaskContext` /
+`NodeRun` reference plus a direct DB read (`app/.env` connection strings) if you need an
+equivalent per-node execution envelope for a surviving workflow.
 
 ---
 
@@ -574,26 +548,15 @@ reference.
 
 ---
 
-## `scripts/emit_task_context_fixture.py` — Emit a real `task_context` conformance fixture
+## `scripts/emit_task_context_fixture.py` — removed (fixture is now a frozen golden file)
 
-Runs `ResearchAgentWorkflow` end to end (Anthropic client + prompt loading mocked; no DB/Celery
-involved) and writes the resulting `TaskContext.model_dump(mode="json")` to
-`tests/fixtures/task_context/research_agent_task_context.json` — a **captured**, code-path-produced
-fixture, not a hand-authored one. `engine-rs`'s `crates/engine-contract/tests/round_trip.rs` asserts
-against a checked-in copy of this file instead of a fixture it previously wrote about itself; this
-repo's own `tests/test_task_context_fixture.py` asserts the same live output matches it too, so
-drift on either side is caught. See `tests/fixtures/task_context/README.md` for full provenance
-(what was redacted and why) and `planning/task-context-fixture/notes.md` for the finding that
-prompted this.
-
-```bash
-uv run python scripts/emit_task_context_fixture.py
-```
-
-The event dict and every mocked Anthropic response are fixed literals, so re-running the script is
-a no-op diff unless the workflow's actual `task_context` shape changes. If the diff is non-empty,
-review it, update `docs/data-contract.md` §5/§6 if the shape changed intentionally, and copy the
-regenerated file into `engine-rs/tests/fixtures/`.
-Per the block's design principle (D33 / local D8), it is an offline eval harness, not a runtime
-router: `--emit-routing` only ever produces a routing config file; nothing in `app/core/` or
-`app/workflows/` reads it.
+Removed under `OR.X` cut 2 (D51 divestment) along with the `RESEARCH_AGENT` workflow it ran
+end-to-end to produce `tests/fixtures/task_context/research_agent_task_context.json`. That fixture
+stays **byte-identical** going forward — `bastion` and `engine-rs`'s
+`crates/engine-contract/tests/round_trip.rs` pin its exact bytes, and re-pointing the generator at
+a surviving workflow would only regenerate different bytes, forcing an unnecessary data-contract
+bump and a re-pin in both downstream repos to preserve a regeneration capability nobody used. The
+fixture's value was always its *shape*, not its reproducibility — see `docs/data-contract.md` §5
+and `tests/fixtures/task_context/README.md` for the frozen-golden-file note.
+`tests/test_task_context_fixture.py` still asserts the checked-in file parses and carries the
+documented shape; it no longer re-runs generation.
