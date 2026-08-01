@@ -424,24 +424,30 @@ document earlier-dated work).
 
 ---
 
-## `syn` — Brain console script (OR.N1 read commands + OR.N2 write/ops commands)
+## `syn` — Brain console script (OR.N1 read commands + OR.N2 write/ops commands + OR.K2 eval)
 
 Agent-callable console script (registered `[project.scripts]` entry in `pyproject.toml`, `syn =
 "app.brain.cli:main"`, mirroring `createworkflow`) wiring the Brain read cores
-(`app/brain/retrieval.py::recall`, `app/brain/graph.py::walk`, `app/brain/pulse.py::pulse`) and
-the Brain write/ops core (`app/brain/ops.py::embed_paths`, `ingest_dir`, `prune_paths`,
-`refresh`, `stale`, `run_routine`) plus the deep-drift read core (`app/brain/reconcile.py::deep_stale`,
-`ops.py::repair_deep_stale`) behind short, deterministic verbs: `recall`, `walk`, `pulse`,
-`embed`, `ingest`, `prune`, `refresh`, `stale` (plain and `--deep [--repair]`), `routine`. Every
-command supports `--json` for a machine-parseable payload
-and nothing else on stdout, has a deterministic exit code (`0` on success; non-zero on an
-unhealthy `pulse` verdict, a typed `--workspace` resolution error, an unknown `routine` name,
-`stale --assert-clean` finding drift, or `stale --deep` finding drift on any axis), and never
-prompts interactively.
+(`app/brain/retrieval.py::recall`, `app/brain/graph.py::walk`, `app/brain/pulse.py::pulse`), the
+Brain write/ops core (`app/brain/ops.py::embed_paths`, `ingest_dir`, `prune_paths`, `refresh`,
+`stale`, `run_routine`), the deep-drift read core (`app/brain/reconcile.py::deep_stale`,
+`ops.py::repair_deep_stale`), and the retrieval eval harness (`app/brain/eval/`, OR.K2) behind
+short, deterministic verbs: `recall`, `walk`, `pulse`, `embed`, `ingest`, `prune`, `refresh`,
+`stale` (plain and `--deep [--repair]`), `routine`, `eval`. Every command supports `--json` for a
+machine-parseable payload and nothing else on stdout, has a deterministic exit code (`0` on
+success; non-zero on an unhealthy `pulse` verdict, a typed `--workspace` resolution error, an
+unknown `routine` name, `stale --assert-clean` finding drift, `stale --deep` finding drift on any
+axis, or `eval --baseline` finding a metric regression), and never prompts interactively.
+
+**`--workspace` scoping (OR.K2):** `recall --workspace NAME` now actually scopes results to that
+D47 workspace's `project` on every retrieval path (exact-id, semantic, hybrid) — previously a
+no-op past the CLI's registry-validation step. `walk --workspace` remains reserved/unused
+(`graph.walk()` takes no `workspace` parameter in this block).
 
 ```bash
 syn recall "What is decision D20 about?"
 syn recall "How does structural graph retrieval work?" --limit 10 --hybrid --json
+syn recall "onboarding checklist" --workspace my-notes    # scopes to that workspace's project (OR.K2)
 
 syn walk D20 --depth 2
 
@@ -457,11 +463,17 @@ syn stale --deep --json           # five-axis deep drift report + the ingested/ 
 syn stale --deep --repair         # repair the repairable axes, then re-report the delta
 syn routine refresh               # runs a registered ROUTINES entry (OR.J cron convention)
 syn routine reconcile             # runs the deep check (report-only — no --repair from a routine)
+
+# OR.K2 retrieval eval harness
+syn eval                                    # score the default golden set, write a dated report
+syn eval --baseline planning/retrieval-eval-runs/2026-08-01T22-43-33Z.json   # signed deltas; non-zero on regression
+syn eval --set path/to/other-golden-set.yaml --json
+syn routine eval                            # report-only cron-safe run (no --baseline)
 ```
 
 | Command | Description |
 |---|---|
-| `recall QUERY [--limit N] [--hybrid] [--workspace NAME] [--json]` | Exact-id / semantic / hybrid search over `brain_documents`, dispatched the same way `query_brain.py`'s `main()` does. |
+| `recall QUERY [--limit N] [--hybrid] [--workspace NAME] [--json]` | Exact-id / semantic / hybrid search over `brain_documents`, dispatched the same way `query_brain.py`'s `main()` does. `--workspace` (OR.K2) scopes every path. |
 | `walk DOC_ID [--depth N] [--workspace NAME] [--json]` | BFS-traverses `brain_edges` from `DOC_ID` out to `N` hops. `--workspace` is accepted but currently unused (reserved). |
 | `pulse [--json]` | Reports corpus/substrate health (pgvector + embedding reachability, row counts, staleness, `edges_empty_but_related_exists`). Exits non-zero when unhealthy. |
 | `embed FILE [--force] [--brain-path PATH] [--json]` | Re-embeds a single file via `brain.ops.embed_paths` (which shells into `index_brain.py --only-paths`). `--force` bypasses the incremental skip. |
@@ -470,7 +482,8 @@ syn routine reconcile             # runs the deep check (report-only — no --re
 | `refresh [--rebuild] [--dry-run] [--brain-path PATH] [--json]` | Runs the content-index step then the edge-reload step via `brain.ops.refresh`. `--dry-run` skips the edge-reload step entirely. |
 | `stale [--assert-clean] [--brain-path PATH] [--json]` | Read-only drift report via `brain.ops.stale`: content axis (file mtime newer than its indexed `brain_documents` row) and structure axis (`pulse()`'s `edges_empty_but_related_exists`). `--assert-clean` turns any drift into a non-zero exit — the flag `OR.J`'s cron uses to fail loudly; a plain `syn stale` always exits `0`. |
 | `stale --deep [--repair] [--brain-path PATH] [--json]` | Deep corpus/index drift report via `brain.reconcile.deep_stale` — the inverse of plain `stale`: it walks DB rows looking for the filesystem/edge/embedding state they claim to still be backed by, instead of walking the filesystem looking for DB rows. Five drift axes plus the informational `ingested/` lane; see below. Exits `1` whenever the final report's `drift` is `True`, `0` otherwise — unconditional, unlike plain `stale` (no `--assert-clean` gate: asking for `--deep` means you want the drift signal by definition). `--repair` dispatches `brain.ops.repair_deep_stale` (existing primitives only — see below) and reports the pre/post-repair delta instead of a single snapshot. |
-| `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh`, `stale`, and `reconcile`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. `reconcile` runs the deep check report-only (`brain.reconcile.deep_stale().to_dict()`) — a routine must be cron-safe, so it never dispatches `--repair`. |
+| `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh`, `stale`, `reconcile`, and `eval`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. `reconcile`/`eval` both run report-only — a routine must be cron-safe, so neither dispatches `--repair` or `--baseline`. |
+| `eval [--set PATH] [--baseline PATH] [--json]` | **(OR.K2)** Scores the golden set (`planning/retrieval-golden-set.yaml` by default) against the promoted `retrieval_engine.retrieve` pipeline — recall@5, recall@10, MRR, abstain-correctness, groundedness, no LLM in the scoring path — and writes a dated JSON report to `planning/retrieval-eval-runs/`. `--baseline PATH` diffs the run's aggregate against a prior report and prints signed per-metric deltas; the command exits non-zero if any metric regressed. See `docs/api-reference.md` § [Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbrainevals-syn-eval). |
 
 **`stale --deep` — the five drift axes (plus the `ingested/` lane):**
 
