@@ -2,12 +2,36 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-07-25T14:30:21Z"
+timestamp: "2026-08-01T13:20:00Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-08-01]
+
+### Brain-quality track authored + divestment re-scoped and unblocked (planning only)
+- **What:** Mapped the retrieval-quality work nobody owned into a new `brain-quality` epic and four
+  items — `OR.ticket.corpus-reconcile` (deep index drift check via `syn stale --deep`), `OR.K1`
+  (retrieval query log + `syn queries`), `OR.K2` (the `syn eval` harness + promoting the 832-LOC
+  retrieval core out of `app/workflows/` into `app/brain/retrieval_engine.py`), and `OR.K3`
+  (`CLAIM_REAFFIRM`, the one genuine DAG workflow, consuming mev's stale-claim lane). Re-scoped `OR.X`
+  to four cuts and cleared its `depends_on` (`EN.4.A`/`EN.4.C`/`EN.5.A` are all closed); split
+  `SDLC_FLOW` + `app/evals` into a new `OR.X2` and dropped its `EN.5.B1` gate as moot. Rescued `OR.J`,
+  which was referenced by prose against a `brain-freshness-cron-loop` carryover that no longer exists —
+  now registered `deferred`. Retired the stale 2026-07-23 handoff after folding its one durable line
+  into `OR.1.B`. Wrote a reciprocal boundary guard into engine-rs's `EN.5.B1`. Zero code written.
+- **Why:** D51 rule 3 assigns "retrieval quality" to Synapse but no block owned it, while `EN.5.B1`
+  moves the eval *engine* to engine-rs — so it was falling between two repos. Concretely: the
+  `is_section_title` 2× fusion-weight question (`knowledge.md` L215) has been unresolvable for weeks
+  because nothing can measure it. Separately, `OR.X` had been rendering `blocked` for weeks while its
+  gates had actually cleared. Also found `syn recall --hybrid --workspace X` silently ignores the
+  workspace filter (`app/brain/retrieval.py:106` drops `filters`/`workspace_id`/`session`).
+- **Refs:** `planning/master-plan.md` (Brain Quality section, `OR.X`, `OR.X2`, `OR.R`, `OR.J`, `OR.1.B`);
+  `planning/handoff.md`; brain D51/D52/D49; `core/planning/epics/brain-quality.md`.
 
 ---
 
