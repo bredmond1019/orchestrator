@@ -185,7 +185,13 @@ def test_hybrid_search_delegates_to_retrieval_engine_and_normalizes_shape():
         results = hybrid_search("What is decision D99 about?", limit=3)
 
     mock_retrieve.assert_called_once_with(
-        "What is decision D99 about?", corpus="brain", k=3, filters=None, session=None
+        "What is decision D99 about?",
+        corpus="brain",
+        k=3,
+        filters=None,
+        workspace_id=None,
+        session=None,
+        surface=None,
     )
     assert results == [
         {

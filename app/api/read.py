@@ -43,7 +43,9 @@ def recall_route(
         HTTPException: 500 if the underlying recall core raises.
     """
     try:
-        results = retrieval.recall(q, limit=limit, hybrid=hybrid, session=session)
+        results = retrieval.recall(
+            q, limit=limit, hybrid=hybrid, session=session, surface="http"
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Recall failed: {exc}") from exc
 

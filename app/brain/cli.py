@@ -173,7 +173,13 @@ def _run_recall(args: argparse.Namespace) -> int:
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return _emit_error(exc, as_json=args.json)
 
-    results = recall(args.query, limit=args.limit, hybrid=args.hybrid, workspace=args.workspace)
+    results = recall(
+        args.query,
+        limit=args.limit,
+        hybrid=args.hybrid,
+        workspace=args.workspace,
+        surface="cli",
+    )
 
     if args.json:
         print(json.dumps(results))
