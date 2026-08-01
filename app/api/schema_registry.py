@@ -6,13 +6,11 @@ from schemas.document_ingest_schema import DocumentIngestEventSchema
 from schemas.document_qa_schema import DocumentQAEventSchema
 from schemas.memory_schema import MemoryConsolidationEventSchema, MemoryIngestEventSchema
 from schemas.proposal_generator_schema import ProposalGeneratorEventSchema
-from schemas.research_agent_schema import ResearchAgentEventSchema
 from schemas.sdlc_schema import SDLCFlowEventSchema
 from workflows.workflow_registry import WorkflowRegistry
 
 SCHEMA_MAP: dict[str, type[BaseModel]] = {
     WorkflowRegistry.CONTENT_PIPELINE.name: ContentPipelineEventSchema,
-    WorkflowRegistry.RESEARCH_AGENT.name: ResearchAgentEventSchema,
     WorkflowRegistry.PROPOSAL_GENERATOR.name: ProposalGeneratorEventSchema,
     WorkflowRegistry.DOCUMENT_INGEST.name: DocumentIngestEventSchema,
     WorkflowRegistry.DOCUMENT_QA.name: DocumentQAEventSchema,

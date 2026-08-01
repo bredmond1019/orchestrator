@@ -31,9 +31,9 @@ TIEBREAKER — if 1 and 2 are both YES, the work is a hybrid.
 
 **What this repo keeps:** `DOCUMENT_INGEST`, `DOCUMENT_QA`, `MEMORY_INGEST`, `MEMORY_CONSOLIDATION`,
 and the corpus/graph/memory capability itself. **What is leaving** (per D51, tracked as `OR.X`):
-`RESEARCH_AGENT`, `PROPOSAL_GENERATOR`, `CONTENT_PIPELINE`, `SDLC_FLOW`, and `app/evals/`. The first
-cut of `OR.X` (the Engine-shaped reference workflow with no engine-rs counterpart) has already landed.
-Do not extend anything on the leaving list — fixes only.
+`PROPOSAL_GENERATOR`, `CONTENT_PIPELINE`, `SDLC_FLOW`, and `app/evals/`. The first two cuts of
+`OR.X` (`CUSTOMER_CARE`, the Engine-shaped reference workflow with no engine-rs counterpart; and
+`RESEARCH_AGENT`) have already landed. Do not extend anything on the leaving list — fixes only.
 
 ## Before you start
 

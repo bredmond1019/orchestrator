@@ -574,26 +574,15 @@ reference.
 
 ---
 
-## `scripts/emit_task_context_fixture.py` — Emit a real `task_context` conformance fixture
+## `scripts/emit_task_context_fixture.py` — removed (fixture is now a frozen golden file)
 
-Runs `ResearchAgentWorkflow` end to end (Anthropic client + prompt loading mocked; no DB/Celery
-involved) and writes the resulting `TaskContext.model_dump(mode="json")` to
-`tests/fixtures/task_context/research_agent_task_context.json` — a **captured**, code-path-produced
-fixture, not a hand-authored one. `engine-rs`'s `crates/engine-contract/tests/round_trip.rs` asserts
-against a checked-in copy of this file instead of a fixture it previously wrote about itself; this
-repo's own `tests/test_task_context_fixture.py` asserts the same live output matches it too, so
-drift on either side is caught. See `tests/fixtures/task_context/README.md` for full provenance
-(what was redacted and why) and `planning/task-context-fixture/notes.md` for the finding that
-prompted this.
-
-```bash
-uv run python scripts/emit_task_context_fixture.py
-```
-
-The event dict and every mocked Anthropic response are fixed literals, so re-running the script is
-a no-op diff unless the workflow's actual `task_context` shape changes. If the diff is non-empty,
-review it, update `docs/data-contract.md` §5/§6 if the shape changed intentionally, and copy the
-regenerated file into `engine-rs/tests/fixtures/`.
-Per the block's design principle (D33 / local D8), it is an offline eval harness, not a runtime
-router: `--emit-routing` only ever produces a routing config file; nothing in `app/core/` or
-`app/workflows/` reads it.
+Removed under `OR.X` cut 2 (D51 divestment) along with the `RESEARCH_AGENT` workflow it ran
+end-to-end to produce `tests/fixtures/task_context/research_agent_task_context.json`. That fixture
+stays **byte-identical** going forward — `bastion` and `engine-rs`'s
+`crates/engine-contract/tests/round_trip.rs` pin its exact bytes, and re-pointing the generator at
+a surviving workflow would only regenerate different bytes, forcing an unnecessary data-contract
+bump and a re-pin in both downstream repos to preserve a regeneration capability nobody used. The
+fixture's value was always its *shape*, not its reproducibility — see `docs/data-contract.md` §5
+and `tests/fixtures/task_context/README.md` for the frozen-golden-file note.
+`tests/test_task_context_fixture.py` still asserts the checked-in file parses and carries the
+documented shape; it no longer re-runs generation.

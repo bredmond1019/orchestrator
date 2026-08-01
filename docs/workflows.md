@@ -12,7 +12,7 @@ related: [api-reference, app-architecture-overview, data-contract, sdlc-flow-wor
 
 # Workflow Catalog
 
-Eight production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
+Seven production workflows ship with the framework. All are triggered by posting to `POST /events/` with a `workflow_type` and a `data` payload. The API persists the event and queues it for async processing — you get a 202 and a `task_id` immediately.
 
 **All requests require the `X-API-Key` header:**
 
@@ -89,53 +89,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 2. Research Agent (`RESEARCH_AGENT`)
-
-**What it does:** Takes a company name, runs a Tavily web search loop via the raw Anthropic tool-use API, and returns a structured research brief: what they do, where they bleed time, one automation hypothesis.
-
-**When to use:** Pre-sales research before a client conversation. The thin-cut version — one node, no storage. The hardened multi-node version (with planner → research → critic → revise → BrainDocument write) is deferred for when a real prospect demands depth.
-
-**Node DAG:**
-
-```
-CompanyResearchNode (terminal — single node)
-```
-
-**Event payload:**
-
-```json
-{
-  "workflow_type": "RESEARCH_AGENT",
-  "data": {
-    "company_name": "Acme Corp"
-  }
-}
-```
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `company_name` | string | yes | Name to research |
-| `artifact_id` | UUID | no | Auto-generated |
-| `timestamp` | datetime | no | Auto-generated |
-
-**Trigger:**
-
-```bash
-curl -X POST http://localhost:8080/events/ \
-  -H 'Content-Type: application/json' \
-  -H 'X-API-Key: dev-secret' \
-  -d '{"workflow_type": "RESEARCH_AGENT", "data": {"company_name": "Notion"}}'
-```
-
-**Output shape (`ResearchBriefOutput`):**
-- `company_name`
-- `what_they_do` — short description
-- `likely_time_sinks` — list of processes where they bleed time
-- `automation_hypothesis` — one concrete ROI hypothesis
-
----
-
-## 3. Proposal Generator (`PROPOSAL_GENERATOR`)
+## 2. Proposal Generator (`PROPOSAL_GENERATOR`)
 
 **What it does:** Takes client context (company, industry, description), runs the research agent tool loop, scores automation opportunities using a binding composite formula, writes a bilingual (PT/EN) diagnostic roadmap, self-reviews it, and persists the result.
 
@@ -201,7 +155,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 4. Document Ingest (`DOCUMENT_INGEST`)
+## 3. Document Ingest (`DOCUMENT_INGEST`)
 
 **What it does:** Parses a document (plain text or PDF), splits it into section-aware overlapping token chunks, embeds all chunks in a single batched Voyage call, and persists them as `ContentChunk` rows with vectors. Creates the searchable corpus that `DOCUMENT_QA` queries against.
 
@@ -267,7 +221,7 @@ Note the `doc_id` from the payload (or generate one before sending): you'll need
 
 ---
 
-## 5. Document Q&A (`DOCUMENT_QA`)
+## 4. Document Q&A (`DOCUMENT_QA`)
 
 **What it does:** Embeds a question, retrieves the most relevant chunks from a previously ingested document via two-stage hybrid retrieval (semantic candidate set → keyword re-rank → score fusion), assembles the RAG context alongside prior session turns, generates a grounded answer, and persists the Q&A turn to the chat session.
 
@@ -335,7 +289,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 6. Memory Ingest (`MEMORY_INGEST`)
+## 5. Memory Ingest (`MEMORY_INGEST`)
 
 **What it does:** Fast, per-interaction memory extraction — the first stage of the two-stage block OR.S memory pipeline (Honcho reference architecture, D25). Extracts an episode summary, outcome, tags, and candidate facts from a single interaction via Claude, then writes the episode (upserting the owning `Peer`) and upserts the extracted facts as `SemanticMemory` rows.
 
@@ -393,7 +347,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 7. Memory Consolidation (`MEMORY_CONSOLIDATION`)
+## 6. Memory Consolidation (`MEMORY_CONSOLIDATION`)
 
 **What it does:** Dream-time consolidation — the second stage of the two-stage block OR.S memory pipeline. Reasons deeply (Claude only, D35 frontier-only rule) across a peer's (or every peer's, in a workspace) recently accumulated episodes and current facts to distill durable `SemanticMemory` rows, resolve contradictions (lower-and-insert, never overwrite/delete), and refresh `Peer.representation`.
 
@@ -444,7 +398,7 @@ curl -X POST http://localhost:8080/events/ \
 
 ---
 
-## 8. SDLC Flow (`SDLC_FLOW`)
+## 7. SDLC Flow (`SDLC_FLOW`)
 
 **What it does:** Drives a structured spec (`SDLCTask` list persisted as JSON) through a sequential implement → test → triage → review loop, task by task, in one shared git worktree — then patches docs, writes a wrap-up log, and opens a PR. Replaces markdown-based task parsing with the `SDLCState`/`SDLCTask` schema in `app/schemas/sdlc_schema.py`.
 
