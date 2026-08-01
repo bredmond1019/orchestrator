@@ -11,6 +11,38 @@ timestamp: "2026-08-01T13:20:00Z"
 
 ---
 
+## [2026-08-01] (session 2)
+
+### Brain-quality track independently reviewed — 5 items amended, OR.K3 → engine-rs, all 7 task specs generated (planning only)
+- **What:** Ran the reviewing-orchestrator pass the morning handoff requested: six deep recon
+  passes (retrieval path, ingest/corpus, Python DAG engine; engine-rs capabilities, Brain seams,
+  roadmap), then amended the block set. `OR.ticket.corpus-reconcile` widened to five drift axes
+  (+ section-renamed orphans) plus an `embedding_model` stamp migration (model mismatch is
+  undetectable without it) and the `ingested/` trust-hole fixes; `OR.X` cut 4 gains
+  `inspect_run.py` + the telegram docker/pyproject surfaces; `OR.X2`'s premise corrected —
+  **`app/services/claude_code/` is not deletable** (`app/core/nodes/agent.py` + all three surviving
+  LLM nodes depend on it); `OR.K2` widened (workspace scoping is a no-op on *every* recall path,
+  not just hybrid; recall return shapes normalize during promotion; golden-set expectations
+  re-derived, not inherited from the stale 2026-07-03 archive; ≥2 exact-ID-hijack cases);
+  `OR.K1` re-scoped to one call site inside the promoted core and re-ordered **after** `OR.K2`.
+  **`OR.K3` superseded → engine-rs `EN.6.L`** — with `OR.Q2` shipped, judgment consumes retrieval
+  over `GET /recall` (engine-shaped per the boundary test), and the "vindicates app/core" claim was
+  false (no per-item fan-out; no retries; mid-run progress flushed but never committed). Minted
+  engine-rs **`EN.6.K`** (Brain read-client seam; also fixes both PersistToBrainNodes sending no
+  `X-API-Key` and content_pipeline posting to the nonexistent `/ingest/learning`). Generated task
+  specs for all seven items; wrote the orchestration runbook
+  (`planning/brain-quality-orchestration.md`); rewrote `handoff.md` for the executing agent.
+- **Notable recon finds beyond the block set:** the abstain gate is effectively "did anything
+  match" (`sigmoid(top_fused_score)` vs 0.55 — one keyword hit clears it; post-K2 experiment);
+  `build_context_prefix` is per-file, confirming the L215 header-only-chunk bias mechanism; 5 DB
+  sessions per retrieve(); question embedded twice per QA turn; `content_chunks` has no ANN index.
+- **Refs:** `planning/brain-quality-orchestration.md` (the runbook); `planning/master-plan.md`
+  (amended Brain Quality section, OR.X/OR.X2, superseded OR.K3);
+  `core/_planning/engine-rs/master-plan.md` (EN.6.K, EN.6.L); the seven `planning/*/tasks.{md,json}`
+  spec dirs; brain D51/D9/D20.
+
+---
+
 ## [2026-08-01]
 
 ### Brain-quality track authored + divestment re-scoped and unblocked (planning only)
