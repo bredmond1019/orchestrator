@@ -12,7 +12,7 @@ related: [D28-node-level-execution-state, D30-data-contract-ownership, app-archi
 
 # Data Contract — Orchestrator Execution State
 
-**Contract Version: 1.4.0**
+**Contract Version: 1.5.0**
 
 This is the **single source of truth** for the shape any external consumer reads to observe a
 workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
@@ -242,8 +242,8 @@ Mounted at `/` (`app/api/`):
 | `GET` | `/workflows` | — | `{ "workflows": [str, ...] }` — registered types |
 | `GET` | `/workflows/{type}/graph` | — | `{ "nodes": [str, ...], "edges": [[from, to], ...] }` |
 | `POST` | `/events/{run_id}/abort` | — (no body) | `202 { "run_id": str, "status": "aborting" }` — **abort** a live run (new in v1.1.0; **not yet implemented in orchestrator's own API** — see "Known gap" above; live in `engine-rs` today) |
-| `POST` | `/ingest/proposal` | `{ "artifact_id": str, "company_name": str, "doc_type": str, "section": str, "content": str, "roadmap": object }` | `200 { "artifact_id": str, "chunks_written": int }` — **ingest** an engine-rs proposal artifact (new in v1.3.0) |
-| `POST` | `/ingest/artifact` | `{ "artifact_id": str, "doc_type": str, "content": str, "section": str \| null, "project": str \| null, "title": str \| null, "description": str \| null, "metadata": object \| null }` | `200 { "artifact_id": str, "chunks_written": int }` — **ingest** a generic artifact (new in v1.3.0) |
+| `POST` | `/ingest/proposal` | `{ "artifact_id": str, "company_name": str, "doc_type": str, "section": str, "content": str, "roadmap": object, "authored_at": datetime \| null }` | `200 { "artifact_id": str, "chunks_written": int }` — **ingest** an engine-rs proposal artifact (new in v1.3.0; `authored_at` added v1.5.0) |
+| `POST` | `/ingest/artifact` | `{ "artifact_id": str, "doc_type": str, "content": str, "section": str \| null, "project": str \| null, "title": str \| null, "description": str \| null, "metadata": object \| null, "authored_at": datetime \| null }` | `200 { "artifact_id": str, "chunks_written": int }` — **ingest** a generic artifact (new in v1.3.0; `authored_at` added v1.5.0) |
 | `GET` | `/recall?q=<str>&limit=<int>&hybrid=<bool>` | — | `200 { "query": str, "count": int, "results": [ { "doc_id": str \| null, "file_path": str, "title": str \| null, "section": str \| null, "content": str, "score": float, "via": str }, ... ] }` — **recall** corpus results (new in v1.4.0) |
 | `GET` | `/walk?doc_id=<str>&depth=<int>` | — | `200 { "root": str, "depth": int, "levels": [[str, ...], ...], "nodes": { "<doc_id>": { "doc_id": str, "file_path": str \| null, "title": str \| null } } }` — **walk** the structural graph (new in v1.4.0) |
 | `GET` | `/pulse` | — | `200 { "pgvector_reachable": bool, "embedding_reachable": bool, "embedding_error": str \| null, "brain_documents_count": int, "brain_edges_count": int, "max_indexed_at": str \| null, "max_authored_at": str \| null, "edges_empty_but_related_exists": bool, "healthy": bool, "errors": [str, ...] }` — **pulse** health snapshot (new in v1.4.0) |
@@ -313,13 +313,19 @@ engine-rs. Both routes reuse the same `X-API-Key` gate as `POST /events/`, deleg
 `app/brain/ingest.py::ingest_artifact` chunk→embed→write path, and write `brain_documents` rows
 (§7 is the only place these routes are specified; they do not touch `events` or `task_context`).
 
-- **`POST /ingest/proposal`** accepts engine-rs's `PersistToBrainNode` payload **exactly**:
+- **`POST /ingest/proposal`** accepts engine-rs's `PersistToBrainNode` payload **exactly**, plus
+  the optional `authored_at` field (added v1.5.0):
   `{ "artifact_id": str, "company_name": str, "doc_type": str, "section": str, "content": str,
-  "roadmap": object }`. This is the target for `EN.4.C`'s proposal-generator hybrid.
+  "roadmap": object, "authored_at": datetime | null }`. This is the target for `EN.4.C`'s
+  proposal-generator hybrid.
 - **`POST /ingest/artifact`** accepts the generic envelope for other producers (`EN.5.A`
   content-pipeline, `EN.5.C` external-intel): `{ "artifact_id": str, "doc_type": str,
   "content": str, "section": str | null, "project": str | null, "title": str | null,
-  "description": str | null, "metadata": object | null }`.
+  "description": str | null, "metadata": object | null, "authored_at": datetime | null }`.
+- **`authored_at`** (v1.5.0, both routes) — optional caller-supplied authoring timestamp for the
+  written `brain_documents` rows; omitted or `null` falls back to `datetime.now()` (the
+  pre-v1.5.0 behavior, unchanged). Threaded through to `app/brain/ingest.py::ingest_artifact`'s
+  own `authored_at` parameter.
 - **`401 Unauthorized`** — missing or mismatched `X-API-Key` header (no body), same gate as
   `POST /events/`.
 - **`422 Unprocessable Entity`** — a malformed body (missing/empty required field) is rejected as
@@ -390,3 +396,4 @@ checklist step prompting this.
 | 1.2.0 | 2026-07-24 | Minor: new `GET /events/{event_id}` read endpoint (§7) — the async-result seam; reuses the `X-API-Key` gate, `404` for unknown/malformed ids, returns `{event_id, workflow_type, status, created_at, updated_at, task_context}` with `status` derived on every read (six values, precedence documented in §7; golden fixtures under `tests/fixtures/event_read/`). `POST /events/` 202 body gains `event_id` (the `events.id` of the row just created). New run-level `metadata.failure` annotation (§5) — written on a fresh, independently committed session so it survives the enclosing `db_session` rollback on a raising workflow; `NodeRun`'s `pending|running|success|failed` vocabulary (§6) is unchanged. §3's read path reconciled: the reserved read API has landed, `GET /events?status=running` stays reserved. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.3.0 | 2026-07-24 | Minor: new `POST /ingest/proposal` and `POST /ingest/artifact` endpoints (§7) — the ingest seam engine-rs hybrid workflows (`EN.4.C`/`EN.5.A`/`EN.5.C`) POST their finished artifacts through instead of embedding pgvector into engine-rs. Both reuse the `X-API-Key` gate, reject malformed bodies with a typed `422` (never `500`), delegate to the one `app/brain/ingest.py::ingest_artifact` chunk→embed→write path, and return `{artifact_id, chunks_written}` on success. `/ingest/proposal` is pinned exactly to engine-rs's `PersistToBrainNode` payload; `/ingest/artifact` is the generic envelope for other producers. Does not change any `events`/`task_context` shape — these routes write only to `brain_documents`, outside this contract's `events` scope, and are documented here because they share the same HTTP surface and auth gate. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.4.0 | 2026-07-27 | Minor: new `GET /recall`, `GET /walk`, `GET /pulse` endpoints (§7) — the read half of the D51 HTTP adapter whose write half (`POST /ingest/*`) landed in v1.3.0. All three reuse the `X-API-Key` gate, reject missing/malformed query params with a typed `422` (never a `500`), and delegate unchanged to the one `app/brain/` read core (`retrieval.recall` / `graph.walk` / `pulse.pulse`) that the `syn recall`/`walk`/`pulse` CLI already calls — no retrieval, traversal, or health-probe behavior changes. `recall()`'s `workspace` argument is not wired to a query param (out of scope). Does not change any `events`/`task_context` shape — these routes read only `brain_documents`/`brain_edges`, outside this contract's `events` scope, and are documented here because they share the same HTTP surface and auth gate (the same framing v1.3.0 used for `/ingest/*`). §3's read-path narrative reconciled: a consumer no longer needs direct `brain_documents` coupling to query the corpus. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
+| 1.5.0 | 2026-08-01 | Minor: `POST /ingest/proposal` and `POST /ingest/artifact` (§7) gain an optional `authored_at: datetime \| null` field (additive, backward-compatible — omitted or `null` preserves the pre-existing `datetime.now()` fallback exactly). Threaded through `app/brain/ingest.py::ingest_artifact`'s new optional `authored_at` parameter to the written `brain_documents` rows. Part of `OR.ticket.corpus-reconcile` task 1 (the `embedding_model` stamp migration); does not touch `events`/`task_context`/`node_runs` shape. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |

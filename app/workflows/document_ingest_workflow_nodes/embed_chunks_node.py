@@ -25,10 +25,11 @@ class EmbedChunksNode(Node):
         chunks: list[dict] = chunk_result["chunks"]
 
         texts = [c["content"] for c in chunks]
-        vectors = EmbeddingService().embed_batch(texts)
+        embedding_svc = EmbeddingService()
+        vectors = embedding_svc.embed_batch(texts)
 
         chunks_with_embeddings = [
-            {**chunk, "embedding": vector}
+            {**chunk, "embedding": vector, "embedding_model": embedding_svc.stamp}
             for chunk, vector in zip(chunks, vectors, strict=True)
         ]
 

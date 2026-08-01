@@ -74,3 +74,11 @@ class ContentChunk(Base):
         default=datetime.now,
         doc="Timestamp when the chunk was created",
     )
+    # Column added in migration (ticket-corpus-reconcile task 1). See
+    # database.brain_document.BrainDocument.embedding_model for the full
+    # rationale (same stamp, same axis, applied to this table's chunk rows).
+    embedding_model = Column(
+        String(128),
+        nullable=True,
+        doc="EmbeddingService.stamp at write time; NULL means unstamped, pre-migration.",
+    )

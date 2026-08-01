@@ -7,13 +7,16 @@ against the Docker-gated ``pgvector_engine`` fixture (``tests/brain/conftest.py`
 re-exports it from ``tests/database/conftest.py``).
 """
 
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 from brain.ingest import ingest_artifact
 from database.brain_document import BrainDocument
+from freezegun import freeze_time
 
 _FAKE_VECTOR = [0.1] * 1024
+_FAKE_STAMP = "ollama:mxbai-embed-large"
 
 
 def _mock_embed_batch(texts: list[str]) -> list[list[float]]:
@@ -127,6 +130,57 @@ class TestIngestArtifactPureLogic:
         # project set -> an extra .filter() call scopes the delete by project.
         assert base_filter.filter.called
 
+    def test_writes_embedding_model_stamp(self):
+        session = MagicMock()
+        with patch("brain.ingest.EmbeddingService") as mock_svc:
+            mock_svc.return_value.embed_batch.side_effect = _mock_embed_batch
+            mock_svc.return_value.stamp = _FAKE_STAMP
+
+            ingest_artifact(
+                session,
+                artifact_id="artifact-stamped",
+                doc_type="proposal",
+                content="Body content.",
+            )
+
+        (doc,) = (call.args[0] for call in session.add.call_args_list)
+        assert doc.embedding_model == _FAKE_STAMP
+
+    def test_authored_at_supplied_is_persisted(self):
+        session = MagicMock()
+        supplied = datetime(2026, 1, 1, 12, 0, 0)
+        with patch("brain.ingest.EmbeddingService") as mock_svc:
+            mock_svc.return_value.embed_batch.side_effect = _mock_embed_batch
+            mock_svc.return_value.stamp = _FAKE_STAMP
+
+            ingest_artifact(
+                session,
+                artifact_id="artifact-authored",
+                doc_type="proposal",
+                content="Body content.",
+                authored_at=supplied,
+            )
+
+        (doc,) = (call.args[0] for call in session.add.call_args_list)
+        assert doc.authored_at == supplied
+
+    def test_authored_at_omitted_falls_back_to_now(self):
+        session = MagicMock()
+        frozen = datetime(2026, 8, 1, 9, 30, 0)
+        with freeze_time(frozen), patch("brain.ingest.EmbeddingService") as mock_svc:
+            mock_svc.return_value.embed_batch.side_effect = _mock_embed_batch
+            mock_svc.return_value.stamp = _FAKE_STAMP
+
+            ingest_artifact(
+                session,
+                artifact_id="artifact-no-authored",
+                doc_type="proposal",
+                content="Body content.",
+            )
+
+        (doc,) = (call.args[0] for call in session.add.call_args_list)
+        assert doc.authored_at == frozen
+
     def test_embedding_count_mismatch_raises(self):
         session = MagicMock()
         with patch("brain.ingest.EmbeddingService") as mock_svc:
@@ -149,6 +203,7 @@ class TestIngestArtifactRealWrite:
     def test_real_write_produces_row(self, pgvector_session):
         with patch("brain.ingest.EmbeddingService") as mock_svc:
             mock_svc.return_value.embed_batch.side_effect = _mock_embed_batch
+            mock_svc.return_value.stamp = _FAKE_STAMP
             written = ingest_artifact(
                 pgvector_session,
                 artifact_id="real-artifact-1",
@@ -168,12 +223,14 @@ class TestIngestArtifactRealWrite:
         assert rows[0].content == "## Section One\nSome real content."
         assert rows[0].project == "real-co"
         assert len(rows[0].embedding) == 1024
+        assert rows[0].embedding_model == _FAKE_STAMP
 
     def test_reingesting_same_artifact_and_section_replaces_not_duplicates(
         self, pgvector_session
     ):
         with patch("brain.ingest.EmbeddingService") as mock_svc:
             mock_svc.return_value.embed_batch.side_effect = _mock_embed_batch
+            mock_svc.return_value.stamp = _FAKE_STAMP
             ingest_artifact(
                 pgvector_session,
                 artifact_id="real-artifact-2",

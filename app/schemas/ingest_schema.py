@@ -10,6 +10,8 @@ Two inbound shapes share the one ``app/brain/ingest.py`` write path:
 Both routes respond with the same ``IngestResponse``.
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -17,8 +19,10 @@ class ProposalIngestPayload(BaseModel):
     """Inbound body for ``POST /ingest/proposal``.
 
     Matches engine-rs's ``PersistToBrainNode`` payload exactly — do not
-    rename, reorder, or drop any field. ``roadmap`` is the
+    rename, reorder, or drop any required field. ``roadmap`` is the
     ``AutomationRoadmap`` JSON produced by ``proposal_generator_workflow``.
+    ``authored_at`` is additive (optional, v1.5.0) — omitting it preserves
+    the pre-existing behavior exactly.
     """
 
     artifact_id: str = Field(..., min_length=1, description="Stable proposal artifact id")
@@ -27,6 +31,10 @@ class ProposalIngestPayload(BaseModel):
     section: str = Field(..., min_length=1, description="Section label for this chunk group")
     content: str = Field(..., min_length=1, description="Raw artifact text to ingest")
     roadmap: dict = Field(..., description="The AutomationRoadmap JSON payload")
+    authored_at: datetime | None = Field(
+        default=None,
+        description="Optional caller-supplied authoring timestamp; falls back to now()",
+    )
 
 
 class ArtifactIngestPayload(BaseModel):
@@ -44,6 +52,10 @@ class ArtifactIngestPayload(BaseModel):
     title: str | None = Field(default=None, description="Optional OKF title")
     description: str | None = Field(default=None, description="Optional OKF description")
     metadata: dict | None = Field(default=None, description="Optional free-form metadata")
+    authored_at: datetime | None = Field(
+        default=None,
+        description="Optional caller-supplied authoring timestamp; falls back to now()",
+    )
 
 
 class IngestResponse(BaseModel):

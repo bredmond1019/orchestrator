@@ -51,6 +51,7 @@ class StoreChunksNode(Node):
                 is_section_title=c.get("is_section_title", False),
                 content=c["content"],
                 embedding=c["embedding"],
+                embedding_model=c.get("embedding_model"),
             )
             for c in embedded_chunks
         ]
