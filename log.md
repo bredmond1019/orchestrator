@@ -11,6 +11,47 @@ timestamp: "2026-08-01T13:20:00Z"
 
 ---
 
+## [2026-08-01] (session 6)
+
+### OR.K2 shipped — retrieval evaluation harness (`syn eval`) + retrieval-core promotion
+- **What:** `/sdlc-flow or-k2-retrieval-eval-harness --worktree` ran all 4 tasks to PASS, reviewed
+  PASS in 1 attempt. Task 1 promoted the 832-LOC retrieval core out of `RetrieveChunksNode` into
+  `app/brain/retrieval_engine.py`, shrinking the node to a thin adapter; fixed workspace/filters/
+  session scoping across all of `retrieval.py`'s exact-id/semantic/hybrid recall paths; normalized
+  `recall()`'s return shape to one dict shape with higher-is-better scores everywhere; killed the
+  inverted `app/brain/` → `app/workflows/` import (grep-verified, guarded by a new
+  `tests/brain/test_no_workflows_import.py`); migrated all 7 affected test files and added
+  workspace-scoping + golden-ordering regression tests. Task 2 authored the 23-case hand-written
+  retrieval golden set (`planning/retrieval-golden-set.yaml`), with expectations re-derived live
+  against today's corpus rather than trusted from the 2026-07-03 archive test run (found 3 still-FAIL,
+  1 partial, 1 regression), plus an 11-test schema-validation suite. Task 3 built `app/brain/eval/`
+  (scorer + runner + models) and wired `syn eval [--set] [--json] [--baseline]` — a deterministic
+  recall@5/recall@10/MRR/abstain-correctness/groundedness scorer with a baseline regression gate —
+  registering `eval` in `ops.ROUTINES` as report-only/cron-safe. Task 4 documented the promotion +
+  harness across `docs/` (api-reference.md, scripts.md, brain-rag.md, index.md), bumped
+  `docs/data-contract.md` to v1.6.0 (Minor) for `GET /recall`'s score-polarity/`via`-vocabulary
+  change, and ran the first real `syn eval` against the live corpus: recall@5 0.7059, recall@10
+  0.8824, MRR 0.5011, abstain_correctness 0.7391, groundedness 0.4490 — the abstain number is the
+  instrument working as designed (today's fixed `0.55` confidence threshold is a deliberate post-K2
+  calibration item, not a bug). `bastion/docs/data-contract.md` was left pinned at 1.4.0 (out of
+  this task's file scope, pre-existing gap, flagged for a follow-up bastion-side session).
+  `state.json` block `OR.K2` flipped to `closed`; unblocks `OR.K1` (retrieval query log).
+- **Refs:** `planning/or-k2-retrieval-eval-harness/tasks.md` (task spec, 1 amendment logged — the
+  deferred bastion re-pin); `planning/master-plan.md` § `OR.K2`; brain D51/D52.
+- **Next:** `OR.K1` (retrieval query log + `syn queries`) is now unblocked — the traffic substrate
+  feeding future golden-set expansion.
+
+```
+03a0d46 fix(docs): correct Retrieval Eval Harness anchor typo (appbrainevals -> appbraineval)
+ffbfb00 docs: OR.K2 task 4 — retrieval_engine/eval-harness docs, data-contract v1.6.0, first real syn eval
+fe4523f feat: implement or-k2-retrieval-eval-harness-task3
+22e80cf feat: implement or-k2-retrieval-eval-harness-task2
+175fa54 feat: implement or-k2-retrieval-eval-harness-task1
+6567116 chore: init worktree or-k2-retrieval-eval-harness-flow
+```
+
+---
+
 ## [2026-08-01] (session 5)
 
 ### OR.X2 shipped — `SDLC_FLOW` + `app/evals` retirement
