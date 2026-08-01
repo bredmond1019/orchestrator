@@ -126,6 +126,22 @@ def _build_parser() -> argparse.ArgumentParser:
     routine_parser.add_argument("name", help="Registered routine name (e.g. refresh, stale).")
     routine_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
+    eval_parser = subparsers.add_parser(
+        "eval", help="Score the retrieval golden set (OR.K2) and report metrics."
+    )
+    eval_parser.add_argument(
+        "--set",
+        dest="golden_set",
+        default=None,
+        help="Golden-set YAML path (default: planning/retrieval-golden-set.yaml).",
+    )
+    eval_parser.add_argument(
+        "--baseline",
+        default=None,
+        help="Prior run JSON to diff against; exits non-zero on any metric regression.",
+    )
+    eval_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
     return parser
 
 
@@ -388,6 +404,75 @@ def _run_routine(args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_eval_report(report_dict: dict) -> None:
+    """Human-mode renderer for a `RetrievalRunReport.to_dict()` payload."""
+    for case in report_dict["results"]:
+        print(
+            f"[{case['case_id']}] recall@5={case['recall_at_5']} "
+            f"recall@10={case['recall_at_10']} rr={case['reciprocal_rank']} "
+            f"abstain_correct={case['abstain_correct']} "
+            f"groundedness={case['groundedness']}"
+        )
+    print("-- aggregate --")
+    for metric, value in sorted(report_dict["aggregate"].items()):
+        print(f"  {metric}: {value:.4f}")
+
+
+def _run_eval(args: argparse.Namespace) -> int:
+    """Execute `syn eval` and print its result; return the exit code.
+
+    Runs the golden set, writes a dated JSON report, and prints per-case +
+    aggregate metrics. With `--baseline <path>`, also prints a signed
+    per-metric delta against that prior run and returns non-zero on any
+    regression (`brain.eval.compare_to_baseline`).
+    """
+    from brain.eval import (  # pylint: disable=import-outside-toplevel
+        compare_to_baseline,
+        load_cases,
+        run_eval,
+        write_report,
+    )
+    from brain.eval.runner import (  # pylint: disable=import-outside-toplevel
+        DEFAULT_GOLDEN_SET_PATH,
+        load_report,
+    )
+
+    golden_set_path = args.golden_set or DEFAULT_GOLDEN_SET_PATH
+
+    try:
+        cases = load_cases(golden_set_path)
+        report = run_eval(cases)
+        write_report(report)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    report_dict = report.to_dict()
+    exit_code = 0
+
+    deltas = None
+    if args.baseline:
+        try:
+            baseline = load_report(args.baseline)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _emit_error(exc, as_json=args.json)
+        deltas, regressed = compare_to_baseline(report_dict, baseline)
+        exit_code = 1 if regressed else 0
+
+    if args.json:
+        payload = dict(report_dict)
+        if deltas is not None:
+            payload["baseline_deltas"] = deltas
+        print(json.dumps(payload))
+    else:
+        _print_eval_report(report_dict)
+        if deltas is not None:
+            print("-- baseline deltas (signed; negative = regression) --")
+            for metric, delta in sorted(deltas.items()):
+                print(f"  {metric}: {delta:+.4f}")
+
+    return exit_code
+
+
 def _emit_error(exc: Exception, *, as_json: bool) -> int:
     """Render a typed error and return a non-zero exit code (never a prompt/traceback)."""
     message = str(exc)
@@ -419,6 +504,7 @@ def main(argv: list[str] | None = None) -> int:
         "refresh": _run_refresh,
         "stale": _run_stale,
         "routine": _run_routine,
+        "eval": _run_eval,
     }
     return dispatch[args.command](args)
 
