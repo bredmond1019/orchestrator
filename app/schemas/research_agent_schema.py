@@ -1,10 +1,11 @@
 """Output schema for CompanyResearchNode (formerly the research_agent workflow).
 
 ``ResearchAgentEventSchema`` and the ``RESEARCH_AGENT`` workflow itself were removed
-under `OR.X` cut 2 (D51 divestment). ``ResearchBriefOutput`` survives here because
-``ProposalCompanyResearchNode`` (`app/workflows/proposal_generator_workflow_nodes/`)
-subclasses `CompanyResearchNode` and reuses this output shape unchanged; it retires
-with `PROPOSAL_GENERATOR` in `OR.X` cut 3.
+under `OR.X` cut 2 (D51 divestment). ``ProposalCompanyResearchNode``, the only
+remaining subclass of ``CompanyResearchNode`` reusing this output shape, was removed
+under `OR.X` cut 3 along with `PROPOSAL_GENERATOR`. ``ResearchBriefOutput`` is now
+unused pending `CompanyResearchNode` itself being revisited — kept only for the base
+node's own tests, not for any workflow.
 """
 
 from pydantic import BaseModel, Field
