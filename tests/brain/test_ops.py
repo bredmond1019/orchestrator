@@ -1,4 +1,4 @@
-"""Tests for app/brain/ops.py — the Brain write/ops core (OR.N2 task 2).
+"""Tests for app/brain/ops.py — the Brain write/ops core (OR.N2 task 2; repair dispatch task 3).
 
 Mocks `index_brain.main`, the `mev` subprocess, and `load_brain_edges.load_edges`
 rather than requiring a live/Docker-gated DB — `stale()`'s DB read is exercised
@@ -6,12 +6,16 @@ against a MagicMock session built the same way `tests/test_index_brain.py`'s
 incremental-skip tests do. Covers: `refresh()` step ordering + `--dry-run` skip,
 `refresh_edges()` subprocess parsing + `MevUnavailableError`, `stale()`'s
 content/structure axes (clean corpus -> zero drift; a changed file -> named;
-pulse's `edges_empty_but_related_exists` -> `edges_stale`), `run_routine`
-dispatch + `UnknownRoutineError`, and `embed_paths`/`ingest_dir`/`prune_paths`
-argument forwarding.
+pulse's `edges_empty_but_related_exists` -> `edges_stale`; `ingested/%` rows
+structurally cannot appear), `run_routine` dispatch (including the deep-check
+`"reconcile"` routine) + `UnknownRoutineError`, `embed_paths`/`ingest_dir`/
+`prune_paths` argument forwarding (including `ingested/%` paths), and
+`repair_deep_stale`'s per-axis dispatch to existing primitives only
+(pgvector-gated for the orphaned-chunks delete, which needs a real session).
 """
 
 import json
+import uuid
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +28,7 @@ from brain.ops import (
     prune_paths,
     refresh,
     refresh_edges,
+    repair_deep_stale,
     run_routine,
     stale,
 )
@@ -126,6 +131,16 @@ class TestPrunePaths:
             ["--prune-paths", "docs/old.md", "--dry-run", "--brain-path", "/tmp/brain"]
         )
         assert result["dry_run"] is True
+
+    @patch("index_brain.main")
+    def test_accepts_ingested_lane_synthetic_paths(self, mock_main):
+        """`ingested/%` paths are exact-match deletes like any other path (OR.ticket task 3)."""
+        result = prune_paths(["ingested/proposal/abc123.md"])
+
+        mock_main.assert_called_once_with(
+            ["--prune-paths", "ingested/proposal/abc123.md"]
+        )
+        assert result == {"pruned": ["ingested/proposal/abc123.md"], "dry_run": False}
 
 
 class TestRefreshEdges:
@@ -293,6 +308,30 @@ class TestStale:
         assert result["edges_stale"] is True
         assert result["drift"] is True
 
+    @patch("index_brain._collect_files", return_value=[])
+    @patch("brain.pulse.pulse")
+    @patch("database.session.db_session")
+    def test_ingested_lane_rows_never_appear_in_changed_files(
+        self, mock_db_session, mock_pulse, _mock_collect_files, tmp_path
+    ):
+        """`_collect_files` walks disk only, so `ingested/%` DB rows structurally
+        cannot surface here regardless of how many exist — pinning the exemption
+        `stale()`'s docstring now states explicitly (OR.ticket task 3)."""
+        fake_session = MagicMock()
+        fake_session.__enter__ = MagicMock(return_value=fake_session)
+        fake_session.__exit__ = MagicMock(return_value=False)
+
+        def fake_db_session():
+            yield fake_session
+
+        mock_db_session.side_effect = fake_db_session
+        mock_pulse.return_value = _FakePulseReport(edges_empty_but_related_exists=False)
+
+        result = stale(brain_path=str(tmp_path))
+
+        assert result["changed_files"] == []
+        assert result["drift"] is False
+
 
 class TestRunRoutine:
     """`run_routine` dispatches over the `ROUTINES` registry; unknown names raise."""
@@ -315,6 +354,140 @@ class TestRunRoutine:
         mock_stale.assert_called_once_with()
         assert result["drift"] is False
 
+    @patch("brain.reconcile.deep_stale")
+    def test_dispatches_reconcile_report_only(self, mock_deep_stale):
+        """`"reconcile"` runs the deep check and serializes it — report-only, no repair
+        dispatch (a routine must be safe to cron)."""
+        fake_report = _make_report()
+        mock_deep_stale.return_value = fake_report
+
+        result = run_routine("reconcile")
+
+        mock_deep_stale.assert_called_once_with()
+        assert result == fake_report.to_dict()
+
     def test_unknown_name_raises(self):
         with pytest.raises(UnknownRoutineError):
             run_routine("nope")
+
+
+def _make_report(**overrides):
+    """Build a `ReconcileReport` with axis-empty defaults, overridable per test."""
+    from brain.reconcile import ReconcileReport
+
+    defaults = dict(
+        deleted_but_embedded=[],
+        section_orphans=[],
+        orphaned_chunks=[],
+        dangling_edges=[],
+        model_mismatch=[],
+        unstamped_count=0,
+        ingested_count=0,
+        ingested_min_authored_at=None,
+        ingested_max_authored_at=None,
+        drift=False,
+    )
+    defaults.update(overrides)
+    return ReconcileReport(**defaults)
+
+
+class TestRepairDeepStale:
+    """`repair_deep_stale` dispatches per-axis using only pre-existing ops primitives,
+    re-runs detection, and reports the delta. Never touches `client_slug` rows — every
+    `deep_stale` axis already excludes them, so there is nothing extra to guard here."""
+
+    @patch("brain.reconcile.deep_stale")
+    @patch("brain.ops.prune_paths")
+    def test_deleted_but_embedded_dispatches_prune_paths(self, mock_prune, mock_deep_stale):
+        report = _make_report(deleted_but_embedded=["gone.md"], drift=True)
+        mock_deep_stale.return_value = _make_report()
+
+        result = repair_deep_stale(report, brain_path="/tmp/brain")
+
+        mock_prune.assert_called_once_with(["gone.md"], brain_path="/tmp/brain")
+        assert result["actions"] == [
+            {"axis": "deleted_but_embedded", "action": "prune_paths", "count": 1}
+        ]
+        assert result["before"] == report.to_dict()
+        assert result["after"]["drift"] is False
+
+    @patch("brain.reconcile.deep_stale")
+    @patch("brain.ops.refresh_edges")
+    def test_dangling_edges_dispatches_refresh_edges(self, mock_refresh_edges, mock_deep_stale):
+        report = _make_report(
+            dangling_edges=[{"source_doc_id": "D1", "to_ref": "X", "target_doc_id": None}],
+            drift=True,
+        )
+        mock_refresh_edges.return_value = 3
+        mock_deep_stale.return_value = _make_report()
+
+        result = repair_deep_stale(report, brain_path="/tmp/brain")
+
+        called_path = mock_refresh_edges.call_args[0][0]
+        assert str(called_path) == "/tmp/brain"
+        assert result["actions"] == [
+            {"axis": "dangling_edges", "action": "refresh_edges", "loaded": 3}
+        ]
+
+    @patch("brain.reconcile.deep_stale")
+    @patch("brain.ops.prune_paths")
+    @patch("brain.ops.refresh_edges")
+    def test_section_orphans_and_model_mismatch_are_manual_only(
+        self, mock_refresh_edges, mock_prune, mock_deep_stale
+    ):
+        report = _make_report(
+            section_orphans=[("doc.md", "## Old")],
+            model_mismatch=[{"embedding_model": "voyage:voyage-2"}],
+            drift=True,
+        )
+        mock_deep_stale.return_value = report
+
+        result = repair_deep_stale(report)
+
+        mock_prune.assert_not_called()
+        mock_refresh_edges.assert_not_called()
+        actions_by_axis = {action["axis"]: action for action in result["actions"]}
+        assert actions_by_axis["section_orphans"]["action"] == "manual --rebuild"
+        assert actions_by_axis["model_mismatch"]["action"] == "manual --rebuild"
+
+    @patch("brain.reconcile.deep_stale")
+    def test_healthy_report_is_a_noop(self, mock_deep_stale):
+        report = _make_report()
+        mock_deep_stale.return_value = report
+
+        result = repair_deep_stale(report)
+
+        assert result["actions"] == []
+        assert result["after"]["drift"] is False
+
+    def test_orphaned_chunks_deleted_via_repository(self, pgvector_session):
+        """End-to-end delete against a real session — the targeted, provably-orphaned
+        delete this axis is explicitly allowed (mirrors `_prune_paths`'s style)."""
+        from database.content_chunk import ContentChunk
+
+        orphan = ContentChunk(doc_id=uuid.uuid4(), position=1, content="orphan chunk")
+        pgvector_session.add(orphan)
+        pgvector_session.flush()
+        chunk_id = str(orphan.id)
+
+        report = _make_report(orphaned_chunks=[chunk_id], drift=True)
+
+        def fake_db_session():
+            yield pgvector_session
+
+        with patch("database.session.db_session", side_effect=fake_db_session), patch(
+            "brain.reconcile.deep_stale", return_value=_make_report()
+        ):
+            result = repair_deep_stale(report)
+
+        assert result["actions"] == [
+            {"axis": "orphaned_chunks", "action": "delete_orphaned_chunks", "count": 1}
+        ]
+        # `chunk_id` (captured before the delete) rather than `orphan.id` — the bulk
+        # delete + commit expires `orphan`, and it is no longer bound to a session.
+        remaining = (
+            pgvector_session.query(ContentChunk)
+            .filter(ContentChunk.id == uuid.UUID(chunk_id))
+            .first()
+        )
+        assert remaining is None
