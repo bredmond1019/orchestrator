@@ -198,7 +198,7 @@ the connection strings in `app/.env`. See `docs/scripts.md` for all developer sc
 
 ```bash
 uv run python -m pytest
-# ~1453 tests; all should pass
+# ~1273 tests; all should pass
 ```
 
 <!-- updated by /update-docs -->
