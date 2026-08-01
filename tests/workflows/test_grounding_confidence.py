@@ -13,6 +13,7 @@ Covers:
 import uuid
 from unittest.mock import MagicMock, patch
 
+from brain import retrieval_engine
 from core.task import TaskContext
 from schemas.document_qa_schema import DocumentQAEventSchema
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import RetrieveChunksNode
@@ -81,7 +82,7 @@ class TestProcessEnvelope:
         ]
 
         node = RetrieveChunksNode()
-        with patch.object(node, "retrieve", return_value=fake_chunks) as mock_retrieve:
+        with patch.object(retrieval_engine, "retrieve", return_value=fake_chunks) as mock_retrieve:
             result_ctx = node.process(ctx)
 
         mock_retrieve.assert_called_once()
@@ -98,7 +99,7 @@ class TestProcessEnvelope:
         ctx = TaskContext(event=event)
 
         node = RetrieveChunksNode()
-        with patch.object(node, "retrieve", return_value=[]):
+        with patch.object(retrieval_engine, "retrieve", return_value=[]):
             result_ctx = node.process(ctx)
 
         stored = result_ctx.nodes[node.node_name]["result"]

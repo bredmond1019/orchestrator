@@ -261,35 +261,47 @@ class TestSysPathShim:
 class TestRecallParityEndToEnd:
     """`syn recall --hybrid` parity against `query_brain`'s (`brain.retrieval.hybrid_search`) path.
 
-    `RetrieveChunksNode.retrieve` is mocked (as in `tests/brain/test_retrieval.py`'s own parity
-    guard) so this exercises the real dispatch chain — argparse -> `brain.retrieval.recall` ->
-    `brain.retrieval.hybrid_search` -> `RetrieveChunksNode.retrieve` -> `--json` stdout — without
-    requiring a live embedding backend, while still proving `syn recall --hybrid` and
-    `query_brain.py --hybrid` (which also calls `hybrid_search`) resolve to one implementation.
+    ``brain.retrieval_engine.retrieve`` is mocked (OR.K2 promoted the fusion
+    pipeline out of ``RetrieveChunksNode``) so this exercises the real
+    dispatch chain — argparse -> `brain.retrieval.recall` ->
+    `brain.retrieval.hybrid_search` -> `brain.retrieval_engine.retrieve` ->
+    `--json` stdout — without requiring a live embedding backend, while still
+    proving `syn recall --hybrid` and `query_brain.py --hybrid` (which also
+    calls `hybrid_search`) resolve to one implementation.
     """
 
     def test_recall_hybrid_matches_hybrid_search(self, capsys):
         from brain.retrieval import hybrid_search
 
-        fake_chunks = [
+        fake_engine_chunks = [
             {
+                "id": "chunk-1",
                 "doc_id": "D99",
                 "file_path": "docs/decisions/D99-example.md",
                 "title": "D99 — Parity Check",
                 "section_title": "",
                 "content": "Parity check content for the syn recall CLI.",
+                "source": "General",
                 "score": 0.9,
                 "via": "semantic",
             }
         ]
-        with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.RetrieveChunksNode"
-        ) as mock_node_cls:
-            mock_node_cls.return_value.retrieve.return_value = fake_chunks
+        with patch("brain.retrieval_engine.retrieve", return_value=fake_engine_chunks):
             expected = hybrid_search("D99", limit=5)
 
             code = main(["recall", "D99", "--hybrid", "--json"])
 
         assert code == 0
         out = _read_stdout(capsys)
-        assert json.loads(out) == expected == fake_chunks
+        assert json.loads(out) == expected
+        assert expected == [
+            {
+                "doc_id": "D99",
+                "file_path": "docs/decisions/D99-example.md",
+                "title": "D99 — Parity Check",
+                "section": "",
+                "content": "Parity check content for the syn recall CLI.",
+                "score": 0.9,
+                "via": "semantic",
+            }
+        ]

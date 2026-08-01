@@ -15,6 +15,10 @@ Cases covered (mirroring the task spec's list):
 (e) A decayed fact ranks below a fresh fact of equal cosine similarity.
 (f) No ``semantic_memories`` id is passed to ``_keyword_search``.
 
+OR.K2 task 1 promoted the pipeline these tests exercise into
+``app/brain/retrieval_engine.py`` (module-level functions) — patches now
+target that module instead of a ``RetrieveChunksNode`` instance.
+
 Per CLAUDE.md standing rule 9, ``TaskContext`` output is asserted via the
 real ``{"result": ...}`` contract produced by ``update_node``.
 """
@@ -22,6 +26,7 @@ real ``{"result": ...}`` contract produced by ``update_node``.
 import uuid
 from unittest.mock import MagicMock, patch
 
+from brain import retrieval_engine
 from core.task import TaskContext
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
     RetrieveChunksNode,
@@ -54,8 +59,8 @@ def _make_ctx(**kwargs) -> TaskContext:
 
 class _NodeHarness:
     """Shared setup: a node plus a context manager that patches every DB/embed
-    seam RetrieveChunksNode.retrieve() touches except _memory_expand/
-    MemoryLoaderNode.retrieve, which each test controls directly."""
+    seam ``retrieval_engine.retrieve()`` touches except ``_memory_expand``/
+    ``MemoryLoaderNode.retrieve``, which each test controls directly."""
 
     def setup_method(self):
         self.node = RetrieveChunksNode()
@@ -63,7 +68,7 @@ class _NodeHarness:
     def _patched(self, semantic_candidates=None):
         semantic_candidates = semantic_candidates if semantic_candidates is not None else []
         return patch.multiple(
-            self.node,
+            retrieval_engine,
             _semantic_search=MagicMock(return_value=semantic_candidates),
             _structural_expand=MagicMock(return_value=[]),
             _keyword_expand=MagicMock(return_value=[]),
@@ -76,12 +81,12 @@ class TestIncludeMemoryGating(_NodeHarness):
 
     def test_include_memory_false_never_calls_memory_expand(self):
         with self._patched(), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node, "_memory_expand"
+            retrieval_engine, "_memory_expand"
         ) as mock_memory_expand:
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
-            self.node.retrieve(
+            retrieval_engine.retrieve(
                 "q",
                 corpus="content",
                 workspace_id="some-workspace",
@@ -93,9 +98,9 @@ class TestIncludeMemoryGating(_NodeHarness):
         """Same gate, driven end-to-end through process()."""
         ctx = _make_ctx(workspace_id="some-workspace", include_memory=False)
         with self._patched(), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node, "_memory_expand"
+            retrieval_engine, "_memory_expand"
         ) as mock_memory_expand:
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
             self.node.process(ctx)
@@ -106,16 +111,14 @@ class TestWorkspaceIdNoneNoOp(_NodeHarness):
     """(b) include_memory=True + workspace_id=None returns [] and touches no DB."""
 
     def test_memory_expand_returns_empty_when_workspace_id_none(self):
-        result = RetrieveChunksNode._memory_expand(
+        result = retrieval_engine._memory_expand(  # pylint: disable=protected-access
             [0.1] * 1024, workspace_id=None, peer_id=None
         )
         assert result == []
 
     def test_memory_expand_opens_no_db_session_when_workspace_id_none(self):
-        with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.MemoryLoaderNode"
-        ) as mock_loader_cls:
-            result = RetrieveChunksNode._memory_expand(
+        with patch("brain.retrieval_engine.MemoryLoaderNode") as mock_loader_cls:
+            result = retrieval_engine._memory_expand(  # pylint: disable=protected-access
                 [0.1] * 1024, workspace_id=None, peer_id="p1"
             )
         assert result == []
@@ -123,12 +126,12 @@ class TestWorkspaceIdNoneNoOp(_NodeHarness):
 
     def test_retrieve_end_to_end_workspace_id_none(self):
         with self._patched(), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.MemoryLoaderNode"
+            "brain.retrieval_engine.MemoryLoaderNode"
         ) as mock_loader_cls:
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
-            results = self.node.retrieve(
+            results = retrieval_engine.retrieve(
                 "q",
                 corpus="content",
                 workspace_id=None,
@@ -157,18 +160,18 @@ class TestGracefulDegradationNoPeersNoFacts(_NodeHarness):
         }
 
         with self._patched(semantic_candidates=[semantic_candidate]), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node,
+            retrieval_engine,
             "_memory_expand",
             return_value=[],  # MemoryLoaderNode with no facts returns []
         ):
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
 
-            without_memory = self.node.retrieve(
+            without_memory = retrieval_engine.retrieve(
                 "q", corpus="content", workspace_id=None, include_memory=False
             )
-            with_memory_no_facts = self.node.retrieve(
+            with_memory_no_facts = retrieval_engine.retrieve(
                 "q", corpus="content", workspace_id="ws-1", include_memory=True
             )
 
@@ -195,12 +198,12 @@ class TestMemoryFactReachesOutput(_NodeHarness):
         }
 
         with self._patched(semantic_candidates=[]), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node, "_memory_expand", return_value=[memory_candidate]
+            retrieval_engine, "_memory_expand", return_value=[memory_candidate]
         ):
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
-            results = self.node.retrieve(
+            results = retrieval_engine.retrieve(
                 "q", corpus="content", workspace_id="ws-1", include_memory=True
             )
 
@@ -226,11 +229,9 @@ class TestMemoryFactReachesOutput(_NodeHarness):
             ],
             "episodes": [],
         }
-        with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.MemoryLoaderNode"
-        ) as mock_loader_cls:
+        with patch("brain.retrieval_engine.MemoryLoaderNode") as mock_loader_cls:
             mock_loader_cls.return_value.retrieve.return_value = fake_facts
-            result = RetrieveChunksNode._memory_expand(
+            result = retrieval_engine._memory_expand(  # pylint: disable=protected-access
                 [0.1] * 1024, workspace_id="ws-1", peer_id=None
             )
 
@@ -286,14 +287,14 @@ class TestDecayOrdering(_NodeHarness):
         }
 
         with self._patched(semantic_candidates=[]), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node,
+            retrieval_engine,
             "_memory_expand",
             return_value=[decayed_candidate, fresh_candidate],
         ):
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
-            results = self.node.retrieve(
+            results = retrieval_engine.retrieve(
                 "q", corpus="content", workspace_id="ws-1", include_memory=True
             )
 
@@ -330,16 +331,16 @@ class TestMemoryIdsExcludedFromKeywordSearch(_NodeHarness):
         }
 
         with self._patched(semantic_candidates=[semantic_candidate]), patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node, "_memory_expand", return_value=[memory_candidate]
+            retrieval_engine, "_memory_expand", return_value=[memory_candidate]
         ):
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
-            self.node.retrieve(
+            retrieval_engine.retrieve(
                 "q", corpus="content", workspace_id="ws-1", include_memory=True
             )
 
-            called_args, called_kwargs = self.node._keyword_search.call_args
+            called_args, called_kwargs = retrieval_engine._keyword_search.call_args
             candidate_ids_arg = (
                 called_args[1] if len(called_args) > 1 else called_kwargs.get("candidate_ids")
             )
