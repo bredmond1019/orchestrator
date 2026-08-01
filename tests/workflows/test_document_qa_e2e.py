@@ -18,6 +18,7 @@ not the plain dict that unit tests seed) and catches cross-node contract drift.
 import uuid
 from unittest.mock import MagicMock, patch
 
+from brain import retrieval_engine
 from core.task import TaskContext
 from database.chat_session import ChatSession
 from schemas.document_qa_schema import DocumentQAEventSchema
@@ -73,26 +74,27 @@ class TestDocumentQAPipelineE2E:
             MockES.return_value.embed_text.return_value = [0.1] * 1024
             EmbedQuestionNode().process(ctx)
 
-        # Node 2 — RetrieveChunksNode (_semantic_search / _keyword_search mocked)
+        # Node 2 — RetrieveChunksNode (retrieval_engine._semantic_search /
+        # _keyword_search mocked at the promoted module — OR.K2)
         node2 = RetrieveChunksNode()
         fake_retrieved = _fake_chunks(2)
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
-        ) as MockES:
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockES, patch.object(
+            retrieval_engine,
+            "_semantic_search",
+            return_value=[
+                {
+                    "id": uuid.uuid4(),
+                    "content": c["content"],
+                    "section_title": c["section_title"],
+                    "is_section_title": False,
+                    "distance": 0.1 + i * 0.05,
+                }
+                for i, c in enumerate(fake_retrieved)
+            ],
+        ), patch.object(retrieval_engine, "_keyword_search", return_value=set()):
             MockES.return_value.embed_text.return_value = [0.1] * 1024
-            node2._semantic_search = MagicMock(
-                return_value=[
-                    {
-                        "id": uuid.uuid4(),
-                        "content": c["content"],
-                        "section_title": c["section_title"],
-                        "is_section_title": False,
-                        "distance": 0.1 + i * 0.05,
-                    }
-                    for i, c in enumerate(fake_retrieved)
-                ]
-            )
-            node2._keyword_search = MagicMock(return_value=set())
             node2.process(ctx)
 
         # Node 3 — AssembleContextNode (_load_session mocked)

@@ -40,12 +40,13 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from database.brain_edge import BrainEdge  # noqa: E402
 from load_brain_edges import build_edge_rows  # noqa: E402
+from brain import retrieval_engine  # noqa: E402
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (  # noqa: E402
     RetrieveChunksNode,
 )
 
-_EMBED_PATCH = "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
-_DB_SESSION_PATCH = "memory.seams.db_session"
+_EMBED_PATCH = "brain.retrieval_engine.EmbeddingService"
+_DB_SESSION_PATCH = "brain.retrieval_engine.db_session"
 
 
 def _brain_row(doc_id: str, content: str, title: str = "") -> SimpleNamespace:
@@ -151,14 +152,14 @@ class TestBrainGraphRetrievalAcceptance:
         )
 
         with patch(_EMBED_PATCH) as mock_embed, patch.object(
-            self.node, "_semantic_search", return_value=[alpha_candidate]
-        ), patch.object(self.node, "_keyword_search", return_value=set()), patch.object(
-            self.node, "_keyword_expand", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[alpha_candidate]
+        ), patch.object(retrieval_engine, "_keyword_search", return_value=set()), patch.object(
+            retrieval_engine, "_keyword_expand", return_value=[]
         ), patch(
             _DB_SESSION_PATCH, fake_db_session
         ):
             mock_embed.return_value.embed_text.return_value = [0.1] * 1024
-            structural_on = self.node.retrieve(
+            structural_on = retrieval_engine.retrieve(
                 "What is the specific answer?", corpus="brain", k=5, expand_structural=True
             )
 
@@ -173,14 +174,14 @@ class TestBrainGraphRetrievalAcceptance:
         # expand_structural, so it is mocked out here to isolate the
         # structural-stage's own DB-call behavior under test.)
         with patch(_EMBED_PATCH) as mock_embed, patch.object(
-            self.node, "_semantic_search", return_value=[alpha_candidate]
-        ), patch.object(self.node, "_keyword_search", return_value=set()), patch.object(
-            self.node, "_keyword_expand", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[alpha_candidate]
+        ), patch.object(retrieval_engine, "_keyword_search", return_value=set()), patch.object(
+            retrieval_engine, "_keyword_expand", return_value=[]
         ), patch(
             _DB_SESSION_PATCH
         ) as mock_db_session:
             mock_embed.return_value.embed_text.return_value = [0.1] * 1024
-            structural_off = self.node.retrieve(
+            structural_off = retrieval_engine.retrieve(
                 "What is the specific answer?", corpus="brain", k=5, expand_structural=False
             )
 
@@ -245,12 +246,12 @@ class TestBrainGraphRetrievalAcceptance:
                 edge_target_doc_ids=resolved_targets, neighbor_rows=[]
             )
             with patch(_EMBED_PATCH) as mock_embed, patch.object(
-                self.node, "_semantic_search", return_value=[alpha_candidate]
-            ), patch.object(self.node, "_keyword_search", return_value=set()), patch(
+                retrieval_engine, "_semantic_search", return_value=[alpha_candidate]
+            ), patch.object(retrieval_engine, "_keyword_search", return_value=set()), patch(
                 _DB_SESSION_PATCH, fake_db_session
             ):
                 mock_embed.return_value.embed_text.return_value = [0.1] * 1024
-                return self.node.retrieve(
+                return retrieval_engine.retrieve(
                     "Tell me about alpha", corpus="brain", k=5, expand_structural=expand
                 )
 
@@ -270,12 +271,12 @@ class TestBrainGraphRetrievalAcceptance:
             "distance": 0.15,
         }
         with patch(_EMBED_PATCH) as mock_embed, patch.object(
-            self.node, "_semantic_search", return_value=[candidate]
-        ), patch.object(self.node, "_keyword_search", return_value=set()), patch(
+            retrieval_engine, "_semantic_search", return_value=[candidate]
+        ), patch.object(retrieval_engine, "_keyword_search", return_value=set()), patch(
             _DB_SESSION_PATCH
         ) as mock_db_session:
             mock_embed.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve(
+            result = retrieval_engine.retrieve(
                 "some question", corpus="content", k=5, expand_structural=True
             )
 
