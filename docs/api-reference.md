@@ -89,7 +89,7 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 67. [ConsolidationWriteNode](#consolidationwritenode)
 68. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
 69. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
-70. [Retrieval Eval Harness (app/brain/eval/, syn eval)](#retrieval-eval-harness-appbrainevals-syn-eval)
+70. [Retrieval Eval Harness (app/brain/eval/, syn eval)](#retrieval-eval-harness-appbraineval-syn-eval)
 
 ---
 
