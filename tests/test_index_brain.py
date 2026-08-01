@@ -1243,6 +1243,42 @@ class TestNewColumnPopulation:
         assert captured[0].title is None
         assert captured[0].description is None
 
+    def test_embedding_model_stamp_is_written(self, tmp_path):
+        """Every freshly indexed row carries the '{provider}:{model}' stamp."""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "career.md").write_text(
+            "## Section\nA paragraph body with enough length to be a real chunk here.",
+            encoding="utf-8",
+        )
+
+        captured: list = []
+
+        def fake_db_session():
+            mock_session = self._make_mock_session()
+
+            def capturing_add(obj):
+                captured.append(obj)
+
+            mock_session.add = capturing_add
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+        mock_embed.stamp = "ollama:mxbai-embed-large"
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch(
+                "services.embedding_service.EmbeddingService",
+                return_value=mock_embed,
+            ),
+        ):
+            main(["--brain-path", str(tmp_path)])
+
+        assert len(captured) == 1
+        assert captured[0].embedding_model == "ollama:mxbai-embed-large"
+
 
 class TestDefaultBrainPath:
     """The default --brain-path is resolved by walking up to brain.toml, not cwd."""

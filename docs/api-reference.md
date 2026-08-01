@@ -5022,7 +5022,7 @@ LoadMemoryContextNode
 
 ## Brain Read Core (recall / walk / pulse / syn CLI)
 
-**Sources:** `app/brain/retrieval.py`, `app/brain/graph.py`, `app/brain/pulse.py`, `app/brain/ops.py`, `app/brain/cli.py`
+**Sources:** `app/brain/retrieval.py`, `app/brain/graph.py`, `app/brain/pulse.py`, `app/brain/ops.py`, `app/brain/reconcile.py`, `app/brain/cli.py`
 
 Block **OR.N1** (read core) + **OR.N2** (write/ops core). Three typed, agent-callable read cores
 over the Brain corpus and its structural graph — `recall` (exact-id / semantic / hybrid search),
@@ -5138,8 +5138,9 @@ def prune_paths(paths: list[str], *, dry_run: bool = False, brain_path: str | No
 def refresh_edges(brain_path: Path) -> int: ...
 def refresh(*, rebuild: bool = False, dry_run: bool = False, brain_path: str | None = None) -> dict: ...
 def stale(*, brain_path: str | None = None) -> dict: ...
+def repair_deep_stale(report, *, brain_path: str | None = None) -> dict: ...
 
-ROUTINES: dict[str, Callable[[], dict]]  # {"refresh": ..., "stale": ...}
+ROUTINES: dict[str, Callable[[], dict]]  # {"refresh": ..., "stale": ..., "reconcile": ...}
 
 def run_routine(name: str) -> dict: ...
 ```
@@ -5152,11 +5153,63 @@ def run_routine(name: str) -> dict: ...
 | `refresh_edges(brain_path)` | Runs `mev emit-graph --json <brain_path>`, parses the JSON payload, and loads it into `brain_edges` via `load_brain_edges.load_edges`. Raises `MevUnavailableError` when the `mev` binary isn't on `PATH`. The single edge-reload implementation shared by `syn refresh` and `syn routine refresh`. |
 | `refresh(*, rebuild=False, dry_run=False, brain_path=None)` | Runs the content-index step (`index_brain.main`) then the edge-reload step (`refresh_edges`), in that order. `dry_run=True` skips the edge step entirely (`brain_edges` has no dry-run equivalent) and returns `{"documents": {"dry_run": True}, "edges": {"skipped": True}}`; otherwise returns `{"documents": {"dry_run": False}, "edges": {"loaded": N}}`. |
 | `stale(*, brain_path=None)` | Read-only drift report — never writes. Content axis: reuses `index_brain._collect_files`/`_load_brain_config` and, per file, compares its mtime to the newest matching `brain_documents.indexed_at` row (the same comparison the incremental skip makes, but non-destructive). Structure axis: reuses `brain.pulse.pulse()`'s `edges_empty_but_related_exists` flag rather than re-deriving it. Returns `{"changed_files": [...], "edges_stale": bool, "drift": bool}` — `drift` is `False` on an untouched, fully-loaded corpus. |
-| `run_routine(name)` | Dispatches to `ROUTINES[name]()`. Raises `UnknownRoutineError` (listing the known names) for an unregistered name. `ROUTINES` currently registers `"refresh"` and `"stale"`; entries are lambdas (not direct function references) specifically so `patch("app.brain.ops.refresh", ...)` / `patch("app.brain.ops.stale", ...)` affects dispatch — a direct reference would bind the original function object at import time. This is the convention `OR.J`'s cron invokes. |
+| `repair_deep_stale(report, *, brain_path=None)` | Repairs the repairable `reconcile.deep_stale` axes using existing primitives only — never a second write path. Dispatch per axis: `deleted_but_embedded` → `prune_paths` (exact paths); `dangling_edges` → `refresh_edges`; `orphaned_chunks` → a targeted `content_chunks` delete (`_delete_orphaned_chunks`, mirroring `prune_paths`'s exact-match/one-commit style — allowed because the rows are provably orphaned); `section_orphans` and `model_mismatch` → no automatic action, since no targeted-delete primitive exists for either — the report names the manual `--rebuild` follow-up instead of inventing one. Re-runs `deep_stale` after acting so the caller sees the delta, not just the actions taken. Never touches `client_slug` diagnostic rows (every `deep_stale` axis already excludes them). Returns `{"actions": [{"axis", "action", ...}, ...], "before": ReconcileReport.to_dict(), "after": ReconcileReport.to_dict()}`. |
+| `run_routine(name)` | Dispatches to `ROUTINES[name]()`. Raises `UnknownRoutineError` (listing the known names) for an unregistered name. `ROUTINES` currently registers `"refresh"`, `"stale"`, and `"reconcile"` (the deep check, report-only — `_reconcile_routine` calls `reconcile.deep_stale().to_dict()` with no `--repair` dispatch, since a cron routine must be safe to run unattended); entries are lambdas (not direct function references) specifically so `patch("app.brain.ops.refresh", ...)` / `patch("app.brain.ops.stale", ...)` affects dispatch — a direct reference would bind the original function object at import time. This is the convention `OR.J`'s cron invokes. |
 
 `embed_paths`, `ingest_dir`, `prune_paths`, `refresh`, and `stale` each locally import
 `index_brain` (and, for the edge step, `load_brain_edges`/`database.session`) at call time, with
-`app/` and `scripts/` inserted into `sys.path` at module load.
+`app/` and `scripts/` inserted into `sys.path` at module load. `repair_deep_stale` locally imports
+`index_brain` and `database.session` the same way, plus `brain.reconcile.deep_stale` for its
+post-repair re-check.
+
+### `app/brain/reconcile.py` — deep corpus/index drift (read-only)
+
+```python
+@dataclass
+class ReconcileReport:
+    deleted_but_embedded: list[str]
+    section_orphans: list[tuple[str, str]]
+    orphaned_chunks: list[str]
+    dangling_edges: list[dict]
+    model_mismatch: list[dict]
+    unstamped_count: int
+    ingested_count: int
+    ingested_min_authored_at: datetime | None
+    ingested_max_authored_at: datetime | None
+    drift: bool
+    errors: list[str]
+
+    def to_dict(self) -> dict: ...  # ISO-serializes the two datetime fields; tuples -> lists
+
+def deep_stale(
+    *,
+    brain_path: str | None = None,
+    session=None,
+    embedding_service=None,
+) -> ReconcileReport: ...
+```
+
+The inverse of `app/brain/ops.py::stale`: `stale` only ever walks the *filesystem* corpus looking
+for matching DB rows; `deep_stale` walks DB rows looking for the filesystem/edge/embedding state
+they claim to still be backed by. Pure and read-only — it never writes, and every count is derived
+from a live DB query, never from what a caller requested (the `ops.py` fabricated-return trap this
+module is explicitly not fixing there). Five drift axes plus one informational lane, each backed by
+a private `_<axis>` helper:
+
+| Axis | Helper | What it flags |
+|---|---|---|
+| `deleted_but_embedded` | `_deleted_but_embedded` | An indexed `file_path` (excluding `ingested/%` and `client_slug` rows) whose file no longer exists under the corpus root. |
+| `section_orphans` | `_section_orphans` | A `(file_path, section)` pair in the DB absent from the file's *current* section set (`brain.chunking.chunk_by_section` over `index_brain.parse_document`'s body) for a still-existing file — a header rename/removal leaks a row the `(file_path, section)`-keyed upsert never revisits. A file already reported under `deleted_but_embedded` is skipped here (no double-report). |
+| `orphaned_chunks` | `_orphaned_chunks` | A `content_chunks.doc_id` group with no `position == 0` row — the document-anchor row every `ingest_artifact`-shaped write produces first; a group missing it has no live parent. |
+| `dangling_edges` | `_dangling_edges` | `brain_edges` rows with `target_doc_id IS NULL` (kept deliberately by the loader) plus rows whose non-null `target_doc_id` matches no `brain_documents.doc_id`. |
+| `model_mismatch` / `unstamped_count` | `_model_mismatch` | `brain_documents`/`content_chunks` rows whose `embedding_model` stamp differs from the injected `embedding_service.stamp`. `NULL` stamps are counted separately in `unstamped_count` (pre-migration rows — informational, not drift). |
+| `ingested_count` / `ingested_min_authored_at` / `ingested_max_authored_at` | `_ingested_lane` | Informational only: count and `authored_at` age range of `ingested/%` rows, which never appear in any filesystem-based axis. |
+
+`deep_stale` opens its own session (`database.session.db_session`) and constructs a default
+`EmbeddingService` when neither is injected; `_resolve_root` resolves the corpus root the same way
+`ops.stale` does (`index_brain._DEFAULT_BRAIN_PATH` unless `brain_path` overrides it). `drift` is
+`True` when any of axes 1-5 is non-empty; `unstamped_count` and the `ingested/` lane are
+informational and never contribute to `drift`.
 
 ### `app/brain/cli.py` — the `syn` console script
 
@@ -5166,13 +5219,15 @@ def main(argv: list[str] | None = None) -> int: ...
 
 Registered in `pyproject.toml` (`[project.scripts]`, `syn = "app.brain.cli:main"`, mirroring
 [`createworkflow`](#createworkflow-cli)). An `argparse` dispatcher wiring `recall` / `walk` /
-`pulse` (OR.N1 read core) and `embed` / `ingest` / `prune` / `refresh` / `stale` / `routine`
-(OR.N2 write/ops core) behind short, deterministic, agent-callable verbs: every command accepts
+`pulse` (OR.N1 read core), `embed` / `ingest` / `prune` / `refresh` / `stale` / `routine`
+(OR.N2 write/ops core), and `stale`'s `--deep [--repair]` mode (`reconcile.deep_stale` /
+`ops.repair_deep_stale`) behind short, deterministic, agent-callable verbs: every command accepts
 `--json` (emits one machine-parseable payload and nothing else on stdout), exit codes are
 deterministic (`0` on success; non-zero on a typed `--workspace` resolution error, an unhealthy
-`pulse` verdict, an unregistered `routine` name, or `stale --assert-clean` finding drift), and none
-of the nine commands ever prompts interactively. Mirrors `scripts/query_brain.py`'s `sys.path`
-shim so `app`-relative imports resolve identically regardless of invocation form.
+`pulse` verdict, an unregistered `routine` name, `stale --assert-clean` finding drift, or
+`stale --deep` finding drift on any axis), and none of the commands ever prompts interactively.
+Mirrors `scripts/query_brain.py`'s `sys.path` shim so `app`-relative imports resolve identically
+regardless of invocation form.
 
 | Subcommand | Arguments | Behavior |
 |---|---|---|
@@ -5183,8 +5238,8 @@ shim so `app`-relative imports resolve identically regardless of invocation form
 | `ingest` | `--dir DIRECTORY` (required, dest `directory`), `--force`, `--brain-path PATH`, `--json` | Calls `brain.ops.ingest_dir(DIRECTORY, ...)`. |
 | `prune PATH [PATH ...]` | `--dry-run`, `--brain-path PATH`, `--json` | Calls `brain.ops.prune_paths(PATHS, ...)`. The brain repo's post-commit delete/rename freshness hook calls this. |
 | `refresh` | `--rebuild`, `--dry-run`, `--brain-path PATH`, `--json` | Calls `brain.ops.refresh(...)`. |
-| `stale` | `--assert-clean`, `--brain-path PATH`, `--json` | Calls `brain.ops.stale(...)`; always prints the report and returns `0` unless `--assert-clean` is set and `result["drift"]` is `True`, in which case it returns `1`. |
-| `routine NAME` | `--json` | Calls `brain.ops.run_routine(NAME)`; an `UnknownRoutineError` is caught by the same `_emit_error` path as the other write/ops commands. |
+| `stale` | `--assert-clean`, `--deep`, `--repair`, `--brain-path PATH`, `--json` | Without `--deep`: calls `brain.ops.stale(...)`; always prints the report and returns `0` unless `--assert-clean` is set and `result["drift"]` is `True`, in which case it returns `1`. With `--deep`: calls `brain.reconcile.deep_stale(...)` instead — returns `1` whenever the final report's `drift` is `True`, `0` otherwise, unconditionally (no `--assert-clean` gate; asking for `--deep` means you want the drift signal). `--repair` (only meaningful with `--deep`) additionally calls `brain.ops.repair_deep_stale(report, ...)` and prints/returns the pre/post-repair `{"actions", "before", "after"}` payload instead of a single snapshot. |
+| `routine NAME` | `--json` | Calls `brain.ops.run_routine(NAME)`; an `UnknownRoutineError` is caught by the same `_emit_error` path as the other write/ops commands. `routine reconcile` runs the deep check report-only (no `--repair` from a routine — see `ops.ROUTINES`). |
 
 `--workspace` validation is shared across `recall`/`walk` via `_resolve_workspace` (same
 typed-error/exit-code parity), even though `walk` does not yet apply the resolved scope to its
@@ -5218,13 +5273,29 @@ from another directory without `cd`-ing here, use `uv run --project <path-to-thi
   `tests/brain/test_retrieval.py` uses).
 - `tests/brain/test_ops.py` — pure-mock coverage (mocked session, mocked `subprocess`/
   `index_brain.main`) of `embed_paths`, `ingest_dir` (including the not-a-directory and
-  no-matching-files cases), `prune_paths`, `refresh_edges` (including `MevUnavailableError`),
-  `refresh` (including the `dry_run` short-circuit), `stale`'s content/structure drift detection
-  against `tmp_path` fixtures, and `run_routine`/`ROUTINES` dispatch (including
-  `UnknownRoutineError`).
+  no-matching-files cases), `prune_paths` (including `ingested/%` synthetic paths being accepted
+  as an ordinary exact-match path), `refresh_edges` (including `MevUnavailableError`), `refresh`
+  (including the `dry_run` short-circuit), `stale`'s content/structure drift detection against
+  `tmp_path` fixtures (including `ingested/%` DB rows structurally never appearing in
+  `changed_files` — the filesystem-only walk exemption pinned with a comment + test), and
+  `run_routine`/`ROUTINES` dispatch (including `UnknownRoutineError` and the `"reconcile"` routine
+  running the deep check report-only). `repair_deep_stale`'s per-axis dispatch to existing
+  primitives only (`prune_paths`, `refresh_edges`, the targeted `content_chunks` delete; the
+  manual-`--rebuild` axes taking no automatic action; a healthy report being a no-op; `client_slug`
+  rows never touched) is mocked against `brain.reconcile.deep_stale`.
+- `tests/brain/test_reconcile.py` — one test class per drift axis (`TestDeletedButEmbedded`,
+  `TestSectionOrphans`, `TestOrphanedChunks`, `TestDanglingEdges`, `TestModelMismatch`,
+  `TestIngestedLane`) against the Docker-gated pgvector fixture, seeding the drift and asserting
+  the exact rows named; `TestHealthyCorpus` pins `drift == False` on a clean corpus;
+  `TestReconcileReportSerialization` pins `to_dict()`'s ISO-datetime and tuple-to-list shape.
 - `tests/brain/test_cli_ops.py` — argument parsing and `--json`/exit-code behavior for the
   `embed`/`ingest`/`prune`/`refresh`/`stale`/`routine` subcommands, including
   `stale --assert-clean`'s drift-dependent exit code and the shared `_emit_error` typed-exception
   path.
+- `tests/brain/test_cli.py` (deep-drift wiring) — `stale --deep [--json]` calling
+  `reconcile.deep_stale` with the parsed `--brain-path`, its unconditional drift-dependent exit
+  code (no `--assert-clean` gate), `stale --deep --repair` dispatching `ops.repair_deep_stale` and
+  reporting the `{"before", "actions", "after"}` delta, the shared `_emit_error` path on a
+  `deep_stale` exception, and `routine reconcile` running via `ops.run_routine`.
 - `tests/test_index_brain.py` — `--only-paths` filtering (matched/unmatched/mixed paths, warning
   on unmatched), `--force`'s incremental-skip bypass, and `--prune-paths` (`TestPrunePaths`).

@@ -79,6 +79,21 @@ class EmbeddingService:
             api_key = os.environ["VOYAGE_API_KEY"]
             self._client = voyageai.Client(api_key=api_key)
 
+    @property
+    def provider(self) -> str:
+        """The resolved provider name (e.g. ``"ollama"``)."""
+        return self._provider
+
+    @property
+    def model(self) -> str:
+        """The resolved model name (e.g. ``"mxbai-embed-large"``)."""
+        return self._model
+
+    @property
+    def stamp(self) -> str:
+        """The ``"{provider}:{model}"`` stamp written to ``embedding_model`` columns."""
+        return f"{self._provider}:{self._model}"
+
     def embed_text(self, text: str) -> list[float]:
         """Embed a single string and return its vector."""
         return self.embed_batch([text])[0]

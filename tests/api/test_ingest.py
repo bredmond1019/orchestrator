@@ -135,6 +135,17 @@ class TestIngestDispatch:
         assert kwargs["content"] == "This is the proposal body content."
         assert kwargs["section"] == "Executive Summary"
         assert kwargs["project"] == "Acme Co"
+        assert kwargs["authored_at"] is None
+
+    def test_proposal_authored_at_is_passed_through(self, ingest_context):
+        client, _ = ingest_context
+        payload = {**VALID_PROPOSAL_PAYLOAD, "authored_at": "2026-01-01T12:00:00"}
+        with patch("api.ingest.ingest_artifact", return_value=1) as mock_ingest:
+            response = client.post("/ingest/proposal", json=payload)
+
+        assert response.status_code == 200
+        _, kwargs = mock_ingest.call_args
+        assert kwargs["authored_at"].isoformat() == "2026-01-01T12:00:00"
 
     def test_artifact_payload_returns_200_and_response(self, ingest_context):
         client, _ = ingest_context
@@ -152,6 +163,17 @@ class TestIngestDispatch:
         assert kwargs["content"] == "This is generic artifact content."
         assert kwargs["section"] is None
         assert kwargs["project"] is None
+        assert kwargs["authored_at"] is None
+
+    def test_artifact_authored_at_is_passed_through(self, ingest_context):
+        client, _ = ingest_context
+        payload = {**VALID_ARTIFACT_PAYLOAD, "authored_at": "2026-02-02T08:00:00"}
+        with patch("api.ingest.ingest_artifact", return_value=1) as mock_ingest:
+            response = client.post("/ingest/artifact", json=payload)
+
+        assert response.status_code == 200
+        _, kwargs = mock_ingest.call_args
+        assert kwargs["authored_at"].isoformat() == "2026-02-02T08:00:00"
 
     def test_ingest_slice_failure_returns_500_not_unhandled(self, ingest_context):
         client, _ = ingest_context

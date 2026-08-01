@@ -71,12 +71,15 @@ def _upsert_chunk(
     section_header: str,
     chunk_text: str,
     embedding: list[float],
+    embedding_model: str,
+    authored_at: datetime | None = None,
 ) -> None:
     """Delete any existing row for this (file_path, section[, project]), then insert.
 
     ``attribution`` carries the caller's ``project``/``title``/``description``
     (bundled into one dict to keep this helper's argument count small and
-    stable — see ``ingest_artifact`` for the source values).
+    stable — see ``ingest_artifact`` for the source values). ``authored_at``
+    falls back to ``datetime.now()`` when the caller does not supply one.
     """
     project = attribution.get("project")
     delete_query = session.query(BrainDocument).filter(
@@ -94,8 +97,9 @@ def _upsert_chunk(
             section=section_header,
             content=chunk_text,
             embedding=embedding,
+            embedding_model=embedding_model,
             indexed_at=datetime.now(),
-            authored_at=datetime.now(),
+            authored_at=authored_at or datetime.now(),
             project=project,
             is_section_title=_is_header_only_chunk(section_header, chunk_text),
             title=attribution.get("title") or None,
@@ -116,6 +120,7 @@ def ingest_artifact(
     project: str | None = None,
     title: str | None = None,
     description: str | None = None,
+    authored_at: datetime | None = None,
 ) -> int:
     """Chunk, embed, and upsert one artifact's content into ``brain_documents``.
 
@@ -143,6 +148,8 @@ def ingest_artifact(
         title: Optional OKF title, stored for FTS/citation display.
         description: Optional OKF description, stored for FTS/citation
             display and folded into the embed-text context prefix.
+        authored_at: Optional caller-supplied authoring timestamp; falls
+            back to ``datetime.now()`` when omitted (unchanged default).
 
     Returns:
         The number of ``BrainDocument`` chunk rows written.
@@ -156,7 +163,8 @@ def ingest_artifact(
         return 0
 
     embed_texts = [context_prefix + chunk_text for _, chunk_text in final_chunks]
-    embeddings = EmbeddingService().embed_batch(embed_texts)
+    embedding_svc = EmbeddingService()
+    embeddings = embedding_svc.embed_batch(embed_texts)
 
     chunks_written = 0
     # strict=True: an embedding-count mismatch must fail loudly here, never
@@ -170,6 +178,8 @@ def ingest_artifact(
             section_header=section_header,
             chunk_text=chunk_text,
             embedding=embedding,
+            embedding_model=embedding_svc.stamp,
+            authored_at=authored_at,
         )
         chunks_written += 1
 

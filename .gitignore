@@ -111,6 +111,7 @@ app/alembic/versions/*
 !app/alembic/versions/*_brain_documents_fts_ann_and_metadata_columns.py
 !app/alembic/versions/*_create_memory_layer_tables.py
 !app/alembic/versions/*_add_authored_at_to_brain_documents.py
+!app/alembic/versions/*_add_embedding_model_to_brain_documents_and_content_chunks.py
 
 # Playground
 playground/*.png

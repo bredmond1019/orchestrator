@@ -7,6 +7,8 @@ Covers:
 - ArtifactIngestPayload optional fields default to None
 """
 
+from datetime import datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -92,6 +94,15 @@ class TestProposalIngestPayload:
         with pytest.raises(ValidationError):
             ProposalIngestPayload(**data)
 
+    def test_authored_at_defaults_to_none(self):
+        payload = ProposalIngestPayload(**_valid_proposal_payload())
+        assert payload.authored_at is None
+
+    def test_authored_at_accepts_a_timestamp(self):
+        ts = datetime(2026, 1, 1, 12, 0, 0)
+        payload = ProposalIngestPayload(**_valid_proposal_payload(authored_at=ts))
+        assert payload.authored_at == ts
+
 
 # ---------------------------------------------------------------------------
 # ArtifactIngestPayload
@@ -116,8 +127,10 @@ class TestArtifactIngestPayload:
         assert payload.title is None
         assert payload.description is None
         assert payload.metadata is None
+        assert payload.authored_at is None
 
     def test_optional_fields_accept_values(self):
+        ts = datetime(2026, 1, 1, 12, 0, 0)
         payload = ArtifactIngestPayload(
             artifact_id="art-1",
             doc_type="content",
@@ -127,12 +140,14 @@ class TestArtifactIngestPayload:
             title="A Title",
             description="A description",
             metadata={"source": "external"},
+            authored_at=ts,
         )
         assert payload.section == "intro"
         assert payload.project == "orchestrator"
         assert payload.title == "A Title"
         assert payload.description == "A description"
         assert payload.metadata == {"source": "external"}
+        assert payload.authored_at == ts
 
     def test_empty_content_rejected(self):
         with pytest.raises(ValidationError):
