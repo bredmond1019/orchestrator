@@ -112,6 +112,7 @@ app/alembic/versions/*
 !app/alembic/versions/*_create_memory_layer_tables.py
 !app/alembic/versions/*_add_authored_at_to_brain_documents.py
 !app/alembic/versions/*_add_embedding_model_to_brain_documents_and_content_chunks.py
+!app/alembic/versions/*_create_retrieval_queries_table.py
 
 # Playground
 playground/*.png

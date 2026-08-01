@@ -6,6 +6,7 @@ from database.chat_session import ChatSession
 from database.content_chunk import ContentChunk
 from database.eval_record import EvalResult, EvalRun
 from database.learning_artifact import LearningArtifact
+from database.retrieval_query import RetrievalQuery
 
 __all__ = [
     "BrainDocument",
@@ -15,4 +16,5 @@ __all__ = [
     "EvalResult",
     "EvalRun",
     "LearningArtifact",
+    "RetrievalQuery",
 ]
