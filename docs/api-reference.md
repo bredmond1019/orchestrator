@@ -30,70 +30,64 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 8. [AgentNode](#agentnode)
 9. [ParallelNode](#parallelnode)
 10. [BaseRouter and RouterNode](#baserouter-and-routernode)
-11. [Content Pipeline Nodes](#content-pipeline-nodes-phase-1-project-a--task-3)
-12. [ToolUseNode](#tooluse-node)
-13. [GenericRepository](#genericrepository)
-14. [PromptManager](#promptmanager)
-15. [EmbeddingService](#embeddingservice)
-16. [ArticleExtractionService](#articleextractionservice)
-17. [SearchService and SearchResult](#searchservice-and-searchresult)
-18. [ChunkingService](#chunkingservice)
-19. [TranscriptService](#transcriptservice)
-20. [ClaudeResult](#clauderesult)
-21. [ClaudeCodeBackend](#claudecodebackend)
-22. [ClaudeAgentSdkBackend](#claudeagentsdkbackend)
-23. [BastionSessionBackend](#bastionsessionbackend)
-24. [WorkspaceResolver](#workspaceresolver)
-25. [ClaudeCodeModel](#claudecodemodel)
-26. [WorkflowRegistry](#workflowregistry)
-27. [Event SQLAlchemy Model](#event-sqlalchemy-model)
-28. [SummarizerNode](#summarizernode)
-29. [Content Pipeline Blog Branch Nodes](#content-pipeline-blog-branch-nodes-phase-1-project-a--task-6)
-30. [ProposalWriterNode](#proposalwriternode)
-31. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
-32. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
-33. [BrainEdge SQLAlchemy Model](#brainedge-sqlalchemy-model)
-34. [ContentChunk SQLAlchemy Model](#contentchunk-sqlalchemy-model)
-35. [ChatSession SQLAlchemy Model](#chatsession-sqlalchemy-model)
-36. [StorageNode](#storagenode)
-37. [ProposalGenerator StorageNode](#proposalgenerator-storagenode)
-38. [digest_renderer](#digest_renderer)
-39. [createworkflow CLI](#createworkflow-cli)
-40. [API Security and CORS](#api-security-and-cors)
-41. [API Layer](#api-layer)
-42. [Ingest API](#ingest-api-post-ingest)
-43. [Read API](#read-api-get-recall-walk-pulse)
-44. [DocumentIngestEventSchema](#documentingesteventschemae)
-45. [ParseDocumentNode](#parsedocumentnode)
-46. [ChunkDocumentNode](#chunkdocumentnode)
-47. [EmbedChunksNode](#embedchunksnode)
-48. [DocumentIngest StoreChunksNode](#documentingest-storechnksnode)
-49. [DocumentIngestWorkflow](#documentingestworkflow)
-50. [RetrieveChunksNode](#retrievechunksnode)
-51. [DocumentQAEventSchema](#documentqaeventschemae)
-52. [EmbedQuestionNode](#embedquestionnode)
-53. [AssembleContextNode](#assemblecontextnode)
-54. [AnswerNode](#answernode)
-55. [GroundingRouterNode](#groundingrouternode)
-56. [AbstainNode](#abstainnode)
-57. [VerifyCitationsNode](#verifycitationsnode)
-58. [UpdateSessionMemoryNode](#updatesessionmemorynode)
-59. [DocumentQAWorkflow](#documentqaworkflow)
-60. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
-61. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
-62. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
-63. [decay module](#decay-module)
-64. [EpisodeWriteService](#episodewriteservice)
-65. [UpsertMemoryNode](#upsertmemorynode)
-66. [MemoryLoaderNode](#memoryloadernode)
-67. [IngestTimeExtractionNode](#ingesttimeextractionnode)
-68. [MemoryWriteNode](#memorywritenode)
-69. [MemoryIngestWorkflow](#memoryingestworkflow)
-70. [LoadMemoryContextNode](#loadmemorycontextnode)
-71. [ConsolidationNode](#consolidationnode)
-72. [ConsolidationWriteNode](#consolidationwritenode)
-73. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
-74. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
+11. [ToolUse Node](#tooluse-node)
+12. [GenericRepository](#genericrepository)
+13. [PromptManager](#promptmanager)
+14. [EmbeddingService](#embeddingservice)
+15. [ArticleExtractionService](#articleextractionservice)
+16. [SearchService and SearchResult](#searchservice-and-searchresult)
+17. [ChunkingService](#chunkingservice)
+18. [TranscriptService](#transcriptservice)
+19. [ClaudeResult](#clauderesult)
+20. [ClaudeCodeBackend](#claudecodebackend)
+21. [ClaudeAgentSdkBackend](#claudeagentsdkbackend)
+22. [BastionSessionBackend](#bastionsessionbackend)
+23. [ClaudeCodeModel](#claudecodemodel)
+24. [WorkflowRegistry](#workflowregistry)
+25. [Event SQLAlchemy Model](#event-sqlalchemy-model)
+26. [LearningArtifact SQLAlchemy Model](#learningartifact-sqlalchemy-model)
+27. [BrainDocument SQLAlchemy Model](#braindocument-sqlalchemy-model)
+28. [BrainEdge SQLAlchemy Model](#brainedge-sqlalchemy-model)
+29. [WorkspaceResolver](#workspaceresolver)
+30. [ContentChunk SQLAlchemy Model](#contentchunk-sqlalchemy-model)
+31. [ChatSession SQLAlchemy Model](#chatsession-sqlalchemy-model)
+32. [RetrieveChunksNode](#retrievechunksnode)
+33. [createworkflow CLI](#createworkflow-cli)
+34. [API Security and CORS](#api-security-and-cors)
+35. [API Layer](#api-layer)
+36. [Ingest API](#ingest-api-post-ingest)
+37. [Read API](#read-api-get-recall-walk-pulse)
+38. [DocumentIngestEventSchema](#documentingesteventschema)
+39. [ParseDocumentNode](#parsedocumentnode)
+40. [ChunkDocumentNode](#chunkdocumentnode)
+41. [EmbedChunksNode](#embedchunksnode)
+42. [DocumentIngest StoreChunksNode](#documentingest-storechunksnode)
+43. [DocumentIngestWorkflow](#documentingestworkflow)
+44. [DocumentQAEventSchema](#documentqaeventschema)
+45. [EmbedQuestionNode](#embedquestionnode)
+46. [AssembleContextNode](#assemblecontextnode)
+47. [AnswerNode](#answernode)
+48. [GroundingRouterNode](#groundingrouternode)
+49. [AbstainNode](#abstainnode)
+50. [VerifyCitationsNode](#verifycitationsnode)
+51. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+52. [DocumentQAWorkflow](#documentqaworkflow)
+53. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
+54. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
+55. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
+56. [decay module](#decay-module)
+57. [DbSeamMixin](#dbseammixin)
+58. [EpisodeWriteService](#episodewriteservice)
+59. [UpsertMemoryNode](#upsertmemorynode)
+60. [MemoryLoaderNode](#memoryloadernode)
+61. [IngestTimeExtractionNode](#ingesttimeextractionnode)
+62. [MemoryWriteNode](#memorywritenode)
+63. [MemoryIngestWorkflow](#memoryingestworkflow)
+64. [LoadMemoryContextNode](#loadmemorycontextnode)
+65. [ConsolidationNode](#consolidationnode)
+66. [ConsolidationWriteNode](#consolidationwritenode)
+67. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
+68. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
 
 ---
 
@@ -607,9 +601,6 @@ def process(self, task_context: TaskContext) -> TaskContext:
     return task_context
 ```
 
-The existing `customer_care` nodes call `self.agent.run_sync()` directly and are
-frozen (Rule 3). Those nodes record no usage — that is intentional and expected.
-
 ---
 
 ## ParallelNode
@@ -737,94 +728,6 @@ to claim the route; return `None` to pass to the next `RouterNode` in the list.
 `next_node.__class__` to get the node type for the main execution loop. The returned
 `Node` instance from `determine_next_node()` is used only for its class — the workflow
 engine instantiates a fresh instance when executing the next node.
-
----
-
-## Content Pipeline Nodes (Phase 1 Project A — Task 3)
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/`
-
-Three nodes implement URL classification and content fetching for the content ingestion pipeline.
-
-### `SourceRouterNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/source_router_node.py`
-
-```python
-class SourceRouterNode(BaseRouter):
-    def __init__(self):
-        self.routes = [YouTubeRouter()]
-        self.fallback = FetchArticleNode()
-```
-
-Classifies `event.url` by hostname and routes to the appropriate fetch node. Follows
-the `BaseRouter` / `RouterNode` shape (`ticket_router_node.py` reference pattern).
-
-- **YouTube** (`youtube.com`, `youtu.be`, any subdomain) → `FetchTranscriptNode`
-- **All other URLs** → `FetchArticleNode` (fallback)
-
-Unparseable or empty hostnames fall through to the article fallback — they never raise.
-
-#### `YouTubeRouter`
-
-```python
-class YouTubeRouter(RouterNode):
-    def determine_next_node(self, task_context: TaskContext) -> Node | None:
-```
-
-The single `RouterNode` rule in `SourceRouterNode.routes`. Uses
-`urllib.parse.urlparse(...).hostname` plus a suffix check (avoids matching a URL that
-merely contains "youtube.com" in its path). Returns `FetchTranscriptNode()` on match,
-`None` otherwise.
-
----
-
-### `FetchTranscriptNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/fetch_transcript_node.py`
-
-```python
-class FetchTranscriptNode(Node):
-    def process(self, task_context: TaskContext) -> TaskContext:
-```
-
-Fetches the YouTube transcript for `event.url` via `TranscriptService().fetch_transcript(url)`.
-
-#### Node output keys
-
-| Key | Type | Value |
-|---|---|---|
-| `text` | `str` | Raw transcript text on success; `""` on failure |
-| `title` | `None` | Always `None` — shape-parity with `FetchArticleNode` |
-| `fetch_status` | `str` | `"ok"` on success; `"failed"` if the service raises |
-
-`ValueError` (bad URL) and `RuntimeError` (no transcript / empty) from `TranscriptService`
-are caught and recorded as `fetch_status="failed"`. The pipeline continues normally.
-Unexpected exceptions propagate.
-
----
-
-### `FetchArticleNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/fetch_article_node.py`
-
-```python
-class FetchArticleNode(Node):
-    def process(self, task_context: TaskContext) -> TaskContext:
-```
-
-Extracts readable article text from `event.url` via
-`ArticleExtractionService().extract(url)`. The service uses trafilatura first, then
-Firecrawl as a fallback for JS-heavy pages (D24). It **never raises** — it always
-returns an `ArticleResult`.
-
-#### Node output keys
-
-| Key | Type | Value |
-|---|---|---|
-| `text` | `str` | Extracted article text (may be `""` on failure) |
-| `title` | `str \| None` | Page title when extractable; `None` otherwise |
-| `fetch_status` | `str` | `"ok"`, `"fallback_used"` (Firecrawl path), or `"failed"` |
 
 ---
 
@@ -1744,20 +1647,18 @@ and attachable in `bastion sessions`.
 
 ```python
 from enum import Enum
-from workflows.content_pipeline_workflow import ContentPipelineWorkflow
-from workflows.customer_care_workflow import CustomerCareWorkflow
 from workflows.document_ingest_workflow import DocumentIngestWorkflow
 from workflows.document_qa_workflow import DocumentQAWorkflow
-from workflows.proposal_generator_workflow import ProposalGeneratorWorkflow
-from workflows.research_agent_workflow import ResearchAgentWorkflow
+from workflows.memory_consolidation_workflow import MemoryConsolidationWorkflow
+from workflows.memory_ingest_workflow import MemoryIngestWorkflow
+from workflows.sdlc_flow_workflow import SDLCFlowWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE    = CustomerCareWorkflow
-    CONTENT_PIPELINE = ContentPipelineWorkflow
-    RESEARCH_AGENT   = ResearchAgentWorkflow
-    PROPOSAL_GENERATOR = ProposalGeneratorWorkflow
-    DOCUMENT_INGEST  = DocumentIngestWorkflow
-    DOCUMENT_QA      = DocumentQAWorkflow
+    DOCUMENT_INGEST      = DocumentIngestWorkflow
+    DOCUMENT_QA          = DocumentQAWorkflow
+    SDLC_FLOW            = SDLCFlowWorkflow
+    MEMORY_INGEST        = MemoryIngestWorkflow
+    MEMORY_CONSOLIDATION = MemoryConsolidationWorkflow
 ```
 
 A plain `Enum` mapping string workflow type identifiers to workflow classes. The
@@ -1778,9 +1679,9 @@ Celery worker resolves the correct `Workflow` subclass by looking up the
 from workflows.my_new_workflow import MyNewWorkflow
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE    = CustomerCareWorkflow
-    CONTENT_PIPELINE = ContentPipelineWorkflow
-    MY_NEW           = MyNewWorkflow
+    DOCUMENT_INGEST = DocumentIngestWorkflow
+    DOCUMENT_QA     = DocumentQAWorkflow
+    MY_NEW          = MyNewWorkflow
 ```
 
 ```python
@@ -1788,9 +1689,9 @@ class WorkflowRegistry(Enum):
 from schemas.my_new_schema import MyNewEventSchema
 
 SCHEMA_MAP: dict[str, type[BaseModel]] = {
-    WorkflowRegistry.CUSTOMER_CARE.name:    CustomerCareEventSchema,
-    WorkflowRegistry.CONTENT_PIPELINE.name: ContentPipelineEventSchema,
-    WorkflowRegistry.MY_NEW.name:           MyNewEventSchema,
+    WorkflowRegistry.DOCUMENT_INGEST.name: DocumentIngestEventSchema,
+    WorkflowRegistry.DOCUMENT_QA.name:     DocumentQAEventSchema,
+    WorkflowRegistry.MY_NEW.name:          MyNewEventSchema,
 }
 ```
 
@@ -1851,350 +1752,6 @@ The engine is created lazily on first use: `db_session()` calls `_get_engine()`,
 initialises `_ENGINE` (a module-level sentinel, initially `None`) to a live
 `create_engine(...)` instance on the first call. Importing `session.py` does not
 trigger a database connection.
-
----
-
-## SummarizerNode
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/summarizer_node.py`
-
-```python
-class SummarizerNode(AgentNode):
-```
-
-Concrete `AgentNode` that turns fetched source text (from `FetchTranscriptNode` or
-`FetchArticleNode`) into a structured `SummaryOutput`. Produces the per-artifact
-summary stored on `LearningArtifact.summary` and consumed by `StorageNode` (Task 5).
-
-### `SummaryOutput`
-
-```python
-class SummaryOutput(AgentNode.OutputType):
-```
-
-Module-level Pydantic model that is also assigned as `SummarizerNode.OutputType`.
-Exported from this module so downstream nodes (e.g. `StorageNode`) can import it
-without creating a circular dependency.
-
-| Field | Type | Description |
-|---|---|---|
-| `title` | `str` | Clean, human-readable title for the artifact. |
-| `category` | `str` | Free-form category string; preferred values: `ai_engineering`, `physics_relativity`, `music`, `other`. |
-| `tl_dr` | `str` | One-line core takeaway. |
-| `read_time_estimate` | `str` | Short human read-time estimate, e.g. `'6 min'`. |
-| `core_concepts` | `list[str]` | Key ideas the source teaches. |
-| `key_insights` | `list[str]` | Non-obvious, memorable points worth retaining. |
-| `questions_raised` | `list[str]` | Open questions the source provokes. |
-| `connections_to_my_work` | `list[str]` | Explicit links to Brandon's agentic-engineering / AI-architecture work. |
-| `further_exploration` | `list[str]` | Concrete next things to read, watch, or try. |
-
-### `get_agent_config() -> AgentConfig`
-
-```python
-def get_agent_config(self) -> AgentConfig:
-    return AgentConfig(
-        system_prompt=PromptManager().get_prompt("content_summarizer"),
-        output_type=SummaryOutput,
-        deps_type=None,
-        model_provider=ModelProvider.CLAUDE_CODE_SDK,
-        model_name="sonnet",
-    )
-```
-
-Loads the system prompt from `app/prompts/content_summarizer.j2` via `PromptManager`.
-Uses `ModelProvider.CLAUDE_CODE_SDK` with `"sonnet"` (subscription-billing default;
-revert to `ModelProvider.ANTHROPIC` / `"claude-opus-4-8"` per-node when metered API
-billing is needed). No prompt text is hardcoded in Python.
-
-### `process(task_context) -> TaskContext`
-
-Reads the upstream fetched text from whichever fetch node ran (via
-`_read_source_text()`), calls `self.run_agent_recorded(task_context, source_text)`
-for per-node token telemetry, and stores the resulting `SummaryOutput` under the
-node's `result` key via `task_context.update_node()`.
-
-If no fetch node produced text (e.g. a failed fetch), `process()` passes an empty
-string to the agent rather than raising — the pipeline continues with a best-effort
-summary of an empty source.
-
-### `_read_source_text(task_context) -> str`
-
-Iterates `_FETCH_NODE_NAMES = ("FetchTranscriptNode", "FetchArticleNode")` in
-priority order and returns the first non-empty `text` value found in
-`task_context.nodes`. Returns `""` if no text is available.
-
-### System Prompt
-
-`app/prompts/content_summarizer.j2` — biased toward agentic/harness/AI-architecture
-and RAG-memory topics; personal categories include physics/relativity and music.
-No prompt text is stored in Python; all prompt content lives in the `.j2` file.
-
----
-
-## Content Pipeline Blog Branch Nodes (Phase 1 Project A — Task 6)
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/`
-
-Five nodes implement the optional blog-generation branch for the content pipeline.
-The branch is gated by `event.make_blog`: when false, the pipeline ends after storage;
-when true it runs `BlogWriterNode → SelfCriticNode → ReviseNode → TranslatePtBrNode`
-(linear, no cycle).
-
----
-
-### `BlogDecisionRouterNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/blog_decision_router_node.py`
-
-```python
-class BlogDecisionRouterNode(BaseRouter):
-    def __init__(self):
-        self.routes = [MakeBlogRouter()]
-        self.fallback = None
-```
-
-Routes to `BlogWriterNode` when `event.make_blog` is `True`; has no fallback so
-`BaseRouter.route` returns `None` on the false path (digest-only run terminates after
-the storage step). Follows the `ticket_router_node.py` reference pattern.
-
-#### `MakeBlogRouter`
-
-```python
-class MakeBlogRouter(RouterNode):
-    def determine_next_node(self, task_context: TaskContext) -> Node | None:
-```
-
-The single `RouterNode` rule in `BlogDecisionRouterNode.routes`. Returns
-`BlogWriterNode()` when `task_context.event.make_blog` is truthy; `None` otherwise.
-
----
-
-### `BlogWriterNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/blog_writer_node.py`
-
-```python
-class BlogWriterNode(AgentNode):
-```
-
-First node of the blog branch. Converts the structured `SummaryOutput` produced by
-`SummarizerNode` into a draft blog post written in Brandon's voice.
-
-#### `OutputType`
-
-| Field | Type | Description |
-|---|---|---|
-| `title` | `str` | Clear, specific title for the blog post. |
-| `body_markdown` | `str` | Full post body in Markdown. |
-| `reasoning` | `str` | Short note on the chosen angle and structure. |
-
-#### `get_agent_config() -> AgentConfig`
-
-Loads `app/prompts/blog_writer.j2` via `PromptManager`; uses `ModelProvider.CLAUDE_CODE_SDK`
-with `"sonnet"` (subscription-billing default; revert to `ModelProvider.ANTHROPIC` /
-`"claude-opus-4-8"` per-node for metered API billing). No prompt text is hardcoded in Python.
-
-#### `process(task_context) -> TaskContext`
-
-Reads `SummarizerNode`'s `result` (a `SummaryOutput`) via
-`task_context.get_node_output("SummarizerNode")["result"]`, serialises it with
-`model_dump_json()`, calls `run_agent_recorded()`, and stores the `OutputType` instance
-under this node's `result` key.
-
-### System Prompt
-
-`app/prompts/blog_writer.j2` — instructs the agent to write in Brandon's voice; voice
-guidance is intended to be reused by Project C.
-
----
-
-### `SelfCriticNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/self_critic_node.py`
-
-```python
-class SelfCriticNode(AgentNode):
-```
-
-Second node of the blog branch. Critiques the `BlogWriterNode` draft for clarity,
-accuracy against the source summary, voice consistency, and structure.
-
-#### `OutputType`
-
-| Field | Type | Description |
-|---|---|---|
-| `critique` | `str` | Short overall assessment of the draft. |
-| `issues` | `list[str]` | Concrete, actionable problems found in the draft (default `[]`). |
-| `approved` | `bool` | `True` only when the draft has no material issues (default `False`). |
-
-#### `get_agent_config() -> AgentConfig`
-
-Loads `app/prompts/blog_self_critic.j2` via `PromptManager`; uses
-`ModelProvider.CLAUDE_CODE_SDK` with `"sonnet"` (subscription-billing default; revert
-to `ModelProvider.ANTHROPIC` / `"claude-opus-4-8"` per-node for metered API billing).
-
-#### `process(task_context) -> TaskContext`
-
-Reads `BlogWriterNode`'s `result` via `get_node_output("BlogWriterNode")["result"]`,
-serialises it, calls `run_agent_recorded()`, and stores the critique `OutputType`.
-
-### System Prompt
-
-`app/prompts/blog_self_critic.j2` — critique criteria: clarity, accuracy vs. source,
-voice consistency, structure.
-
----
-
-### `ReviseNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/revise_node.py`
-
-```python
-class ReviseNode(AgentNode):
-```
-
-Applies the `SelfCriticNode` critique to the `BlogWriterNode` draft and produces the
-final revised English post, then connects to `TranslatePtBrNode`. Threads both draft
-and critique into one JSON user prompt.
-
-#### `OutputType`
-
-| Field | Type | Description |
-|---|---|---|
-| `title` | `str` | Revised (or unchanged) post title. |
-| `body_markdown` | `str` | Full revised post body in Markdown. |
-
-#### `get_agent_config() -> AgentConfig`
-
-Loads `app/prompts/blog_reviser.j2` via `PromptManager`; uses
-`ModelProvider.CLAUDE_CODE_SDK` with `"sonnet"` (subscription-billing default; revert
-to `ModelProvider.ANTHROPIC` / `"claude-opus-4-8"` per-node for metered API billing).
-
-#### `process(task_context) -> TaskContext`
-
-Reads `BlogWriterNode` draft and `SelfCriticNode` critique via `get_node_output()`,
-builds a combined `{"draft": ..., "critique": ...}` JSON user prompt,
-calls `run_agent_recorded()`, and stores the revised `OutputType`.
-
-### System Prompt
-
-`app/prompts/blog_reviser.j2` — instructs the agent to apply critique changes while
-preserving Brandon's voice; frontmatter included for `PromptManager` rendering.
-
----
-
-### `TranslatePtBrNode`
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/translate_ptbr_node.py`
-
-```python
-class TranslatePtBrNode(AgentNode):
-```
-
-Terminal node of the blog branch (no downstream connection). Translates the finished
-English post from `ReviseNode` into Brazilian Portuguese (pt-BR) so a published post
-serves the brand's PT+EN cadence. Ported from the site's `claude-translator.ts`
-(blog-post content type, Brazil cultural adaptation, mixed technical terminology,
-Markdown preserved).
-
-#### `OutputType`
-
-| Field | Type | Description |
-|---|---|---|
-| `translated_title` | `str` | Post title in pt-BR. |
-| `translated_body_markdown` | `str` | Full post body in pt-BR, Markdown preserved. |
-| `confidence` | `int` | Self-rated translation quality, 0–100 (default `80`). |
-| `cultural_notes` | `list[str]` | Notes on any cultural-adaptation choices (default `[]`). |
-| `technical_terms` | `list[TranslatedTerm]` | Non-obvious term decisions (default `[]`). |
-
-`TranslatedTerm` is a nested model with `original`, `translation`, and `reasoning` fields.
-
-#### `get_agent_config() -> AgentConfig`
-
-Loads `app/prompts/translate_ptbr.j2` via `PromptManager`; uses `ModelProvider.CLAUDE_CODE_SDK`
-with `"sonnet"` (subscription-billing default; revert to `ModelProvider.ANTHROPIC` /
-`"claude-opus-4-8"` per-node for metered API billing; a natural Project H downgrade
-candidate once local/open-weight swaps are measured).
-
-#### `process(task_context) -> TaskContext`
-
-Reads `ReviseNode`'s `result` via `get_node_output("ReviseNode")["result"]`, serialises
-it with `model_dump_json()`, calls `run_agent_recorded()`, and stores the translation
-`OutputType`.
-
-### System Prompt
-
-`app/prompts/translate_ptbr.j2` — professional EN→pt-BR translation rules: Brazil
-cultural adaptation, mixed technical terminology, Markdown/code/identifier preservation.
-
----
-
-## ProposalWriterNode
-
-**Source:** `app/workflows/proposal_generator_workflow_nodes/proposal_writer_node.py`
-
-```python
-class ProposalWriterNode(AgentNode):
-```
-
-Concrete `AgentNode` that produces the client-facing `AutomationRoadmap` deliverable from
-scored opportunities. It is the fourth node in the proposal generator pipeline
-(`OpportunityIdentifierNode → ProposalWriterNode`).
-
-Reads the full opportunity output from `OpportunityIdentifierNode` (sorted candidates plus
-a recommended workflow) and asks the LLM to produce a four-section roadmap following The
-Diagnostic deliverable template. Language (PT or EN) is threaded through the user-prompt
-JSON from `event.language` (defaults to `"PT"` for Brazilian clients).
-
-### `OutputType`
-
-```python
-class OutputType(AgentNode.OutputType):
-    situation_summary: str
-    candidates: list[ScoredCandidate]
-    top_profiles: list[WorkflowProfile]
-    recommended_workflow: str
-    engagement_scope: str
-    price_range_brl: tuple[int, int]
-    body_pt: str | None = None
-    body_en: str | None = None
-```
-
-Fields mirror `AutomationRoadmap` directly so the agent produces a single validated
-object. `candidates` are expected pre-sorted composite-descending (guaranteed by
-`OpportunityIdentifierNode`); `top_profiles` is capped at 3 by the `AutomationRoadmap`
-validator.
-
-### `get_agent_config() -> AgentConfig`
-
-Returns an `AgentConfig` with:
-
-| Field | Value |
-|---|---|
-| `system_prompt` | `PromptManager().get_prompt("proposal_writer")` |
-| `output_type` | `ProposalWriterNode.OutputType` |
-| `deps_type` | `None` |
-| `model_provider` | `ModelProvider.CLAUDE_CODE_SDK` |
-| `model_name` | `"sonnet"` |
-
-### `process(task_context) -> TaskContext`
-
-Reads:
-- `OpportunityIdentifierNode` output via `task_context.get_node_output("OpportunityIdentifierNode")["result"]`
-- `event.language` (`"PT"` or `"EN"`; handles both dict events and Pydantic event objects)
-
-Serialises both into a JSON user prompt, calls `run_agent_recorded()`, validates the
-raw output into an `AutomationRoadmap`, and writes the result under `ProposalWriterNode`
-via `task_context.update_node()`.
-
-### System Prompt
-
-`app/prompts/proposal_writer.j2` — encodes all four required deliverable sections
-(Situation & Opportunity, Ranked Candidates, Top Workflow Profiles, Recommended First
-Engagement), the composite scoring rubric axis definitions and anchor descriptions
-(`frequency × 0.35 + time_cost × 0.40 + buildability × 0.25`), and PT/EN language
-dispatch instructions. No scoring computation occurs in Python — the formula is
-embedded in the prompt for model-version stability.
 
 ---
 
@@ -2808,147 +2365,6 @@ identical when no useful neighbor exists (dangling edge).
 
 ---
 
-## StorageNode
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/storage_node.py`
-
-```python
-class StorageNode(Node):
-```
-
-Concrete `Node` that closes the content pipeline: for every ingested item it (a) embeds the
-summary text at write time via `EmbeddingService`, (b) persists a `LearningArtifact` row through
-`GenericRepository` using the shared `db_session` factory (no connection string or deployment
-path lives inside the node — rule 7), and (c) writes a static HTML digest page and regenerates
-the category index. The output directory comes from the `CONTENT_DIGEST_DIR` env var.
-
-### `process(task_context) -> TaskContext`
-
-1. Reads `SummaryOutput` from `task_context.get_node_output("SummarizerNode")["result"]`.
-2. Derives `source_type` and `fetch_status` from whichever fetch node ran (via
-   `_read_source_meta`).
-3. Builds the embedding text as `f"{title}\n{tl_dr}\n{' '.join(core_concepts)}"` and calls
-   `EmbeddingService().embed_text(embed_text)` — embedding is produced **at write time** before
-   the artifact is persisted.
-4. Constructs a `LearningArtifact` with `id=task_context.event.artifact_id` (stable identity
-   from the event schema) and calls `self._persist(artifact)`.
-5. Calls `render_artifact_page(...)` and `regenerate_category_index(...)` from `digest_renderer`.
-6. Records `{"artifact_id", "page", "category", "embedded": True}` via `task_context.update_node()`.
-
-### `_persist(artifact) -> None`
-
-Single persistence seam. Opens the shared `db_session` context manager, creates a
-`GenericRepository(session, LearningArtifact)`, and calls `.create(artifact)`. Tests
-monkeypatch this method so no real database is touched.
-
-### `_read_source_meta(task_context) -> tuple[str, str]`
-
-Returns `(source_type, fetch_status)` from whichever fetch node ran. A
-`FetchTranscriptNode` output implies `source_type="youtube"`; otherwise `"article"`. An
-explicit `source_type` key on the fetch output wins. Falls back to `fetch_status="ok"` if
-the key is absent.
-
----
-
-## ProposalGenerator StorageNode
-
-**Source:** `app/workflows/proposal_generator_workflow_nodes/storage_node.py`
-
-```python
-class StorageNode(Node):
-```
-
-Terminal persistence node for the proposal generator workflow. Reads the final
-`AutomationRoadmap` from whichever writer branch ran, embeds a summary string via
-`EmbeddingService`, and stores a `BrainDocument` row through `GenericRepository` using
-the shared `db_session` factory (rule 7 — no deployment logic inside the node).
-
-The artifact id is captured from `task_context.event.artifact_id` **before** the session
-commits. SQLAlchemy's default `expire_on_commit` would clear ORM attributes on the
-detached instance after the session closes; reading `doc.id` post-commit would silently
-return `None` or raise `DetachedInstanceError`. Reading from the event schema instead
-avoids this entirely.
-
-### `process(task_context) -> TaskContext`
-
-1. Calls `_read_final_roadmap(task_context)` to get the authoritative `AutomationRoadmap`.
-2. Captures `artifact_id` and `company_name` from `task_context.event` before any commit.
-3. Calls `_build_embed_text(roadmap)` → `EmbeddingService().embed_text(embed_text)`.
-4. Constructs `BrainDocument(id=artifact_id, file_path=f"proposals/{artifact_id}/roadmap.json", doc_type="proposal", section="AutomationRoadmap", content=embed_text, embedding=embedding)`.
-5. Calls `self._persist(doc)`.
-6. Records `{"artifact_id", "file_path", "company_name", "embedded": True, "doc_type": "proposal"}` via `task_context.update_node()`.
-
-### `_read_final_roadmap(task_context) -> AutomationRoadmap`
-
-Returns the authoritative roadmap from whichever terminal writer ran. Checks
-`task_context.nodes.get("ProposalReviseNode")` first — if the revise branch ran, its output
-is authoritative and is reconstructed via `_roadmap_from_revise_output`. Otherwise falls
-back to `task_context.get_node_output("ProposalWriterNode")["result"]`.
-If `roadmap_data` is already an `AutomationRoadmap` instance it is returned directly;
-otherwise `AutomationRoadmap.model_validate(roadmap_data)` is called to coerce from dict.
-
-### `_roadmap_from_revise_output(revise_result) -> AutomationRoadmap`
-
-Reconstructs an `AutomationRoadmap` from a `ProposalReviseNode.OutputType` payload.
-`ProposalReviseNode` stores candidates and top_profiles as JSON-encoded strings
-(`candidates_json`, `top_profiles_json`) because pydantic-ai does not support nested
-Pydantic models in structured output. This helper decodes those strings and validates
-the full roadmap, combining revise fields with the original writer output fields
-(`situation_summary`, `recommended_workflow`, `engagement_scope`, `price_range_brl`).
-
-### `_build_embed_text(roadmap) -> str`
-
-Constructs the string passed to `EmbeddingService.embed_text`. Format:
-`f"{roadmap.situation_summary}\n{'; '.join(c.name for c in roadmap.candidates)}"`.
-Encodes situation context and candidate names so future semantic search queries can
-retrieve past proposals by domain or problem type.
-
-### `_persist(doc) -> None`
-
-Single persistence seam. Opens the shared `db_session` context manager, creates a
-`GenericRepository(session=session, model=BrainDocument)`, and calls `.create(doc)`.
-Tests monkeypatch this method so no real database is touched.
-
----
-
-## digest_renderer
-
-**Source:** `app/workflows/content_pipeline_workflow_nodes/digest_renderer.py`
-
-Pure-function static-HTML renderer. Deliberately dumb: no JavaScript, no search, no tagging
-(D22 — MVP is ingestion + store + dumb display only). All output paths are supplied by the
-caller (config/env), never hardcoded.
-
-### `render_artifact_page(artifact, output_dir, category) -> Path`
-
-```python
-def render_artifact_page(artifact: dict, output_dir: Path, category: str) -> Path:
-```
-
-Writes a single static HTML page for one artifact and returns its path. The page is written to
-`output_dir/<category>/<artifact_id>.html`. Content includes title, TL;DR, read-time estimate,
-category, source URL, and the five `SummaryOutput` list fields (`core_concepts`, `key_insights`,
-`questions_raised`, `connections_to_my_work`, `further_exploration`). All interpolated values
-are HTML-escaped via `_esc`.
-
-| Parameter | Type | Description |
-|---|---|---|
-| `artifact` | `dict` | Merged dict of `SummaryOutput.model_dump()` plus `artifact_id` and `source_url`. |
-| `output_dir` | `Path` | Root digest directory (from `CONTENT_DIGEST_DIR` env via caller). |
-| `category` | `str` | Category string; becomes the sub-folder name. |
-
-### `regenerate_category_index(output_dir, category) -> Path`
-
-```python
-def regenerate_category_index(output_dir: Path, category: str) -> Path:
-```
-
-Rewrites `output_dir/<category>/index.html` listing every artifact page. Globs for `*.html`
-(excluding `index.html`), sorts the results, and writes a minimal `<ul>` of links. Called by
-`StorageNode.process()` after every artifact write so the index is always current.
-
----
-
 ## createworkflow CLI
 
 **Source:** `app/core/commands/init_workflow.py`
@@ -3134,7 +2550,7 @@ event schema before dispatch.
 
 | Field | Type | Description |
 |---|---|---|
-| `workflow_type` | `str` | Must match a `WorkflowRegistry` enum member name (e.g. `"CONTENT_PIPELINE"`). |
+| `workflow_type` | `str` | Must match a `WorkflowRegistry` enum member name (e.g. `"DOCUMENT_INGEST"`). |
 | `data` | `dict` | Raw event payload; validated against the workflow's event schema class. |
 
 ### `TaskAcceptedResponse`
@@ -3223,7 +2639,7 @@ names as strings (matching `WorkflowRegistry` enum member names).
 
 | Field | Type | Description |
 |---|---|---|
-| `workflows` | `list[str]` | Registered workflow type names (e.g. `["CUSTOMER_CARE", "CONTENT_PIPELINE"]`). |
+| `workflows` | `list[str]` | Registered workflow type names (e.g. `["DOCUMENT_INGEST", "DOCUMENT_QA"]`). |
 
 ### `WorkflowGraphResponse`
 
@@ -3266,7 +2682,7 @@ Typed 200 response body for `GET /health`.
 **Source:** `app/api/endpoint.py`
 
 ```
-POST /events/  X-API-Key: <key>  {"workflow_type": "CONTENT_PIPELINE", "data": {...}}
+POST /events/  X-API-Key: <key>  {"workflow_type": "DOCUMENT_INGEST", "data": {...}}
   → 202 TaskAcceptedResponse(task_id="...", event_id="...", message="...")
   → 401 if X-API-Key is absent or wrong
   → 503 if ORCHESTRATION_API_KEY is unset (operator misconfiguration)
@@ -3313,7 +2729,7 @@ message broker. Use this endpoint for liveness probes.
 **Source:** `app/api/graph.py`
 
 ```
-GET /workflows → 200 WorkflowListResponse(workflows=["CUSTOMER_CARE", "CONTENT_PIPELINE", ...])
+GET /workflows → 200 WorkflowListResponse(workflows=["DOCUMENT_INGEST", "DOCUMENT_QA", ...])
 ```
 
 Returns the names of all registered workflow types from `WorkflowRegistry`. No
@@ -3324,7 +2740,7 @@ authentication required. Does not touch the database or message broker.
 **Source:** `app/api/graph.py`
 
 ```
-GET /workflows/CUSTOMER_CARE/graph → 200 WorkflowGraphResponse(nodes=[...], edges=[...])
+GET /workflows/DOCUMENT_INGEST/graph → 200 WorkflowGraphResponse(nodes=[...], edges=[...])
 GET /workflows/UNKNOWN/graph      → 404 {"detail": "Unknown workflow_type: 'UNKNOWN'"}
 ```
 
@@ -3342,12 +2758,11 @@ member.
 
 ```python
 SCHEMA_MAP: dict[str, type[BaseModel]] = {
-    WorkflowRegistry.CUSTOMER_CARE.name:      CustomerCareEventSchema,
-    WorkflowRegistry.CONTENT_PIPELINE.name:   ContentPipelineEventSchema,
-    WorkflowRegistry.RESEARCH_AGENT.name:     ResearchAgentEventSchema,
-    WorkflowRegistry.PROPOSAL_GENERATOR.name: ProposalGeneratorEventSchema,
-    WorkflowRegistry.DOCUMENT_INGEST.name:    DocumentIngestEventSchema,
-    WorkflowRegistry.DOCUMENT_QA.name:        DocumentQAEventSchema,
+    WorkflowRegistry.DOCUMENT_INGEST.name:      DocumentIngestEventSchema,
+    WorkflowRegistry.DOCUMENT_QA.name:          DocumentQAEventSchema,
+    WorkflowRegistry.SDLC_FLOW.name:            SDLCFlowEventSchema,
+    WorkflowRegistry.MEMORY_INGEST.name:        MemoryIngestEventSchema,
+    WorkflowRegistry.MEMORY_CONSOLIDATION.name: MemoryConsolidationEventSchema,
 }
 ```
 
@@ -3398,7 +2813,7 @@ dropped. All `str` fields require `min_length=1`, so an empty string is rejected
 | `doc_type` | `str` | Corpus `doc_type` category. |
 | `section` | `str` | Section label stored on every chunk row produced from `content`. |
 | `content` | `str` | Raw artifact text to chunk, embed, and store. |
-| `roadmap` | `dict` | The `AutomationRoadmap` JSON produced by `proposal_generator_workflow`; carried through, not chunked separately. |
+| `roadmap` | `dict` | The `AutomationRoadmap` JSON produced by engine-rs's proposal generator (`PersistToBrainNode`); carried through, not chunked separately. |
 
 ### `ArtifactIngestPayload`
 

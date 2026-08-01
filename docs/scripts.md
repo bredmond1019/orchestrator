@@ -67,40 +67,14 @@ The session is named `orchestration`. After detaching (`Ctrl-b d`), re-attach wi
 
 ---
 
-## `scripts/inspect_run.py` — Inspect the latest content pipeline run
+## `scripts/inspect_run.py` — removed (`OR.X` cut 4)
 
-Reads the most recent `CONTENT_PIPELINE` event from the database and prints a per-node execution report plus the stored `LearningArtifact`.
-
-```bash
-# Run from the repo root, with the env loaded
-cd app && uv run python ../scripts/inspect_run.py
-```
-
-**What it prints:**
-
-```
-EVENT  id=...  created=...
-PER-NODE EXECUTION ENVELOPE
-  SourceRouterNode     status=completed  usage=—
-  FetchTranscriptNode  status=completed  usage=in=1203 out=42 model=claude-sonnet-4-6
-  SummarizerNode       status=completed  usage=...
-  ...
-SUMMARIZER OUTPUT (structured)
-  { "title": "...", "summary": "..." }
-STORAGE OUTPUT
-  { "artifact_id": "...", ... }
-LEARNING ARTIFACT (persisted row)
-  id          : <uuid>
-  source_url  : https://...
-  title       : ...
-  category    : ...
-  tl_dr       : ...
-  embedding   : 1024-dim vector
-```
-
-Useful after a test run to verify node execution, check token usage, and confirm the artifact was persisted correctly.
-
-**Note:** Reads from the live database using the connection strings in `app/.env`. The Celery worker must have already completed the run before this shows useful data.
+This script inspected the most recent `CONTENT_PIPELINE` event and printed a per-node execution
+report plus the stored `LearningArtifact`. It never generalized beyond `content_pipeline` (its
+docstring named that workflow specifically), so per the `OR.X` cut-4 pre-flight it was deleted
+alongside the workflow rather than re-pointed. Use `docs/api-reference.md`'s `TaskContext` /
+`NodeRun` reference plus a direct DB read (`app/.env` connection strings) if you need an
+equivalent per-node execution envelope for a surviving workflow.
 
 ---
 
