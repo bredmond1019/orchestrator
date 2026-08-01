@@ -324,7 +324,7 @@ Run `syn stale --deep` first so a drifted index doesn't get measured as a retrie
 regression. This is the method to reach for after any change to `retrieval_engine.py`,
 `_fuse_and_rank`, `_CORPUS_CONFIG`, or the golden set itself — (1) and (2) below are for
 spot-checking one query at a time. See `docs/api-reference.md` §
-[Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbrainevals-syn-eval).
+[Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbraineval-syn-eval).
 
 ### 1. Raw semantic search — `scripts/query_brain.py`
 
