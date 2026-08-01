@@ -125,6 +125,104 @@ class TestPulseDispatch:
         assert payload["healthy"] is False
 
 
+def _fake_report(**overrides):
+    from brain.reconcile import ReconcileReport
+
+    defaults = dict(
+        deleted_but_embedded=[],
+        section_orphans=[],
+        orphaned_chunks=[],
+        dangling_edges=[],
+        model_mismatch=[],
+        unstamped_count=0,
+        ingested_count=0,
+        ingested_min_authored_at=None,
+        ingested_max_authored_at=None,
+        drift=False,
+    )
+    defaults.update(overrides)
+    return ReconcileReport(**defaults)
+
+
+class TestStaleDeepDispatch:
+    """`syn stale --deep [--repair]` wires to `reconcile.deep_stale` / `ops.repair_deep_stale`."""
+
+    def test_healthy_json_exits_zero(self, capsys):
+        report = _fake_report()
+        with patch("brain.reconcile.deep_stale", return_value=report) as mock_deep_stale:
+            code = main(["stale", "--deep", "--json", "--brain-path", "/tmp/brain"])
+
+        assert code == 0
+        mock_deep_stale.assert_called_once_with(brain_path="/tmp/brain")
+        out = _read_stdout(capsys)
+        payload = json.loads(out)
+        assert payload["drift"] is False
+
+    def test_drifted_json_exits_nonzero(self, capsys):
+        report = _fake_report(deleted_but_embedded=["gone.md"], drift=True)
+        with patch("brain.reconcile.deep_stale", return_value=report):
+            code = main(["stale", "--deep", "--json"])
+
+        assert code == 1
+        out = _read_stdout(capsys)
+        payload = json.loads(out)
+        assert payload["drift"] is True
+        assert payload["deleted_but_embedded"] == ["gone.md"]
+
+    def test_human_mode_does_not_emit_raw_json(self, capsys):
+        report = _fake_report()
+        with patch("brain.reconcile.deep_stale", return_value=report):
+            code = main(["stale", "--deep"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(out)
+        assert "drift: False" in out
+
+    def test_repair_dispatches_and_reports_delta(self, capsys):
+        before = _fake_report(deleted_but_embedded=["gone.md"], drift=True)
+        after = _fake_report()
+        repair_result = {
+            "actions": [{"axis": "deleted_but_embedded", "action": "prune_paths", "count": 1}],
+            "before": before.to_dict(),
+            "after": after.to_dict(),
+        }
+        with patch("brain.reconcile.deep_stale", return_value=before), patch(
+            "brain.ops.repair_deep_stale", return_value=repair_result
+        ) as mock_repair:
+            code = main(["stale", "--deep", "--repair", "--json"])
+
+        assert code == 0
+        mock_repair.assert_called_once_with(before, brain_path=None)
+        out = _read_stdout(capsys)
+        payload = json.loads(out)
+        assert payload == repair_result
+
+    def test_error_returns_nonzero_with_typed_payload(self, capsys):
+        with patch("brain.reconcile.deep_stale", side_effect=RuntimeError("db down")):
+            code = main(["stale", "--deep", "--json"])
+
+        assert code != 0
+        out = _read_stdout(capsys)
+        payload = json.loads(out)
+        assert payload["error"] == "db down"
+
+
+class TestReconcileRoutineDispatch:
+    """`syn routine reconcile` runs the deep check via `ops.run_routine`."""
+
+    def test_runs_and_emits_json(self, capsys):
+        report = _fake_report()
+        with patch("brain.reconcile.deep_stale", return_value=report):
+            code = main(["routine", "reconcile", "--json"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        payload = json.loads(out)
+        assert payload["drift"] is False
+
+
 class TestConsoleScriptRegistration:
     """`[project.scripts]` registers `syn = "app.brain.cli:main"` and it is callable."""
 

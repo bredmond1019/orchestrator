@@ -45,12 +45,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-# `brain.ops` puts `scripts/` on sys.path as an import-time side effect (so
-# `scripts/index_brain.py` can be imported bare, as `import index_brain`).
-# This module needs that same bare import for `_DEFAULT_BRAIN_PATH` and
-# `parse_document` — importing `ops` here (rather than duplicating its
-# sys.path bootstrap) keeps the one bootstrap in one place.
-from brain import ops as _ops  # noqa: F401  pylint: disable=unused-import
+# `brain._bootstrap` puts `scripts/` on sys.path as an import-time side effect
+# (so `scripts/index_brain.py` can be imported bare, as `import index_brain`).
+# `brain.ops` needs the identical bootstrap; importing the *shared* leaf
+# module here (rather than importing `brain.ops` itself, or duplicating the
+# shim) avoids an import cycle — `ops.repair_deep_stale` calls back into this
+# module (`deep_stale`), and `brain.ops` <-> `brain.reconcile` would cycle
+# even though both call sites are lazy, function-local imports.
+from brain import _bootstrap  # noqa: F401  pylint: disable=unused-import
 
 
 @dataclass
