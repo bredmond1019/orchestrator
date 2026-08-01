@@ -11,6 +11,42 @@ timestamp: "2026-08-01T13:20:00Z"
 
 ---
 
+## [2026-08-01] (session 5)
+
+### OR.X2 shipped — `SDLC_FLOW` + `app/evals` retirement
+- **What:** `/sdlc-flow or-x2-sdlc-evals-retirement --worktree` ran all 3 tasks to PASS, reviewed
+  PASS in 1 attempt. Task 1 deleted the Python `SDLC_FLOW` workflow (workflow/nodes/schema/
+  prompts/tests/doc), de-registered it from both `workflow_registry.py` and `schema_registry.py`,
+  and also removed `app/evals/slices/coding.py` — the sole eval slice, which its own change made
+  dead/unimportable (`schemas.sdlc_schema` gone) — plus its two directly-broken test modules;
+  `app/services/claude_code/` was verified load-bearing via `AgentNode` and left intact, per the
+  spec's corrected scope. Task 2 deleted the remainder of `app/evals/` and `scripts/run_eval.py`,
+  kept `app/database/eval_record.py` (engine-rs now owns the `eval_runs`/`eval_results` tables)
+  with an updated docstring explaining why it outlives its Python consumer, and added a standing
+  Docker-gated regression test (`tests/database/test_eval_record_autogenerate.py`) proving Alembic
+  autogenerate never proposes a `DROP` against either eval table. Task 3 was a docs-only sweep:
+  deleted `docs/evals.md`; updated `docs/workflows.md`, `docs/index.md`, `docs/scripts.md`,
+  `docs/api-reference.md`, `docs/getting-started.md`, `CLAUDE.md`, `AGENT.md`; kept two
+  `SDLC_FLOW` mentions in `docs/app-architecture-overview.md` as intentional past-tense history
+  per the spec's explicit instruction not to erase it. `pytest --collect-only` fell 1453 → 1273
+  (-180) across the block; full suite 1266 passed / 7 skipped, ruff clean, pylint 10.00/10.
+  `state.json` block `OR.X2` flipped to `closed` — this was the last split-off of `OR.X`
+  (workflow divestment); no further divestment work is queued.
+- **Refs:** `planning/or-x2-sdlc-evals-retirement/tasks.md` (task spec, no amendments — the spec's
+  own corrected scope held); `planning/master-plan.md` § `OR.X2`; brain D51.
+- **Next:** brain-quality epic continues — `OR.K2` (retrieval evaluation harness / `syn eval` +
+  retrieval-core promotion) or `OR.K1` (retrieval query log), per `planning/brain-quality-orchestration.md`.
+
+```
+bc7570e docs: sweep SDLC_FLOW/app-evals references — OR.X2 task 3
+14c4ab8 feat: implement or-x2-sdlc-evals-retirement-task2
+b39a196 fix: fix pass 1 for or-x2-sdlc-evals-retirement-task1
+75b6c8e feat: implement or-x2-sdlc-evals-retirement-task1
+3b6f229 chore: init worktree or-x2-sdlc-evals-retirement-flow
+```
+
+---
+
 ## [2026-08-01] (session 4)
 
 ### OR.X shipped — workflow divestment, four cuts (CUSTOMER_CARE, RESEARCH_AGENT, PROPOSAL_GENERATOR, CONTENT_PIPELINE)
