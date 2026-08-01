@@ -15,14 +15,13 @@ from database.session import Base, db_session
 from main import app
 from worker.config import celery_app
 
-VALID_CUSTOMER_CARE_PAYLOAD = {
-    "workflow_type": "CUSTOMER_CARE",
+VALID_MEMORY_INGEST_PAYLOAD = {
+    "workflow_type": "MEMORY_INGEST",
     "data": {
-        "from_email": "sender@example.com",
-        "to_email": "support@example.com",
-        "sender": "Test User",
-        "subject": "Test Subject",
-        "body": "This is a test message.",
+        "workspace_id": "orchestrator",
+        "peer_id": "test-peer",
+        "peer_type": "client",
+        "interaction": "This is a test interaction.",
     },
 }
 
@@ -70,7 +69,7 @@ class TestEventDispatch:
     def test_valid_payload_returns_202(self, endpoint_context):
         client, _ = endpoint_context
         with patch.object(celery_app, "send_task", return_value=MagicMock()):
-            response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+            response = client.post("/events/", json=VALID_MEMORY_INGEST_PAYLOAD)
         assert response.status_code == 202
 
     def test_unknown_workflow_type_returns_422(self, endpoint_context):
@@ -85,7 +84,7 @@ class TestEventDispatch:
         client, _ = endpoint_context
         response = client.post(
             "/events/",
-            json={"workflow_type": "CUSTOMER_CARE", "data": {"from_email": "x"}},
+            json={"workflow_type": "MEMORY_INGEST", "data": {"peer_id": "x"}},
         )
         assert response.status_code == 422
 
@@ -94,21 +93,21 @@ class TestEventDispatch:
         with patch.object(
             celery_app, "send_task", side_effect=RuntimeError("Redis unavailable")
         ):
-            response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+            response = client.post("/events/", json=VALID_MEMORY_INGEST_PAYLOAD)
         assert response.status_code == 500
         assert session.query(Event).count() == 0
 
     def test_successful_enqueue_commits_event(self, endpoint_context):
         client, session = endpoint_context
         with patch.object(celery_app, "send_task", return_value=MagicMock()):
-            response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+            response = client.post("/events/", json=VALID_MEMORY_INGEST_PAYLOAD)
         assert response.status_code == 202
         assert session.query(Event).count() == 1
 
     def test_202_body_contains_event_id_matching_persisted_row(self, endpoint_context):
         client, session = endpoint_context
         with patch.object(celery_app, "send_task", return_value=MagicMock()):
-            response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+            response = client.post("/events/", json=VALID_MEMORY_INGEST_PAYLOAD)
         assert response.status_code == 202
 
         body = response.json()
@@ -125,7 +124,7 @@ class TestEventDispatch:
 class TestEventRead:
     """Tests for `GET /events/{event_id}`."""
 
-    def _seed_event(self, session, task_context=None, workflow_type="CUSTOMER_CARE"):
+    def _seed_event(self, session, task_context=None, workflow_type="MEMORY_INGEST"):
         event = Event(data={"foo": "bar"}, workflow_type=workflow_type)
         event.task_context = task_context
         session.add(event)
@@ -147,7 +146,7 @@ class TestEventRead:
         assert response.status_code == 200
         body = response.json()
         assert body["event_id"] == str(event.id)
-        assert body["workflow_type"] == "CUSTOMER_CARE"
+        assert body["workflow_type"] == "MEMORY_INGEST"
         assert body["status"] == "succeeded"
         assert isinstance(body["created_at"], str)
         assert isinstance(body["updated_at"], str)
@@ -176,7 +175,7 @@ class TestEventRead:
     def test_submit_then_poll_reports_queued(self, endpoint_context):
         client, _ = endpoint_context
         with patch.object(celery_app, "send_task", return_value=MagicMock()):
-            post_response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+            post_response = client.post("/events/", json=VALID_MEMORY_INGEST_PAYLOAD)
         assert post_response.status_code == 202
         event_id = post_response.json()["event_id"]
 

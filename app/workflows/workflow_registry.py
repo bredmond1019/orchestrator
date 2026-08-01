@@ -1,7 +1,6 @@
 from enum import Enum
 
 from workflows.content_pipeline_workflow import ContentPipelineWorkflow
-from workflows.customer_care_workflow import CustomerCareWorkflow
 from workflows.document_ingest_workflow import DocumentIngestWorkflow
 from workflows.document_qa_workflow import DocumentQAWorkflow
 from workflows.memory_consolidation_workflow import MemoryConsolidationWorkflow
@@ -12,7 +11,6 @@ from workflows.sdlc_flow_workflow import SDLCFlowWorkflow
 
 
 class WorkflowRegistry(Enum):
-    CUSTOMER_CARE = CustomerCareWorkflow
     CONTENT_PIPELINE = ContentPipelineWorkflow
     RESEARCH_AGENT = ResearchAgentWorkflow
     PROPOSAL_GENERATOR = ProposalGeneratorWorkflow

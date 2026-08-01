@@ -31,8 +31,9 @@ TIEBREAKER — if 1 and 2 are both YES, the work is a hybrid.
 
 **What this repo keeps:** `DOCUMENT_INGEST`, `DOCUMENT_QA`, `MEMORY_INGEST`, `MEMORY_CONSOLIDATION`,
 and the corpus/graph/memory capability itself. **What is leaving** (per D51, tracked as `OR.X`):
-`CUSTOMER_CARE` (immediately), `RESEARCH_AGENT`, `PROPOSAL_GENERATOR`, `CONTENT_PIPELINE`,
-`SDLC_FLOW`, and `app/evals/`. Do not extend anything on the leaving list — fixes only.
+`RESEARCH_AGENT`, `PROPOSAL_GENERATOR`, `CONTENT_PIPELINE`, `SDLC_FLOW`, and `app/evals/`. The first
+cut of `OR.X` (the Engine-shaped reference workflow with no engine-rs counterpart) has already landed.
+Do not extend anything on the leaving list — fixes only.
 
 ## Before you start
 
@@ -55,7 +56,7 @@ and the corpus/graph/memory capability itself. **What is leaving** (per D51, tra
 
 1. **Every new function, module, or behaviour change ships with tests.** No exceptions — this applies to ad-hoc fixes and one-off changes just as much as formal blocks/tasks. If you add or change code, add or update the tests that cover it. Per-project test requirements are in `planning/master-plan.md` Project Library.
 2. **Never hardcode a system prompt in Python.** All prompts are `.j2` files in `app/prompts/`, loaded via `PromptManager`.
-3. **`customer_care` is being deleted, not preserved.** Per D51 it is an Engine-shaped reference implementation with no engine-rs counterpart to wait for, so it is the first removal under `OR.X`. Do not extend it, add tests for it, or treat it as a pattern to copy.
+3. **The first `OR.X` cut removed the Engine-shaped reference workflow.** Per D51 it had no engine-rs counterpart to wait for, so it was the first divestment. Do not re-add anything shaped like it, and do not treat it as a pattern to copy for new workflows.
 4. **New workflows go to `engine-rs`, not here.** Run the boundary test above first. A genuinely Brain-side workflow (one that needs embeddings/pgvector/memory in-process) still uses `app/workflows/<name>_workflow.py` + `app/workflows/<name>_workflow_nodes/` + `app/schemas/<name>_schema.py` via `createworkflow` — but that should be rare. **A hybrid is never built whole here:** engine-rs runs it and hands the artifact over `POST /ingest/*`.
 5. **This repo is the Brain; `engine-rs` is the Engine.** The knowledge layer — embeddings, corpus, structural graph, memory, retrieval — stays Python and stays here. Execution workflows, business artifacts, and the SDLC harness are `engine-rs`'s (brain D42/D50/D51). `bastion` (the Console) remains a *separate layer* that reads this repo over HTTP/Postgres and never shares code with it. Do not propose Rust rewrites of anything on the Brain side of the boundary test. (See `planning/decisions/` D6, D17, **D36**; brain D24/D42/D51.)
 6. **Register every new workflow in both registries.** Add the enum member to `app/workflows/workflow_registry.py` AND add the corresponding event schema entry to `app/api/schema_registry.py`. Missing the second step causes the API dispatcher to 422 every request for that workflow. `tests/api/test_endpoint.py::TestSchemaRegistryCompleteness` enforces this automatically.
@@ -152,7 +153,6 @@ Run `uv run python -m ruff check app/ --fix` before committing to auto-resolve m
 
 ## What NOT to touch
 
-- `app/workflows/customer_care_workflow*` — frozen and **queued for deletion** under `OR.X` (D51); don't invest in it either way
 - `app/core/skills/` — excluded from ruff and pylint, do not reformat
 - `app/alembic/` — migration history, excluded from pylint, never hand-edit generated files
 

@@ -525,9 +525,3 @@ curl http://localhost:8080/workflows/DOCUMENT_QA/graph
 ```
 
 The graph endpoint returns `start`, `nodes` (with `connections`, `is_router` flag, `description`), and `description` — no auth required.
-
----
-
-## Reference implementations (not for direct use)
-
-`CUSTOMER_CARE` is a frozen reference workflow used only for the original tech demo. Do not trigger it with real LLM calls — it has no tests and is not maintained. It exists in the codebase so you can see the original event schema structure.
