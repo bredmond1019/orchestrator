@@ -124,14 +124,8 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `CLAUDE_CODE_SESSION_TIMEOUT_SECONDS` | integer | `180` | Conditional | `BastionSessionBackend` — per-call timeout in seconds |
 | `FIRECRAWL_API_KEY` | string | — | Optional | `ArticleExtractionService` Firecrawl fallback |
 | `TAVILY_API_KEY` | string | — | Conditional | `SearchService` — required when any workflow uses web search |
-| `CONTENT_DIGEST_DIR` | string | `./_digest` | Optional | `StorageNode` — root directory for static HTML digest pages; sub-folders per category are created automatically |
 | `ORCHESTRATION_API_KEY` | string | — | **Required** (public) | `app/api/security.py` — `X-API-Key` value for `POST /events/`; if unset, the service returns `503` (fail-closed). Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. |
 | `ALLOWED_ORIGINS` | string | `https://learn-agentic-ai.com` | No | `app/main.py` — comma-separated list of origins for `CORSMiddleware`. |
-| `TELEGRAM_BOT_TOKEN` | string | — | **Required** (bot) | `integrations/telegram/config.py` — token issued by @BotFather. |
-| `ORCHESTRATION_API_BASE_URL` | string | `http://localhost:8080` | No | `integrations/telegram/config.py` — base URL the bot uses to reach `POST /events/`. Use `http://api:8080` inside Docker Compose. |
-| `TELEGRAM_ALLOWED_CHAT_IDS` | string | — | No | `integrations/telegram/config.py` — comma-separated allowlist of Telegram chat IDs. When unset, the bot accepts all chats (not recommended for production). |
-| `CF_ACCESS_CLIENT_ID` | string | — | No | `integrations/telegram/config.py` — Cloudflare Access service-token header; only required when the bot calls the API via the public hostname (`api.learn-agentic-ai.com`). |
-| `CF_ACCESS_CLIENT_SECRET` | string | — | No | `integrations/telegram/config.py` — Cloudflare Access service-token secret; paired with `CF_ACCESS_CLIENT_ID`. |
 
 "Conditional" means the variable is required only when a workflow node is configured with the
 corresponding `ModelProvider` value (or service, in the case of `TAVILY_API_KEY`).
@@ -406,34 +400,17 @@ receives `POSTGRES_HOST=/var/run/postgresql` (Unix socket path, used internally)
 | `caddy_config` | `caddy` (currently commented out) |
 | `caddy_data` | `caddy` (currently commented out) |
 
-### `telegram_bot`
-
-| Property | Value |
-|---|---|
-| Build context | repo root |
-| Dockerfile | `docker/Dockerfile.telegram` |
-| Container name | `${PROJECT_NAME}_telegram_bot` |
-| Exposed port | none |
-| Restart policy | `unless-stopped` |
-| Volume mount | `../integrations:/integrations` |
-| Depends on | `api` |
-
-Runs the long-poll Telegram bot from `integrations/telegram/bot.py`. Calls the API
-over the internal Compose network (`http://api:8080`) using `X-API-Key` auth; never
-routes through the public hostname, so `CF_ACCESS_CLIENT_ID`/`CF_ACCESS_CLIENT_SECRET`
-are not needed in the Compose deployment.
-
-**Alternative (non-Docker, Mac Mini):** run `python integrations/telegram/bot.py` as a
-launchd service (mirroring `com.brandon.learn-ai`), with `ORCHESTRATION_API_BASE_URL=http://localhost:8080`.
-
 ### Depends-on chain
 
 ```
 db ──┐
      ├──► api ──► celery_worker
-redis┘              │
-                    └──► telegram_bot
+redis┘
 ```
+
+*The `telegram_bot` service (built from `docker/Dockerfile.telegram`, running
+`integrations/telegram/bot.py`) was removed under `OR.X` cut 4 (D51) — it was `CONTENT_PIPELINE`'s
+only caller.*
 
 ---
 

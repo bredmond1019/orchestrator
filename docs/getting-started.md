@@ -92,7 +92,6 @@ Open `docker/.env` and fill in:
 - `PROJECT_NAME` — anything you like; becomes the container name prefix (e.g. `orchestration`)
 - `POSTGRES_PASSWORD` — a password for the DB container
 - `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`, etc. — same AI keys as above
-- Leave `TELEGRAM_BOT_TOKEN` empty unless you're running the bot
 
 ```bash
 # 3. Build images and start all services
@@ -111,7 +110,6 @@ cd docker && ./start.sh
 - `celery_worker` — Celery consuming from Redis
 - `redis` — broker + result backend
 - `db` — Postgres with pgvector (Supabase image)
-- `telegram_bot` — only if `TELEGRAM_BOT_TOKEN` is set
 
 **Run migrations inside Docker:**
 
@@ -148,15 +146,15 @@ ORCHESTRATION_API_KEY=dev-secret
 Then restart the server (or just set it before the first start). If `ORCHESTRATION_API_KEY` is blank, every request will 401.
 
 ```bash
-# Content pipeline — summarize a YouTube video
+# Document ingest — chunk and embed a document into the corpus
 curl -X POST http://localhost:8080/events/ \
   -H 'Content-Type: application/json' \
   -H 'X-API-Key: dev-secret' \
   -d '{
-    "workflow_type": "CONTENT_PIPELINE",
+    "workflow_type": "DOCUMENT_INGEST",
     "data": {
-      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      "make_blog": false
+      "title": "My Document",
+      "content": "The full text of the document goes here..."
     }
   }'
 # → 202 {"task_id": "...", "event_id": "...", "message": "process_incoming_event started `...`"}
@@ -185,19 +183,14 @@ curl -X POST https://api.learn-agentic-ai.com/events/ \
   -d '...'
 ```
 
-Store it in a password manager (1Password, Bitwarden) so you can paste it when setting up a new client. For mobile access, the Telegram bot is the better path — it holds the key server-side and you never need to type it on your phone.
+Store it in a password manager (1Password, Bitwarden) so you can paste it when setting up a new client.
 
 ---
 
 ## Check a run result
 
-After a run completes, inspect the most recent content pipeline result:
-
-```bash
-cd app && uv run python ../scripts/inspect_run.py
-```
-
-This prints the per-node execution envelope (status, timing, token usage) and the stored `LearningArtifact`. See `docs/scripts.md` for all scripts.
+After a run completes, poll it with the `event_id` as shown above, or query the row directly with
+the connection strings in `app/.env`. See `docs/scripts.md` for all developer scripts.
 
 ---
 
@@ -205,7 +198,7 @@ This prints the per-node execution envelope (status, timing, token usage) and th
 
 ```bash
 uv run python -m pytest
-# ~998 tests; all should pass
+# ~1453 tests; all should pass
 ```
 
 <!-- updated by /update-docs -->

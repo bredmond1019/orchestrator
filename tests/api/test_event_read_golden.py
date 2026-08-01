@@ -43,14 +43,13 @@ from worker.config import celery_app
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "event_read"
 
-VALID_CUSTOMER_CARE_PAYLOAD = {
-    "workflow_type": "CUSTOMER_CARE",
+VALID_MEMORY_INGEST_PAYLOAD = {
+    "workflow_type": "MEMORY_INGEST",
     "data": {
-        "from_email": "sender@example.com",
-        "to_email": "support@example.com",
-        "sender": "Test User",
-        "subject": "Test Subject",
-        "body": "This is a test message.",
+        "workspace_id": "orchestrator",
+        "peer_id": "test-peer",
+        "peer_type": "client",
+        "interaction": "This is a test interaction.",
     },
 }
 
@@ -116,9 +115,9 @@ def endpoint_context():
     engine.dispose()
 
 
-def _seed_event(session, task_context=None, workflow_type="CUSTOMER_CARE") -> Event:
+def _seed_event(session, task_context=None, workflow_type="MEMORY_INGEST") -> Event:
     event = Event(
-        data=VALID_CUSTOMER_CARE_PAYLOAD["data"],
+        data=VALID_MEMORY_INGEST_PAYLOAD["data"],
         workflow_type=workflow_type,
         task_context=task_context,
     )
@@ -170,7 +169,7 @@ class TestSubmitPollTerminal:
         client, _, session = endpoint_context
 
         with patch.object(celery_app, "send_task", return_value=MagicMock()):
-            post_response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+            post_response = client.post("/events/", json=VALID_MEMORY_INGEST_PAYLOAD)
         assert post_response.status_code == 202
         event_id = post_response.json()["event_id"]
         assert post_response.json()["task_id"]
@@ -185,7 +184,7 @@ class TestSubmitPollTerminal:
         #    non-terminal node before the run finishes.
         event = session.query(Event).filter(Event.id == uuid.UUID(event_id)).one()
         event.task_context = {
-            "event": VALID_CUSTOMER_CARE_PAYLOAD["data"],
+            "event": VALID_MEMORY_INGEST_PAYLOAD["data"],
             "nodes": {},
             "metadata": {},
             "node_runs": {"ClassifyNode": {"status": "running"}},
@@ -200,7 +199,7 @@ class TestSubmitPollTerminal:
         # 3. succeeded — the worker's terminal authoritative write.
         event = session.query(Event).filter(Event.id == uuid.UUID(event_id)).one()
         event.task_context = {
-            "event": VALID_CUSTOMER_CARE_PAYLOAD["data"],
+            "event": VALID_MEMORY_INGEST_PAYLOAD["data"],
             "nodes": {"ClassifyNode": {"output": "billing"}},
             "metadata": {},
             "node_runs": {"ClassifyNode": {"status": "success"}},
@@ -216,7 +215,7 @@ class TestSubmitPollTerminal:
         client, _, session = endpoint_context
 
         with patch.object(celery_app, "send_task", return_value=MagicMock()):
-            post_response = client.post("/events/", json=VALID_CUSTOMER_CARE_PAYLOAD)
+            post_response = client.post("/events/", json=VALID_MEMORY_INGEST_PAYLOAD)
         assert post_response.status_code == 202
         event_id = post_response.json()["event_id"]
 
@@ -226,7 +225,7 @@ class TestSubmitPollTerminal:
         # running — one node started before the workflow raised.
         event = session.query(Event).filter(Event.id == uuid.UUID(event_id)).one()
         event.task_context = {
-            "event": VALID_CUSTOMER_CARE_PAYLOAD["data"],
+            "event": VALID_MEMORY_INGEST_PAYLOAD["data"],
             "nodes": {},
             "metadata": {},
             "node_runs": {"ClassifyNode": {"status": "running"}},

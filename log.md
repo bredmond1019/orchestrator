@@ -11,6 +11,45 @@ timestamp: "2026-08-01T13:20:00Z"
 
 ---
 
+## [2026-08-01] (session 4)
+
+### OR.X shipped — workflow divestment, four cuts (CUSTOMER_CARE, RESEARCH_AGENT, PROPOSAL_GENERATOR, CONTENT_PIPELINE)
+- **What:** `/sdlc-flow or-x-workflow-divestment --worktree` ran all 5 tasks to PASS, reviewed PASS
+  in 2 attempts. Task 1 removed `CUSTOMER_CARE` — deleted its workflow/schema/prompts/nodes,
+  de-registered from both `workflow_registry.py` and `schema_registry.py`, re-pointed tests that
+  exercised it to `MEMORY_INGEST`. Task 2 removed `RESEARCH_AGENT`, but discovered an undocumented
+  coupling the spec's recon missed — `PROPOSAL_GENERATOR`'s `CompanyResearchNode` subclasses the
+  research_agent one and imports `ResearchBriefOutput` — so the shared node/schema/prompt was kept
+  alive (docstring-flagged) until cut 3, and the frozen `tests/fixtures/task_context/` fixture
+  stayed byte-identical. Task 3 removed `PROPOSAL_GENERATOR` and verified `POST /ingest/proposal`
+  (the engine-rs seam) still round-trips. Task 4 removed `CONTENT_PIPELINE` plus its orphaned
+  telegram integration (docker service, Dockerfile, pyproject extra) and unused transcript
+  fixtures. Task 5 swept `docs/api-reference.md`, `docs/app-architecture-overview.md`,
+  `docs/configuration.md`, `docs/getting-started.md`, `docs/scripts.md` of stale references
+  (expanding past the task's literal file list once broken getting-started commands surfaced) and
+  fixed the harness emoji gate (5 stray emoji in section headers, 2 attempts). Only
+  `DOCUMENT_INGEST`, `DOCUMENT_QA`, `MEMORY_INGEST`, `MEMORY_CONSOLIDATION` remain registered.
+  `pytest --collect-only` count fell 1648 → 1453 (-195) and full-suite wall-clock fell
+  32.39s → 23.22s (-9.17s) across the block (measured against a throwaway pre-cut-1 worktree).
+  `state.json` block `OR.X` flipped to `closed`.
+- **Refs:** `planning/or-x-workflow-divestment/tasks.md` (task spec + 3 amendment-log entries);
+  `planning/master-plan.md` § `OR.X`; brain D51.
+- **Next:** `OR.X2` — SDLC_FLOW + `app/evals` retirement (split from `OR.X`; `EN.5.B1` gate dropped
+  as moot).
+
+```
+cdf93f6 fix: review pass 1 for or-x-workflow-divestment
+ae92469 fix: fix pass 1 for or-x-workflow-divestment-task5
+46c22f6 feat: implement or-x-workflow-divestment-task5
+7e15de3 feat: implement or-x-workflow-divestment-task4
+73a3ce6 feat: implement or-x-workflow-divestment-task3
+14e871e feat: implement or-x-workflow-divestment-task2 (registries, docs, tests)
+ece9b35 feat: implement or-x-workflow-divestment-task2
+1c8e829 feat: implement or-x-workflow-divestment-task1
+```
+
+---
+
 ## [2026-08-01] (session 2)
 
 ### Brain-quality track independently reviewed — 5 items amended, OR.K3 → engine-rs, all 7 task specs generated (planning only)
