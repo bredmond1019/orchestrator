@@ -14,6 +14,7 @@ from database.brain_edge import *
 from database.eval_record import *
 from database.event import *
 from database.learning_artifact import *
+from database.retrieval_query import *
 
 """
 Alembic Environment Module
