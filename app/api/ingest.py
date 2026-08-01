@@ -53,6 +53,7 @@ def ingest_proposal(
             project=payload.company_name,
             title=payload.company_name,
             description=f"Proposal roadmap section for {payload.company_name}",
+            authored_at=payload.authored_at,
         )
     except Exception as exc:
         raise HTTPException(
@@ -90,6 +91,7 @@ def ingest_artifact_route(
             project=payload.project,
             title=payload.title,
             description=payload.description,
+            authored_at=payload.authored_at,
         )
     except Exception as exc:
         raise HTTPException(

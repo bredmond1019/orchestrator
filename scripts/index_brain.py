@@ -939,6 +939,7 @@ def main(argv: list[str] | None = None) -> None:
                             section=section_header,
                             content=chunk_text,
                             embedding=embedding,
+                            embedding_model=embedding_svc.stamp,
                             indexed_at=datetime.now(),
                             authored_at=authored_at,
                             doc_id=norm["doc_id"],

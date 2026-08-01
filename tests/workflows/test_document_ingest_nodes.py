@@ -256,6 +256,21 @@ class TestEmbedChunksNode:
         assert result_chunks[0]["embedding"] == fake_vectors[0]
         assert result_chunks[1]["embedding"] == fake_vectors[1]
 
+    def test_embedding_model_stamp_attached_to_chunks(self):
+        """Each output chunk carries the EmbeddingService.stamp value."""
+        ctx, _ = self._ctx_with_chunks(2)
+        fake_vectors = [[0.1] * 1024, [0.2] * 1024]
+
+        with patch(
+            "workflows.document_ingest_workflow_nodes.embed_chunks_node.EmbeddingService"
+        ) as MockES:
+            MockES.return_value.embed_batch.return_value = fake_vectors
+            MockES.return_value.stamp = "ollama:mxbai-embed-large"
+            EmbedChunksNode().process(ctx)
+
+        result_chunks = ctx.nodes["EmbedChunksNode"]["result"]["chunks"]
+        assert all(c["embedding_model"] == "ollama:mxbai-embed-large" for c in result_chunks)
+
     def test_chunk_count_preserved(self):
         """The output chunk list has the same length as the input."""
         n = 5
@@ -288,6 +303,7 @@ class TestStoreChunksNode:
                 "is_section_title": False,
                 "content": f"content {i}",
                 "embedding": [float(i)] * 1024,
+                "embedding_model": "ollama:mxbai-embed-large",
             }
             for i in range(n)
         ]
@@ -351,3 +367,13 @@ class TestStoreChunksNode:
 
         assert captured[0].embedding == [0.0] * 1024
         assert captured[1].embedding == [1.0] * 1024
+
+    def test_embedding_model_stamp_on_orm_objects(self, monkeypatch):
+        """ContentChunk ORM objects carry the embedding_model stamp."""
+        ctx, _ = self._ctx_with_embedded_chunks(2)
+        captured: list = []
+        node = StoreChunksNode()
+        monkeypatch.setattr(node, "_persist", lambda chunks: captured.extend(chunks))
+        node.process(ctx)
+
+        assert all(c.embedding_model == "ollama:mxbai-embed-large" for c in captured)
