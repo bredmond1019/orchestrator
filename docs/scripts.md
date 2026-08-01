@@ -485,12 +485,14 @@ Agent-callable console script (registered `[project.scripts]` entry in `pyprojec
 "app.brain.cli:main"`, mirroring `createworkflow`) wiring the Brain read cores
 (`app/brain/retrieval.py::recall`, `app/brain/graph.py::walk`, `app/brain/pulse.py::pulse`) and
 the Brain write/ops core (`app/brain/ops.py::embed_paths`, `ingest_dir`, `prune_paths`,
-`refresh`, `stale`, `run_routine`) behind short, deterministic verbs: `recall`, `walk`, `pulse`,
-`embed`, `ingest`, `prune`, `refresh`, `stale`, `routine`. Every command supports `--json` for a
-machine-parseable payload
+`refresh`, `stale`, `run_routine`) plus the deep-drift read core (`app/brain/reconcile.py::deep_stale`,
+`ops.py::repair_deep_stale`) behind short, deterministic verbs: `recall`, `walk`, `pulse`,
+`embed`, `ingest`, `prune`, `refresh`, `stale` (plain and `--deep [--repair]`), `routine`. Every
+command supports `--json` for a machine-parseable payload
 and nothing else on stdout, has a deterministic exit code (`0` on success; non-zero on an
-unhealthy `pulse` verdict, a typed `--workspace` resolution error, an unknown `routine` name, or
-`stale --assert-clean` finding drift), and never prompts interactively.
+unhealthy `pulse` verdict, a typed `--workspace` resolution error, an unknown `routine` name,
+`stale --assert-clean` finding drift, or `stale --deep` finding drift on any axis), and never
+prompts interactively.
 
 ```bash
 syn recall "What is decision D20 about?"
@@ -506,7 +508,10 @@ syn ingest --dir docs/decisions --json
 syn prune docs/old.md docs/decisions/gone.md    # the brain repo's post-commit hook calls this
 syn refresh --rebuild
 syn stale --assert-clean          # non-zero exit if content or structure drift is found
+syn stale --deep --json           # five-axis deep drift report + the ingested/ lane
+syn stale --deep --repair         # repair the repairable axes, then re-report the delta
 syn routine refresh               # runs a registered ROUTINES entry (OR.J cron convention)
+syn routine reconcile             # runs the deep check (report-only — no --repair from a routine)
 ```
 
 | Command | Description |
@@ -519,7 +524,35 @@ syn routine refresh               # runs a registered ROUTINES entry (OR.J cron 
 | `prune PATH [PATH ...] [--dry-run] [--brain-path PATH] [--json]` | Deletes `brain_documents` rows for the named (deleted/renamed-away) file paths via `brain.ops.prune_paths` (shells into `index_brain.py --prune-paths`) — no embedding, no API call. The brain repo's post-commit delete/rename freshness hook calls this. |
 | `refresh [--rebuild] [--dry-run] [--brain-path PATH] [--json]` | Runs the content-index step then the edge-reload step via `brain.ops.refresh`. `--dry-run` skips the edge-reload step entirely. |
 | `stale [--assert-clean] [--brain-path PATH] [--json]` | Read-only drift report via `brain.ops.stale`: content axis (file mtime newer than its indexed `brain_documents` row) and structure axis (`pulse()`'s `edges_empty_but_related_exists`). `--assert-clean` turns any drift into a non-zero exit — the flag `OR.J`'s cron uses to fail loudly; a plain `syn stale` always exits `0`. |
-| `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh` and `stale`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. |
+| `stale --deep [--repair] [--brain-path PATH] [--json]` | Deep corpus/index drift report via `brain.reconcile.deep_stale` — the inverse of plain `stale`: it walks DB rows looking for the filesystem/edge/embedding state they claim to still be backed by, instead of walking the filesystem looking for DB rows. Five drift axes plus the informational `ingested/` lane; see below. Exits `1` whenever the final report's `drift` is `True`, `0` otherwise — unconditional, unlike plain `stale` (no `--assert-clean` gate: asking for `--deep` means you want the drift signal by definition). `--repair` dispatches `brain.ops.repair_deep_stale` (existing primitives only — see below) and reports the pre/post-repair delta instead of a single snapshot. |
+| `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh`, `stale`, and `reconcile`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. `reconcile` runs the deep check report-only (`brain.reconcile.deep_stale().to_dict()`) — a routine must be cron-safe, so it never dispatches `--repair`. |
+
+**`stale --deep` — the five drift axes (plus the `ingested/` lane):**
+
+1. **deleted-but-embedded** — an indexed `file_path` whose file no longer exists on disk. Excludes
+   `ingested/%` rows (synthetic paths, no file was ever expected) and `client_slug` diagnostic rows.
+   Repairable via `prune_paths` (exact paths).
+2. **section-orphans** — a `(file_path, section)` pair in the DB absent from the file's *current*
+   section set (derived via `brain.chunking.chunk_by_section`) for a still-existing file — a header
+   rename/removal leaks a row the incremental upsert (keyed on that same pair) never revisits. No
+   targeted-delete primitive exists; `--repair` names the manual `--rebuild` follow-up instead of
+   inventing a second write path.
+3. **orphaned content_chunks** — a `content_chunks.doc_id` group with no `position == 0` anchor row
+   (the document-anchor every `ingest_artifact`-shaped write produces first). Repairable via a
+   targeted delete of the orphaned rows.
+4. **dangling brain_edges** — rows with a `NULL` `target_doc_id` (kept deliberately by the loader)
+   plus rows whose non-null `target_doc_id` matches no `brain_documents.doc_id`. Repairable via
+   `refresh_edges` (reloads the structural graph wholesale from `mev emit-graph`).
+5. **model mismatch** — rows whose `embedding_model` stamp differs from the currently configured
+   `EmbeddingService`'s stamp; `NULL` stamps are counted separately as `unstamped_count`
+   (informational — pre-migration rows, not drift). No automatic repair — same manual `--rebuild`
+   follow-up as section-orphans.
+6. **`ingested/` lane** (informational, not drift) — count and `authored_at` age range of
+   `ingested/%` rows, which never appear in plain `stale`'s filesystem-only axis.
+
+`drift` is `True` when axes 1-5 report anything; the `ingested/` lane and `unstamped_count` are
+informational only and never flip `drift`. `--repair` never touches `client_slug` diagnostic rows
+on any axis.
 
 **Invoking from outside this repo:** `syn` is a real console script (`pyproject.toml` declares
 `[build-system]`/`[tool.setuptools.packages.find]` with `namespaces = true`, since `app/` has no

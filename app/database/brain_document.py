@@ -147,6 +147,17 @@ class BrainDocument(Base):
         nullable=True,
         doc="OKF frontmatter description field; stored for FTS keyword search and citation display",
     )
+    # Column added in migration (ticket-corpus-reconcile task 1)
+    embedding_model = Column(
+        String(128),
+        nullable=True,
+        doc=(
+            "The '{provider}:{model}' stamp (EmbeddingService.stamp) resolved at write time. "
+            "NULL for pre-migration rows ('unstamped', not drift). Enables the reconcile "
+            "model-mismatch axis to detect a same-dim model swap that pgvector's width check "
+            "alone cannot catch."
+        ),
+    )
     # Read-only: Postgres maintains this generated column automatically from
     # content/title/description/keywords. The indexer must NEVER write it (no INSERT/UPDATE).
     content_tsv = Column(

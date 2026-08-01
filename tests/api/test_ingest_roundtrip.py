@@ -70,6 +70,7 @@ class TestIngestRoundtrip:
                 mock_svc.return_value.embed_batch.side_effect = lambda texts: [
                     list(_FAKE_VECTOR) for _ in texts
                 ]
+                mock_svc.return_value.stamp = "ollama:mxbai-embed-large"
                 response = client.post("/ingest/proposal", json=PROPOSAL_PAYLOAD)
 
             assert response.status_code == 200
@@ -86,6 +87,7 @@ class TestIngestRoundtrip:
             assert hit.section == "Executive Summary"
             assert hit.file_path == "ingested/proposal/roundtrip-artifact-1.md"
             assert hit.project == "Roundtrip Co"
+            assert hit.embedding_model == "ollama:mxbai-embed-large"
         finally:
             app.dependency_overrides.clear()
             session.close()

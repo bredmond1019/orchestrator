@@ -89,17 +89,20 @@ max-returns = 10
 # real, independent parameter (the brain-rag-improvements plan deliberately chose
 # an explicit include_archived flag over overloading filters). Raised 6 → 7 to
 # accommodate, continuing the precedent the frontmatter-retrieval-filters spec set.
-# app.brain.ingest.ingest_artifact's public signature is pinned by the OR.Q
-# task spec (session + artifact_id, doc_type, content, section, project,
-# title, description) — 8 real, independent parameters, each keyword-only
-# after session so positional-arguments stays at 6. Raised 7 -> 8, continuing
-# the precedent the frontmatter-retrieval-filters spec set. max-locals follows
-# suit: the function's own bookkeeping (file_path, attribution, context_prefix,
+# app.brain.ingest.ingest_artifact's public signature is pinned by the OR.Q /
+# ticket-corpus-reconcile task specs (session + artifact_id, doc_type,
+# content, section, project, title, description, authored_at) — 9 real,
+# independent parameters, each keyword-only after session so
+# positional-arguments stays at 6. Raised 7 -> 8 -> 9, continuing the
+# precedent the frontmatter-retrieval-filters spec set; _upsert_chunk mirrors
+# the same growth (adds embedding_model + authored_at alongside the existing
+# per-chunk write fields). max-locals follows suit: the function's own
+# bookkeeping (file_path, attribution, context_prefix, embedding_svc,
 # final_chunks, embed_texts, embeddings, chunks_written, plus the per-chunk
 # loop vars) pushes past the default 15 without indicating real complexity.
-max-args = 8
+max-args = 9
 max-positional-arguments = 6
-max-locals = 18
+max-locals = 20
 
 [tool.pylint.messages_control]
 disable = [

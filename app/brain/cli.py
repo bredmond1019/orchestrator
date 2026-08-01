@@ -106,6 +106,17 @@ def _build_parser() -> argparse.ArgumentParser:
     stale_parser.add_argument(
         "--assert-clean", action="store_true", help="Exit non-zero if any drift is found."
     )
+    stale_parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="Run the deep corpus/index drift check (five axes + the ingested/ lane); "
+        "exits non-zero on any drift.",
+    )
+    stale_parser.add_argument(
+        "--repair",
+        action="store_true",
+        help="With --deep: repair the repairable drift axes using existing ops primitives.",
+    )
     stale_parser.add_argument("--brain-path", default=None, help="Brain repo root override.")
     stale_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
@@ -273,9 +284,15 @@ def _run_refresh(args: argparse.Namespace) -> int:
 def _run_stale(args: argparse.Namespace) -> int:
     """Execute `syn stale` and print its result; return the exit code.
 
-    Exits non-zero only when `--assert-clean` is passed and drift is found,
-    so `OR.J`'s cron can fail on drift while an ad-hoc report stays exit 0.
+    `--deep` runs the five-axis `reconcile.deep_stale` check instead (its own
+    exit-code contract: non-zero on any drift, unconditionally — see
+    `_run_stale_deep`). Without `--deep`, exits non-zero only when
+    `--assert-clean` is passed and drift is found, so `OR.J`'s cron can fail
+    on drift while an ad-hoc report stays exit 0.
     """
+    if args.deep:
+        return _run_stale_deep(args)
+
     from brain.ops import stale  # pylint: disable=import-outside-toplevel
 
     try:
@@ -295,6 +312,63 @@ def _run_stale(args: argparse.Namespace) -> int:
         return 1
 
     return 0
+
+
+def _print_deep_report(report: dict) -> None:
+    """Human-mode renderer for a `reconcile.ReconcileReport.to_dict()` payload."""
+    print(f"drift: {report['drift']}")
+    print(f"  deleted_but_embedded: {len(report['deleted_but_embedded'])}")
+    for file_path in report["deleted_but_embedded"]:
+        print(f"    - {file_path}")
+    print(f"  section_orphans: {len(report['section_orphans'])}")
+    for file_path, section in report["section_orphans"]:
+        print(f"    - {file_path} :: {section}")
+    print(f"  orphaned_chunks: {len(report['orphaned_chunks'])}")
+    print(f"  dangling_edges: {len(report['dangling_edges'])}")
+    print(f"  model_mismatch: {len(report['model_mismatch'])}")
+    print(f"  unstamped_count (informational): {report['unstamped_count']}")
+    print(f"  ingested_count (informational): {report['ingested_count']}")
+
+
+def _run_stale_deep(args: argparse.Namespace) -> int:
+    """Execute `syn stale --deep [--repair]` and print its result; return the exit code.
+
+    Runs `reconcile.deep_stale`; with `--repair`, dispatches
+    `ops.repair_deep_stale` (existing primitives only) and re-reports the
+    post-repair state. Exits 1 whenever the final report's `drift` is True,
+    0 otherwise — unconditional, unlike plain `syn stale` (no `--assert-clean`
+    gate here: a caller asking for `--deep` wants the drift signal by
+    definition).
+    """
+    from brain.ops import repair_deep_stale  # pylint: disable=import-outside-toplevel
+    from brain.reconcile import deep_stale  # pylint: disable=import-outside-toplevel
+
+    try:
+        report = deep_stale(brain_path=args.brain_path)
+        if args.repair:
+            result = repair_deep_stale(report, brain_path=args.brain_path)
+            payload = result
+            final_drift = result["after"]["drift"]
+        else:
+            payload = report.to_dict()
+            final_drift = report.drift
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(payload))
+    elif args.repair:
+        print("-- before --")
+        _print_deep_report(payload["before"])
+        print("-- actions --")
+        for action in payload["actions"]:
+            print(f"  {action}")
+        print("-- after --")
+        _print_deep_report(payload["after"])
+    else:
+        _print_deep_report(payload)
+
+    return 1 if final_drift else 0
 
 
 def _run_routine(args: argparse.Namespace) -> int:

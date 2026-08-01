@@ -10,16 +10,11 @@ chunk->embed->write path is introduced here (CLAUDE.md rule 10).
 import json
 import logging
 import subprocess
-import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-_APP_DIR = Path(__file__).resolve().parent.parent
-_SCRIPTS_DIR = _APP_DIR.parent / "scripts"
-for _p in (_APP_DIR, _SCRIPTS_DIR):
-    if str(_p) not in sys.path:
-        sys.path.insert(0, str(_p))
+from brain import _bootstrap  # noqa: F401  pylint: disable=unused-import
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +216,13 @@ def stale(*, brain_path: str | None = None) -> dict:
     Structure axis: reuses `brain.pulse.pulse()`'s
     `edges_empty_but_related_exists` flag rather than re-deriving it.
 
+    `ingested/%` rows (synthetic paths written by `app/brain/ingest.py` — no
+    on-disk file was ever expected) are exempted from this axis rather than
+    silently never surfacing: `index_brain._collect_files` only walks the
+    filesystem, so it never yields an `ingested/%` path in the first place —
+    they simply cannot appear in `changed`. `syn stale --deep` is what covers
+    them (the informational `ingested/` lane in `reconcile.deep_stale`).
+
     Args:
         brain_path: Optional brain root override.
 
@@ -252,6 +254,126 @@ def stale(*, brain_path: str | None = None) -> dict:
     }
 
 
+def _delete_orphaned_chunks(chunk_ids: list[str], session) -> int:
+    """Delete `content_chunks` rows by id — targeted, provably-orphaned rows only.
+
+    Mirrors `_prune_paths`'s style (exact-match delete, one commit, return the
+    count) rather than reusing `GenericRepository.delete`, which is one
+    row/one commit at a time and would be needlessly chatty for a batch of
+    orphaned chunk ids.
+
+    Args:
+        chunk_ids: `ContentChunk.id` values (as returned by
+            `reconcile.deep_stale`'s `orphaned_chunks` axis) to delete.
+        session: An open SQLAlchemy session.
+
+    Returns:
+        The number of rows deleted.
+    """
+    import uuid as _uuid  # pylint: disable=import-outside-toplevel
+
+    from database.content_chunk import ContentChunk  # pylint: disable=import-outside-toplevel
+
+    ids = [_uuid.UUID(chunk_id) for chunk_id in chunk_ids]
+    deleted = session.query(ContentChunk).filter(ContentChunk.id.in_(ids)).delete(
+        synchronize_session=False
+    )
+    session.commit()
+    return deleted
+
+
+def repair_deep_stale(report, *, brain_path: str | None = None) -> dict:
+    """Repair the repairable `reconcile.deep_stale` axes using existing primitives only.
+
+    Dispatch, per axis (never touches `client_slug` diagnostic rows — every
+    `deep_stale` axis already excludes them):
+
+    - **deleted-but-embedded** -> `prune_paths` (exact paths).
+    - **section-orphans** -> no automatic action; a targeted delete of one
+      `(file_path, section)` pair is not an existing primitive, so the report
+      names the manual follow-up (`refresh(rebuild=True)` / `syn refresh
+      --rebuild`) instead of inventing a second write path.
+    - **dangling brain_edges** -> `refresh_edges` (reloads the structural
+      graph wholesale from `mev emit-graph`).
+    - **model mismatch** -> no automatic action; same manual `--rebuild`
+      follow-up as section-orphans (repairing in place would mean a second
+      embed path, which this module does not introduce).
+    - **orphaned content_chunks** -> `_delete_orphaned_chunks` (a targeted
+      delete of provably-orphaned rows, mirroring `prune_paths`'s style).
+
+    Detection re-runs after repair so the caller sees the delta, not just the
+    actions taken.
+
+    Args:
+        report: A `reconcile.ReconcileReport` (typically freshly produced by
+            `reconcile.deep_stale`) naming what to repair.
+        brain_path: Optional brain root override (forwarded to `prune_paths`,
+            `refresh_edges`, and the post-repair `deep_stale` re-check).
+
+    Returns:
+        `{"actions": [...], "before": {...}, "after": {...}}` — `before`/
+        `after` are `ReconcileReport.to_dict()` snapshots.
+    """
+    import index_brain  # pylint: disable=import-outside-toplevel,import-error
+    from database.session import db_session  # pylint: disable=import-outside-toplevel
+
+    from brain.reconcile import deep_stale  # pylint: disable=import-outside-toplevel
+
+    actions: list[dict] = []
+
+    if report.deleted_but_embedded:
+        prune_paths(list(report.deleted_but_embedded), brain_path=brain_path)
+        actions.append(
+            {
+                "axis": "deleted_but_embedded",
+                "action": "prune_paths",
+                "count": len(report.deleted_but_embedded),
+            }
+        )
+
+    if report.section_orphans:
+        actions.append(
+            {
+                "axis": "section_orphans",
+                "action": "manual --rebuild",
+                "count": len(report.section_orphans),
+            }
+        )
+
+    if report.dangling_edges:
+        root = Path(brain_path) if brain_path else index_brain._DEFAULT_BRAIN_PATH  # pylint: disable=protected-access
+        loaded = refresh_edges(root)
+        actions.append(
+            {"axis": "dangling_edges", "action": "refresh_edges", "loaded": loaded}
+        )
+
+    if report.model_mismatch:
+        actions.append(
+            {
+                "axis": "model_mismatch",
+                "action": "manual --rebuild",
+                "count": len(report.model_mismatch),
+            }
+        )
+
+    if report.orphaned_chunks:
+        with next(db_session()) as session:  # type: ignore[arg-type]
+            deleted = _delete_orphaned_chunks(report.orphaned_chunks, session)
+        actions.append(
+            {"axis": "orphaned_chunks", "action": "delete_orphaned_chunks", "count": deleted}
+        )
+
+    after = deep_stale(brain_path=brain_path)
+    return {"actions": actions, "before": report.to_dict(), "after": after.to_dict()}
+
+
+def _reconcile_routine() -> dict:
+    """`ROUTINES["reconcile"]` body — report-only (a routine must be cron-safe)."""
+    from brain.reconcile import deep_stale  # pylint: disable=import-outside-toplevel
+
+    return deep_stale().to_dict()
+
+
 ROUTINES: dict[str, Callable[[], dict]] = {
     # Lambdas (not direct function refs) so tests can `patch("app.brain.ops.refresh", ...)`
     # / `patch("app.brain.ops.stale", ...)` and have the registry dispatch to the patch —
@@ -259,6 +381,8 @@ ROUTINES: dict[str, Callable[[], dict]] = {
     # at import time, before any patch is applied.
     "refresh": lambda: refresh(),  # pylint: disable=unnecessary-lambda
     "stale": lambda: stale(),  # pylint: disable=unnecessary-lambda
+    # Deep drift check, report-only — no `--repair` dispatch from a cron routine.
+    "reconcile": lambda: _reconcile_routine(),  # pylint: disable=unnecessary-lambda
 }
 
 
