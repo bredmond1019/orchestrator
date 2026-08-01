@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from core.task import TaskContext
+from brain import retrieval_engine
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import RetrieveChunksNode
 
 
@@ -73,7 +74,7 @@ class TestFuseAndRank:
         c1 = _make_candidate(dist=0.1)   # similarity 0.9
         c2 = _make_candidate(dist=0.3)   # similarity 0.7
         c3 = _make_candidate(dist=0.2)   # similarity 0.8
-        results = self.node._fuse_and_rank([c1, c2, c3], set(), k=3, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c1, c2, c3], set(), k=3, threshold=0.0)
         scores = [r["score"] for r in results]
         assert scores == sorted(scores, reverse=True)
         assert results[0]["content"] == c1["content"]
@@ -86,7 +87,7 @@ class TestFuseAndRank:
         close = _make_candidate(dist=0.1, candidate_id=close_id)
         far = _make_candidate(dist=0.25, candidate_id=far_id)
         keyword_ids = {far_id}
-        results = self.node._fuse_and_rank([close, far], keyword_ids, k=2, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([close, far], keyword_ids, k=2, threshold=0.0)
         # far: (1-0.25)*1 + 1.0 = 0.75 + 1.0 = 1.75
         # close: (1-0.1)*1 + 0.0 = 0.9
         assert results[0]["id"] == far_id
@@ -99,28 +100,28 @@ class TestFuseAndRank:
         title = _make_candidate(dist=0.3, is_section_title=True, candidate_id=title_id)
         # body score:  (1-0.05)*1 = 0.95
         # title score: (1-0.3)*2  = 1.40
-        results = self.node._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
         assert results[0]["id"] == title_id
 
     def test_threshold_filters_low_scores(self):
         """Candidates with a fused score below threshold are excluded."""
         c1 = _make_candidate(dist=0.9)   # similarity 0.1, score 0.1
         c2 = _make_candidate(dist=0.1)   # similarity 0.9, score 0.9
-        results = self.node._fuse_and_rank([c1, c2], set(), k=5, threshold=0.5)
+        results = retrieval_engine._fuse_and_rank([c1, c2], set(), k=5, threshold=0.5)
         assert len(results) == 1
         assert results[0]["content"] == c2["content"]
 
     def test_top_k_respected(self):
         """Only the top-k candidates are returned."""
         candidates = [_make_candidate(dist=0.1 * i) for i in range(1, 21)]
-        results = self.node._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
         assert len(results) == 5
 
     def test_nan_distance_does_not_crash(self):
         """A NaN distance is silently filtered; no exception is raised."""
         nan_c = _make_candidate(dist=float("nan"))
         good_c = _make_candidate(dist=0.2)
-        results = self.node._fuse_and_rank([nan_c, good_c], set(), k=5, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([nan_c, good_c], set(), k=5, threshold=0.0)
         # The NaN candidate must be absent; the good one must be present
         assert len(results) == 1
         assert results[0]["id"] == good_c["id"]
@@ -128,17 +129,17 @@ class TestFuseAndRank:
     def test_nan_only_candidates_returns_empty(self):
         """All NaN distances → empty result list, no crash."""
         candidates = [_make_candidate(dist=float("nan")) for _ in range(5)]
-        results = self.node._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
         assert results == []
 
     def test_empty_candidates_returns_empty(self):
         """Empty input list returns empty result list."""
-        assert self.node._fuse_and_rank([], set(), k=5, threshold=0.0) == []
+        assert retrieval_engine._fuse_and_rank([], set(), k=5, threshold=0.0) == []
 
     def test_output_dict_has_required_keys(self):
         """Each returned dict contains the required normalized keys."""
         c = _make_candidate(dist=0.2, section_title="Overview")
-        results = self.node._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
         assert len(results) == 1
         assert {"content", "section_title", "score", "source"}.issubset(results[0].keys())
         assert results[0]["section_title"] == "Overview"
@@ -147,20 +148,20 @@ class TestFuseAndRank:
     def test_output_source_defaults_to_general_when_no_section(self):
         """Source falls back to 'General' when section_title is None."""
         c = _make_candidate(dist=0.2, section_title=None)
-        results = self.node._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
         assert results[0]["source"] == "General"
 
     def test_score_formula_body_chunk_no_keyword(self):
         """Exact score for a body chunk with no keyword match."""
         c = _make_candidate(dist=0.4, is_section_title=False)
-        results = self.node._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
         assert abs(results[0]["score"] - 0.6) < 1e-9
 
     def test_score_formula_section_title_with_keyword(self):
         """Exact score for a section-title chunk with a keyword match."""
         cid = uuid.uuid4()
         c = _make_candidate(dist=0.2, is_section_title=True, candidate_id=cid)
-        results = self.node._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
         # score = (1-0.2)*2 + 1.0 = 1.6 + 1.0 = 2.6
         assert abs(results[0]["score"] - 2.6) < 1e-9
 
@@ -189,14 +190,14 @@ class TestRetrieve:
         """Patch all external calls and invoke retrieve()."""
         keyword_ids = keyword_ids or set()
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=candidates
+            retrieval_engine, "_semantic_search", return_value=candidates
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=keyword_ids
+            retrieval_engine, "_keyword_search", return_value=keyword_ids
         ) as mock_kw:
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve(query, corpus=corpus, k=k, threshold=threshold)
+            result = retrieval_engine.retrieve(query, corpus=corpus, k=k, threshold=threshold)
         return result
 
     def test_returns_list_of_dicts(self):
@@ -214,47 +215,48 @@ class TestRetrieve:
     def test_embedding_service_called_once(self):
         """EmbeddingService.embed_text is called exactly once per retrieve call."""
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ), patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.0] * 1024
-            self.node.retrieve("question")
+            retrieval_engine.retrieve("question")
             MockEmb.return_value.embed_text.assert_called_once_with("question")
 
     def test_semantic_search_called_with_vector_and_corpus(self):
         """_semantic_search receives the embedded vector and the corpus name."""
         expected_vector = [0.5] * 1024
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = expected_vector
-            self.node.retrieve("q", corpus="brain", k=5)
+            retrieval_engine.retrieve("q", corpus="brain", k=5)
             mock_sem.assert_called_once_with(
                 expected_vector,
                 "brain",
                 limit=20,
                 filters=None,
                 include_archived=False,
+                session=None,
             )
 
     def test_corpus_brain_threads_through(self):
         """corpus='brain' is forwarded to _semantic_search."""
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.0] * 1024
-            self.node.retrieve("q", corpus="brain")
+            retrieval_engine.retrieve("q", corpus="brain")
             # _semantic_search(vector, corpus, limit=20) — corpus is positional arg 1
             positional_args = mock_sem.call_args[0]
             assert positional_args[1] == "brain"
@@ -264,14 +266,14 @@ class TestRetrieve:
         cid = uuid.uuid4()
         candidates = [_make_candidate(candidate_id=cid)]
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=candidates
+            retrieval_engine, "_semantic_search", return_value=candidates
         ), patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ) as mock_kw:
             MockEmb.return_value.embed_text.return_value = [0.0] * 1024
-            self.node.retrieve("q")
+            retrieval_engine.retrieve("q")
             call_args = mock_kw.call_args[0]
             assert cid in call_args[1]  # candidate_ids argument
 
@@ -310,10 +312,10 @@ class TestRetrieve:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_search(
+            result = retrieval_engine._keyword_search(
                 "What is RAG?", candidate_ids, "content"
             )
 
@@ -350,7 +352,7 @@ class TestProcess:
             }
         ]
         with patch.object(
-            self.node, "retrieve", return_value=fake_chunks
+            retrieval_engine, "retrieve", return_value=fake_chunks
         ):
             ctx = self.node.process(ctx)
 
@@ -361,7 +363,7 @@ class TestProcess:
     def test_process_passes_corpus_from_event(self):
         """process() reads corpus from the event and passes it to retrieve."""
         ctx = _make_ctx(question="brain question", corpus="brain")
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         _, call_kwargs = mock_ret.call_args[0], mock_ret.call_args[1]
         assert mock_ret.call_args[1].get("corpus") == "brain" or \
@@ -372,7 +374,7 @@ class TestProcess:
         event = MagicMock(spec=["question"])
         event.question = "What is chunking?"
         ctx = TaskContext(event=event)
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         # The default should be "content"
         call_kwargs = mock_ret.call_args
@@ -390,7 +392,7 @@ class TestProcess:
         event.corpus = "brain"
         event.filters = {"project": "orchestrator"}
         ctx = TaskContext(event=event)
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         call_kwargs = mock_ret.call_args[1]
         assert call_kwargs.get("filters") == {"project": "orchestrator"}
@@ -401,7 +403,7 @@ class TestProcess:
         event.question = "What is chunking?"
         event.corpus = "content"
         ctx = TaskContext(event=event)
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         call_kwargs = mock_ret.call_args[1]
         assert call_kwargs.get("filters") is None
@@ -439,10 +441,10 @@ class TestKeywordSearchShapes:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_search("data contract", candidate_ids, "brain")
+            result = retrieval_engine._keyword_search("data contract", candidate_ids, "brain")
 
         # Graded result: a dict mapping id -> float ts_rank (not a set).
         assert isinstance(result, dict)
@@ -452,12 +454,12 @@ class TestKeywordSearchShapes:
 
     def test_brain_empty_candidates_returns_empty_dict(self):
         """No candidates → empty dict (FTS shape), not an empty set."""
-        result = self.node._keyword_search("anything", [], "brain")
+        result = retrieval_engine._keyword_search("anything", [], "brain")
         assert result == {}
 
     def test_content_empty_candidates_returns_empty_set(self):
         """No candidates → empty set (legacy shape) for the content corpus."""
-        result = self.node._keyword_search("anything", [], "content")
+        result = retrieval_engine._keyword_search("anything", [], "content")
         assert result == set()
 
     def test_content_corpus_keyword_search_unchanged(self):
@@ -486,10 +488,10 @@ class TestKeywordSearchShapes:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_search("python", candidate_ids, "content")
+            result = retrieval_engine._keyword_search("python", candidate_ids, "content")
 
         # Verify no array_to_string appears in the filter args string — content corpus
         # should only use the content column, not any extra fields
@@ -516,56 +518,56 @@ class TestSemanticSearchFilters:
     ) -> list[dict]:
         """Patch seams and call retrieve() with optional filters."""
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=candidates
+            retrieval_engine, "_semantic_search", return_value=candidates
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve("q", corpus=corpus, k=5, filters=filters)
+            result = retrieval_engine.retrieve("q", corpus=corpus, k=5, filters=filters)
         return result
 
     def test_retrieve_forwards_filters_to_semantic_search(self):
         """retrieve() passes filters kwarg through to _semantic_search."""
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            self.node.retrieve("q", corpus="brain", filters={"project": "acme"})
+            retrieval_engine.retrieve("q", corpus="brain", filters={"project": "acme"})
             call_kwargs = mock_sem.call_args[1]
             assert call_kwargs.get("filters") == {"project": "acme"}
 
     def test_retrieve_without_filters_passes_none_to_semantic_search(self):
         """retrieve() passes filters=None when not supplied."""
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            self.node.retrieve("q", corpus="brain")
+            retrieval_engine.retrieve("q", corpus="brain")
             call_kwargs = mock_sem.call_args[1]
             assert call_kwargs.get("filters") is None
 
     def test_content_corpus_retrieve_unaffected_by_filters(self):
         """retrieve() with corpus='content' passes filters through but content corpus ignores them."""
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
             # Should not raise even with filters for content corpus
-            result = self.node.retrieve(
+            result = retrieval_engine.retrieve(
                 "q", corpus="content", filters={"project": "acme"}
             )
             assert isinstance(result, list)
@@ -592,14 +594,14 @@ class TestSemanticSearchFilters:
         # We model this by having _semantic_search only return the matching row.
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[matching]
+            retrieval_engine, "_semantic_search", return_value=[matching]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve(
+            result = retrieval_engine.retrieve(
                 "q",
                 corpus="brain",
                 filters={"project": "matching-project"},
@@ -675,6 +677,13 @@ class TestCrossRepoProjectScoping:
 
     def setup_method(self):
         self.node = RetrieveChunksNode()
+        # Capture the real (unpatched) function so _run_semantic_search_scoped
+        # keeps exercising the genuine implementation even when the
+        # module-level ``retrieval_engine._semantic_search`` name is patched
+        # elsewhere in this test (module-level patching replaces the name
+        # globally — unlike the old per-instance monkeypatch, which only
+        # shadowed one node instance's attribute).
+        self.real_semantic_search = retrieval_engine._semantic_search
 
     def _make_fixture_row(self, project: str, content: str):
         row = MagicMock()
@@ -703,15 +712,14 @@ class TestCrossRepoProjectScoping:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            # Call the unbound method directly so this helper still exercises
-            # the real _semantic_search even when the instance's
-            # _semantic_search attribute is itself patched (as it is in the
-            # end-to-end retrieve() test below).
-            return RetrieveChunksNode._semantic_search(
-                self.node,
+            # Call the captured real function directly so this helper still
+            # exercises the real _semantic_search even when the module-level
+            # name is itself patched (as it is in the end-to-end retrieve()
+            # test below).
+            return self.real_semantic_search(
                 [0.1] * 1024,
                 "brain",
                 limit=20,
@@ -734,23 +742,25 @@ class TestCrossRepoProjectScoping:
     def test_retrieve_end_to_end_scopes_by_project_per_repo(self):
         """retrieve() end-to-end: two project-scoped queries never cross-contaminate."""
 
-        def _fake_semantic_search(_vector, _corpus, limit, filters=None, include_archived=False):
+        def _fake_semantic_search(
+            _vector, _corpus, limit, filters=None, include_archived=False, session=None
+        ):
             return self._run_semantic_search_scoped(filters["project"])
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", side_effect=_fake_semantic_search
+            retrieval_engine, "_semantic_search", side_effect=_fake_semantic_search
         ), patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ), patch.object(
-            self.node, "_structural_expand", return_value=[]
+            retrieval_engine, "_structural_expand", return_value=[]
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result_a = self.node.retrieve(
+            result_a = retrieval_engine.retrieve(
                 "q", corpus="brain", filters={"project": "repo-a"}, include_archived=True
             )
-            result_b = self.node.retrieve(
+            result_b = retrieval_engine.retrieve(
                 "q", corpus="brain", filters={"project": "repo-b"}, include_archived=True
             )
 
@@ -776,18 +786,16 @@ class TestGradedKeywordFusion:
         weak = _make_candidate(dist=0.2, candidate_id=weak_id)
         strong = _make_candidate(dist=0.2, candidate_id=strong_id)
         graded = {weak_id: 0.01, strong_id: 0.30}
-        results = self.node._fuse_and_rank([weak, strong], graded, k=2, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([weak, strong], graded, k=2, threshold=0.0)
         assert results[0]["id"] == strong_id
 
     def test_graded_score_uses_kw_weight(self):
         """Score = similarity*title_weight + _KW_WEIGHT*ts_rank (exact)."""
-        from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
-            _KW_WEIGHT,
-        )
+        from brain.retrieval_engine import _KW_WEIGHT
 
         cid = uuid.uuid4()
         c = _make_candidate(dist=0.2, is_section_title=False, candidate_id=cid)
-        results = self.node._fuse_and_rank([c], {cid: 0.10}, k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], {cid: 0.10}, k=1, threshold=0.0)
         expected = (1.0 - 0.2) * 1.0 + _KW_WEIGHT * 0.10
         assert results[0]["score"] == pytest.approx(expected)
 
@@ -795,16 +803,16 @@ class TestGradedKeywordFusion:
         """A candidate absent from the graded dict gets no keyword contribution."""
         cid = uuid.uuid4()
         c = _make_candidate(dist=0.3, candidate_id=cid)
-        results = self.node._fuse_and_rank([c], {}, k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], {}, k=1, threshold=0.0)
         assert results[0]["score"] == pytest.approx(0.7)  # (1-0.3)*1 + 0
 
     def test_legacy_set_boost_still_flat(self):
         """A set (legacy corpus) still applies the flat _KW_BOOST, not a graded one."""
-        from workflows.document_qa_workflow_nodes.retrieve_chunks_node import _KW_BOOST
+        from brain.retrieval_engine import _KW_BOOST
 
         cid = uuid.uuid4()
         c = _make_candidate(dist=0.2, candidate_id=cid)
-        results = self.node._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
         assert results[0]["score"] == pytest.approx((1.0 - 0.2) + _KW_BOOST)
 
     def test_provenance_fields_carried_through(self):
@@ -814,7 +822,7 @@ class TestGradedKeywordFusion:
         c["file_path"] = "docs/decisions/D20-shared-data-contract.md"
         c["doc_id"] = "D20-shared-data-contract"
         c["title"] = "Shared Data Contract"
-        results = self.node._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
         assert results[0]["file_path"] == "docs/decisions/D20-shared-data-contract.md"
         assert results[0]["doc_id"] == "D20-shared-data-contract"
         assert results[0]["title"] == "Shared Data Contract"
@@ -822,7 +830,7 @@ class TestGradedKeywordFusion:
     def test_provenance_fields_default_to_none(self):
         """Candidates lacking provenance keys still produce the keys, set to None."""
         c = _make_candidate(dist=0.2)
-        results = self.node._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
         assert results[0]["file_path"] is None
         assert results[0]["doc_id"] is None
         assert results[0]["title"] is None
@@ -846,7 +854,7 @@ class TestDiversityCap:
             _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(4)
         ]
         other = _make_candidate(dist=0.5, file_path="docs/b.md")
-        results = self.node._fuse_and_rank(
+        results = retrieval_engine._fuse_and_rank(
             same_file + [other], set(), k=3, threshold=0.0
         )
         a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
@@ -865,7 +873,7 @@ class TestDiversityCap:
         candidates = [
             _make_candidate(dist=0.05 * i, file_path=f"docs/{i}.md") for i in range(5)
         ]
-        results = self.node._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
         assert [r["id"] for r in results] == [c["id"] for c in candidates]
 
     def test_backfills_when_not_enough_distinct_files_to_fill_k(self):
@@ -874,7 +882,7 @@ class TestDiversityCap:
         same_file = [
             _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(4)
         ]
-        results = self.node._fuse_and_rank(same_file, set(), k=4, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank(same_file, set(), k=4, threshold=0.0)
         assert len(results) == 4
         assert [r["id"] for r in results] == [c["id"] for c in same_file]
 
@@ -882,7 +890,7 @@ class TestDiversityCap:
         """Candidates with file_path=None (no citation metadata) are each
         treated as their own group and are never capped."""
         candidates = [_make_candidate(dist=0.05 * i, file_path=None) for i in range(4)]
-        results = self.node._fuse_and_rank(candidates, set(), k=4, threshold=0.0)
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=4, threshold=0.0)
         assert len(results) == 4
         assert [r["id"] for r in results] == [c["id"] for c in candidates]
 
@@ -915,10 +923,10 @@ class TestArchivedExclusion:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            self.node._semantic_search(
+            retrieval_engine._semantic_search(
                 [0.1] * 1024,
                 corpus,
                 limit=20,
@@ -955,26 +963,26 @@ class TestIncludeArchivedThreading:
 
     def test_retrieve_forwards_include_archived(self):
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            self.node.retrieve("q", corpus="brain", include_archived=True)
+            retrieval_engine.retrieve("q", corpus="brain", include_archived=True)
             assert mock_sem.call_args[1].get("include_archived") is True
 
     def test_retrieve_defaults_include_archived_false(self):
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ) as mock_sem, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            self.node.retrieve("q", corpus="brain")
+            retrieval_engine.retrieve("q", corpus="brain")
             assert mock_sem.call_args[1].get("include_archived") is False
 
     def test_process_reads_include_archived_from_event(self):
@@ -984,7 +992,7 @@ class TestIncludeArchivedThreading:
         event.filters = None
         event.include_archived = True
         ctx = TaskContext(event=event)
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         assert mock_ret.call_args[1].get("include_archived") is True
 
@@ -993,7 +1001,7 @@ class TestIncludeArchivedThreading:
         event.question = "What is chunking?"
         event.corpus = "content"
         ctx = TaskContext(event=event)
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         assert mock_ret.call_args[1].get("include_archived") is False
 
@@ -1031,16 +1039,16 @@ class TestStructuralExpand:
         """The content corpus doesn't declare supports_structural — always []."""
         candidate = _make_candidate()
         candidate["doc_id"] = "alpha"
-        result = self.node._structural_expand([candidate], "content", [0.1] * 1024)
+        result = retrieval_engine._structural_expand([candidate], "content", [0.1] * 1024)
         assert result == []
 
     def test_no_seed_doc_ids_returns_empty_without_touching_db(self):
         """Candidates with no doc_id produce no seeds; the DB is never opened."""
         candidates = [_make_candidate()]  # no "doc_id" key
         with patch(
-            "memory.seams.db_session"
+            "brain.retrieval_engine.db_session"
         ) as mock_db_session:
-            result = self.node._structural_expand(candidates, "brain", [0.1] * 1024)
+            result = retrieval_engine._structural_expand(candidates, "brain", [0.1] * 1024)
         assert result == []
         mock_db_session.assert_not_called()
 
@@ -1066,10 +1074,10 @@ class TestStructuralExpand:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._structural_expand([seed], "brain", [0.1] * 1024)
+            result = retrieval_engine._structural_expand([seed], "brain", [0.1] * 1024)
 
         assert len(result) == 1
         assert result[0]["via"] == "structural"
@@ -1091,10 +1099,10 @@ class TestStructuralExpand:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._structural_expand(
+            result = retrieval_engine._structural_expand(
                 [seed, already_present], "brain", [0.1] * 1024
             )
 
@@ -1112,10 +1120,10 @@ class TestStructuralExpand:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._structural_expand([seed], "brain", [0.1] * 1024)
+            result = retrieval_engine._structural_expand([seed], "brain", [0.1] * 1024)
 
         assert result == []
 
@@ -1145,16 +1153,16 @@ class TestRetrieveStructuralExpansion:
         structural_candidate["via"] = "structural"
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[semantic_candidate]
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[structural_candidate]
+            retrieval_engine, "_structural_expand", return_value=[structural_candidate]
         ) as mock_struct, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve("q", corpus="brain", k=5)
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
 
         mock_struct.assert_called_once()
         result_by_id = {r["id"]: r for r in result}
@@ -1173,16 +1181,16 @@ class TestRetrieveStructuralExpansion:
         structural_candidate["via"] = "structural"
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[semantic_candidate]
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[structural_candidate]
+            retrieval_engine, "_structural_expand", return_value=[structural_candidate]
         ) as mock_struct, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve(
+            result = retrieval_engine.retrieve(
                 "q", corpus="brain", k=5, expand_structural=False
             )
 
@@ -1200,16 +1208,16 @@ class TestRetrieveStructuralExpansion:
         dup_structural["via"] = "structural"
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[semantic_candidate]
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[dup_structural]
+            retrieval_engine, "_structural_expand", return_value=[dup_structural]
         ), patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve("q", corpus="brain", k=5)
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
 
         assert len(result) == 1
         assert result[0]["via"] == "semantic"
@@ -1218,16 +1226,16 @@ class TestRetrieveStructuralExpansion:
         """_structural_expand is called with the embedded vector and corpus."""
         expected_vector = [0.3] * 1024
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[]
+            retrieval_engine, "_semantic_search", return_value=[]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[]
+            retrieval_engine, "_structural_expand", return_value=[]
         ) as mock_struct, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = expected_vector
-            self.node.retrieve("q", corpus="brain", k=5)
+            retrieval_engine.retrieve("q", corpus="brain", k=5)
 
         args = mock_struct.call_args[0]
         assert args[1] == "brain"
@@ -1252,14 +1260,14 @@ class TestStructuralExpansionRegression:
         every result is flagged via='semantic' (unchanged behaviour)."""
         candidates = [_make_candidate(dist=0.1), _make_candidate(dist=0.3)]
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=candidates
+            retrieval_engine, "_semantic_search", return_value=candidates
         ), patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve("q", corpus="content", k=5)
+            result = retrieval_engine.retrieve("q", corpus="content", k=5)
 
         assert len(result) == 2
         assert all(r["via"] == "semantic" for r in result)
@@ -1272,14 +1280,14 @@ class TestStructuralExpansionRegression:
 
         def _run(expand: bool):
             with patch(
-                "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+                "brain.retrieval_engine.EmbeddingService"
             ) as MockEmb, patch.object(
-                self.node, "_semantic_search", return_value=candidates
+                retrieval_engine, "_semantic_search", return_value=candidates
             ), patch.object(
-                self.node, "_keyword_search", return_value=set()
+                retrieval_engine, "_keyword_search", return_value=set()
             ):
                 MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-                return self.node.retrieve(
+                return retrieval_engine.retrieve(
                     "q", corpus="brain", k=5, expand_structural=expand
                 )
 
@@ -1305,7 +1313,7 @@ class TestExpandStructuralThreading:
         event.include_archived = False
         event.expand_structural = False
         ctx = TaskContext(event=event)
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         assert mock_ret.call_args[1].get("expand_structural") is False
 
@@ -1314,7 +1322,7 @@ class TestExpandStructuralThreading:
         event.question = "What is chunking?"
         event.corpus = "content"
         ctx = TaskContext(event=event)
-        with patch.object(self.node, "retrieve", return_value=[]) as mock_ret:
+        with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
         assert mock_ret.call_args[1].get("expand_structural") is True
 
@@ -1428,9 +1436,9 @@ class TestKeywordExpand:
     def test_content_corpus_is_noop_without_touching_db(self):
         """The content corpus declares no tsv_field — always [], DB never opened."""
         with patch(
-            "memory.seams.db_session"
+            "brain.retrieval_engine.db_session"
         ) as mock_db_session:
-            result = self.node._keyword_expand(
+            result = retrieval_engine._keyword_expand(
                 "query text", "content", [0.1] * 1024, set()
             )
         assert result == []
@@ -1449,10 +1457,10 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_expand(
+            result = retrieval_engine._keyword_expand(
                 "OR.V graph resolver cleanup", "brain", [0.1] * 1024, set()
             )
 
@@ -1478,10 +1486,10 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_expand(
+            result = retrieval_engine._keyword_expand(
                 "query", "brain", [0.1] * 1024, {existing_row.id}
             )
 
@@ -1491,9 +1499,7 @@ class TestKeywordExpand:
 
     def test_result_capped_at_keyword_candidate_limit(self):
         """More matching rows than _KEYWORD_CANDIDATE_LIMIT are truncated."""
-        from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
-            _KEYWORD_CANDIDATE_LIMIT,
-        )
+        from brain.retrieval_engine import _KEYWORD_CANDIDATE_LIMIT
 
         rows = [
             (_make_brain_row(), 0.1 + i * 0.001)
@@ -1508,10 +1514,10 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_expand(
+            result = retrieval_engine._keyword_expand(
                 "query", "brain", [0.1] * 1024, set()
             )
 
@@ -1532,10 +1538,10 @@ class TestKeywordExpand:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._keyword_expand(
+            result = retrieval_engine._keyword_expand(
                 "query",
                 "brain",
                 [0.1] * 1024,
@@ -1568,10 +1574,10 @@ class TestKeywordExpand:
         # include_archived=False: base "@@" match filter + archived-status
         # exclusion filter = 2 filter() calls minimum.
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            self.node._keyword_expand(
+            retrieval_engine._keyword_expand(
                 "query", "brain", [0.1] * 1024, set(), include_archived=False
             )
         base_call_count = fake_query.filter.call_count
@@ -1582,10 +1588,10 @@ class TestKeywordExpand:
         # filter = 2 filter() calls, one fewer than the archived-exclusion path
         # would add on top.
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            self.node._keyword_expand(
+            retrieval_engine._keyword_expand(
                 "query",
                 "brain",
                 [0.1] * 1024,
@@ -1622,18 +1628,18 @@ class TestRetrieveKeywordExpansion:
         keyword_candidate["via"] = "keyword"
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[semantic_candidate]
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[]
+            retrieval_engine, "_structural_expand", return_value=[]
         ), patch.object(
-            self.node, "_keyword_expand", return_value=[keyword_candidate]
+            retrieval_engine, "_keyword_expand", return_value=[keyword_candidate]
         ) as mock_kw, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve("q", corpus="brain", k=5)
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
 
         mock_kw.assert_called_once()
         result_by_id = {r["id"]: r for r in result}
@@ -1650,18 +1656,18 @@ class TestRetrieveKeywordExpansion:
         dup_keyword["via"] = "keyword"
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[semantic_candidate]
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[]
+            retrieval_engine, "_structural_expand", return_value=[]
         ), patch.object(
-            self.node, "_keyword_expand", return_value=[dup_keyword]
+            retrieval_engine, "_keyword_expand", return_value=[dup_keyword]
         ), patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve("q", corpus="brain", k=5)
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
 
         assert len(result) == 1
         assert result[0]["via"] == "semantic"
@@ -1672,16 +1678,16 @@ class TestRetrieveKeywordExpansion:
         candidate = _make_candidate(dist=0.2)
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as MockEmb, patch.object(
-            self.node, "_semantic_search", return_value=[candidate]
+            retrieval_engine, "_semantic_search", return_value=[candidate]
         ), patch(
-            "memory.seams.db_session"
+            "brain.retrieval_engine.db_session"
         ) as mock_db_session, patch.object(
-            self.node, "_keyword_search", return_value=set()
+            retrieval_engine, "_keyword_search", return_value=set()
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = self.node.retrieve("q", corpus="content", k=5)
+            result = retrieval_engine.retrieve("q", corpus="content", k=5)
 
         # _keyword_expand's real no-op path never opens a DB session for content.
         mock_db_session.assert_not_called()
@@ -1710,7 +1716,7 @@ class TestMergeCandidatesRename:
             _make_candidate(candidate_id=extra_id, content="new"),
         ]
 
-        result = RetrieveChunksNode._merge_candidates(base, extra)
+        result = retrieval_engine._merge_candidates(base, extra)
 
         result_by_id = {c["id"]: c for c in result}
         assert result_by_id[base_id]["content"] == "base"
@@ -1719,5 +1725,78 @@ class TestMergeCandidatesRename:
 
     def test_merge_candidates_empty_extra_returns_base_unchanged(self):
         base = [_make_candidate()]
-        result = RetrieveChunksNode._merge_candidates(base, [])
+        result = retrieval_engine._merge_candidates(base, [])
         assert result == base
+
+
+# ---------------------------------------------------------------------------
+# OR.K2 task 1 — byte-identical-ranking regression across the full pipeline
+# ---------------------------------------------------------------------------
+
+
+class TestByteIdenticalRankingRegression:
+    """A golden-ordering fixture captured against the pre-promotion algorithm
+    (score formula, merge/dedupe order, stable-sort tie handling): an
+    unscoped "brain"-corpus query exercising all four candidate sources
+    (semantic, structural, keyword-expand, keyword-search boost) must still
+    produce this exact order/score sequence after the OR.K2 promotion into
+    ``retrieval_engine`` — the promotion moved *where* the code lives, not
+    *what* it computes.
+
+    Score formula (unchanged): ``(1 - distance) * title_weight + kw_boost``,
+    no decay (no ``authored_at`` on any fixture candidate), stable-sorted
+    descending. Hand-derived expectations:
+
+    - A (semantic, distance=0.1, no keyword hit):      (1-0.1)*1 + 0    = 0.90
+    - E (keyword,  distance=0.4, kw_rank=0.05):         (1-0.4)*1 + 0.25 = 0.85
+    - D (structural, distance=0.2, no keyword hit):     (1-0.2)*1 + 0    = 0.80
+    - B (semantic, distance=0.3, no keyword hit):       (1-0.3)*1 + 0    = 0.70
+    """
+
+    def setup_method(self):
+        self.node = RetrieveChunksNode()
+
+    def test_full_pipeline_unscoped_brain_query_matches_golden_order(self):
+        semantic_candidates = [
+            _make_candidate(dist=0.1, candidate_id="A", file_path="a.md"),
+            _make_candidate(dist=0.3, candidate_id="B", file_path="b.md"),
+        ]
+        structural_candidates = [
+            _make_candidate(
+                dist=0.2, candidate_id="D", file_path="d.md", content="structural neighbor"
+            )
+        ]
+        structural_candidates[0]["via"] = "structural"
+        keyword_expand_candidates = [
+            _make_candidate(
+                dist=0.4, candidate_id="E", file_path="e.md", content="keyword-only hit"
+            )
+        ]
+        keyword_expand_candidates[0]["via"] = "keyword"
+        # Graded FTS keyword-search boost: only "E" matches, ts_rank=0.05.
+        keyword_matches = {"E": 0.05}
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=semantic_candidates
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=structural_candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_expand", return_value=keyword_expand_candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=keyword_matches
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="brain", k=4)
+
+        assert [r["id"] for r in result] == ["A", "E", "D", "B"]
+        golden_scores = {"A": 0.90, "E": 0.85, "D": 0.80, "B": 0.70}
+        for r in result:
+            assert r["score"] == pytest.approx(golden_scores[r["id"]])
+        assert {r["id"]: r["via"] for r in result} == {
+            "A": "semantic",
+            "E": "keyword",
+            "D": "structural",
+            "B": "semantic",
+        }

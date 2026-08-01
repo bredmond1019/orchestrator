@@ -41,12 +41,16 @@ from brain.retrieval import (  # noqa: E402
 def format_hybrid_result(
     rank: int, chunk: dict, *, show_content: bool, content_chars: int
 ) -> str:
-    """Render one `hybrid_search` result dict for terminal display."""
+    """Render one `hybrid_search` result dict for terminal display.
+
+    `hybrid_search` returns the normalized `recall()` shape (OR.K2): `section`
+    (not `section_title`), and `score` is a similarity where higher is better.
+    """
     file_path = chunk.get("file_path") or "(no file_path)"
     header = f"[{rank}] score={chunk['score']:.4f}  {file_path}  via={chunk.get('via', 'semantic')}"
     detail = f"    title: {chunk.get('title') or '(none)'}"
-    if chunk.get("section_title"):
-        detail += f"  section: {chunk['section_title']}"
+    if chunk.get("section"):
+        detail += f"  section: {chunk['section']}"
     lines = [header, detail]
     if show_content:
         content = chunk.get("content") or ""

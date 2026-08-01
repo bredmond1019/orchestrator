@@ -33,6 +33,7 @@ output.
 import uuid
 from unittest.mock import MagicMock, patch
 
+from brain import retrieval_engine
 from core.task import TaskContext
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
     RetrieveChunksNode,
@@ -117,6 +118,14 @@ def _make_workspace_row(
     return row
 
 
+# Captured before any test patches ``retrieval_engine._semantic_search`` so
+# ``_run_semantic_search_scoped`` keeps exercising the real implementation
+# even from inside a ``side_effect`` that has replaced the module-level name
+# (module-level patching replaces the name globally, unlike the old
+# per-instance monkeypatch which only shadowed one node's attribute).
+_REAL_SEMANTIC_SEARCH = retrieval_engine._semantic_search
+
+
 def _run_semantic_search_scoped(node: RetrieveChunksNode, project_filter: str, rows) -> list[dict]:
     """Drive the real ``_semantic_search`` (and real ``_apply_metadata_filters``)
     over ``rows`` scoped by ``filters={"project": project_filter}``."""
@@ -128,11 +137,10 @@ def _run_semantic_search_scoped(node: RetrieveChunksNode, project_filter: str, r
         yield fake_session
 
     with patch(
-        "memory.seams.db_session",
+        "brain.retrieval_engine.db_session",
         _fake_db_session,
     ):
-        return RetrieveChunksNode._semantic_search(
-            node,
+        return _REAL_SEMANTIC_SEARCH(
             [0.1] * 1024,
             "brain",
             limit=20,
@@ -159,19 +167,21 @@ class TestWorkspaceScopingEndToEnd:
     def _process_scoped(self, project_filter: str) -> list[dict]:
         ctx = _make_ctx(corpus="brain", filters={"project": project_filter})
 
-        def _fake_semantic_search(_vector, _corpus, limit, filters=None, include_archived=False):
+        def _fake_semantic_search(
+            _vector, _corpus, limit, filters=None, include_archived=False, session=None
+        ):
             return _run_semantic_search_scoped(self.node, filters["project"], self.all_rows)
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node, "_semantic_search", side_effect=_fake_semantic_search
+            retrieval_engine, "_semantic_search", side_effect=_fake_semantic_search
         ), patch.object(
-            self.node, "_keyword_search", return_value={}
+            retrieval_engine, "_keyword_search", return_value={}
         ), patch.object(
-            self.node, "_keyword_expand", return_value=[]
+            retrieval_engine, "_keyword_expand", return_value=[]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[]
+            retrieval_engine, "_structural_expand", return_value=[]
         ):
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
             result_ctx = self.node.process(ctx)
@@ -250,11 +260,10 @@ class TestBrainScopedQueryUnaffected:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            results = RetrieveChunksNode._semantic_search(
-                self.node,
+            results = retrieval_engine._semantic_search(
                 [0.1] * 1024,
                 "brain",
                 limit=20,
@@ -301,10 +310,10 @@ class TestStructuralExpansionNoOpForWorkspace:
             yield fake_session
 
         with patch(
-            "memory.seams.db_session",
+            "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = self.node._structural_expand([candidate], "brain", [0.1] * 1024)
+            result = retrieval_engine._structural_expand([candidate], "brain", [0.1] * 1024)
 
         assert result == []
 
@@ -314,22 +323,24 @@ class TestStructuralExpansionNoOpForWorkspace:
         semantic-only candidate set — no extra, no leaked rows."""
         row = _make_workspace_row("learn-ai-notes", "guides/setup.md", content="setup content")
 
-        def _fake_semantic_search(_vector, _corpus, limit, filters=None, include_archived=False):
+        def _fake_semantic_search(
+            _vector, _corpus, limit, filters=None, include_archived=False, session=None
+        ):
             return _run_semantic_search_scoped(self.node, "learn-ai-notes", [row])
 
         with patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.EmbeddingService"
+            "brain.retrieval_engine.EmbeddingService"
         ) as mock_emb, patch.object(
-            self.node, "_semantic_search", side_effect=_fake_semantic_search
+            retrieval_engine, "_semantic_search", side_effect=_fake_semantic_search
         ), patch.object(
-            self.node, "_keyword_search", return_value={}
+            retrieval_engine, "_keyword_search", return_value={}
         ), patch.object(
-            self.node, "_keyword_expand", return_value=[]
+            retrieval_engine, "_keyword_expand", return_value=[]
         ), patch.object(
-            self.node, "_structural_expand", return_value=[]
+            retrieval_engine, "_structural_expand", return_value=[]
         ):
             mock_emb.return_value.embed_text.return_value = [0.1] * 1024
-            results = self.node.retrieve(
+            results = retrieval_engine.retrieve(
                 "q", corpus="brain", filters={"project": "learn-ai-notes"}, include_archived=True
             )
 

@@ -14,9 +14,7 @@ Pure unit tests against ``_fuse_and_rank`` — no DB, no network. Mirrors the
 import uuid
 from datetime import datetime, timedelta
 
-from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (
-    RetrieveChunksNode,
-)
+from brain import retrieval_engine
 
 
 def _make_candidate(
@@ -43,8 +41,6 @@ def _make_candidate(
 class TestDecayOrdering:
     """A decayed (older) fact/doc ranks below a fresh one of equal similarity."""
 
-    def setup_method(self):
-        self.node = RetrieveChunksNode()
 
     def test_older_doc_ranks_below_equally_similar_newer_doc(self):
         now = datetime.now()
@@ -55,7 +51,7 @@ class TestDecayOrdering:
             dist=0.2, authored_at=now - timedelta(weeks=0), file_path="docs/new.md"
         )
 
-        results = self.node._fuse_and_rank(
+        results = retrieval_engine._fuse_and_rank(
             [old_doc, new_doc], set(), k=2, threshold=0.0, apply_decay=True
         )
 
@@ -69,10 +65,10 @@ class TestDecayOrdering:
             dist=0.2, authored_at=now - timedelta(weeks=26), file_path="docs/old.md"
         )
 
-        decayed = self.node._fuse_and_rank(
+        decayed = retrieval_engine._fuse_and_rank(
             [old_doc], set(), k=1, threshold=0.0, apply_decay=True
         )
-        undecayed = self.node._fuse_and_rank(
+        undecayed = retrieval_engine._fuse_and_rank(
             [old_doc], set(), k=1, threshold=0.0, apply_decay=False
         )
 
@@ -82,8 +78,6 @@ class TestDecayOrdering:
 class TestApplyDecayOptOut:
     """apply_decay=False reproduces pre-decay ranking exactly."""
 
-    def setup_method(self):
-        self.node = RetrieveChunksNode()
 
     def test_apply_decay_false_matches_no_authored_at_score(self):
         now = datetime.now()
@@ -92,10 +86,10 @@ class TestApplyDecayOptOut:
         )
         no_date = _make_candidate(dist=0.2, authored_at=None, file_path="docs/b.md")
 
-        opted_out = self.node._fuse_and_rank(
+        opted_out = retrieval_engine._fuse_and_rank(
             [old_with_date], set(), k=1, threshold=0.0, apply_decay=False
         )
-        undated = self.node._fuse_and_rank(
+        undated = retrieval_engine._fuse_and_rank(
             [no_date], set(), k=1, threshold=0.0, apply_decay=True
         )
 
@@ -112,7 +106,7 @@ class TestApplyDecayOptOut:
             dist=0.3, authored_at=now, file_path="docs/new.md"
         )
 
-        results = self.node._fuse_and_rank(
+        results = retrieval_engine._fuse_and_rank(
             [old_doc, new_doc], set(), k=2, threshold=0.0, apply_decay=False
         )
 
@@ -124,16 +118,14 @@ class TestApplyDecayOptOut:
 class TestAuthoredAtNoneUndecayed:
     """A candidate with authored_at=None is never decayed, even when apply_decay=True."""
 
-    def setup_method(self):
-        self.node = RetrieveChunksNode()
 
     def test_none_authored_at_score_unaffected_by_apply_decay(self):
         candidate = _make_candidate(dist=0.25, authored_at=None)
 
-        with_decay = self.node._fuse_and_rank(
+        with_decay = retrieval_engine._fuse_and_rank(
             [candidate], set(), k=1, threshold=0.0, apply_decay=True
         )
-        without_decay = self.node._fuse_and_rank(
+        without_decay = retrieval_engine._fuse_and_rank(
             [candidate], set(), k=1, threshold=0.0, apply_decay=False
         )
 
@@ -151,7 +143,7 @@ class TestAuthoredAtNoneUndecayed:
             "file_path": None,
         }
 
-        results = self.node._fuse_and_rank(
+        results = retrieval_engine._fuse_and_rank(
             [candidate], set(), k=1, threshold=0.0, apply_decay=True
         )
 
