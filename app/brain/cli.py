@@ -3,9 +3,10 @@
 Registered as the `syn` console script (`[project.scripts]` in
 `pyproject.toml`, `syn = "app.brain.cli:main"`), mirroring `createworkflow`.
 Wires the OR.N1 read cores (`brain.retrieval.recall`, `brain.graph.walk`,
-`brain.pulse.pulse`) and the OR.N2 write/ops core (`brain.ops.embed_paths`,
-`ingest_dir`, `prune_paths`, `refresh`, `stale`, `run_routine`) behind short, deterministic,
-agent-callable verbs (D52):
+`brain.pulse.pulse`), the OR.N2 write/ops core (`brain.ops.embed_paths`,
+`ingest_dir`, `prune_paths`, `refresh`, `stale`, `run_routine`), and the OR.K1 query-log read
+(`queries` — raw `retrieval_queries` rows plus a read-time abstain rate; no aggregation table,
+no rollup, no dashboard) behind short, deterministic, agent-callable verbs (D52):
 `--json` on every command emits a machine-parseable payload and nothing else
 on stdout, exit codes are deterministic (0 success; non-zero on an unhealthy
 `pulse` verdict or a typed `--workspace` resolution error), and there are no
@@ -17,7 +18,9 @@ script or as `python -m app.brain.cli`.
 import argparse
 import json
 import logging
+import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 _APP_DIR = Path(__file__).resolve().parent.parent
@@ -25,12 +28,12 @@ if str(_APP_DIR) not in sys.path:
     sys.path.insert(0, str(_APP_DIR))
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Construct the `syn` argparse dispatcher (recall, walk, pulse)."""
+def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-statements
+    """Construct the `syn` argparse dispatcher (recall, walk, pulse, ..., queries)."""
     parser = argparse.ArgumentParser(
         prog="syn",
         description="Synapse Brain commands: recall, walk, pulse, embed, ingest, prune, "
-        "refresh, stale, routine.",
+        "refresh, stale, routine, eval, queries.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -141,6 +144,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Prior run JSON to diff against; exits non-zero on any metric regression.",
     )
     eval_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    queries_parser = subparsers.add_parser(
+        "queries",
+        help="Read raw retrieval_queries rows logged by the OR.K1 fire-and-forget query log.",
+    )
+    queries_parser.add_argument(
+        "--since",
+        default=None,
+        help="Window, e.g. '7d' or '24h' (default: no lower bound — every logged row).",
+    )
+    queries_parser.add_argument(
+        "--abstained", action="store_true", help="Only rows where abstained=true."
+    )
+    queries_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
     return parser
 
@@ -479,6 +496,98 @@ def _run_eval(args: argparse.Namespace) -> int:
     return exit_code
 
 
+_SINCE_RE = re.compile(r"^(\d+)([dh])$")
+
+
+class InvalidSinceWindowError(ValueError):
+    """Raised when `--since` doesn't match the `<N>d` / `<N>h` window syntax."""
+
+
+def _parse_since(since: str) -> timedelta:
+    """Parse a `'7d'` / `'24h'`-style window string into a `timedelta`.
+
+    Raises `InvalidSinceWindowError` (typed, caught by `_emit_error` like
+    every other `syn` command error) for anything else.
+    """
+    match = _SINCE_RE.match(since.strip())
+    if not match:
+        raise InvalidSinceWindowError(
+            f"invalid --since window {since!r}: expected '<N>d' or '<N>h' (e.g. '7d', '24h')"
+        )
+    amount, unit = int(match.group(1)), match.group(2)
+    return timedelta(days=amount) if unit == "d" else timedelta(hours=amount)
+
+
+def _row_to_dict(row) -> dict:
+    """Render one `RetrievalQuery` row as a JSON/print-friendly dict."""
+    return {
+        "id": str(row.id),
+        "query": row.query,
+        "surface": row.surface,
+        "workspace_id": row.workspace_id,
+        "hybrid": row.hybrid,
+        "via_mix": row.via_mix,
+        "result_count": row.result_count,
+        "top_score": row.top_score,
+        "retrieval_confidence": row.retrieval_confidence,
+        "abstained": row.abstained,
+        "top_doc_ids": row.top_doc_ids,
+        "latency_ms": row.latency_ms,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def _run_queries(args: argparse.Namespace) -> int:
+    """Execute `syn queries` and print its result; return the exit code.
+
+    Reads raw `retrieval_queries` rows (no aggregation table, no rollup,
+    no dashboard — `GenericRepository.get_all()` plus in-process
+    filtering/sorting) and, in `--json` mode, includes a read-time
+    `abstain_rate` computed over the returned window — never a stored
+    number.
+    """
+    from database.repository import GenericRepository  # pylint: disable=import-outside-toplevel
+    from database.retrieval_query import RetrievalQuery  # pylint: disable=import-outside-toplevel
+    from database.session import db_session  # pylint: disable=import-outside-toplevel
+
+    try:
+        # `created_at` (RetrievalQuery model) defaults to naive `datetime.now()`, so the
+        # cutoff is computed the same naive way rather than tz-aware — comparing naive to
+        # aware would raise.
+        cutoff = datetime.now() - _parse_since(args.since) if args.since else None
+    except InvalidSinceWindowError as exc:
+        return _emit_error(exc, as_json=args.json)
+
+    with next(db_session()) as session:  # type: ignore[arg-type]
+        rows = GenericRepository(session=session, model=RetrievalQuery).get_all()
+
+        if cutoff is not None:
+            rows = [row for row in rows if row.created_at is not None and row.created_at >= cutoff]
+        if args.abstained:
+            rows = [row for row in rows if row.abstained]
+        rows.sort(key=lambda row: row.created_at or datetime.min, reverse=True)
+
+        rendered = [_row_to_dict(row) for row in rows]
+
+    if args.json:
+        # Read-time only — never a stored rollup (the zero-aggregation rule, OR.K1).
+        total = len(rendered)
+        abstained_count = sum(1 for row in rendered if row["abstained"])
+        abstain_rate = abstained_count / total if total else 0.0
+        print(json.dumps({"queries": rendered, "count": total, "abstain_rate": abstain_rate}))
+    else:
+        if not rendered:
+            print("No logged queries.")
+        for row in rendered:
+            print(
+                f"[{row['created_at']}] ({row['surface']}) {row['query']!r} "
+                f"via_mix={row['via_mix']} confidence={row['retrieval_confidence']} "
+                f"abstained={row['abstained']}"
+            )
+
+    return 0
+
+
 def _emit_error(exc: Exception, *, as_json: bool) -> int:
     """Render a typed error and return a non-zero exit code (never a prompt/traceback)."""
     message = str(exc)
@@ -511,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
         "stale": _run_stale,
         "routine": _run_routine,
         "eval": _run_eval,
+        "queries": _run_queries,
     }
     return dispatch[args.command](args)
 
