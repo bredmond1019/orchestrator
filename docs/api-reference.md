@@ -51,43 +51,45 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 29. [WorkspaceResolver](#workspaceresolver)
 30. [ContentChunk SQLAlchemy Model](#contentchunk-sqlalchemy-model)
 31. [ChatSession SQLAlchemy Model](#chatsession-sqlalchemy-model)
-32. [RetrieveChunksNode](#retrievechunksnode)
-33. [createworkflow CLI](#createworkflow-cli)
-34. [API Security and CORS](#api-security-and-cors)
-35. [API Layer](#api-layer)
-36. [Ingest API](#ingest-api-post-ingest)
-37. [Read API](#read-api-get-recall-walk-pulse)
-38. [DocumentIngestEventSchema](#documentingesteventschema)
-39. [ParseDocumentNode](#parsedocumentnode)
-40. [ChunkDocumentNode](#chunkdocumentnode)
-41. [EmbedChunksNode](#embedchunksnode)
-42. [DocumentIngest StoreChunksNode](#documentingest-storechunksnode)
-43. [DocumentIngestWorkflow](#documentingestworkflow)
-44. [DocumentQAEventSchema](#documentqaeventschema)
-45. [EmbedQuestionNode](#embedquestionnode)
-46. [AssembleContextNode](#assemblecontextnode)
-47. [AnswerNode](#answernode)
-48. [GroundingRouterNode](#groundingrouternode)
-49. [AbstainNode](#abstainnode)
-50. [VerifyCitationsNode](#verifycitationsnode)
-51. [UpdateSessionMemoryNode](#updatesessionmemorynode)
-52. [DocumentQAWorkflow](#documentqaworkflow)
-53. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
-54. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
-55. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
-56. [decay module](#decay-module)
-57. [DbSeamMixin](#dbseammixin)
-58. [EpisodeWriteService](#episodewriteservice)
-59. [UpsertMemoryNode](#upsertmemorynode)
-60. [MemoryLoaderNode](#memoryloadernode)
-61. [IngestTimeExtractionNode](#ingesttimeextractionnode)
-62. [MemoryWriteNode](#memorywritenode)
-63. [MemoryIngestWorkflow](#memoryingestworkflow)
-64. [LoadMemoryContextNode](#loadmemorycontextnode)
-65. [ConsolidationNode](#consolidationnode)
-66. [ConsolidationWriteNode](#consolidationwritenode)
-67. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
-68. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
+32. [Retrieval Engine (app/brain/retrieval_engine.py)](#retrieval-engine-appbrainretrieval_enginepy)
+33. [RetrieveChunksNode](#retrievechunksnode)
+34. [createworkflow CLI](#createworkflow-cli)
+35. [API Security and CORS](#api-security-and-cors)
+36. [API Layer](#api-layer)
+37. [Ingest API](#ingest-api-post-ingest)
+38. [Read API](#read-api-get-recall-walk-pulse)
+39. [DocumentIngestEventSchema](#documentingesteventschema)
+40. [ParseDocumentNode](#parsedocumentnode)
+41. [ChunkDocumentNode](#chunkdocumentnode)
+42. [EmbedChunksNode](#embedchunksnode)
+43. [DocumentIngest StoreChunksNode](#documentingest-storechunksnode)
+44. [DocumentIngestWorkflow](#documentingestworkflow)
+45. [DocumentQAEventSchema](#documentqaeventschema)
+46. [EmbedQuestionNode](#embedquestionnode)
+47. [AssembleContextNode](#assemblecontextnode)
+48. [AnswerNode](#answernode)
+49. [GroundingRouterNode](#groundingrouternode)
+50. [AbstainNode](#abstainnode)
+51. [VerifyCitationsNode](#verifycitationsnode)
+52. [UpdateSessionMemoryNode](#updatesessionmemorynode)
+53. [DocumentQAWorkflow](#documentqaworkflow)
+54. [Peer SQLAlchemy Model](#peer-sqlalchemy-model)
+55. [AgentEpisode SQLAlchemy Model](#agentepisode-sqlalchemy-model)
+56. [SemanticMemory SQLAlchemy Model](#semanticmemory-sqlalchemy-model)
+57. [decay module](#decay-module)
+58. [DbSeamMixin](#dbseammixin)
+59. [EpisodeWriteService](#episodewriteservice)
+60. [UpsertMemoryNode](#upsertmemorynode)
+61. [MemoryLoaderNode](#memoryloadernode)
+62. [IngestTimeExtractionNode](#ingesttimeextractionnode)
+63. [MemoryWriteNode](#memorywritenode)
+64. [MemoryIngestWorkflow](#memoryingestworkflow)
+65. [LoadMemoryContextNode](#loadmemorycontextnode)
+66. [ConsolidationNode](#consolidationnode)
+67. [ConsolidationWriteNode](#consolidationwritenode)
+68. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
+69. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
+70. [Retrieval Eval Harness (app/brain/eval/, syn eval)](#retrieval-eval-harness-appbrainevals-syn-eval)
 
 ---
 
@@ -2157,17 +2159,47 @@ from database import ChatSession, ContentChunk
 
 ---
 
-## RetrieveChunksNode
+## Retrieval Engine (`app/brain/retrieval_engine.py`)
 
-**Source:** `app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`
+**Source:** `app/brain/retrieval_engine.py`
+
+**OR.K2 task 1** promoted the ~800-LOC two-stage hybrid retrieval pipeline this module now owns
+out of `RetrieveChunksNode` (see [below](#retrievechunksnode)) — extract-on-the-second-consumer
+(CLAUDE.md standing rule 10): both the `DOCUMENT_QA` workflow node and `app/brain/retrieval.py`
+(`syn recall --hybrid` / `GET /recall?hybrid=true`) need the identical semantic → structural →
+keyword → memory → fuse-and-rank pipeline, and the latter previously reached into the former with
+an inverted, function-local import (`app/brain/` importing `app/workflows/`). `app/brain/` imports
+`app/workflows/` **nowhere** now (grep-asserted, `tests/brain/test_no_workflows_import.py`). Every
+DB-touching stage carried over verbatim, plus one addition: an optional `session` (a caller-supplied
+SQLAlchemy session, or a zero-arg session-factory) threaded through the whole pipeline so a caller
+(`recall()`, the `app/brain/eval/` harness, future `OR.K1` query-log wiring) can share one session
+instead of each stage opening its own; `session=None` (the default) preserves the original
+per-stage session-opening behavior byte-for-byte. Ranking math (`_fuse_and_rank`,
+`_apply_diversity_cap`) is untouched, so unscoped-query rankings are identical pre/post promotion
+(pinned by a golden-ordering regression fixture — see Test coverage below). Implements the
+semantic-then-keyword re-rank pattern originally ported from the rag-engine-rs
+`two_stage_retrieval.rs` and `query.rs` modules.
 
 ```python
-class RetrieveChunksNode(Node, DbSeamMixin):
-```
+def retrieve(
+    query: str,
+    *,
+    corpus: str = "content",
+    k: int = 5,
+    threshold: float = 0.0,
+    filters: dict | None = None,
+    include_archived: bool = False,
+    expand_structural: bool = True,
+    workspace_id: str | None = None,
+    peer_id: str | None = None,
+    include_memory: bool = False,
+    apply_decay: bool = True,
+    session=None,
+    embedder=None,
+) -> list[dict]: ...
 
-Two-stage hybrid retrieval node for the `DOCUMENT_QA` workflow (Phase 1 Project D Task 3).
-Implements the semantic-then-keyword re-rank pattern ported from the rag-engine-rs
-`two_stage_retrieval.rs` and `query.rs` modules.
+def compute_retrieval_confidence(chunks: list[dict]) -> float: ...
+```
 
 **Retrieval pipeline:**
 
@@ -2242,47 +2274,30 @@ Implements the semantic-then-keyword re-rank pattern ported from the rag-engine-
 
 Adding a third corpus requires one entry in the module-level `_CORPUS_CONFIG` dict.
 
-### `process(task_context: TaskContext) -> TaskContext`
+### `retrieve(query, *, corpus="content", k=5, threshold=0.0, filters=None, include_archived=False, expand_structural=True, workspace_id=None, peer_id=None, include_memory=False, apply_decay=True, session=None, embedder=None) -> list[dict]`
 
-Reads `event.question`, `event.corpus` (defaults to `"content"`), `event.filters`,
-`event.include_archived`, `event.expand_structural`, `event.workspace_id`, `event.peer_id`,
-`event.include_memory`, and `event.apply_decay` (all via `getattr` defensive read — defaulting to
-`None`/`False`/`True`/`None`/`None`/`False`/`True` respectively, so an event predating block OR.M
-that omits the last four fields still validates and retrieves unchanged) from the task context,
-calls `retrieve()` with `k=5` plus all of the above, and writes the result:
-
-```python
-task_context.update_node(node_name=self.node_name, result={"chunks": chunks})
-```
-
-Downstream nodes read via:
-
-```python
-output = task_context.get_node_output("RetrieveChunksNode")
-chunks = output["result"]["chunks"]
-```
-
-### `retrieve(query, corpus="content", k=5, threshold=0.0, *, filters=None, include_archived=False, expand_structural=True, workspace_id=None, peer_id=None, include_memory=False, apply_decay=True) -> list[dict]`
-
-Public retrieval method. Embeds `query` via `EmbeddingService`, runs the two-stage (plus optional
-structural and memory) pipeline, and returns up to `k` normalized chunk dicts sorted by fused
-score descending.
+Public module-level retrieval function (OR.K2 — module-level, not a bound method; `RetrieveChunksNode`
+below is now a thin caller). Embeds `query` via `EmbeddingService` (or the injected `embedder`), runs
+the two-stage (plus optional structural and memory) pipeline, and returns up to `k` normalized chunk
+dicts sorted by fused score descending.
 
 **Parameters:**
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `query` | `str` | — | User question text to search. |
-| `corpus` | `str` | `"content"` | Target corpus: `"content"` or `"brain"`. |
-| `k` | `int` | `5` | Maximum number of chunks to return. |
-| `threshold` | `float` | `0.0` | Minimum fused score; chunks below are excluded. |
-| `filters` | `dict \| None` | `None` | Optional metadata filters (keyword-only). Applied only when the corpus declares `filter_fields`. See `DocumentQAEventSchema` for accepted keys. |
+| `corpus` | `str` | `"content"` | Keyword-only. Target corpus: `"content"` or `"brain"`. |
+| `k` | `int` | `5` | Keyword-only. Maximum number of chunks to return. |
+| `threshold` | `float` | `0.0` | Keyword-only. Minimum fused score; chunks below are excluded. |
+| `filters` | `dict \| None` | `None` | Optional metadata filters (keyword-only). Applied only when the corpus declares `filter_fields`. See `DocumentQAEventSchema` for accepted keys; `app/brain/retrieval.py` (OR.K2) resolves `workspace` to `filters={"project": workspace}` (D47) before calling in. |
 | `include_archived` | `bool` | `False` | Keyword-only. When `False`, brain-corpus results exclude `status='archived'` docs. No effect on the content corpus. |
 | `expand_structural` | `bool` | `True` | Keyword-only. When `True` and the corpus declares `supports_structural` (currently `"brain"` only), widens the Stage-1 semantic candidate set through the `related:`-neighborhood of the top hits before keyword re-rank. No-op for `"content"` or when `False`. |
 | `workspace_id` | `str \| None` | `None` | Block OR.M. Keyword-only. D47 workspace name to scope Stage 1d memory retrieval to. Required (non-`None`) **together with** `include_memory=True` for `_memory_expand` to run at all — either alone is a no-op. |
 | `peer_id` | `str \| None` | `None` | Block OR.M. Keyword-only. Optional narrowing of Stage 1d memory retrieval to one entity's facts. |
 | `include_memory` | `bool` | `False` | Block OR.M. Keyword-only, opt-in. Gates Stage 1d (`_memory_expand`) — surfaces accumulated `SemanticMemory` facts as `via="memory"` candidates. See `workspace_id` above for the second half of the gate. |
 | `apply_decay` | `bool` | `True` | Block OR.M. Keyword-only, opt-out. When `True`, brain-corpus candidates with a non-`None` `authored_at` are down-weighted by age in `_fuse_and_rank` (`_DOC_DECAY_FACTOR`). Set `False` to reproduce pre-OR.M ranking exactly regardless of `authored_at`. |
+| `session` | SQLAlchemy session, session-factory, or `None` | `None` | OR.K2. Keyword-only. When supplied, every DB-touching stage reuses it instead of opening its own short-lived session via `_session_scope()`. `None` (the default) preserves per-stage session-opening behavior and byte-identical ranking. |
+| `embedder` | object exposing `embed_text(query)`, or `None` | `None` | OR.K2. Keyword-only. `None` constructs a fresh `EmbeddingService()`, as before the promotion. |
 
 **Return schema** — each element of the returned list contains:
 
@@ -2297,34 +2312,26 @@ score descending.
 | `title` | `str \| None` | Provenance: OKF `title` of the source doc, for citation display. |
 | `via` | `str` | Provenance: `"semantic"` (Stage 1), `"structural"` (Stage 1b neighborhood expansion), `"keyword"` (Stage 1c keyword-candidate expansion), or `"memory"` (Stage 1d memory expansion, block OR.M). |
 
-**`retrieval_confidence` (block OR.L):** `process()` additionally writes a top-level
-`retrieval_confidence: float` alongside `chunks` (not part of the per-chunk dict above):
+### `compute_retrieval_confidence(chunks: list[dict]) -> float`
 
-```python
-task_context.nodes["RetrieveChunksNode"] = {
-    "result": {
-        "chunks": [...],
-        "retrieval_confidence": 0.87,
-    }
-}
-```
-
-Computed by `_compute_retrieval_confidence(chunks)`: a logistic squash
-(`1 / (1 + e^-score)`) of the single highest-scoring chunk's fused `score`, monotonic in
-that score by construction and bounded to `[0, 1]`. Returns `0.0` when `chunks` is empty
-(no retrieval signal at all). This is the raw retrieval-derived confidence signal
-`GroundingRouterNode` gates on and that surfaces on the final answer envelope as
-`context_confidence` (design decision 1) — see § "Answer envelope (block OR.L)" below.
+**`retrieval_confidence` (block OR.L):** a logistic squash (`1 / (1 + e^-score)`) of the single
+highest-scoring chunk's fused `score`, monotonic in that score by construction and bounded to
+`[0, 1]`. Returns `0.0` when `chunks` is empty (no retrieval signal at all). This is the raw
+retrieval-derived confidence signal `GroundingRouterNode` gates on and that surfaces on the final
+answer envelope as `context_confidence` (design decision 1) — see § "Answer envelope (block
+OR.L)" below. It is also the signal `app/brain/eval/scorer.py`'s abstain-correctness metric
+(OR.K2 task 3) predicts abstention from (`retrieval_confidence < 0.55`).
 
 Note: `authored_at` (block OR.M) is threaded through `_row_to_candidate` and consumed internally
 by `_fuse_and_rank`'s age-decay term (see Stage 3 above), but is **not** one of the returned dict's
 keys — it is a scoring input, not a citation field.
 
-`_session_scope()` (used by `_memory_expand` and elsewhere the node needs a DB session) comes
-from [`DbSeamMixin`](#dbseammixin) (block OR.M) — the node's 4 previously-inline
-`contextmanager(db_session)()` call sites now resolve through the shared mixin.
+`_session_scope(session=None)` accepts the module-level `retrieve()`'s optional `session`
+(OR.K2): a plain session or a zero-arg session-factory is entered as-is (`contextlib.nullcontext`
+for a plain session so the caller's own `close()`/commit lifecycle is respected); `None` opens a
+fresh `db_session()` scope exactly as before the promotion.
 
-### Internal methods (mockable test seams)
+### Internal functions (module-level, mockable test seams)
 
 | Method | Description |
 |---|---|
@@ -2343,23 +2350,73 @@ from [`DbSeamMixin`](#dbseammixin) (block OR.M) — the node's 4 previously-inli
 
 ### Test coverage
 
-`tests/workflows/test_retrieve_chunks_node.py` — 78 tests covering: score ordering,
-keyword boost, section-title 2x weight, threshold filtering, top-k, NaN safety,
-corpus `"brain"` threading, TaskContext output contract (`{"result": {"chunks": [...]}}` shape),
+`tests/workflows/test_retrieve_chunks_node.py` — migrated (OR.K2 task 1) from monkeypatching
+`RetrieveChunksNode`'s former per-instance DB/embedding seams to patching the module-level
+`retrieval_engine` functions directly; 78+ tests covering: score ordering, keyword boost,
+section-title 2x weight, threshold filtering, top-k, NaN safety, corpus `"brain"` threading,
 exact score formula verification, punctuation stripping in keyword terms, `filters` forwarding
-from event through `process()` → `retrieve()` → `_semantic_search()`, defensive `getattr`
-fallback when event has no `filters` attribute, brain corpus ORing the `keywords` column in
-keyword search, content corpus query unchanged by new config, scalar-filter exclusion of
-non-matching rows, the structural neighborhood-expansion stage (`_structural_expand`,
-`expand_structural` toggle on/off, `via="structural"` tagging, no-DB-call short-circuit for
-corpora without `supports_structural`), the Stage 1c keyword-candidate expansion stage
-(`_keyword_expand` existing-ids exclusion, filters/`include_archived` forwarding, no-DB-call
-short-circuit for corpora without a `tsv_field`, `via="keyword"` tagging, integration through
-`retrieve()`), and the generalized `_merge_candidates` dedupe/base-wins semantics shared by both
-expansion stages. An additional end-to-end suite, `tests/workflows/test_brain_graph_retrieval.py`,
-proves the headline OR.G acceptance: a `related:`-neighbor answer is retrieved and flagged
+through `retrieve()` → `_semantic_search()`, brain corpus ORing the `keywords` column in keyword
+search, content corpus query unchanged by new config, scalar-filter exclusion of non-matching
+rows, the structural neighborhood-expansion stage (`_structural_expand`, `expand_structural`
+toggle on/off, `via="structural"` tagging, no-DB-call short-circuit for corpora without
+`supports_structural`), the Stage 1c keyword-candidate expansion stage (`_keyword_expand`
+existing-ids exclusion, filters/`include_archived` forwarding, no-DB-call short-circuit for
+corpora without a `tsv_field`, `via="keyword"` tagging, integration through `retrieve()`), and the
+generalized `_merge_candidates` dedupe/base-wins semantics shared by both expansion stages. A
+byte-identical-ranking regression test (a captured golden-ordering fixture, pre-refactor) pins
+that the promotion changed where the pipeline lives, not what it computes, for unscoped hybrid
+queries. An additional end-to-end suite, `tests/workflows/test_brain_graph_retrieval.py`, proves
+the headline OR.G acceptance: a `related:`-neighbor answer is retrieved and flagged
 `via="structural"` when absent from the semantic-only path, and structural-on/off results are
 identical when no useful neighbor exists (dangling edge).
+
+---
+
+## RetrieveChunksNode
+
+**Source:** `app/workflows/document_qa_workflow_nodes/retrieve_chunks_node.py`
+
+```python
+class RetrieveChunksNode(Node):
+```
+
+Since **OR.K2 task 1**, a ~30-line `TaskContext` adapter over
+[`retrieval_engine.retrieve`](#retrieval-engine-appbrainretrieval_enginepy) for the `DOCUMENT_QA`
+workflow — it owns no retrieval logic of its own. `process()` reads `event.question`,
+`event.corpus` (defaults to `"content"`), `event.filters`, `event.include_archived`,
+`event.expand_structural`, `event.workspace_id`, `event.peer_id`, `event.include_memory`, and
+`event.apply_decay` (all via `getattr` defensive read — defaulting to
+`None`/`False`/`True`/`None`/`None`/`False`/`True` respectively, so an event predating block OR.M
+that omits the last four fields still validates and retrieves unchanged) from the task context,
+calls `retrieval_engine.retrieve()` with `k=5` plus all of the above, and writes the result:
+
+```python
+task_context.update_node(
+    node_name=self.node_name,
+    result={"chunks": chunks, "retrieval_confidence": self._compute_retrieval_confidence(chunks)},
+)
+```
+
+Downstream nodes read via:
+
+```python
+output = task_context.get_node_output("RetrieveChunksNode")
+chunks = output["result"]["chunks"]
+confidence = output["result"]["retrieval_confidence"]
+```
+
+`_compute_retrieval_confidence(chunks)` is kept as a node-level `@staticmethod` (rather than
+inlined at the call site or dropped) — it delegates to
+`retrieval_engine.compute_retrieval_confidence(chunks)` but is a stable, independently-tested seam
+other workflow code (`GroundingRouterNode`, abstain-path tests) still reaches via
+`RetrieveChunksNode._compute_retrieval_confidence` directly.
+
+**Corpus dispatch** — controlled by the `corpus` field on the incoming event:
+
+| `corpus` value | Table queried | Model |
+|---|---|---|
+| `"content"` (default) | `content_chunks` | `ContentChunk` |
+| `"brain"` | `brain_documents` | `BrainDocument` |
 
 ---
 
@@ -2942,7 +2999,9 @@ instead of opening its own Postgres connection. All three are mounted at the rou
 [`require_api_key`](#require_api_key) dependency as `POST /events/` and `POST /ingest/*`, and
 delegate to the read core unchanged — no filtering, re-ranking, or reshaping beyond building the
 typed response model. Ranking, fusion, and traversal output stay byte-identical to what the `syn`
-CLI returns today. See `docs/data-contract.md` §7 for the canonical contract (v1.4.0).
+CLI returns today. See `docs/data-contract.md` §7 for the canonical contract (v1.4.0 introduced
+the three routes; v1.6.0 reconciled `GET /recall`'s `score`/`via` shape with the OR.K2 retrieval
+promotion — see that changelog row).
 
 ### `RecallResult` / `RecallResponse`
 
@@ -4456,13 +4515,35 @@ that needed it (see `docs/scripts.md` § `refresh_brain.py`).
 
 ### `app/brain/retrieval.py`
 
+**OR.K2** promoted the hybrid pipeline out of `RetrieveChunksNode` into
+[`app/brain/retrieval_engine.py`](#retrieval-engine-appbrainretrieval_enginepy) and fixed two
+defects here: every path now actually scopes by `workspace` (previously a no-op past the CLI's
+validation step — `hybrid_search` dropped every argument but `query`/`limit`, and
+`exact_id_lookup`/`semantic_search` took no filter at all), and `recall()`'s return shape is
+normalized to one dict shape on every path with `score` always a higher-is-better similarity
+(see the data-contract v1.6.0 changelog row for the consumer-facing implication).
+`app/brain/` imports `app/workflows/` **nowhere** — `hybrid_search` now calls
+`retrieval_engine.retrieve` directly instead of the former function-local import of
+`RetrieveChunksNode` (grep-asserted, `tests/brain/test_no_workflows_import.py`).
+
 ```python
 ID_PATTERN: re.Pattern  # matches structured ids like "D20", "OR.V", "MV.3B.Q"
 
 def find_exact_id(query: str) -> str | None: ...
-def exact_id_lookup(id_str: str, session, limit: int = 5) -> list: ...
-def semantic_search(query: str, session, embedding_service, limit: int = 5) -> list[tuple]: ...
-def hybrid_search(query: str, limit: int = 5) -> list[dict]: ...
+def exact_id_lookup(
+    id_str: str, session, limit: int = 5, *, filters: dict | None = None
+) -> list: ...
+def semantic_search(
+    query: str, session, embedding_service, limit: int = 5, *, filters: dict | None = None
+) -> list[tuple]: ...
+def hybrid_search(
+    query: str,
+    limit: int = 5,
+    *,
+    filters: dict | None = None,
+    workspace: str | None = None,
+    session=None,
+) -> list[dict]: ...
 
 def recall(
     query: str,
@@ -4477,11 +4558,11 @@ def recall(
 
 | Function | Description |
 |---|---|
-| `find_exact_id(query)` | Returns the first structured-ID token in `query` (e.g. `D20`, `OR.V`, `MV.3B.Q`) via `ID_PATTERN`, or `None`. Structured ids aren't reliably distinct in embedding space, so `recall` short-circuits to a deterministic lookup instead of semantic search when one is present. |
-| `exact_id_lookup(id_str, session, limit=5)` | Resolves `id_str` via an `ILIKE` match on `BrainDocument.doc_id` or `file_path`, doc_id matches first. |
-| `semantic_search(query, session, embedding_service, limit=5)` | Embeds `query` via the injected `embedding_service` and returns the `limit` nearest `(BrainDocument, distance)` tuples by pgvector cosine distance, nearest first. |
-| `hybrid_search(query, limit=5)` | Reuses `RetrieveChunksNode.retrieve(query, corpus="brain", k=limit)` — the same keyword+semantic fusion ranking the production `DOCUMENT_QA` workflow produces — instead of raw cosine distance. |
-| `recall(query, *, limit=5, hybrid=False, workspace=None, session=None, embedding_service=None)` | The single typed dispatcher: `hybrid=True` delegates straight to `hybrid_search`; otherwise tries `find_exact_id` → `exact_id_lookup` first, falling back to `semantic_search`. Opens its own session via `database.session.db_session` and constructs a default `EmbeddingService` when not injected. Returns a list of normalized dicts (`doc_id`, `file_path`, `title`, `section`, `content`, `score`, `via` — `via` is `"exact-id"` or `"semantic"`, distinct from `hybrid_search`'s own passthrough `via`). `workspace` is accepted but currently **unapplied** — reserved for the CLI layer's `--workspace` resolution, not yet wired into the query itself. |
+| `find_exact_id(query)` | Returns the first structured-ID token in `query` (e.g. `D20`, `OR.V`, `MV.3B.Q`) via `ID_PATTERN`, or `None`. Structured ids aren't reliably distinct in embedding space, so `recall` short-circuits to a deterministic lookup instead of semantic search when one is present. Note: this is also the exact-ID-hijack surface the golden set's `hijack-*` cases document — an incidental ID-shaped token inside an otherwise-semantic query (e.g. "US2024 visa requirements") routes here instead of to semantic/hybrid search. |
+| `exact_id_lookup(id_str, session, limit=5, *, filters=None)` | Resolves `id_str` via an `ILIKE` match on `BrainDocument.doc_id` or `file_path`, doc_id matches first. `filters` (OR.K2, e.g. `{"project": "..."}`) is applied via `retrieval_engine._apply_metadata_filters` when the brain corpus's `filter_fields` support it — the same mechanism the semantic/hybrid paths use. |
+| `semantic_search(query, session, embedding_service, limit=5, *, filters=None)` | Embeds `query` via the injected `embedding_service` and returns the `limit` nearest `(BrainDocument, distance)` tuples by pgvector cosine distance, nearest first. `filters` (OR.K2) scopes the query the same way `exact_id_lookup` does. |
+| `hybrid_search(query, limit=5, *, filters=None, workspace=None, session=None)` | Calls `retrieval_engine.retrieve(query, corpus="brain", k=limit, filters=..., session=session)` directly (OR.K2 — no more function-local import of `RetrieveChunksNode`) and normalizes each returned chunk to `recall()`'s shape via `_normalize_engine_chunk`. `workspace` resolves to `filters={"project": workspace}` (D47) and is merged with an explicit `filters` (an explicit `filters["project"]` wins on conflict). |
+| `recall(query, *, limit=5, hybrid=False, workspace=None, session=None, embedding_service=None)` | The single typed dispatcher: `hybrid=True` delegates straight to `hybrid_search`; otherwise tries `find_exact_id` → `exact_id_lookup` first, falling back to `semantic_search`. Opens its own session via `database.session.db_session` and constructs a default `EmbeddingService` when not injected. `workspace` (OR.K2 — previously accepted but unapplied) now resolves to a `{"project": workspace}` filter and is threaded into **every** path (exact-id, semantic, hybrid). Returns a list of one normalized dict shape on every path: `{doc_id, file_path, title, section, content, score, via}`, with `score` always a similarity where higher is better (`1.0` for an exact-id match, `1.0 - distance` for semantic, the fused `retrieval_engine` score for hybrid) and `via` one of `exact-id`, `semantic`, `structural`, `keyword`, or `memory`. |
 
 ### `app/brain/graph.py`
 
@@ -4711,3 +4792,154 @@ from another directory without `cd`-ing here, use `uv run --project <path-to-thi
   `deep_stale` exception, and `routine reconcile` running via `ops.run_routine`.
 - `tests/test_index_brain.py` — `--only-paths` filtering (matched/unmatched/mixed paths, warning
   on unmatched), `--force`'s incremental-skip bypass, and `--prune-paths` (`TestPrunePaths`).
+
+---
+
+## Retrieval Eval Harness (`app/brain/eval/`, `syn eval`)
+
+**Sources:** `app/brain/eval/__init__.py`, `app/brain/eval/models.py`, `app/brain/eval/scorer.py`,
+`app/brain/eval/runner.py`, `app/brain/cli.py`, `app/brain/ops.py`
+
+Block **OR.K2 task 3**. Converts a retrieval change from an argument into a signed number: one
+command (`syn eval`) scores the hand-authored golden set
+(`planning/retrieval-golden-set.yaml`, OR.K2 task 2, hard-capped at 40 cases) against the promoted
+[retrieval engine](#retrieval-engine-appbrainretrieval_enginepy) on recall@5, recall@10, MRR,
+abstain-correctness, and groundedness — deterministically, with no LLM anywhere in the scoring
+path. `app/brain/eval/` imports **nothing** from `app/evals/` (that package was deleted whole by
+`OR.X2` — its runner/gate were DB-bound to `eval_runs`/`eval_results` tables engine-rs now owns;
+this package borrows at most the *shape* of the deleted `gate.py::gate_change` comparison, never
+imports it — grep-asserted, `tests/brain/test_eval.py`). Results persist as git-tracked JSON
+(`planning/retrieval-eval-runs/<ISO8601>.json`) — no new DB tables (a second aggregator next to
+engine-rs's eval tables is the D51 anti-pattern this block deliberately avoids).
+
+### `RetrievalCase` / `CaseResult` / `RetrievalRunReport`
+
+**Source:** `app/brain/eval/models.py`
+
+```python
+@dataclass(frozen=True)
+class RetrievalCase:
+    case_id: str
+    query: str
+    expect_docs: tuple[str, ...]
+    expect_abstain: bool
+    scope: str | None = None
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class CaseResult:
+    case_id: str
+    recall_at_5: float | None
+    recall_at_10: float | None
+    reciprocal_rank: float | None
+    predicted_abstain: bool
+    expected_abstain: bool
+    abstain_correct: bool
+    groundedness: float | None
+    retrieval_confidence: float
+    matched_docs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RetrievalRunReport:
+    generated_at: str
+    case_count: int
+    results: tuple[CaseResult, ...]
+    aggregate: dict[str, float]
+
+    @staticmethod
+    def now_iso() -> str: ...  # ISO 8601 UTC, second precision — the run's filename stem
+
+    def to_dict(self) -> dict: ...  # the git-tracked run-report JSON shape
+```
+
+Plain stdlib dataclasses, not Pydantic — this package stays dependency-free from
+`app/schemas/`/`app/evals/`. `RetrievalCase` mirrors the golden-set YAML schema
+`tests/brain/test_golden_set_schema.py` enforces. `recall_at_5`/`recall_at_10`/`reciprocal_rank`/
+`groundedness` are `None` (not `0.0`) for a case with empty `expect_docs` (a pure-negative
+case) — undefined, not failing, since there is nothing to recall; a negative case's only real
+signal is `abstain_correct`. `RetrievalRunReport.aggregate` keys — `recall_at_5`, `recall_at_10`,
+`mrr`, `groundedness` (mean over positive cases with non-`None` readings only) and
+`abstain_correctness` (mean over **every** case, positive and negative alike).
+
+### `score_case(case: RetrievalCase, results: list[dict], confidence: float) -> CaseResult`
+
+**Source:** `app/brain/eval/scorer.py`
+
+Every metric is a pure function of `(case, results, confidence)` — no DB, no network, no LLM.
+`results` is the ranked chunk list `retrieval_engine.retrieve()` returned (called with `k=10` so
+recall@5 and recall@10 both read off one ranked list, not two separate calls that could drift
+apart on Stage-1 candidate-set non-determinism). Case matching is set membership on `doc_id` OR
+`file_path` against `case.expect_docs` — not rank-sensitive.
+
+- **Abstain prediction:** `predicted_abstain = confidence < ABSTAIN_THRESHOLD`, where
+  `ABSTAIN_THRESHOLD` is imported live from
+  `DocumentQAEventSchema.model_fields["confidence_threshold"].default` (currently `0.55`) — never
+  re-hardcoded, so a future calibration change to the schema default is picked up automatically.
+  `abstain_correct = predicted_abstain == case.expect_abstain`.
+- **Groundedness:** lifts `VerifyCitationsNode`'s lexical-overlap scoring
+  (`support_score`/`split_sentences`, block OR.L) as a byte-for-byte **mirrored copy**, not an
+  import — `app/brain/` must import `app/workflows/` nowhere, so the pure, dependency-free
+  functions are duplicated deliberately (grep-verified; if `VerifyCitationsNode`'s scoring
+  changes, update both copies). Computed against the highest-ranked matching chunk's content, with
+  the case's own `query` (split into sentences) standing in for "the claim being checked" — there
+  is no LLM-authored answer text at retrieval-eval time.
+- **Recall@5 / Recall@10 / reciprocal rank:** `1.0`/`0.0` and `1/rank` respectively over the
+  top-`k` slice of `results`; `None` for a case with empty `expect_docs`.
+
+### Runner — `load_cases` / `run_eval` / `write_report` / `compare_to_baseline`
+
+**Source:** `app/brain/eval/runner.py`
+
+```python
+DEFAULT_GOLDEN_SET_PATH: Path  # planning/retrieval-golden-set.yaml
+DEFAULT_RUNS_DIR: Path         # planning/retrieval-eval-runs/
+
+def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase]: ...
+
+def run_eval(
+    cases: list[RetrievalCase],
+    *,
+    corpus: str = "brain",
+    k: int = 10,
+    session=None,
+    embedder=None,
+) -> RetrievalRunReport: ...
+
+def write_report(report: RetrievalRunReport, out_dir: str | Path = DEFAULT_RUNS_DIR) -> Path: ...
+def load_report(path: str | Path) -> dict: ...
+def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float], bool]: ...
+```
+
+| Function | Description |
+|---|---|
+| `load_cases(path)` | Parses the golden-set YAML into `RetrievalCase` objects. |
+| `run_eval(cases, *, corpus="brain", k=10, session=None, embedder=None)` | Runs every case's `query` through `retrieval_engine.retrieve(query, corpus=corpus, k=k, filters={"project": case.scope} if case.scope else None, session=session, embedder=embedder)`, computes `retrieval_confidence` via `retrieval_engine.compute_retrieval_confidence(chunks[:5])` (mirroring production's `k=5` dispatch even though the runner requests `k=10`), scores each case, and returns a `RetrievalRunReport` with per-case results plus aggregates. |
+| `write_report(report, out_dir=DEFAULT_RUNS_DIR)` | Writes `<out_dir>/<report.generated_at>.json` (`mkdir(parents=True, exist_ok=True)`; sorted-keys, newline-terminated). Returns the written path. |
+| `load_report(path)` | Loads a previously-written run JSON (e.g. a `--baseline` file). |
+| `compare_to_baseline(current, baseline)` | Signed per-metric delta of `current["aggregate"]` vs. `baseline["aggregate"]`: `deltas[metric] = current - baseline` (positive = improvement, every metric here is higher-is-better); `regressed` is `True` iff any metric strictly decreased. A ~15-line comparison shaped like the deleted `app/evals/gate.py::gate_change`, never imported from it. |
+
+### `syn eval` CLI
+
+**Source:** `app/brain/cli.py`
+
+| Subcommand | Arguments | Behavior |
+|---|---|---|
+| `eval` | `--set PATH` (default: `planning/retrieval-golden-set.yaml`), `--baseline PATH`, `--json` | Loads the golden set, runs it through `run_eval`, writes a dated JSON report via `write_report`, and prints per-case + aggregate metrics. With `--baseline <path>`, additionally loads that prior run JSON, prints a signed per-metric delta via `compare_to_baseline`, and **exits non-zero on any metric regression**. Errors are caught by the same `_emit_error` typed-exception path the write/ops commands use. |
+
+`ops.ROUTINES` also registers `"eval"` (`app/brain/ops.py::_eval_routine`) — report-only and
+cron-safe, so `syn routine eval` scores the default golden set and writes a dated run without a
+`--baseline` comparison (a routine, like `"reconcile"`, never gates or repairs anything
+automatically).
+
+### Test coverage
+
+- `tests/brain/test_eval.py` — deterministic double-run identity on a fixture corpus (two runs on
+  an unchanged corpus produce identical aggregate metrics); a seeded regression makes
+  `compare_to_baseline` return `regressed=True` and the CLI exit non-zero; abstain-correctness on
+  a negative case (`expect_docs=[]`, `expect_abstain=True`); groundedness parity with
+  `VerifyCitationsNode.support_score` on a shared fixture; the two grep-assert tests (`app/brain/`
+  imports `app/workflows/` nowhere; `app/brain/eval/` imports `app/evals/` nowhere).
+- `tests/brain/test_golden_set_schema.py` — loads `planning/retrieval-golden-set.yaml` and asserts
+  required fields, the 40-case hard cap, and at least 3 negative (`expect_abstain: true`) cases.

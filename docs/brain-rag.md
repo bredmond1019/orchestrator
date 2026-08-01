@@ -27,15 +27,24 @@ agentic-portfolio/ markdown files
          │
   BrainDocument rows       ← pgvector table (one row per section chunk)
          │
-  RetrieveChunksNode       ← corpus="brain" parameter
-  (DOCUMENT_QA workflow)
+  app/brain/retrieval_engine.py   ← the promoted two-stage hybrid pipeline (OR.K2)
+  (called by RetrieveChunksNode / DOCUMENT_QA, and by app/brain/retrieval.py / syn recall --hybrid)
          │
   AnswerNode               ← grounded answer from brain context
 ```
 
+**OR.K2** promoted the retrieval pipeline out of `RetrieveChunksNode` into
+`app/brain/retrieval_engine.py::retrieve()` — a module-level function, not a node method — so both
+the `DOCUMENT_QA` workflow and `app/brain/retrieval.py` (`syn recall --hybrid` /
+`GET /recall?hybrid=true`) share one implementation. `RetrieveChunksNode` is now a ~30-line
+`TaskContext` adapter that reads the event and delegates; ranking is byte-identical to before the
+promotion. See `docs/api-reference.md` §
+[Retrieval Engine](api-reference.md#retrieval-engine-appbrainretrieval_enginepy) for the full
+reference.
+
 There are three layers:
 - **Layer 1 (shipped):** `BrainDocument` model + `index_brain.py` CLI — index the corpus
-- **Layer 2 (shipped):** `RetrieveChunksNode` `corpus` parameter — query the corpus via `DOCUMENT_QA`, including a structural graph-expansion stage (`BrainEdge` model + `load_brain_edges.py` CLI, OR.G — see below)
+- **Layer 2 (shipped):** `app/brain/retrieval_engine.py::retrieve(corpus="brain", ...)` (OR.K2) — query the corpus via `DOCUMENT_QA` (through the `RetrieveChunksNode` adapter) or directly via `syn recall --hybrid` / `GET /recall?hybrid=true`, including a structural graph-expansion stage (`BrainEdge` model + `load_brain_edges.py` CLI, OR.G — see below)
 - **Layer 3 (planned — Block R):** Brain-as-MCP-server exposing brain retrieval to external clients (the Python server half of the MCP split; the Console vendors the Rust client). Was scoped as "Project F" before the Bastion reframe; see D36.
 
 The indexer's own roadmap sits in the demand-first program blocks: **Block B** populates the vector store over the brain corpus, **Block O** widens it to every sub-repo's `planning/` + `CLAUDE.md`, and **Block J** makes re-indexing automatic on commit (today it is the manual CLI below).
@@ -296,8 +305,26 @@ reproduce pre-OR.M ranking exactly regardless of `authored_at`.
 
 ## Testing retrieval manually
 
-Two ways to check that indexing actually produced good, queryable results, from lightest to
-heaviest:
+Three ways to check that indexing actually produced good, queryable results, from a scored
+one-shot signal to the full end-to-end path:
+
+### 0. Scored retrieval quality — `syn eval` (OR.K2)
+
+The only one of these three that produces a **number**, not just a spot-check. Runs the
+hand-authored golden set (`planning/retrieval-golden-set.yaml`) through the promoted
+`retrieval_engine.retrieve()` pipeline and reports recall@5, recall@10, MRR,
+abstain-correctness, and groundedness — deterministic, no LLM anywhere in the scoring:
+
+```bash
+syn eval                                                          # score, write a dated report
+syn eval --baseline planning/retrieval-eval-runs/<prior-run>.json # signed deltas; non-zero on regression
+```
+
+Run `syn stale --deep` first so a drifted index doesn't get measured as a retrieval-quality
+regression. This is the method to reach for after any change to `retrieval_engine.py`,
+`_fuse_and_rank`, `_CORPUS_CONFIG`, or the golden set itself — (1) and (2) below are for
+spot-checking one query at a time. See `docs/api-reference.md` §
+[Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbrainevals-syn-eval).
 
 ### 1. Raw semantic search — `scripts/query_brain.py`
 
@@ -326,9 +353,9 @@ pulse`. See `docs/scripts.md` § `syn` and `docs/api-reference.md` §
 
 A query matching a bare structured code (`D20`, `OR.V`, `MV.3B.Q`) short-circuits straight to
 a `doc_id`/`file_path` lookup — no embedding call. Pass `--hybrid` to run the same
-keyword+semantic fusion `RetrieveChunksNode` uses in production (including the diversity cap
-on results-per-file), without standing up the API/Celery stack — see (2) below for when the
-full pipeline is still worth exercising.
+`app/brain/retrieval_engine.py::retrieve()` keyword+semantic fusion `DOCUMENT_QA` uses in
+production (including the diversity cap on results-per-file), without standing up the
+API/Celery stack — see (2) below for when the full pipeline is still worth exercising.
 
 ### 2. Full answer path — `DOCUMENT_QA` over HTTP
 
@@ -337,8 +364,9 @@ keyword re-rank) + structural graph expansion + LLM-grounded answer synthesis. R
 API (`uvicorn`) and a Celery worker running (see `docs/getting-started.md`) — use the `curl`
 examples under "Querying the brain" above (`corpus: "brain"`).
 
-Use (1) first to confirm the corpus is populated and retrieval is sane, then (2) to confirm
-the end-to-end answer quality once (1) looks right.
+Use (0) for a scored signal on any retrieval-affecting change, (1) to confirm the corpus is
+populated and retrieval is sane for a single query, then (2) to confirm the end-to-end answer
+quality once (0)/(1) look right.
 
 ---
 
