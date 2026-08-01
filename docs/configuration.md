@@ -126,6 +126,7 @@ Copy `app/.env.example` to `app/.env` and fill in the required values before run
 | `TAVILY_API_KEY` | string | — | Conditional | `SearchService` — required when any workflow uses web search |
 | `ORCHESTRATION_API_KEY` | string | — | **Required** (public) | `app/api/security.py` — `X-API-Key` value for `POST /events/`; if unset, the service returns `503` (fail-closed). Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. |
 | `ALLOWED_ORIGINS` | string | `https://learn-agentic-ai.com` | No | `app/main.py` — comma-separated list of origins for `CORSMiddleware`. |
+| `BRAIN_QUERY_LOG_ENABLED` | string (`"1"`/`"true"`, case-insensitive) | on | No | `app/brain/query_log.py::log_retrieval` (OR.K1) — fire-and-forget write gate for the `retrieval_queries` log read by `syn queries`; defaults on in production, forced off for the whole test suite by an autouse fixture in `tests/conftest.py`. Set to `0` to silence logging for a one-off invocation. See `docs/scripts.md` § `syn` for `syn queries`. |
 
 "Conditional" means the variable is required only when a workflow node is configured with the
 corresponding `ModelProvider` value (or service, in the case of `TAVILY_API_KEY`).
