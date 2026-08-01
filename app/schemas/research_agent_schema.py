@@ -1,30 +1,13 @@
-"""Event and output schemas for the research_agent (Project B) workflow."""
+"""Output schema for CompanyResearchNode (formerly the research_agent workflow).
 
-from datetime import UTC, datetime
-from uuid import UUID, uuid4
+``ResearchAgentEventSchema`` and the ``RESEARCH_AGENT`` workflow itself were removed
+under `OR.X` cut 2 (D51 divestment). ``ResearchBriefOutput`` survives here because
+``ProposalCompanyResearchNode`` (`app/workflows/proposal_generator_workflow_nodes/`)
+subclasses `CompanyResearchNode` and reuses this output shape unchanged; it retires
+with `PROPOSAL_GENERATOR` in `OR.X` cut 3.
+"""
 
 from pydantic import BaseModel, Field
-
-
-class ResearchAgentEventSchema(BaseModel):
-    """Inbound event for the research agent.
-
-    A company name to research, plus a stable identity and submission timestamp
-    mirroring the ContentPipelineEventSchema pattern.
-    """
-
-    company_name: str = Field(
-        ...,
-        description="Name of the company to research",
-    )
-    artifact_id: UUID = Field(
-        default_factory=uuid4,
-        description="Stable identity for the resulting research brief",
-    )
-    timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        description="Time when the research request was submitted",
-    )
 
 
 class ResearchBriefOutput(BaseModel):

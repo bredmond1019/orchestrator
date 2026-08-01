@@ -5,6 +5,12 @@ an actual `ResearchAgentWorkflow` run, dumped via `TaskContext.model_dump(mode="
 call the Celery worker uses to persist `events.task_context` (`app/worker/tasks.py`). It is not
 hand-authored.
 
+> **Frozen golden file (as of `OR.X` cut 2, D51 divestment).** The `RESEARCH_AGENT` workflow and
+> the generator that produced this file (`scripts/emit_task_context_fixture.py`) were both removed.
+> This file itself stays **byte-identical** — `bastion` and `engine-rs`'s `round_trip.rs` pin these
+> exact bytes — because its value was always its *shape*, not its reproducibility. See
+> `docs/data-contract.md` §5.
+
 > **Why this exists.** `engine-rs/crates/engine-contract/tests/round_trip.rs` claims byte-for-byte
 > conformance with this repo's data contract (`docs/data-contract.md`), but the fixture it asserted
 > against (`python_task_context.json`) was written by the Rust side about itself during EN.0.B —
@@ -43,15 +49,10 @@ describes shape**:
 and every node output field are left exactly as the workflow produced them — those are the values a
 conformance test needs to assert against, not noise to scrub.
 
-## How to re-emit
+## Re-emission (retired)
 
-```bash
-uv run python scripts/emit_task_context_fixture.py
-```
-
-The script is deterministic (fixed event literals + mocked Anthropic responses), so re-running it
-produces a byte-identical file unless the workflow's actual output shape changed. If the diff is
-non-empty, that's real drift — the Python-side conformance test
-(`tests/services/test_task_context_fixture.py`) exists to catch it here, and `engine-rs`'s
-`round_trip.rs` exists to catch it there. Update both copies together; do not let them diverge
-silently.
+The generator (`scripts/emit_task_context_fixture.py`) was deleted under `OR.X` cut 2 along with
+the `RESEARCH_AGENT` workflow it ran. This file does not get regenerated — it is a frozen golden
+file (see the note above); the Python-side conformance test
+(`tests/test_task_context_fixture.py`) now only asserts the checked-in file parses and carries the
+documented shape.

@@ -223,10 +223,14 @@ Status lifecycle: `pending` (seeded) → `running` (on entry) → `success` \| `
 | run input | `events.data` |
 
 **Conformance fixture.** `tests/fixtures/task_context/research_agent_task_context.json` is a real,
-code-path-captured `task_context` (emitted by `scripts/emit_task_context_fixture.py`), not a
-hand-authored one — `engine-rs`'s `round_trip.rs` asserts against a checked-in copy of it, and this
-repo's own `tests/test_task_context_fixture.py` asserts the live shape still matches it. Re-emit and
-update both copies whenever §5/§6 change; see `docs/scripts.md`.
+code-path-captured `task_context`, not a hand-authored one — `engine-rs`'s `round_trip.rs` asserts
+against a checked-in copy of it. **Frozen golden file (as of `OR.X` cut 2, 2026-08-01):** the
+`RESEARCH_AGENT` workflow and its generator (`scripts/emit_task_context_fixture.py`) were removed
+under D51's divestment; the fixture's value was always its *shape*, not its reproducibility, so it
+stays byte-identical rather than being re-pointed at a surviving workflow (which would only churn
+the bytes and force an unnecessary version bump + re-pin in `bastion`/`engine-rs`).
+`tests/test_task_context_fixture.py` now only asserts the checked-in file still parses and carries
+the documented shape; see `tests/fixtures/task_context/README.md` and `docs/scripts.md`.
 
 ---
 

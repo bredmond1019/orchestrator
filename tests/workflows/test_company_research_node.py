@@ -3,12 +3,25 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from core.task import TaskContext
-from schemas.research_agent_schema import ResearchAgentEventSchema, ResearchBriefOutput
+from schemas.research_agent_schema import ResearchBriefOutput
 from workflows.research_agent_workflow_nodes.company_research_node import (
     CompanyResearchNode,
 )
+
+
+class _FakePydanticEvent(BaseModel):
+    """Minimal stand-in for a parsed Pydantic event with a ``company_name`` field.
+
+    ``ResearchAgentEventSchema`` (the real workflow event schema) was removed
+    under `OR.X` cut 2; this node's else-branch only needs *some* Pydantic
+    model exposing ``company_name`` via attribute access.
+    """
+
+    company_name: str
+
 
 # The Anthropic client is instantiated in ToolUseNode.__init__ (core/nodes/tool_use.py).
 # Patch there, not in the company_research_node module.
@@ -298,8 +311,8 @@ class TestBuildInitialMessagesWithPydanticEvent:
         self, node, mock_anthropic_client
     ):
         """The else-branch (Pydantic model event) is the production path after
-        Workflow.run() parses the inbound dict into ResearchAgentEventSchema."""
-        event = ResearchAgentEventSchema(company_name="Pydantic Corp")
+        Workflow.run() parses the inbound dict into a Pydantic event schema."""
+        event = _FakePydanticEvent(company_name="Pydantic Corp")
         ctx = TaskContext(event=event)
 
         with patch(_PM_PATCH) as mock_pm:
