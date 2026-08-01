@@ -18,8 +18,17 @@ class RecallResult(BaseModel):
     title: str | None = Field(..., description="OKF frontmatter title, or None if unset")
     section: str | None = Field(..., description="Section label, or None if whole-document")
     content: str = Field(..., description="Chunk or document content")
-    score: float = Field(..., description="Distance/relevance score (0.0 for exact-id matches)")
-    via: str = Field(..., description="Retrieval path: exact-id, semantic, or hybrid")
+    score: float = Field(
+        ...,
+        description=(
+            "Similarity score, higher is better on every path (OR.K2): "
+            "1.0 for an exact-id match, 1.0 - cosine distance for semantic, "
+            "the fused retrieval-engine score for hybrid."
+        ),
+    )
+    via: str = Field(
+        ..., description="Retrieval path: exact-id, semantic, structural, keyword, or memory"
+    )
 
 
 class RecallResponse(BaseModel):

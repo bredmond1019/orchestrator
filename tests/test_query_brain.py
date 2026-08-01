@@ -8,9 +8,9 @@ Tests cover:
   with truncation ellipsis
 - main(): wires embedding service + db_session together end-to-end and
   prints a "no results" message on an empty corpus (mocked seams)
-- hybrid_search / --hybrid: delegates to RetrieveChunksNode.retrieve (mocked,
-  no live DB/embedding call) and main() prints its results without falling
-  through to the raw semantic_search path
+- hybrid_search / --hybrid: delegates to the promoted `brain.retrieval_engine`
+  fusion pipeline (mocked, no live DB/embedding call) and main() prints its
+  results without falling through to the raw semantic_search path (OR.K2)
 """
 
 import sys
@@ -248,7 +248,25 @@ def test_main_non_id_query_still_uses_semantic_search(capsys):
 
 
 def _fake_chunk(**overrides) -> dict:
+    """A `hybrid_search`-normalized (post-OR.K2) chunk dict: `section`, not
+    `section_title` — matches `recall()`'s unified shape on every path."""
     base = {
+        "doc_id": "D26-example",
+        "file_path": "docs/decisions/D26-example.md",
+        "title": "D26 — Example Decision",
+        "section": None,
+        "content": "Some fused chunk content.",
+        "score": 1.2345,
+        "via": "semantic",
+    }
+    base.update(overrides)
+    return base
+
+
+def _fake_engine_chunk(**overrides) -> dict:
+    """A raw `retrieval_engine.retrieve()`-shaped chunk (pre-normalization)."""
+    base = {
+        "id": "chunk-1",
         "content": "Some fused chunk content.",
         "section_title": None,
         "score": 1.2345,
@@ -262,25 +280,20 @@ def _fake_chunk(**overrides) -> dict:
     return base
 
 
-def test_hybrid_search_delegates_to_retrieve_chunks_node():
-    fake_node = MagicMock()
-    fake_node.retrieve.return_value = [_fake_chunk()]
-
+def test_hybrid_search_delegates_to_retrieval_engine():
     with patch(
-        "workflows.document_qa_workflow_nodes.retrieve_chunks_node.RetrieveChunksNode",
-        return_value=fake_node,
-    ) as fake_node_cls:
+        "brain.retrieval_engine.retrieve", return_value=[_fake_engine_chunk()]
+    ) as mock_retrieve:
         results = hybrid_search("What is decision D20 about?", limit=3)
 
-    fake_node_cls.assert_called_once_with()
-    fake_node.retrieve.assert_called_once_with(
-        "What is decision D20 about?", corpus="brain", k=3
+    mock_retrieve.assert_called_once_with(
+        "What is decision D20 about?", corpus="brain", k=3, filters=None, session=None
     )
     assert results == [_fake_chunk()]
 
 
 def test_format_hybrid_result_renders_score_and_via():
-    chunk = _fake_chunk(section_title="Overview")
+    chunk = _fake_chunk(section="Overview")
     rendered = format_hybrid_result(1, chunk, show_content=False, content_chars=200)
 
     assert "score=1.2345" in rendered
@@ -298,22 +311,17 @@ def test_format_hybrid_result_with_content_truncates_and_marks_ellipsis():
 
 
 def test_main_hybrid_flag_invokes_fusion_path_and_skips_semantic_search(capsys):
-    fake_node = MagicMock()
-    fake_node.retrieve.return_value = [_fake_chunk()]
-
     with (
         patch(
-            "workflows.document_qa_workflow_nodes.retrieve_chunks_node.RetrieveChunksNode",
-            return_value=fake_node,
-        ) as fake_node_cls,
+            "brain.retrieval_engine.retrieve", return_value=[_fake_engine_chunk()]
+        ) as mock_retrieve,
         patch("services.embedding_service.EmbeddingService") as fake_service_cls,
         patch("database.session.db_session") as fake_db_session,
     ):
         main(["What is the Bastion program?", "--hybrid"])
 
-    fake_node_cls.assert_called_once_with()
-    fake_node.retrieve.assert_called_once_with(
-        "What is the Bastion program?", corpus="brain", k=5
+    mock_retrieve.assert_called_once_with(
+        "What is the Bastion program?", corpus="brain", k=5, filters=None, session=None
     )
     fake_service_cls.assert_not_called()
     fake_db_session.assert_not_called()
@@ -323,13 +331,7 @@ def test_main_hybrid_flag_invokes_fusion_path_and_skips_semantic_search(capsys):
 
 
 def test_main_hybrid_flag_prints_no_results_message_on_empty_fusion(capsys):
-    fake_node = MagicMock()
-    fake_node.retrieve.return_value = []
-
-    with patch(
-        "workflows.document_qa_workflow_nodes.retrieve_chunks_node.RetrieveChunksNode",
-        return_value=fake_node,
-    ):
+    with patch("brain.retrieval_engine.retrieve", return_value=[]):
         main(["some question", "--hybrid"])
 
     captured = capsys.readouterr()
