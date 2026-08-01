@@ -75,7 +75,7 @@ In the Bastion program this repo is the **Engine** (the workflow runtime below) 
 
 ## Component-by-Component Analysis
 
-### ✅ CORE ENGINE — Keep and extend aggressively
+### CORE ENGINE — Keep and extend aggressively
 
 #### `core/workflow.py` — `Workflow` class
 The orchestrator. Reads a `WorkflowSchema` (a DAG declaration), walks it node by node, passes `TaskContext` through the chain, handles routing. Validates the graph before running.
@@ -154,7 +154,7 @@ DFS cycle detection + BFS reachability check. Runs on every `Workflow.__init__()
 
 ---
 
-### ✅ INFRASTRUCTURE — Solid foundation, needs targeted extensions
+### INFRASTRUCTURE — Solid foundation, needs targeted extensions
 
 #### `database/` — SQLAlchemy + PostgreSQL
 - `DatabaseUtils`: env-var-driven connection string
@@ -200,7 +200,7 @@ Scaffolds a new workflow directory, workflow class, and schema in seconds. Run `
 
 ---
 
-### ❌ DOMAIN CODE — removed under `OR.X` (D51)
+### DOMAIN CODE — removed under `OR.X` (D51)
 
 The Customer Care workflow was a **worked example**, not a foundation to build on — it showed how
 the core abstractions (WorkflowSchema + parallel + router composition, AgentNode/ParallelNode/
@@ -211,7 +211,7 @@ its `.j2` prompts, its tests). See `CLAUDE.md` standing rule 3.
 
 ---
 
-### ✅ SHARED SERVICES LAYER — built in Phase 0, Block D
+### SHARED SERVICES LAYER — built in Phase 0, Block D
 
 Most of what this section originally listed as "to build" now exists. Phase 0 Block D added a
 first-class **services layer** (`app/services/`) alongside the core engine, plus a raw-SDK node type,
@@ -266,7 +266,7 @@ The `WorkflowRegistry` enum scaling concern is resolved in practice: each projec
 `DOCUMENT_INGEST` and `DOCUMENT_QA` were registered by Project D Task 5; `CONTENT_PIPELINE`,
 `RESEARCH_AGENT`, and `PROPOSAL_GENERATOR` are now removed under `OR.X` (D51).
 
-### ⚠️ STILL TO BUILD (per project, just-in-time)
+### STILL TO BUILD (per project, just-in-time)
 
 Deliberately **not** built yet — these arrive with the project that needs them, not before:
 
