@@ -13,12 +13,17 @@ import importlib
 import json
 import sys
 import tomllib
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from brain.cli import main
 from brain.pulse import PulseReport
+from database.retrieval_query import RetrievalQuery
+from database.session import Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -305,3 +310,142 @@ class TestRecallParityEndToEnd:
                 "via": "semantic",
             }
         ]
+
+
+def _sqlite_db_session_factory():
+    """Build an in-memory SQLite `retrieval_queries` engine/session-factory pair
+    mirroring `database.session.db_session`'s commit/rollback/close shape."""
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine, tables=[RetrievalQuery.__table__])
+    session_factory = sessionmaker(bind=engine)
+
+    def _db_session():
+        session = session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    return engine, session_factory, _db_session
+
+
+def _make_row(session_factory, **overrides) -> None:
+    defaults = dict(
+        query="what changed in OR.K2?",
+        surface="cli",
+        workspace_id=None,
+        hybrid=True,
+        via_mix={"semantic": 2, "keyword": 1},
+        result_count=3,
+        top_score=0.9,
+        retrieval_confidence=0.8,
+        abstained=False,
+        top_doc_ids=["doc-1"],
+        latency_ms=12,
+        created_at=datetime.now(),
+    )
+    defaults.update(overrides)
+    session = session_factory()
+    session.add(RetrievalQuery(**defaults))
+    session.commit()
+    session.close()
+
+
+class TestQueriesDispatch:
+    """`syn queries` reads raw `retrieval_queries` rows (OR.K1 task 3) — no aggregation
+    table, no rollup: `--json` computes `abstain_rate` at read time over the window."""
+
+    @pytest.fixture
+    def queries_db(self):
+        engine, session_factory, fake_db_session = _sqlite_db_session_factory()
+        with patch("database.session.db_session", fake_db_session):
+            yield session_factory
+        engine.dispose()
+
+    def test_json_returns_rows_count_and_abstain_rate(self, queries_db, capsys):
+        _make_row(queries_db, query="q1", abstained=False)
+        _make_row(queries_db, query="q2", abstained=True, retrieval_confidence=0.1)
+
+        code = main(["queries", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["count"] == 2
+        assert payload["abstain_rate"] == pytest.approx(0.5)
+        assert {row["query"] for row in payload["queries"]} == {"q1", "q2"}
+
+    def test_json_abstain_rate_zero_when_no_rows(self, queries_db, capsys):
+        code = main(["queries", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["count"] == 0
+        assert payload["abstain_rate"] == 0.0
+        assert payload["queries"] == []
+
+    def test_abstained_flag_filters_to_abstained_rows_only(self, queries_db, capsys):
+        _make_row(queries_db, query="kept", abstained=False)
+        _make_row(queries_db, query="dropped", abstained=True, retrieval_confidence=0.1)
+
+        code = main(["queries", "--abstained", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert [row["query"] for row in payload["queries"]] == ["dropped"]
+
+    def test_since_window_excludes_older_rows(self, queries_db, capsys):
+        now = datetime.now()
+        _make_row(queries_db, query="recent", created_at=now)
+        _make_row(queries_db, query="stale", created_at=now - timedelta(days=30))
+
+        code = main(["queries", "--since", "7d", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert [row["query"] for row in payload["queries"]] == ["recent"]
+
+    def test_via_mix_and_confidence_survive_round_trip(self, queries_db, capsys):
+        _make_row(
+            queries_db,
+            query="mix check",
+            via_mix={"semantic": 3, "structural": 1},
+            retrieval_confidence=0.77,
+        )
+
+        code = main(["queries", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        row = payload["queries"][0]
+        assert row["via_mix"] == {"semantic": 3, "structural": 1}
+        assert row["retrieval_confidence"] == pytest.approx(0.77)
+
+    def test_invalid_since_window_returns_nonzero_typed_error(self, queries_db, capsys):
+        code = main(["queries", "--since", "not-a-window", "--json"])
+
+        assert code != 0
+        payload = json.loads(_read_stdout(capsys))
+        assert "error" in payload
+
+    def test_human_mode_does_not_emit_raw_json(self, queries_db, capsys):
+        _make_row(queries_db, query="human mode row")
+
+        code = main(["queries"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(out)
+
+    def test_human_mode_no_rows_prints_message(self, queries_db, capsys):
+        code = main(["queries"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        assert "No logged queries." in out
