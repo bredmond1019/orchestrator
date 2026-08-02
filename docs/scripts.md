@@ -476,6 +476,12 @@ syn routine eval                            # report-only cron-safe run (no --ba
 syn queries                                 # every logged retrieval_queries row, newest first
 syn queries --since 7d --json               # last 7 days, JSON + a read-time abstain_rate
 syn queries --abstained                     # rows where retrieval_confidence < 0.55
+
+# Retention for the query log (deletion only — never a rollup)
+syn queries --prune --dry-run               # what a prune would delete, deleting nothing
+syn queries --prune                          # delete rows older than the keep window (default 90d)
+syn queries --prune --keep-days 30 --json   # narrower window, machine-parseable summary
+syn routine queries_prune                    # the cron-safe form (defaults, no dry run)
 ```
 
 | Command | Description |
@@ -489,9 +495,10 @@ syn queries --abstained                     # rows where retrieval_confidence < 
 | `refresh [--rebuild] [--dry-run] [--brain-path PATH] [--json]` | Runs the content-index step then the edge-reload step via `brain.ops.refresh`. `--dry-run` skips the edge-reload step entirely. |
 | `stale [--assert-clean] [--brain-path PATH] [--json]` | Read-only drift report via `brain.ops.stale`: content axis (file mtime newer than its indexed `brain_documents` row) and structure axis (`pulse()`'s `edges_empty_but_related_exists`). `--assert-clean` turns any drift into a non-zero exit — the flag `OR.J`'s cron uses to fail loudly; a plain `syn stale` always exits `0`. |
 | `stale --deep [--repair] [--brain-path PATH] [--json]` | Deep corpus/index drift report via `brain.reconcile.deep_stale` — the inverse of plain `stale`: it walks DB rows looking for the filesystem/edge/embedding state they claim to still be backed by, instead of walking the filesystem looking for DB rows. Five drift axes plus the informational `ingested/` lane; see below. Exits `1` whenever the final report's `drift` is `True`, `0` otherwise — unconditional, unlike plain `stale` (no `--assert-clean` gate: asking for `--deep` means you want the drift signal by definition). `--repair` dispatches `brain.ops.repair_deep_stale` (existing primitives only — see below) and reports the pre/post-repair delta instead of a single snapshot. |
-| `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh`, `stale`, `reconcile`, and `eval`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. `reconcile`/`eval` both run report-only — a routine must be cron-safe, so neither dispatches `--repair` or `--baseline`. |
+| `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh`, `stale`, `reconcile`, `eval`, and `queries_prune`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. `reconcile`/`eval` both run report-only — a routine must be cron-safe, so neither dispatches `--repair` or `--baseline`. `queries_prune` is the one **destructive** routine, and deliberately so: unlike a repair, a retention prune is a bounded, idempotent delete of rows past a fixed window, which is exactly what a cron routine is for. |
 | `eval [--set PATH] [--baseline PATH] [--json]` | **(OR.K2)** Scores the golden set (`planning/retrieval-golden-set.yaml` by default) against the promoted `retrieval_engine.retrieve` pipeline — recall@5, recall@10, MRR, abstain-correctness, groundedness, no LLM in the scoring path — and writes a dated JSON report to `planning/retrieval-eval-runs/`. `--baseline PATH` diffs the run's aggregate against a prior report and prints signed per-metric deltas; the command exits non-zero if any metric regressed. See `docs/api-reference.md` § [Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbraineval-syn-eval). |
 | `queries [--since 7d\|24h] [--abstained] [--json]` | **(OR.K1)** Reads raw `retrieval_queries` rows logged by `app/brain/query_log.py::log_retrieval` at the retrieval core's single choke point — no stored aggregation, ever. `--since` parses a `<N>d`/`<N>h` window (an invalid string is a typed, non-zero-exit error); `--abstained` filters to `abstained=true` rows. `--json` additionally includes `count` and a **read-time-computed** `abstain_rate` over the returned rows (`abstained rows / total rows`, `0.0` when empty) — never a stored rollup. See `docs/api-reference.md` § [Retrieval Query Log](api-reference.md#retrieval-query-log-appbrainquery_logpy-syn-queries-or-k1). |
+| `queries --prune [--keep-days N] [--dry-run] [--json]` | Retention mode for the same table — delegates to `brain.ops.prune_queries`, deleting `retrieval_queries` rows whose `created_at` is **strictly older than** the cutoff (a row exactly at the cutoff is kept). Prints/returns `{"deleted", "kept", "cutoff", "keep_days", "dry_run"}`, with `deleted`/`kept` derived from real row counts around the delete rather than from what was requested. `--dry-run` reports the would-delete count and deletes nothing. Exits `0` on success **including a zero-deletion no-op**; non-zero only on an actual error. `--prune` is mutually exclusive with the read filters `--since`/`--abstained` (and `--keep-days`/`--dry-run` are only valid with `--prune`) — an argparse usage error, exit `2`. Retention is deletion, not aggregation (the D51 guard): nothing is rolled up or persisted at prune time, and plain `syn queries` remains the only read surface. |
 
 **`BRAIN_QUERY_LOG_ENABLED` — the OR.K1 query-log inertness switch:** `app/brain/query_log.py`'s
 `log_retrieval` write is gated by this environment variable (`"1"`/`"true"`, case-insensitive;
@@ -501,6 +508,16 @@ configuration; `tests/conftest.py` carries an autouse fixture forcing it off for
 and `tests/brain/conftest.py::enable_query_log` is the opt-in fixture individual tests request to
 assert on written rows. Set it explicitly (e.g. `BRAIN_QUERY_LOG_ENABLED=0 syn recall ...`) to
 silence logging for a one-off invocation outside the test suite.
+
+**`BRAIN_QUERY_LOG_KEEP_DAYS` — the retention window:** how many days of `retrieval_queries` rows
+`prune_queries` (and therefore `syn queries --prune` and the `queries_prune` routine) keeps.
+Resolution order is **explicit argument (`--keep-days`) > this env var > 90**, and the env var is
+read at *call* time, mirroring `BRAIN_QUERY_LOG_ENABLED`'s discipline. An unparsable or non-positive
+value never crashes an unattended cron run — it falls back to 90 with a `logging.warning`.
+
+The 90-day default is deliberate rather than arbitrary: the retained window **is the sample the
+retrieval golden set gets grown from** (OR.K2), so a quarter of real traffic is the floor worth
+keeping. Tightening it below 90 shrinks that sample — note the trade in the ledger before doing so.
 
 **`stale --deep` — the five drift axes (plus the `ingested/` lane):**
 
