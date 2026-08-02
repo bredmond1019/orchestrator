@@ -2,12 +2,38 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-02T09:05:00Z"
+timestamp: "2026-08-02T10:15:00Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-08-02] (session 11)
+
+### Session-10 work verified up to par; operator decisions extracted; four brain-rag specs queued
+
+- **What:** Full review of the six shipped brain-quality items: all four code diffs (`90ce39e`,
+  `ddee87c`, `108ecf9`, `07bfa90`) read line-by-line and found clean; suite 1393/7 green; `syn
+  eval` reproduced the canonical `2026-08-02T08-19-57Z` baseline to every decimal (run committed
+  as `retrieval-eval-runs/2026-08-02T08-54-46Z.json`). Knocked out directly: **I27** (five task
+  specs' unquoted-colon `description:` fields quoted, verified, ingested — 51 rows; HQ
+  `81c7cee0`) and **I10** (`syn refresh` run; the 388 `dangling_edges` do NOT clear — they are
+  refs to out-of-corpus sub-repo docs, i.e. the I24 gap wearing a graph label). Operator
+  decisions: sub-repo `docs/` admitted for **all** manifest repos (frontmatter-wins/
+  slug-fallback); golden-set I25 edit approved; harness defects filed as five HQ backlog tickets
+  (base-template ×4, mev ×1). Queued with full specs + `state.json` registration (HQ
+  `6daad498`): `OR.ticket.corpus-sub-repo-docs` (w21), `OR.chore.business-docs-frontmatter`
+  (w21), `OR.chore.test-layout-tidy` (w21), `OR.ticket.header-stub-chunks` (w22, gated on the
+  corpus ticket). Session-11 disposition block added to `orchestration-run-issues.md`; carryovers
+  annotated; session-10 handoff consumed and a new one written.
+- **Why:** The operator asked for a PAR review of the session-9/10 RAG improvement arc before
+  building further, plus conversion of every actionable leftover (deferred items + carryovers)
+  into specs a next agent can run systematically.
+- **Refs:** `planning/handoff.md` · `planning/orchestration-run-issues.md` § Deferred
+  (session-11 disposition) · the four spec folders · HQ `planning/backlog.md` `[2026-08-02]`
 
 ---
 
