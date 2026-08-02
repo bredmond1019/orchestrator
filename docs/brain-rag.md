@@ -153,7 +153,7 @@ curl -X POST http://localhost:8080/events/ \
   }'
 ```
 
-The retrieval runs two-stage hybrid search: HNSW-indexed semantic similarity (Voyage embedding) + a **graded Postgres full-text re-rank**, with 2× weight on section-title chunks. Unlike the content corpus (which uses a binary ILIKE keyword match), the brain corpus scores keyword relevance with `ts_rank` over a generated `content_tsv` column: a term in a document's `title` or `keywords` (full-text weight `'A'`) outranks the same term buried in body text (weight `'C'`). `plainto_tsquery` strips English stop words and stems terms natively (`"contracts"` matches `"contract"`), so no manual stop-word list is needed. Returned chunks also carry `file_path`, `doc_id`, and `title` provenance for citation.
+The retrieval runs two-stage hybrid search: HNSW-indexed semantic similarity (Voyage embedding) + a **graded Postgres full-text re-rank**. Section-title (header-only) chunks are **ranking-neutral** — the 2× weight ported from `rag-engine-rs` was measured as a ranking defect and retired by `OR.ticket.section-title-boost` (see `retrieval_engine._SECTION_TITLE_WEIGHT`). Unlike the content corpus (which uses a binary ILIKE keyword match), the brain corpus scores keyword relevance with `ts_rank` over a generated `content_tsv` column: a term in a document's `title` or `keywords` (full-text weight `'A'`) outranks the same term buried in body text (weight `'C'`). `plainto_tsquery` strips English stop words and stems terms natively (`"contracts"` matches `"contract"`), so no manual stop-word list is needed. Returned chunks also carry `file_path`, `doc_id`, and `title` provenance for citation.
 
 By default the brain corpus **excludes archived documents** (`status='archived'`). Pass `"include_archived": true` in the event to surface them (e.g. for historical questions):
 
@@ -338,14 +338,18 @@ baseline of **0.3608** was decomposed end-to-end by `ticket-groundedness-baselin
 |---|---|---|
 | Recall coupling (a miss scores 0.0) | ~31% | Read `groundedness_on_hits` instead — 0.5576 |
 | First-matching-chunk sampling | ~31% | Scored against the *top-ranked* chunk of the doc, not its best |
-| `is_section_title` 2× fusion boost | ~15% | Real ranking defect — 15/23 queries return a header stub at rank 1 |
+| `is_section_title` 2× fusion boost | ~15% | Real ranking defect — **fixed 2026-08-02** by `OR.ticket.section-title-boost` (weight → 1.0) |
 | Lexical floor | ~23% | A correct semantic match need not repeat the query's words |
 
-Expected healthy range on this golden set: **~0.55–0.65 overall / ~0.85 `groundedness_on_hits`**
-once the `is_section_title` boost and the corpus-coverage gap (tier `docs/` trees are uncrawled —
-carryover `corpus-tier-docs-uncrawled`) are closed. **A reading near 0.36 with
-`groundedness_on_hits` near 0.56 is the documented status quo, not a new regression** — check
-that artifact before reopening the question. The metric's tokenizer also destroys identifiers
+Two of those four terms have since been closed. Admitting the tier `docs/` trees
+(`OR.ticket.corpus-tier-docs`) moved the baseline to **0.4637 / 0.5631 on hits**
+(`planning/retrieval-eval-runs/2026-08-02T08-02-50Z.json`), and retiring the `is_section_title`
+boost (`OR.ticket.section-title-boost`) moved it again to **0.5275 / 0.6405 on hits**
+(`2026-08-02T08-19-57Z.json`, the current canonical run) with MRR 0.4917 → 0.5794 and rank-1
+header stubs 11/23 → 0/23. What remains is the first-matching-chunk sampling term and the lexical
+floor, neither of which is a bug. **Expected healthy range on this golden set is now ~0.50–0.60
+overall / ~0.64–0.75 `groundedness_on_hits`; a reading in that band is the documented status quo,
+not a regression** — check that artifact before reopening the question. The metric's tokenizer also destroys identifiers
 (`D20` → dropped, `OR.K2` → `or`/`k`), so identifier-anchored cases score on very small
 denominators; that is a known, deliberately-unfixed fidelity limit, not a bug to re-derive.
 
