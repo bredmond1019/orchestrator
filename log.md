@@ -2,12 +2,47 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-01T13:20:00Z"
+timestamp: "2026-08-01T23:55:00Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-08-01] (session 8)
+
+### Brain-quality track — entire Synapse half (items 1–5) orchestrated, verified, and merged
+- **What:** Drove all five Synapse items of the brain-quality runbook end-to-end as the
+  orchestrating agent, one SDLC flow per item, verifying each result independently before
+  integrating: `OR.ticket.corpus-reconcile` (`333cc99`), `OR.X` (`23b069b`, −9,864 LOC),
+  the deferred post-`OR.X` archive (`e9fb3a61`), `OR.X2` (`5b4ce07`, −7,025 LOC), `OR.K2`
+  (`6e5a12c`, the anchor — retrieval core promoted to `app/brain/retrieval_engine.py`, workspace
+  scoping fixed on every recall path, `syn eval` + 23-case golden set), and `OR.K1` (`e7a2539`,
+  the `retrieval_queries` fire-and-forget log + `syn queries`). Ran with `--no-pr` and integrated
+  via local `--no-ff` merges. Final integrated gate on `main`: ruff clean, pylint 10.00/10,
+  1346 passed / 7 skipped, single linear alembic head `b8c9d0e1f2a3`, `mev validate-brain --state`
+  0 errors. **Produced the first-ever `syn eval` baseline:** recall@5 0.7059, recall@10 0.8824,
+  MRR 0.5011, abstain_correctness 0.7391, groundedness 0.4490.
+- **Why:** Brain D51 assigns "retrieval quality" to Synapse but no block owned it — the
+  `is_section_title` fusion-weight question had been unresolvable for weeks because nothing could
+  measure it. The track converts retrieval changes from arguments into signed numbers. Each result
+  was audited by hand rather than accepted on the flow's PASS, because the runbook flagged seven
+  traps whose failure modes are silent (eval-table `DROP`s in a Postgres engine-rs shares, a golden
+  set copied from a stale archive, inline "fixing" of the deliberately-uncalibrated abstain gate).
+  All seven were checked; none fired.
+- **Findings that outlived the runs** (recorded in a new `planning/brain-quality-attention.md`
+  attention ledger, written *during* execution rather than reconstructed after): the data contract
+  advanced 1.4.0 → 1.6.0 while both consumer copies stayed pinned at 1.4.0 — and 1.6.0 flipped
+  `GET /recall`'s score polarity, so a 1.4.0-era consumer would rank results backwards silently;
+  `groundedness` 0.4490 is an unexplained outlier that was not an anticipated experiment; the
+  first-ever `syn stale --deep` surfaced ~149 pre-existing `deleted_but_embedded` rows, left
+  unrepaired on purpose; the `app/.env` worktree caveat fired on the first worktree and needed a
+  backfill workaround throughout.
+- **Refs:** `planning/brain-quality-orchestration.md` (the runbook driven);
+  `planning/brain-quality-attention.md` (the ledger — read this first); `planning/handoff.md`;
+  brain D51/D52/D20/D35.
 
 ---
 
