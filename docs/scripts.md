@@ -193,32 +193,43 @@ them without re-embedding anything. Diagnostic rows (`client_slug` set) are pres
 warning is logged if any matched. This mode powers the brain repo's `post-commit` freshness
 hook (see `hooks/README.md` in the brain repo), which prunes automatically on delete/rename.
 
-**What gets indexed** (defined in `CORPUS` inside the script):
+**What gets indexed.** The corpus is derived from `brain.toml`, not from a hand-maintained
+list, by three lanes in `_collect_files` that share one `seen` set so no file is ever
+collected twice:
 
-| Path in brain repo | `doc_type` |
-|---|---|
-| `docs/decisions/` | `decision` |
-| `docs/projects/` | `project` |
-| `docs/career.md` | `career` |
-| `docs/brand.md` | `brand` |
-| `docs/business/` | `business` |
-| `docs/content/` | `content` |
-| `docs/linkedin.md` | `content` |
-| `planning/the-diagnostic/` | `diagnostic` |
-| `memory/` | `memory` |
-| `MEMORY.md` | `memory` |
+| # | Lane | What it contributes | `project` |
+|---|---|---|---|
+| 1 | Brain root (`_corpus_roots`) | the brain root's `docs/**/*.md` + `planning/**/*.md`, plus its `README.md` and `CLAUDE.md` | from each file's own frontmatter |
+| 2 | Tier `docs/` (`_tier_docs_files`) | every **tier container**'s `docs/**/*.md` — `core/docs/`, `business/docs/`, `portfolio|side|client/docs/` | from each file's own frontmatter |
+| 3 | Sub-repo widening (`_sub_repo_files`, OR.O) | every gitignored sub-repo's `planning/**/*.md` + root `CLAUDE.md` | **stamped** with the manifest `slug` |
 
-**Sub-repo widening (OR.O):** for every `brain.toml` `[[repos]]` entry with
-`repo_path != "."`, the indexer also crawls that sub-repo's `planning/**/*.md`
-subtree and its root `CLAUDE.md` — honouring the same `skip_dirs` / underscore /
-ephemeral-filename rules as the brain-root crawl above. It never reaches a
-sub-repo's `docs/` or source. Every chunk collected this way is unconditionally
-stamped with the manifest's `project` slug (the workspace identity), overriding
-any frontmatter `project:` value the file might carry — `CLAUDE.md` files have
-no frontmatter at all. `--dry-run` annotates these entries with `(project=<slug>)`
-so you can confirm the widened corpus before writing to the DB. Brain-root and
-sub-brain-tier crawling above are unaffected — `project` there still comes from
-each file's own frontmatter.
+All three honour `[crawl].skip_dirs` (so `archive/` subtrees stay out) and skip
+underscore-prefixed and ephemeral filenames (`handoff.md`).
+
+`doc_type` is a soft categorisation assigned by a path classifier (`_DOC_TYPE_RULES`)
+applied to each file's path *relative to its own scope root*, so `core/docs/projects/x.md`
+classifies identically to `docs/projects/x.md`. Retrieval filters on `status` and `corpus`,
+never on `doc_type`. Note `memory/` and `MEMORY.md` are deliberately **not** in the corpus —
+they are harness-managed auto-memory living outside the brain repo, and they drift.
+
+**Lane 2 — tier `docs/` (`OR.ticket.corpus-tier-docs`).** A *tier container* is any manifest
+slug that appears as some other repo's `tier` value (`core` holds `core/orchestrator`,
+`business` holds `business/bastiel`, …) — derived from the manifest, never hardcoded, so
+registering a new tier in `brain.toml` is enough to bring its `docs/` tree in. Leaf code
+repos that happen to sit at the brain root (`learn-ai`, `base-template`, both
+`tier = "_root"`) are *not* tier containers and keep their lane-3 treatment. This lane exists
+because every tier is itself a `[[repos]]` entry, so `_corpus_roots` excludes it and only
+lane 3 re-added it — `planning/` and `CLAUDE.md` but never `docs/`, which left 170 `.md`
+files (the whole of `business/docs/`) outside the corpus. Do **not** "simplify" this by
+un-excluding tiers in `_corpus_roots`: the root walk runs first and would claim
+`<tier>/planning/**`, silently re-attributing it from `project=<tier slug>` to `None`.
+
+**Lane 3 — sub-repo widening (OR.O).** Every chunk is unconditionally stamped with the
+manifest's `project` slug (the workspace identity), overriding any frontmatter `project:`
+value — sub-repo `planning/status.md` often carries none and `CLAUDE.md` has no frontmatter
+at all. `--dry-run` annotates these entries with `(project=<slug>)` so you can confirm the
+widened corpus before writing to the DB. A sub-repo's `docs/` and source are never reached;
+that boundary is deliberate and is what distinguishes lane 3 from lane 2.
 
 Chunking is section-header-based (H2/H3 splits) so each chunk maps to a named section.
 
