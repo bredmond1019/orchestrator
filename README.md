@@ -137,7 +137,6 @@ orchestrator/
 | [docs/configuration.md](docs/configuration.md) | Every environment variable, connection string, and Docker service topology. |
 | [docs/app-architecture-overview.md](docs/app-architecture-overview.md) | FastAPI → Celery → Workflow DAG → TaskContext architecture deep-dive. |
 | [docs/data-contract.md](docs/data-contract.md) | Versioned contract for how external consumers (e.g. `bastion` CLI) read execution state. |
-| [integrations/telegram/README.md](integrations/telegram/README.md) | Telegram bot setup, Docker Compose deployment, Mac Mini launchd, network topology. |
 | [docs/index.md](docs/index.md) | Full documentation index. |
 
 ## Roadmap / Known limitations
