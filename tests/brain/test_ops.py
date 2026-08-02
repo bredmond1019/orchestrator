@@ -15,17 +15,21 @@ structurally cannot appear), `run_routine` dispatch (including the deep-check
 """
 
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 from brain.ops import (
+    DEFAULT_QUERY_KEEP_DAYS,
     MevUnavailableError,
     UnknownRoutineError,
+    _resolve_keep_days,
     embed_paths,
     ingest_dir,
     prune_paths,
+    prune_queries,
     refresh,
     refresh_edges,
     repair_deep_stale,
@@ -366,9 +370,232 @@ class TestRunRoutine:
         mock_deep_stale.assert_called_once_with()
         assert result == fake_report.to_dict()
 
+    @patch("brain.ops.prune_queries")
+    def test_dispatches_queries_prune(self, mock_prune):
+        """`"queries_prune"` is the one destructive routine — bounded, idempotent, and
+        registered lambda-style so it stays patchable like every other entry."""
+        mock_prune.return_value = {"deleted": 3, "kept": 7, "cutoff": "2026-05-03T00:00:00"}
+
+        result = run_routine("queries_prune")
+
+        mock_prune.assert_called_once_with()
+        assert result["deleted"] == 3
+
     def test_unknown_name_raises(self):
         with pytest.raises(UnknownRoutineError):
             run_routine("nope")
+
+
+class TestResolveKeepDays:
+    """Retention window resolution: explicit argument > env var > 90, never a crash."""
+
+    def test_defaults_to_ninety_when_unset(self, monkeypatch):
+        monkeypatch.delenv("BRAIN_QUERY_LOG_KEEP_DAYS", raising=False)
+
+        assert _resolve_keep_days(None) == DEFAULT_QUERY_KEEP_DAYS == 90
+
+    def test_env_override_is_read_at_call_time(self, monkeypatch):
+        monkeypatch.setenv("BRAIN_QUERY_LOG_KEEP_DAYS", "30")
+
+        assert _resolve_keep_days(None) == 30
+
+    def test_explicit_argument_beats_env(self, monkeypatch):
+        monkeypatch.setenv("BRAIN_QUERY_LOG_KEEP_DAYS", "30")
+
+        assert _resolve_keep_days(7) == 7
+
+    def test_garbage_env_falls_back_with_a_warning(self, monkeypatch, caplog):
+        monkeypatch.setenv("BRAIN_QUERY_LOG_KEEP_DAYS", "ninety")
+
+        with caplog.at_level(logging.WARNING):
+            assert _resolve_keep_days(None) == DEFAULT_QUERY_KEEP_DAYS
+        assert "BRAIN_QUERY_LOG_KEEP_DAYS" in caplog.text
+
+    @pytest.mark.parametrize("raw", ["0", "-5"])
+    def test_non_positive_env_falls_back(self, monkeypatch, caplog, raw):
+        monkeypatch.setenv("BRAIN_QUERY_LOG_KEEP_DAYS", raw)
+
+        with caplog.at_level(logging.WARNING):
+            assert _resolve_keep_days(None) == DEFAULT_QUERY_KEEP_DAYS
+        assert "non-positive" in caplog.text
+
+    def test_empty_env_falls_back_silently(self, monkeypatch):
+        monkeypatch.setenv("BRAIN_QUERY_LOG_KEEP_DAYS", "   ")
+
+        assert _resolve_keep_days(None) == DEFAULT_QUERY_KEEP_DAYS
+
+    def test_non_positive_explicit_argument_falls_back(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            assert _resolve_keep_days(0) == DEFAULT_QUERY_KEEP_DAYS
+        assert "non-positive" in caplog.text
+
+
+_FROZEN_NOW = datetime(2026, 8, 1, 12, 0, 0)
+
+
+def _retrieval_query_db():
+    """In-memory SQLite `retrieval_queries` engine/session-factory pair mirroring
+    `database.session.db_session`'s commit/rollback/close shape."""
+    from database.retrieval_query import RetrievalQuery
+    from database.session import Base
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine, tables=[RetrievalQuery.__table__])
+    session_factory = sessionmaker(bind=engine)
+
+    def _db_session():
+        session = session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    return engine, session_factory, _db_session
+
+
+def _seed_query(session_factory, *, query: str, created_at: datetime) -> None:
+    from database.retrieval_query import RetrievalQuery
+
+    session = session_factory()
+    session.add(
+        RetrievalQuery(
+            id=uuid.uuid4(),
+            query=query,
+            surface="cli",
+            workspace_id=None,
+            hybrid=True,
+            via_mix={"semantic": 1},
+            result_count=1,
+            top_score=0.9,
+            retrieval_confidence=0.8,
+            abstained=False,
+            top_doc_ids=["doc-1"],
+            latency_ms=5,
+            created_at=created_at,
+        )
+    )
+    session.commit()
+    session.close()
+
+
+def _remaining_queries(session_factory) -> list[str]:
+    from database.retrieval_query import RetrievalQuery
+
+    session = session_factory()
+    rows = sorted(row.query for row in session.query(RetrievalQuery).all())
+    session.close()
+    return rows
+
+
+class TestPruneQueries:
+    """`prune_queries` — bounded, idempotent retention for the OR.K1 query log.
+
+    Deletion only (the D51 guard: no rollup, nothing persisted at prune time),
+    with `deleted`/`kept` derived from real `count()` reads around the delete
+    rather than from what the caller asked for.
+    """
+
+    @pytest.fixture
+    def queries_db(self):
+        engine, session_factory, fake_db_session = _retrieval_query_db()
+        with patch("database.session.db_session", fake_db_session):
+            yield session_factory
+        engine.dispose()
+
+    @pytest.fixture
+    def frozen_now(self):
+        with patch("brain.ops.datetime") as mock_datetime:
+            mock_datetime.now.return_value = _FROZEN_NOW
+            yield _FROZEN_NOW
+
+    def test_deletes_only_rows_older_than_the_window(self, queries_db, frozen_now):
+        _seed_query(queries_db, query="recent", created_at=frozen_now - timedelta(days=1))
+        _seed_query(queries_db, query="old", created_at=frozen_now - timedelta(days=120))
+
+        result = prune_queries(90)
+
+        assert result["deleted"] == 1
+        assert result["kept"] == 1
+        assert result["keep_days"] == 90
+        assert result["dry_run"] is False
+        assert result["cutoff"] == (frozen_now - timedelta(days=90)).isoformat()
+        assert _remaining_queries(queries_db) == ["recent"]
+
+    def test_row_exactly_at_the_cutoff_is_kept(self, queries_db, frozen_now):
+        """Strictly older-than: the boundary row survives."""
+        _seed_query(queries_db, query="boundary", created_at=frozen_now - timedelta(days=90))
+        _seed_query(
+            queries_db,
+            query="one-second-older",
+            created_at=frozen_now - timedelta(days=90, seconds=1),
+        )
+
+        result = prune_queries(90)
+
+        assert result["deleted"] == 1
+        assert result["kept"] == 1
+        assert _remaining_queries(queries_db) == ["boundary"]
+
+    def test_dry_run_deletes_nothing_but_reports_the_count(self, queries_db, frozen_now):
+        _seed_query(queries_db, query="recent", created_at=frozen_now - timedelta(days=1))
+        _seed_query(queries_db, query="old", created_at=frozen_now - timedelta(days=200))
+
+        result = prune_queries(90, dry_run=True)
+
+        assert result["deleted"] == 1
+        assert result["kept"] == 1
+        assert result["dry_run"] is True
+        assert _remaining_queries(queries_db) == ["old", "recent"]
+
+    def test_is_idempotent_and_zero_deletion_is_not_an_error(self, queries_db, frozen_now):
+        _seed_query(queries_db, query="recent", created_at=frozen_now - timedelta(days=2))
+        _seed_query(queries_db, query="old", created_at=frozen_now - timedelta(days=400))
+
+        first = prune_queries(90)
+        second = prune_queries(90)
+
+        assert first["deleted"] == 1
+        assert second["deleted"] == 0
+        assert second["kept"] == 1
+        assert _remaining_queries(queries_db) == ["recent"]
+
+    def test_empty_table_is_a_clean_no_op(self, queries_db, frozen_now):
+        result = prune_queries()
+
+        assert result == {
+            "deleted": 0,
+            "kept": 0,
+            "cutoff": (frozen_now - timedelta(days=90)).isoformat(),
+            "keep_days": 90,
+            "dry_run": False,
+        }
+
+    def test_env_var_narrows_the_window(self, queries_db, frozen_now, monkeypatch):
+        monkeypatch.setenv("BRAIN_QUERY_LOG_KEEP_DAYS", "7")
+        _seed_query(queries_db, query="recent", created_at=frozen_now - timedelta(days=3))
+        _seed_query(queries_db, query="middling", created_at=frozen_now - timedelta(days=30))
+
+        result = prune_queries()
+
+        assert result["keep_days"] == 7
+        assert result["deleted"] == 1
+        assert _remaining_queries(queries_db) == ["recent"]
+
+    def test_garbage_env_falls_back_to_ninety_days(self, queries_db, frozen_now, monkeypatch):
+        monkeypatch.setenv("BRAIN_QUERY_LOG_KEEP_DAYS", "not-a-number")
+        _seed_query(queries_db, query="middling", created_at=frozen_now - timedelta(days=30))
+
+        result = prune_queries()
+
+        assert result["keep_days"] == 90
+        assert result["deleted"] == 0
+        assert _remaining_queries(queries_db) == ["middling"]
 
 
 def _make_report(**overrides):
