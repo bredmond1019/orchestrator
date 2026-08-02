@@ -2,12 +2,41 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-01T23:55:00Z"
+timestamp: "2026-08-02T01:30:00Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-08-01] (session 9)
+
+### Brain-quality follow-ups analyzed and spec'd — four task specs + three Wave 16 blocks queued
+- **What:** Consumed the session-8 handoff, reviewed `planning/brain-quality-attention.md`
+  end-to-end, and converted every actionable Synapse-side finding into a ready-to-run task spec:
+  `chore-data-contract-repin` (CC1 — re-pin bastion + engine-rs to contract 1.6.0, run directly
+  in place since the edits commit in the sibling repos), `ticket-corpus-prune-backlog` (A1 —
+  classify-then-repair the ~149 `deleted_but_embedded` rows plus a `syn eval` re-baseline),
+  `ticket-groundedness-baseline` (A3/A4 — explain the 0.4490 outlier; spec-time recon found 6 of
+  17 scored cases at exactly 0.0, pointing at the scorer's `[a-zA-Z']+`/len>2 tokenizer
+  destroying identifier-style query terms and the 0.0-on-recall-miss coupling as prime suspects),
+  and `ticket-queries-retention` (E0 — `prune_queries` + `syn queries --prune` + a `queries_prune`
+  ROUTINES registration). Registered the three tickets as blocks in the Wave 16 track
+  (`OR.ticket.corpus-prune-backlog` w18, `OR.ticket.queries-retention` w18,
+  `OR.ticket.groundedness-baseline` w19 gated on the prune), each `origin`-linked to the
+  carryover it will resolve; `mev emit-state --write` regenerated all derived surfaces and
+  `mev validate-brain --state` reports 0 errors. E1 experiments deliberately left un-spec'd
+  (gated on the groundedness verdict); push/PR question left as an operator call; engine-rs
+  items 6–7 untouched per the runbook split. `planning/handoff.md` rewritten for the
+  orchestrating agent.
+- **Why:** The session-8 handoff's instruction was to close the risky loose end (the
+  score-polarity contract skew, dangerous the moment `EN.6.K` builds the first `GET /recall`
+  consumer) and triage the ledger findings rather than build the next thing — this session turned
+  that triage into executable specs so the next agent orchestrates instead of re-deriving scope.
+- **Refs:** `planning/brain-quality-attention.md`; the four new `planning/<slug>/` specs;
+  `planning/handoff.md`; brain D20/D51.
 
 ---
 
