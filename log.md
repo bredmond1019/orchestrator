@@ -11,6 +11,40 @@ timestamp: "2026-08-01T13:20:00Z"
 
 ---
 
+## [2026-08-01] (session 7)
+
+### OR.K1 shipped — retrieval query log (`retrieval_queries` table) + `syn queries`
+- **What:** `/sdlc-flow or-k1-retrieval-query-log --worktree` ran all 3 tasks to PASS, reviewed
+  PASS in 1 attempt. Task 1 added the `retrieval_queries` model/migration/repository (JSON columns
+  for `top_doc_ids`/`via_mix` to keep the table creatable on SQLite for the fast unit suite,
+  mirroring `eval_record.py`'s precedent); its two attempts were both environmental — the 14
+  initial pytest failures were root-caused to the shared local dev Postgres being six Alembic
+  revisions behind head (missing both `brain_documents.authored_at` and this task's own table), not
+  a code defect, and were fixed with `alembic upgrade head`. Task 2 added `app/brain/query_log.py`,
+  a fire-and-forget writer on an independently committed session (never rolling back the retrieval
+  call on a logging failure) wired into the single choke point `retrieval_engine.retrieve()` plus
+  `recall()`'s exact-id/semantic paths, with an optional `surface` kwarg threaded from `syn recall`
+  (cli), `GET /recall` (http), and `RetrieveChunksNode` (workflow); logging is inert-by-default
+  across the test suite via an autouse `tests/conftest.py` fixture, with an opt-in
+  `enable_query_log` fixture for tests that assert on written rows. Task 3 added `syn queries
+  [--since 7d|24h] [--abstained] [--json]` — raw `retrieval_queries` rows plus a read-time
+  `abstain_rate` in `--json` mode only, zero aggregation by design per the D51 boundary guard — and
+  patched `docs/scripts.md`, `docs/api-reference.md`, and a `docs/data-contract.md` prose note (no
+  version bump: a table with no events/task_context/HTTP-surface shape is not itself a contract
+  change per §8). 1346 tests pass / 7 skipped, ruff clean, pylint 10.00/10. `state.json` block
+  `OR.K1` flipped to `closed`.
+- **Next:** `OR.W` (external-knowledge memory layer, brain half) or `OR.R` (Brain-as-MCP-server).
+
+```
+224a527 docs: update docs for or-k1-retrieval-query-log
+462e9e1 feat: implement or-k1-retrieval-query-log-task3
+a660715 feat: implement or-k1-retrieval-query-log-task2
+a82cca2 feat: implement or-k1-retrieval-query-log-task1
+0de02c1 chore: init worktree or-k1-retrieval-query-log-flow
+```
+
+---
+
 ## [2026-08-01] (session 6)
 
 ### OR.K2 shipped — retrieval evaluation harness (`syn eval`) + retrieval-core promotion
