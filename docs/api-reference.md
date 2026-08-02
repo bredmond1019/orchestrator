@@ -4865,8 +4865,19 @@ Plain stdlib dataclasses, not Pydantic — this package stays dependency-free fr
 `groundedness` are `None` (not `0.0`) for a case with empty `expect_docs` (a pure-negative
 case) — undefined, not failing, since there is nothing to recall; a negative case's only real
 signal is `abstain_correct`. `RetrievalRunReport.aggregate` keys — `recall_at_5`, `recall_at_10`,
-`mrr`, `groundedness` (mean over positive cases with non-`None` readings only) and
-`abstain_correctness` (mean over **every** case, positive and negative alike).
+`mrr`, `groundedness` (mean over positive cases with non-`None` readings only),
+`groundedness_on_hits`, and `abstain_correctness` (mean over **every** case, positive and negative
+alike).
+
+`groundedness_on_hits` was added by `ticket-groundedness-baseline`: it is the same lexical-support
+mean restricted to cases whose `matched_docs` is non-empty. The headline `groundedness` scores a
+recall-miss as `0.0` by design, so it partly re-measures recall — on the 2026-08-02 baseline the
+pair reads `0.3608` / `0.5576`, and all six of the misses dragging the first number turned out to
+be corpus-coverage gaps rather than ranking failures. The key is **additive**: `compare_to_baseline`
+iterates the *baseline's* keys, so baseline files written before it existed still compare cleanly
+and no baseline reset was required. `_groundedness`'s docstring enumerates the metric's four
+measured structural biases; the full decomposition is
+`planning/artifacts/groundedness-baseline-analysis.md`.
 
 ### `score_case(case: RetrievalCase, results: list[dict], confidence: float) -> CaseResult`
 

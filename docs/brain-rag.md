@@ -326,6 +326,29 @@ regression. This is the method to reach for after any change to `retrieval_engin
 spot-checking one query at a time. See `docs/api-reference.md` §
 [Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbraineval-syn-eval).
 
+#### Reading `groundedness` — it is a band, not a target
+
+`groundedness` is a **lexical** content-word overlap of the query against the highest-ranked
+chunk of the expected document (`VerifyCitationsNode.support_score`, mirrored). It does not
+mean "the answer was correct", and **a healthy corpus does not read ~1.0.** The 2026-08-02
+baseline of **0.3608** was decomposed end-to-end by `ticket-groundedness-baseline`
+([`planning/artifacts/groundedness-baseline-analysis.md`](../planning/artifacts/groundedness-baseline-analysis.md)):
+
+| Term | Share of the deficit from 1.0 | What it is |
+|---|---|---|
+| Recall coupling (a miss scores 0.0) | ~31% | Read `groundedness_on_hits` instead — 0.5576 |
+| First-matching-chunk sampling | ~31% | Scored against the *top-ranked* chunk of the doc, not its best |
+| `is_section_title` 2× fusion boost | ~15% | Real ranking defect — 15/23 queries return a header stub at rank 1 |
+| Lexical floor | ~23% | A correct semantic match need not repeat the query's words |
+
+Expected healthy range on this golden set: **~0.55–0.65 overall / ~0.85 `groundedness_on_hits`**
+once the `is_section_title` boost and the corpus-coverage gap (tier `docs/` trees are uncrawled —
+carryover `corpus-tier-docs-uncrawled`) are closed. **A reading near 0.36 with
+`groundedness_on_hits` near 0.56 is the documented status quo, not a new regression** — check
+that artifact before reopening the question. The metric's tokenizer also destroys identifiers
+(`D20` → dropped, `OR.K2` → `or`/`k`), so identifier-anchored cases score on very small
+denominators; that is a known, deliberately-unfixed fidelity limit, not a bug to re-derive.
+
 ### 1. Raw semantic search — `scripts/query_brain.py`
 
 The fastest sanity check. Embeds your query and prints the nearest `brain_documents` rows —
