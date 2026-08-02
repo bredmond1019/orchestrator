@@ -9,9 +9,8 @@ Two layers:
 """
 
 import pytest
-from pydantic import ValidationError
-
 from core.validate import WorkflowValidator
+from pydantic import ValidationError
 from schemas.document_ingest_schema import DocumentIngestEventSchema
 from workflows.document_ingest_workflow import DocumentIngestWorkflow
 from workflows.document_ingest_workflow_nodes.chunk_document_node import (

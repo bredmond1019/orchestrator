@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from services.search_service import SearchResult, SearchService
 
 

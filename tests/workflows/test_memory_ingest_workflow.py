@@ -21,17 +21,15 @@ writes.
 from unittest.mock import MagicMock
 
 import pytest
-from pydantic import ValidationError
-
 from core.task import TaskContext
 from core.validate import WorkflowValidator
+from pydantic import ValidationError
 from schemas.memory_schema import MemoryIngestEventSchema
 from workflows.memory_ingest_workflow import MemoryIngestWorkflow
 from workflows.memory_ingest_workflow_nodes.ingest_time_extraction_node import (
     IngestTimeExtractionNode,
 )
 from workflows.memory_ingest_workflow_nodes.memory_write_node import MemoryWriteNode
-
 
 # ---------------------------------------------------------------------------
 # Structure

@@ -8,13 +8,11 @@ JSON-serializable.
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import BaseModel
-
 from core.nodes.agent import AgentConfig, AgentNode, ModelProvider
 from core.nodes.base import Node
 from core.nodes.tool_use import ToolUseNode
 from core.task import NodeRun, NodeStatus, TaskContext, to_jsonable
-
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # ToolUseNode usage capture
