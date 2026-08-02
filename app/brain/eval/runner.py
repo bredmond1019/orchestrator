@@ -50,7 +50,22 @@ def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase
 
 def _aggregate(results: list[CaseResult]) -> dict[str, float]:
     """Mean per metric — positive-case metrics over non-`None` readings only,
-    `abstain_correctness` over every case (see `models.RetrievalRunReport`)."""
+    `abstain_correctness` over every case (see `models.RetrievalRunReport`).
+
+    `groundedness_on_hits` is the same mean restricted to cases that actually
+    matched an `expect_docs` document (`matched_docs` non-empty). It is
+    **additive, not a redefinition**: `groundedness` still scores a
+    recall-miss as 0.0 (`scorer._groundedness`'s documented contract), which
+    means the headline number partly re-measures recall. Reading the two side
+    by side separates "we retrieved nothing" from "we retrieved something
+    ungrounded" without moving a shipped metric — see
+    `planning/artifacts/groundedness-baseline-analysis.md`, where the
+    2026-08-02 baseline decomposes as 0.3608 overall vs. 0.5576 on hits and
+    all six misses turned out to be corpus-coverage gaps, not ranking
+    failures. `compare_to_baseline` iterates the *baseline's* keys, so a
+    pre-existing baseline file simply reports no delta for this key rather
+    than breaking.
+    """
     aggregate: dict[str, float] = {}
 
     aggregate["abstain_correctness"] = (
@@ -68,6 +83,13 @@ def _aggregate(results: list[CaseResult]) -> dict[str, float]:
             getattr(r, field_name) for r in results if getattr(r, field_name) is not None
         ]
         aggregate[out_key] = sum(values) / len(values) if values else 0.0
+
+    on_hits = [
+        r.groundedness
+        for r in results
+        if r.groundedness is not None and r.matched_docs
+    ]
+    aggregate["groundedness_on_hits"] = sum(on_hits) / len(on_hits) if on_hits else 0.0
 
     return aggregate
 

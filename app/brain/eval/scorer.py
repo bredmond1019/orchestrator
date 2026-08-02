@@ -141,6 +141,36 @@ def _groundedness(case: RetrievalCase, results: list[dict]) -> float | None:
     against). 0.0 when `expect_docs` is non-empty but nothing matched
     (recall already failed; groundedness of a non-hit is meaningless-but-
     scored-as-worst rather than silently excluded).
+
+    KNOWN STRUCTURAL BIASES — measured by `ticket-groundedness-baseline`
+    against the 2026-08-02 baseline (0.3608) and written up in full at
+    `planning/artifacts/groundedness-baseline-analysis.md`. These are
+    documented rather than fixed: this is a *shipped* metric with a stored
+    baseline, and every one of them makes the number pessimistic-but-honest
+    rather than wrong. Read it as a **band, not a target** — an all-green
+    corpus reads ~0.55-0.65 overall / ~0.85 on hits, not ~1.0.
+
+    1. *Recall coupling.* A miss scores 0.0, so `groundedness` partly
+       re-measures recall. Read `groundedness_on_hits` (added by that
+       ticket, `runner._aggregate`) alongside it: 0.3608 -> 0.5576 on the
+       baseline, and all six of those misses were corpus-coverage gaps.
+    2. *First-matching-chunk sampling.* Support is measured against the
+       **highest-ranked** chunk of the expected document, not its best
+       one. Scoring the best matching chunk instead would read 0.8530 vs.
+       0.6561 on the same baseline — the single largest term. Deliberate:
+       the top-ranked chunk is what a caller would actually be shown.
+    3. *Identifier-destroying tokenizer.* `_WORD_RE` (`[a-zA-Z']+`) plus
+       the `len > 2` filter deletes `D20` -> `d`, `OR.K2` -> `or`/`k`,
+       `is_section_title` -> `is`/`section`/`title`. Denominators can
+       collapse to one word (`"What is decision D20 about?"` -> `{decision}`),
+       so an identifier-anchored case can score a meaningless 1.0. An
+       identifier-preserving tokenizer was measured and *lowers* the
+       aggregate (0.3608 -> 0.3382) — it is a fidelity defect, not the
+       cause of the low number, and fixing it would fork the mirror below
+       and force a baseline reset for a strictly-worse-looking number.
+       Left open deliberately (ledger `A3`).
+    4. *Lexical floor.* A correct semantic match need not repeat the
+       query's words. ~0.15 of the deficit from 1.0 is irreducible.
     """
     if not case.expect_docs:
         return None
