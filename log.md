@@ -2,12 +2,62 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-02T10:15:00Z"
+timestamp: "2026-08-02T11:45:12Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-08-02] (session 12)
+
+### Session-11's four-spec queue driven to completion — corpus recall@10 hits 1.0
+
+- **What:** Orchestrated all four queued brain-rag specs to green and merged them to `main`
+  (`2c7b5ed`), run in three waves (wave A ran the corpus ticket in place against the live DB while
+  `test-layout-tidy` ran in a parallel worktree; waves B and C were serialized behind it because
+  both mutate the live corpus and move the eval baseline).
+  (1) **`OR.ticket.corpus-sub-repo-docs`** — a fourth indexer lane (`_sub_repo_docs_files`,
+  frontmatter-wins/slug-fallback) admitting every non-tier-container manifest repo's
+  `docs/**/*.md`: **157 net-new files**, `dangling_edges` **388 → 53** (they were never a graph
+  defect — they were `related:` refs pointing at documents the crawler could not see), and
+  **recall@10 0.8235 → 1.0000**, recall@5 +0.1176, MRR +0.0850, groundedness +0.0504. New canonical
+  eval baseline `2026-08-02T10-15-24Z.json`, re-pinned by hand in `knowledge.md` + the ledger.
+  (2) **`OR.chore.test-layout-tidy`** — 73 engine-level tests relocated to
+  `tests/brain/test_retrieval_engine.py`, the I32 node-vs-engine seam pin test deliberately left in
+  the node file, `tests/` brought under the ruff gate (`harness.json` + `CLAUDE.md`); collection
+  identical at 1400.
+  (3) **`OR.chore.business-docs-frontmatter`** — all 79 unattributed `business/docs/` files
+  classified and stamped (61 `brain`, 13 specific slugs, 4 deliberate `cross-cutting`); live corpus
+  reconciles exactly at 125 files with only those 4 still `project IS NULL`, and scoped recall now
+  reaches `rates.md`, `bastiel-strategy.md`, and the `interview-prep/` tree for the first time.
+  (4) **`OR.ticket.header-stub-chunks`** — measurement + verdict **NO-GO**: stubs are 557/11,675
+  rows (**4.77%**) and 10/230 top-k slots (4.35%) with **0/23 at rank 1**; a merge would cost a full
+  corpus re-embed and eval re-baseline to save 4.77% on an already ranking-neutral signal.
+  Gate: ruff `app/ tests/` clean · pylint **10.00/10** · **1402 passed / 7 skipped** ·
+  `mev validate-brain --state` 0 errors. All four blocks verified `closed` by hand.
+- **Why:** Session 11 verified session 10's work and queued four ready-to-run specs but executed
+  none; the operator asked for the queue to be driven to completion via the SDLC flows, with the
+  orchestrator reviewing and merging, and a running on-disk tab of anything needing later attention.
+- **Refs:** `planning/orchestration-run-issues.md` § Session 12 (issues `I35`–`I38`) ·
+  `planning/artifacts/header-stub-chunks-analysis.md` ·
+  `planning/artifacts/business-docs-frontmatter-classification.md` ·
+  `planning/brain-quality-attention.md` § E4 · merge `2c7b5ed`, HQ `d1057968`
+
+**Four findings the engines got wrong or would have missed** (full detail in the issue tab):
+`I36` — a task **bailed on a wrong diagnosis**: it called a fixture "pre-existing missing, unrelated
+to this task" when in fact `planning/` is a *tracked* symlink here, so the worktree's own setup link
+gets reverted by any `git checkout` and the vault vanishes; the file passes 11/11 once restored.
+`I37` — 46 tests silently converted from **passed to skipped** (container runtime down; this machine
+runs OrbStack, not Docker Desktop) and every existing check still passed, leaving a corpus-touching
+change one absent daemon from shipping with its integration surface unexercised.
+`I38` — the `I27` unquoted-colon frontmatter defect **recurred in `core/bastion` D17**, breaking the
+fleet-wide `validate-brain`; left untouched as a live parallel session's file.
+Plus: `groundedness_on_hits` reads −0.0626 purely as a **denominator artefact** (at recall@10 = 1.0
+it collapses onto `groundedness`) — read naively it argues for reverting the change that made recall
+perfect.
 
 ---
 
