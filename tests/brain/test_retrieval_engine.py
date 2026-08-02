@@ -1,0 +1,1657 @@
+"""Tests for ``app/brain/retrieval_engine.py`` — the two-stage hybrid retrieval
+pipeline (``_fuse_and_rank``, ``retrieve``, ``_semantic_search``,
+``_keyword_search``, ``_structural_expand``, ``_keyword_expand``,
+``_merge_candidates``).
+
+Relocated from ``tests/workflows/test_retrieve_chunks_node.py`` (chore
+``OR.chore.test-layout-tidy``) — these tests were stranded there since
+``OR.K2`` promoted the pipeline out of ``RetrieveChunksNode`` into this
+module. Bodies are assertion-identical to their prior home; only imports and
+module-level plumbing changed. Node-adapter tests (``RetrieveChunksNode``'s
+own wiring, including the I32 two-weight order-flip pin test) stay in
+``tests/workflows/test_retrieve_chunks_node.py`` — they guard the
+node-vs-engine seam, not engine internals.
+"""
+
+import uuid
+from unittest.mock import MagicMock, patch
+
+import pytest
+from brain import retrieval_engine
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_candidate(
+    dist: float = 0.1,
+    is_section_title: bool = False,
+    content: str = "some content",
+    section_title: str | None = "Intro",
+    candidate_id: uuid.UUID | None = None,
+    file_path: str | None = None,
+) -> dict:
+    """Build a candidate dict as returned by ``_semantic_search``."""
+    return {
+        "id": candidate_id or uuid.uuid4(),
+        "content": content,
+        "section_title": section_title,
+        "is_section_title": is_section_title,
+        "distance": dist,
+        "file_path": file_path,
+    }
+
+
+# ---------------------------------------------------------------------------
+# _fuse_and_rank — pure function tests (no DB, no mock needed)
+# ---------------------------------------------------------------------------
+
+
+class TestFuseAndRank:
+    """Pure unit tests for _fuse_and_rank. No DB or network involved."""
+
+    def test_semantic_ranking_orders_by_distance(self):
+        """Without keyword hits, candidates are ranked by semantic similarity."""
+        c1 = _make_candidate(dist=0.1)   # similarity 0.9
+        c2 = _make_candidate(dist=0.3)   # similarity 0.7
+        c3 = _make_candidate(dist=0.2)   # similarity 0.8
+        results = retrieval_engine._fuse_and_rank([c1, c2, c3], set(), k=3, threshold=0.0)
+        scores = [r["score"] for r in results]
+        assert scores == sorted(scores, reverse=True)
+        assert results[0]["content"] == c1["content"]
+
+    def test_keyword_boost_changes_order(self):
+        """The candidate with a keyword hit outranks one with a slightly better distance."""
+        close_id = uuid.uuid4()
+        far_id = uuid.uuid4()
+        # far has a worse distance (0.25) but gets a keyword boost of 1.0
+        close = _make_candidate(dist=0.1, candidate_id=close_id)
+        far = _make_candidate(dist=0.25, candidate_id=far_id)
+        keyword_ids = {far_id}
+        results = retrieval_engine._fuse_and_rank([close, far], keyword_ids, k=2, threshold=0.0)
+        # far: (1-0.25)*1 + 1.0 = 0.75 + 1.0 = 1.75
+        # close: (1-0.1)*1 + 0.0 = 0.9
+        assert results[0]["id"] == far_id
+
+    def test_section_title_flag_is_ranking_neutral(self):
+        """A section-title chunk no longer out-ranks a closer body chunk.
+
+        This test previously asserted the opposite (the ported rag-engine-rs 2x
+        boost). ``OR.ticket.section-title-boost`` measured that boost as a real
+        ranking defect — 11 of 23 golden-set queries returned a header stub at
+        rank 1 — and set ``_SECTION_TITLE_WEIGHT`` to 1.0. The assertion is
+        inverted rather than deleted so the old behaviour stays pinned as
+        *wrong*, not merely unmentioned.
+        """
+        body_id = uuid.uuid4()
+        title_id = uuid.uuid4()
+        body = _make_candidate(dist=0.05, is_section_title=False, candidate_id=body_id)
+        title = _make_candidate(dist=0.3, is_section_title=True, candidate_id=title_id)
+        # body score:  (1-0.05)*1.0 = 0.95
+        # title score: (1-0.3)*1.0  = 0.70
+        results = retrieval_engine._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
+        assert results[0]["id"] == body_id
+
+    def test_section_title_and_body_at_equal_distance_score_equally(self):
+        """At identical distance and no keyword hit, the flag changes nothing."""
+        body = _make_candidate(dist=0.2, is_section_title=False)
+        title = _make_candidate(dist=0.2, is_section_title=True)
+        results = retrieval_engine._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
+        assert results[0]["score"] == results[1]["score"]
+
+    def test_section_title_weight_constant_is_the_knob(self, monkeypatch):
+        """Restoring ``_SECTION_TITLE_WEIGHT`` to 2.0 restores the old ordering.
+
+        Falsifiability guard: proves the constant is live config and not dead
+        code, so anyone can re-run the measurement that retired the boost.
+        """
+        monkeypatch.setattr(retrieval_engine, "_SECTION_TITLE_WEIGHT", 2.0)
+        body_id = uuid.uuid4()
+        title_id = uuid.uuid4()
+        body = _make_candidate(dist=0.05, is_section_title=False, candidate_id=body_id)
+        title = _make_candidate(dist=0.3, is_section_title=True, candidate_id=title_id)
+        results = retrieval_engine._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
+        assert results[0]["id"] == title_id
+
+    def test_output_carries_is_section_title_flag(self):
+        """Every emitted dict surfaces ``is_section_title`` (default False)."""
+        title = _make_candidate(dist=0.1, is_section_title=True)
+        body = _make_candidate(dist=0.2, is_section_title=False)
+        bare = {
+            "id": uuid.uuid4(),
+            "content": "no flag key at all",
+            "section_title": None,
+            "distance": 0.3,
+        }
+        results = retrieval_engine._fuse_and_rank([title, body, bare], set(), k=3, threshold=0.0)
+        by_id = {r["id"]: r for r in results}
+        assert by_id[title["id"]]["is_section_title"] is True
+        assert by_id[body["id"]]["is_section_title"] is False
+        # A candidate that omits the key entirely (memory candidates) must not
+        # KeyError and must default to False.
+        assert by_id[bare["id"]]["is_section_title"] is False
+
+    def test_threshold_filters_low_scores(self):
+        """Candidates with a fused score below threshold are excluded."""
+        c1 = _make_candidate(dist=0.9)   # similarity 0.1, score 0.1
+        c2 = _make_candidate(dist=0.1)   # similarity 0.9, score 0.9
+        results = retrieval_engine._fuse_and_rank([c1, c2], set(), k=5, threshold=0.5)
+        assert len(results) == 1
+        assert results[0]["content"] == c2["content"]
+
+    def test_top_k_respected(self):
+        """Only the top-k candidates are returned."""
+        candidates = [_make_candidate(dist=0.1 * i) for i in range(1, 21)]
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
+        assert len(results) == 5
+
+    def test_nan_distance_does_not_crash(self):
+        """A NaN distance is silently filtered; no exception is raised."""
+        nan_c = _make_candidate(dist=float("nan"))
+        good_c = _make_candidate(dist=0.2)
+        results = retrieval_engine._fuse_and_rank([nan_c, good_c], set(), k=5, threshold=0.0)
+        # The NaN candidate must be absent; the good one must be present
+        assert len(results) == 1
+        assert results[0]["id"] == good_c["id"]
+
+    def test_nan_only_candidates_returns_empty(self):
+        """All NaN distances → empty result list, no crash."""
+        candidates = [_make_candidate(dist=float("nan")) for _ in range(5)]
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
+        assert results == []
+
+    def test_empty_candidates_returns_empty(self):
+        """Empty input list returns empty result list."""
+        assert retrieval_engine._fuse_and_rank([], set(), k=5, threshold=0.0) == []
+
+    def test_output_dict_has_required_keys(self):
+        """Each returned dict contains the required normalized keys."""
+        c = _make_candidate(dist=0.2, section_title="Overview")
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        assert len(results) == 1
+        assert {"content", "section_title", "score", "source"}.issubset(results[0].keys())
+        assert results[0]["section_title"] == "Overview"
+        assert results[0]["source"] == "Overview"
+
+    def test_output_source_defaults_to_general_when_no_section(self):
+        """Source falls back to 'General' when section_title is None."""
+        c = _make_candidate(dist=0.2, section_title=None)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        assert results[0]["source"] == "General"
+
+    def test_score_formula_body_chunk_no_keyword(self):
+        """Exact score for a body chunk with no keyword match."""
+        c = _make_candidate(dist=0.4, is_section_title=False)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        assert abs(results[0]["score"] - 0.6) < 1e-9
+
+    def test_score_formula_section_title_with_keyword(self):
+        """Exact score for a section-title chunk with a keyword match."""
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.2, is_section_title=True, candidate_id=cid)
+        results = retrieval_engine._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
+        # score = (1-0.2)*1.0 + 1.0 = 0.8 + 1.0 = 1.8 (weight neutral since
+        # OR.ticket.section-title-boost; it was 2.6 under the retired 2x boost)
+        assert abs(results[0]["score"] - 1.8) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# retrieve() — integration path with mocked DB seams
+# ---------------------------------------------------------------------------
+
+
+class TestRetrieve:
+    """Tests for the retrieve() method; patches _semantic_search, _keyword_search,
+    and EmbeddingService so no live DB or API key is needed."""
+
+    def _run_retrieve(
+        self,
+        candidates: list[dict],
+        keyword_ids: set | None = None,
+        query: str = "test query",
+        corpus: str = "content",
+        k: int = 5,
+        threshold: float = 0.0,
+    ) -> list[dict]:
+        """Patch all external calls and invoke retrieve()."""
+        keyword_ids = keyword_ids or set()
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=keyword_ids
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve(query, corpus=corpus, k=k, threshold=threshold)
+        return result
+
+    def test_returns_list_of_dicts(self):
+        """retrieve() returns a list of normalized dicts."""
+        candidates = [_make_candidate(dist=0.2)]
+        result = self._run_retrieve(candidates)
+        assert isinstance(result, list)
+
+    def test_top_k_observed(self):
+        """retrieve() respects the k limit end to end."""
+        candidates = [_make_candidate(dist=0.1 * i) for i in range(1, 10)]
+        result = self._run_retrieve(candidates, k=3)
+        assert len(result) <= 3
+
+    def test_embedding_service_called_once(self):
+        """EmbeddingService.embed_text is called exactly once per retrieve call."""
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.0] * 1024
+            retrieval_engine.retrieve("question")
+            MockEmb.return_value.embed_text.assert_called_once_with("question")
+
+    def test_semantic_search_called_with_vector_and_corpus(self):
+        """_semantic_search receives the embedded vector and the corpus name."""
+        expected_vector = [0.5] * 1024
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = expected_vector
+            retrieval_engine.retrieve("q", corpus="brain", k=5)
+            mock_sem.assert_called_once_with(
+                expected_vector,
+                "brain",
+                limit=20,
+                filters=None,
+                include_archived=False,
+                session=None,
+            )
+
+    def test_corpus_brain_threads_through(self):
+        """corpus='brain' is forwarded to _semantic_search."""
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.0] * 1024
+            retrieval_engine.retrieve("q", corpus="brain")
+            # _semantic_search(vector, corpus, limit=20) — corpus is positional arg 1
+            positional_args = mock_sem.call_args[0]
+            assert positional_args[1] == "brain"
+
+    def test_keyword_search_called_with_candidate_ids(self):
+        """_keyword_search receives the candidate IDs from _semantic_search."""
+        cid = uuid.uuid4()
+        candidates = [_make_candidate(candidate_id=cid)]
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ) as mock_kw:
+            MockEmb.return_value.embed_text.return_value = [0.0] * 1024
+            retrieval_engine.retrieve("q")
+            call_args = mock_kw.call_args[0]
+            assert cid in call_args[1]  # candidate_ids argument
+
+    def test_threshold_applied(self):
+        """High threshold results in empty list when candidates score below it."""
+        candidates = [_make_candidate(dist=0.9)]  # similarity = 0.1
+        result = self._run_retrieve(candidates, threshold=0.5)
+        assert result == []
+
+    def test_punctuation_stripped_from_query_terms(self):
+        """Terms like 'RAG?' are cleaned to 'RAG' before the ILIKE filter.
+
+        Without stripping, the pattern '%RAG?%' never matches content that
+        just says 'RAG', so the keyword boost silently never fires for
+        question-form queries.
+
+        We capture the SQLAlchemy ILIKE expressions assembled inside
+        ``_keyword_search`` to verify no term contains punctuation.
+        """
+        cid = uuid.uuid4()
+        candidate_ids = [cid]
+
+        fake_row = MagicMock()
+        fake_row.id = cid
+
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.all.return_value = [fake_row]
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        # db_session is a plain generator function; the node wraps it with
+        # contextmanager() at call time, so we must patch it as a generator.
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._keyword_search(
+                "What is RAG?", candidate_ids, "content"
+            )
+
+        # The call succeeded and returned the candidate id (keyword match)
+        assert cid in result
+
+        # Verify the ILIKE args passed to filter() contain no trailing '?'
+        # filter() is called twice: once for id.in_(), once for or_(*ilike_filters)
+        all_call_args = [str(c) for c in fake_query.filter.call_args_list]
+        combined = " ".join(all_call_args)
+        assert "RAG?" not in combined
+
+
+# ---------------------------------------------------------------------------
+# Keyword-extra-fields boost — brain corpus only
+# ---------------------------------------------------------------------------
+
+
+class TestKeywordSearchShapes:
+    """_keyword_search returns a graded dict for FTS corpora, a set for legacy."""
+
+    def test_brain_keyword_search_returns_graded_dict(self):
+        """The brain corpus uses the FTS path: returns dict[id -> ts_rank]."""
+        cid = uuid.uuid4()
+        candidate_ids = [cid]
+
+        # FTS path selects (model.id, ts_rank) rows — supply a concrete rank.
+        fake_row = MagicMock()
+        fake_row.id = cid
+        fake_row.kw_rank = 0.42
+
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.all.return_value = [fake_row]
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._keyword_search("data contract", candidate_ids, "brain")
+
+        # Graded result: a dict mapping id -> float ts_rank (not a set).
+        assert isinstance(result, dict)
+        assert result[cid] == pytest.approx(0.42)
+        # FTS path filters twice: id.in_(candidate_ids) and tsv @@ tsquery.
+        assert fake_query.filter.call_count >= 2
+
+    def test_brain_empty_candidates_returns_empty_dict(self):
+        """No candidates → empty dict (FTS shape), not an empty set."""
+        result = retrieval_engine._keyword_search("anything", [], "brain")
+        assert result == {}
+
+    def test_content_empty_candidates_returns_empty_set(self):
+        """No candidates → empty set (legacy shape) for the content corpus."""
+        result = retrieval_engine._keyword_search("anything", [], "content")
+        assert result == set()
+
+    def test_content_corpus_keyword_search_unchanged(self):
+        """_keyword_search for content corpus uses only content column, no keyword_extra_fields."""
+        cid = uuid.uuid4()
+        candidate_ids = [cid]
+
+        filter_call_args = []
+        fake_row = MagicMock()
+        fake_row.id = cid
+
+        def capturing_filter(*args, **kwargs):
+            filter_call_args.extend(args)
+            m = MagicMock()
+            m.filter = capturing_filter
+            m.all.return_value = [fake_row]
+            return m
+
+        fake_query = MagicMock()
+        fake_query.filter = capturing_filter
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._keyword_search("python", candidate_ids, "content")
+
+        # Verify no array_to_string appears in the filter args string — content corpus
+        # should only use the content column, not any extra fields
+        combined = " ".join(str(a) for a in filter_call_args)
+        assert "array_to_string" not in combined.lower()
+
+
+# ---------------------------------------------------------------------------
+# Filters — metadata scoping for brain corpus
+# ---------------------------------------------------------------------------
+
+
+class TestSemanticSearchFilters:
+    """Tests for optional filters param in retrieve() and _semantic_search."""
+
+    def _run_retrieve_with_filters(
+        self,
+        candidates: list[dict],
+        filters: dict | None,
+        corpus: str = "brain",
+    ) -> list[dict]:
+        """Patch seams and call retrieve() with optional filters."""
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus=corpus, k=5, filters=filters)
+        return result
+
+    def test_retrieve_forwards_filters_to_semantic_search(self):
+        """retrieve() passes filters kwarg through to _semantic_search."""
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            retrieval_engine.retrieve("q", corpus="brain", filters={"project": "acme"})
+            call_kwargs = mock_sem.call_args[1]
+            assert call_kwargs.get("filters") == {"project": "acme"}
+
+    def test_retrieve_without_filters_passes_none_to_semantic_search(self):
+        """retrieve() passes filters=None when not supplied."""
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            retrieval_engine.retrieve("q", corpus="brain")
+            call_kwargs = mock_sem.call_args[1]
+            assert call_kwargs.get("filters") is None
+
+    def test_content_corpus_retrieve_unaffected_by_filters(self):
+        """retrieve() with corpus='content' passes filters through but content corpus ignores them."""
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            # Should not raise even with filters for content corpus
+            result = retrieval_engine.retrieve(
+                "q", corpus="content", filters={"project": "acme"}
+            )
+            assert isinstance(result, list)
+
+    def test_filters_none_produces_same_result_as_no_filters(self):
+        """filters=None and no filters param produce identical results."""
+        cand = _make_candidate(dist=0.2)
+        result_no_filters = self._run_retrieve_with_filters([cand], filters=None)
+        result_with_none = self._run_retrieve_with_filters([cand], filters=None)
+        assert result_no_filters == result_with_none
+
+    def test_scalar_filter_excludes_non_matching_rows(self):
+        """A project filter excludes a fixture row whose project does not match.
+
+        We verify this at the _semantic_search seam: when filters scope to
+        project='matching-project', the seam mock returns only the matching
+        candidate (simulating the WHERE clause). The excluded 'deprecated' row
+        is never returned by _semantic_search.
+        """
+        matching_id = uuid.uuid4()
+        excluded_id = uuid.uuid4()
+        matching = _make_candidate(dist=0.1, candidate_id=matching_id)
+        # excluded row — _semantic_search would filter it out via WHERE
+        # We model this by having _semantic_search only return the matching row.
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[matching]
+        ) as mock_sem, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve(
+                "q",
+                corpus="brain",
+                filters={"project": "matching-project"},
+            )
+
+        # _semantic_search was called with the filter
+        call_kwargs = mock_sem.call_args[1]
+        assert call_kwargs.get("filters") == {"project": "matching-project"}
+        # The result contains only the matching candidate; excluded_id is absent
+        result_ids = {r["id"] for r in result}
+        assert matching_id in result_ids
+        assert excluded_id not in result_ids
+
+
+# ---------------------------------------------------------------------------
+# OR.O — cross-repo retrieval scoping via the existing "brain"-corpus project filter
+# ---------------------------------------------------------------------------
+
+
+def _apply_binary_eq(expr, row) -> bool:
+    """Evaluate a ``Column == literal`` SQLAlchemy BinaryExpression against a fixture row.
+
+    ``_apply_metadata_filters`` builds real ``BrainDocument.project == value``
+    expressions (SQLAlchemy expression construction needs no DB connection).
+    This lets the fake query below apply the *actual* production filter
+    predicate to in-memory fixture rows, rather than re-implementing the
+    scoping logic by hand — so the test exercises the real WHERE-clause
+    contract, not a stand-in.
+    """
+    field = expr.left.key
+    value = expr.right.value
+    return getattr(row, field, None) == value
+
+
+class _FakeSemanticQuery:
+    """Minimal chainable stand-in for the SQLAlchemy query used in _semantic_search.
+
+    Wraps a fixed list of ``(row, distance)`` pairs and applies real
+    ``BinaryExpression`` filters (built by ``_apply_metadata_filters``)
+    against each row's attributes, so ``filters={"project": ...}`` scopes the
+    fixture set exactly as the real ``project == value`` WHERE clause would.
+    """
+
+    def __init__(self, rows_with_distance):
+        self._rows = rows_with_distance
+
+    def filter(self, *exprs):
+        rows = self._rows
+        for expr in exprs:
+            rows = [(row, dist) for row, dist in rows if _apply_binary_eq(expr, row)]
+        return _FakeSemanticQuery(rows)
+
+    def order_by(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, n):
+        return _FakeSemanticQuery(self._rows[:n])
+
+    def all(self):
+        return self._rows
+
+
+class TestCrossRepoProjectScoping:
+    """Proves the existing "brain"-corpus ``project`` filter scopes sub-repo corpora.
+
+    OR.O ships no new retrieval code — it relies on ``RetrieveChunksNode``'s
+    existing ``filter_fields["project"] = "scalar"`` declaration. This drives
+    the *real* ``_semantic_search`` method (not a patched seam) against two
+    fixture ``BrainDocument`` rows tagged with different manifest slugs
+    (simulating two sub-repos' widened corpora) and proves a project-scoped
+    query never returns the other repo's chunk.
+    """
+
+    def setup_method(self):
+        # Capture the real (unpatched) function so _run_semantic_search_scoped
+        # keeps exercising the genuine implementation even when the
+        # module-level ``retrieval_engine._semantic_search`` name is patched
+        # elsewhere in this test (module-level patching replaces the name
+        # globally — unlike the old per-instance monkeypatch, which only
+        # shadowed one node instance's attribute).
+        self.real_semantic_search = retrieval_engine._semantic_search
+
+    def _make_fixture_row(self, project: str, content: str):
+        row = MagicMock()
+        row.id = uuid.uuid4()
+        row.content = content
+        row.section = "## Status"
+        row.is_section_title = False
+        row.file_path = f"core/{project}/planning/status.md"
+        row.doc_id = f"{project}-status"
+        row.title = None
+        row.project = project
+        row.status = None
+        return row
+
+    def _run_semantic_search_scoped(self, project_filter: str) -> list[dict]:
+        repo_a_row = self._make_fixture_row("repo-a", "repo-a status content")
+        repo_b_row = self._make_fixture_row("repo-b", "repo-b status content")
+        fake_query = _FakeSemanticQuery(
+            [(repo_a_row, 0.1), (repo_b_row, 0.1)]
+        )
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            # Call the captured real function directly so this helper still
+            # exercises the real _semantic_search even when the module-level
+            # name is itself patched (as it is in the end-to-end retrieve()
+            # test below).
+            return self.real_semantic_search(
+                [0.1] * 1024,
+                "brain",
+                limit=20,
+                filters={"project": project_filter},
+                include_archived=True,  # skip the unrelated default-status filter
+            )
+
+    def test_project_scoped_query_returns_only_that_repos_chunks(self):
+        """filters={"project": "repo-a"} returns only repo-a's chunk."""
+        results = self._run_semantic_search_scoped("repo-a")
+        assert len(results) == 1
+        assert results[0]["file_path"] == "core/repo-a/planning/status.md"
+
+    def test_symmetric_project_scoped_query_does_not_leak(self):
+        """filters={"project": "repo-b"} returns only repo-b's chunk — no leakage from repo-a."""
+        results = self._run_semantic_search_scoped("repo-b")
+        assert len(results) == 1
+        assert results[0]["file_path"] == "core/repo-b/planning/status.md"
+
+    def test_retrieve_end_to_end_scopes_by_project_per_repo(self):
+        """retrieve() end-to-end: two project-scoped queries never cross-contaminate."""
+
+        def _fake_semantic_search(
+            _vector, _corpus, limit, filters=None, include_archived=False, session=None
+        ):
+            return self._run_semantic_search_scoped(filters["project"])
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", side_effect=_fake_semantic_search
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=[]
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result_a = retrieval_engine.retrieve(
+                "q", corpus="brain", filters={"project": "repo-a"}, include_archived=True
+            )
+            result_b = retrieval_engine.retrieve(
+                "q", corpus="brain", filters={"project": "repo-b"}, include_archived=True
+            )
+
+        assert {r["file_path"] for r in result_a} == {"core/repo-a/planning/status.md"}
+        assert {r["file_path"] for r in result_b} == {"core/repo-b/planning/status.md"}
+
+
+# ---------------------------------------------------------------------------
+# Graded keyword fusion (FTS dict path) + provenance fields
+# ---------------------------------------------------------------------------
+
+
+class TestGradedKeywordFusion:
+    """_fuse_and_rank grades the keyword contribution when given a dict[id->rank]."""
+
+    def test_higher_ts_rank_yields_higher_score(self):
+        """With equal distance, the candidate with the larger ts_rank ranks first."""
+        weak_id = uuid.uuid4()
+        strong_id = uuid.uuid4()
+        weak = _make_candidate(dist=0.2, candidate_id=weak_id)
+        strong = _make_candidate(dist=0.2, candidate_id=strong_id)
+        graded = {weak_id: 0.01, strong_id: 0.30}
+        results = retrieval_engine._fuse_and_rank([weak, strong], graded, k=2, threshold=0.0)
+        assert results[0]["id"] == strong_id
+
+    def test_graded_score_uses_kw_weight(self):
+        """Score = similarity*title_weight + _KW_WEIGHT*ts_rank (exact)."""
+        from brain.retrieval_engine import _KW_WEIGHT
+
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.2, is_section_title=False, candidate_id=cid)
+        results = retrieval_engine._fuse_and_rank([c], {cid: 0.10}, k=1, threshold=0.0)
+        expected = (1.0 - 0.2) * 1.0 + _KW_WEIGHT * 0.10
+        assert results[0]["score"] == pytest.approx(expected)
+
+    def test_dict_without_match_adds_zero(self):
+        """A candidate absent from the graded dict gets no keyword contribution."""
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.3, candidate_id=cid)
+        results = retrieval_engine._fuse_and_rank([c], {}, k=1, threshold=0.0)
+        assert results[0]["score"] == pytest.approx(0.7)  # (1-0.3)*1 + 0
+
+    def test_legacy_set_boost_still_flat(self):
+        """A set (legacy corpus) still applies the flat _KW_BOOST, not a graded one."""
+        from brain.retrieval_engine import _KW_BOOST
+
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.2, candidate_id=cid)
+        results = retrieval_engine._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
+        assert results[0]["score"] == pytest.approx((1.0 - 0.2) + _KW_BOOST)
+
+    def test_provenance_fields_carried_through(self):
+        """file_path / doc_id / title flow from the candidate into the result dict."""
+        cid = uuid.uuid4()
+        c = _make_candidate(dist=0.2, candidate_id=cid)
+        c["file_path"] = "docs/decisions/D20-shared-data-contract.md"
+        c["doc_id"] = "D20-shared-data-contract"
+        c["title"] = "Shared Data Contract"
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        assert results[0]["file_path"] == "docs/decisions/D20-shared-data-contract.md"
+        assert results[0]["doc_id"] == "D20-shared-data-contract"
+        assert results[0]["title"] == "Shared Data Contract"
+
+    def test_provenance_fields_default_to_none(self):
+        """Candidates lacking provenance keys still produce the keys, set to None."""
+        c = _make_candidate(dist=0.2)
+        results = retrieval_engine._fuse_and_rank([c], set(), k=1, threshold=0.0)
+        assert results[0]["file_path"] is None
+        assert results[0]["doc_id"] is None
+        assert results[0]["title"] is None
+
+
+# ---------------------------------------------------------------------------
+# Diversity cap — no more than 2 results from the same file_path in top-K
+# ---------------------------------------------------------------------------
+
+
+class TestDiversityCap:
+    """_fuse_and_rank caps results-per-file_path in the final top-K."""
+
+    def test_caps_same_file_results_when_alternative_exists(self):
+        """>2 candidates sharing one file_path yield at most 2 from that file,
+        with the freed slot filled by a distinct-file candidate."""
+        same_file = [
+            _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(4)
+        ]
+        other = _make_candidate(dist=0.5, file_path="docs/b.md")
+        results = retrieval_engine._fuse_and_rank(
+            same_file + [other], set(), k=3, threshold=0.0
+        )
+        a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
+        b_count = sum(1 for r in results if r["file_path"] == "docs/b.md")
+        assert a_count == 2
+        assert b_count == 1
+        # The two best-scoring docs/a.md candidates (lowest distance) win the slots.
+        assert {r["id"] for r in results if r["file_path"] == "docs/a.md"} == {
+            same_file[0]["id"],
+            same_file[1]["id"],
+        }
+
+    def test_distinct_files_unaffected_by_cap(self):
+        """When every candidate is from a distinct file, output is identical to
+        the uncapped ranking (same ids, same order)."""
+        candidates = [
+            _make_candidate(dist=0.05 * i, file_path=f"docs/{i}.md") for i in range(5)
+        ]
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=5, threshold=0.0)
+        assert [r["id"] for r in results] == [c["id"] for c in candidates]
+
+    def test_backfills_when_not_enough_distinct_files_to_fill_k(self):
+        """No distinct-file candidate exists to fill a freed slot: the cap does
+        not drop results below k, it backfills with the over-cap candidates."""
+        same_file = [
+            _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(4)
+        ]
+        results = retrieval_engine._fuse_and_rank(same_file, set(), k=4, threshold=0.0)
+        assert len(results) == 4
+        assert [r["id"] for r in results] == [c["id"] for c in same_file]
+
+    def test_none_file_path_never_capped(self):
+        """Candidates with file_path=None (no citation metadata) are each
+        treated as their own group and are never capped."""
+        candidates = [_make_candidate(dist=0.05 * i, file_path=None) for i in range(4)]
+        results = retrieval_engine._fuse_and_rank(candidates, set(), k=4, threshold=0.0)
+        assert len(results) == 4
+        assert [r["id"] for r in results] == [c["id"] for c in candidates]
+
+
+# ---------------------------------------------------------------------------
+# Archived exclusion — default-off filter on the brain corpus
+# ---------------------------------------------------------------------------
+
+
+class TestArchivedExclusion:
+    """The brain corpus excludes status='archived' unless include_archived=True."""
+
+    def _run_semantic_search(self, corpus: str, include_archived: bool):
+        """Invoke _semantic_search against a mock session; return the query mock."""
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.order_by.return_value = fake_query
+        fake_query.limit.return_value = fake_query
+        fake_query.all.return_value = []
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+        fake_session.__enter__ = MagicMock(return_value=fake_session)
+        fake_session.__exit__ = MagicMock(return_value=False)
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            retrieval_engine._semantic_search(
+                [0.1] * 1024,
+                corpus,
+                limit=20,
+                filters=None,
+                include_archived=include_archived,
+            )
+        return fake_query
+
+    def test_brain_excludes_archived_by_default(self):
+        """A status filter is applied for the brain corpus when not including archived."""
+        fake_query = self._run_semantic_search("brain", include_archived=False)
+        # query → filter (status) → order_by → limit. The status filter call is
+        # the extra one beyond order_by/limit; assert at least one filter ran.
+        assert fake_query.filter.called
+
+    def test_brain_includes_archived_when_flagged(self):
+        """No status filter is applied when include_archived=True."""
+        fake_query = self._run_semantic_search("brain", include_archived=True)
+        # With no metadata filters and include_archived=True, filter() must not
+        # be called at all (no WHERE clauses added).
+        assert not fake_query.filter.called
+
+    def test_content_corpus_never_filters_status(self):
+        """The content corpus has no default_status_exclude → no status filter."""
+        fake_query = self._run_semantic_search("content", include_archived=False)
+        assert not fake_query.filter.called
+
+
+class TestIncludeArchivedThreading:
+    """include_archived threads retrieve() → _semantic_search."""
+
+    def test_retrieve_forwards_include_archived(self):
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            retrieval_engine.retrieve("q", corpus="brain", include_archived=True)
+            assert mock_sem.call_args[1].get("include_archived") is True
+
+    def test_retrieve_defaults_include_archived_false(self):
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ) as mock_sem, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            retrieval_engine.retrieve("q", corpus="brain")
+            assert mock_sem.call_args[1].get("include_archived") is False
+
+
+# ---------------------------------------------------------------------------
+# _structural_expand — Stage 1b structural neighborhood expansion (OR.G Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestStructuralExpand:
+    """Unit tests for _structural_expand — mocked brain_edges + neighbor rows."""
+
+    @staticmethod
+    def _make_session(edge_target_doc_ids, neighbor_rows):
+        """Fake session whose .query() returns, in order: the edge lookup
+        query (BrainEdge.target_doc_id), then the neighbor row/distance query."""
+        edge_query = MagicMock()
+        edge_query.filter.return_value = edge_query
+        edge_query.all.return_value = [
+            MagicMock(target_doc_id=t) for t in edge_target_doc_ids
+        ]
+
+        neighbor_query = MagicMock()
+        neighbor_query.filter.return_value = neighbor_query
+        neighbor_query.all.return_value = neighbor_rows
+
+        fake_session = MagicMock()
+        fake_session.query.side_effect = [edge_query, neighbor_query]
+        return fake_session
+
+    def test_content_corpus_is_noop(self):
+        """The content corpus doesn't declare supports_structural — always []."""
+        candidate = _make_candidate()
+        candidate["doc_id"] = "alpha"
+        result = retrieval_engine._structural_expand([candidate], "content", [0.1] * 1024)
+        assert result == []
+
+    def test_no_seed_doc_ids_returns_empty_without_touching_db(self):
+        """Candidates with no doc_id produce no seeds; the DB is never opened."""
+        candidates = [_make_candidate()]  # no "doc_id" key
+        with patch(
+            "brain.retrieval_engine.db_session"
+        ) as mock_db_session:
+            result = retrieval_engine._structural_expand(candidates, "brain", [0.1] * 1024)
+        assert result == []
+        mock_db_session.assert_not_called()
+
+    def test_returns_neighbor_flagged_structural(self):
+        """A resolved brain_edges neighbor is returned as a candidate dict
+        with via='structural' and the neighbor's own doc_id/content."""
+        seed = _make_candidate(dist=0.1)
+        seed["doc_id"] = "alpha"
+
+        neighbor_id = uuid.uuid4()
+        fake_row = MagicMock()
+        fake_row.id = neighbor_id
+        fake_row.content = "neighbor content"
+        fake_row.section = "Neighbor Section"
+        fake_row.is_section_title = False
+        fake_row.file_path = "docs/beta.md"
+        fake_row.doc_id = "beta"
+        fake_row.title = "Beta"
+
+        fake_session = self._make_session(["beta"], [(fake_row, 0.15)])
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._structural_expand([seed], "brain", [0.1] * 1024)
+
+        assert len(result) == 1
+        assert result[0]["via"] == "structural"
+        assert result[0]["doc_id"] == "beta"
+        assert result[0]["id"] == neighbor_id
+        assert result[0]["distance"] == 0.15
+
+    def test_neighbor_already_a_candidate_is_excluded(self):
+        """A resolved neighbor whose doc_id already appears among the input
+        candidates is not re-fetched (no duplicate row query)."""
+        seed = _make_candidate(dist=0.1)
+        seed["doc_id"] = "alpha"
+        already_present = _make_candidate(dist=0.2)
+        already_present["doc_id"] = "beta"
+
+        fake_session = self._make_session(["beta"], [])
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._structural_expand(
+                [seed, already_present], "brain", [0.1] * 1024
+            )
+
+        assert result == []
+
+    def test_dangling_edges_are_ignored(self):
+        """Edges with a NULL target_doc_id are filtered at the SQL layer, but
+        even if a None slips through, it never becomes a neighbor doc id."""
+        seed = _make_candidate(dist=0.1)
+        seed["doc_id"] = "alpha"
+
+        fake_session = self._make_session([], [])
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._structural_expand([seed], "brain", [0.1] * 1024)
+
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# retrieve() — structural expansion merged into the fused candidate set
+# ---------------------------------------------------------------------------
+
+
+class TestRetrieveStructuralExpansion:
+    """Integration tests for retrieve() merging _structural_expand output."""
+
+    def test_structural_neighbor_appears_in_fused_result_flagged(self):
+        """A structural candidate is unioned into the candidate set and its
+        via='structural' provenance survives _fuse_and_rank."""
+        semantic_id = uuid.uuid4()
+        structural_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=semantic_id)
+        semantic_candidate["doc_id"] = "alpha"
+        structural_candidate = _make_candidate(
+            dist=0.2, candidate_id=structural_id, content="neighbor content"
+        )
+        structural_candidate["doc_id"] = "beta"
+        structural_candidate["via"] = "structural"
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=[structural_candidate]
+        ) as mock_struct, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
+
+        mock_struct.assert_called_once()
+        result_by_id = {r["id"]: r for r in result}
+        assert structural_id in result_by_id
+        assert result_by_id[structural_id]["via"] == "structural"
+        assert result_by_id[semantic_id]["via"] == "semantic"
+
+    def test_neighbor_absent_from_semantic_only_path(self):
+        """With expand_structural=False, _structural_expand never runs and its
+        candidate never appears — demonstrating the neighbor is genuinely
+        surfaced only by the structural stage on the same fixture."""
+        semantic_id = uuid.uuid4()
+        structural_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=semantic_id)
+        structural_candidate = _make_candidate(dist=0.2, candidate_id=structural_id)
+        structural_candidate["via"] = "structural"
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=[structural_candidate]
+        ) as mock_struct, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve(
+                "q", corpus="brain", k=5, expand_structural=False
+            )
+
+        mock_struct.assert_not_called()
+        result_ids = {r["id"] for r in result}
+        assert structural_id not in result_ids
+        assert semantic_id in result_ids
+
+    def test_dedup_prefers_existing_semantic_candidate(self):
+        """A structural candidate sharing an id with an existing semantic
+        candidate is not duplicated in the fused result."""
+        dup_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=dup_id)
+        dup_structural = _make_candidate(dist=0.2, candidate_id=dup_id)
+        dup_structural["via"] = "structural"
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=[dup_structural]
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
+
+        assert len(result) == 1
+        assert result[0]["via"] == "semantic"
+
+    def test_structural_expand_receives_query_vector_and_corpus(self):
+        """_structural_expand is called with the embedded vector and corpus."""
+        expected_vector = [0.3] * 1024
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[]
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=[]
+        ) as mock_struct, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = expected_vector
+            retrieval_engine.retrieve("q", corpus="brain", k=5)
+
+        args = mock_struct.call_args[0]
+        assert args[1] == "brain"
+        assert args[2] == expected_vector
+
+
+# ---------------------------------------------------------------------------
+# Regression: content corpus + toggle-off brain path unchanged (OR.G Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestStructuralExpansionRegression:
+    """The content corpus and the toggle-off brain path must behave exactly
+    as before the structural expansion stage was added, using the REAL
+    (unmocked) _structural_expand so its no-op guards are exercised."""
+
+    def test_content_corpus_result_unaffected(self):
+        """content corpus: real _structural_expand never touches the DB, and
+        every result is flagged via='semantic' (unchanged behaviour)."""
+        candidates = [_make_candidate(dist=0.1), _make_candidate(dist=0.3)]
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="content", k=5)
+
+        assert len(result) == 2
+        assert all(r["via"] == "semantic" for r in result)
+
+    def test_brain_path_identical_with_toggle_on_or_off_when_no_edges(self):
+        """When candidates carry no doc_id (no traversable seeds — mirrors
+        'no edges exist' per the acceptance criteria), expand_structural=True
+        and False produce byte-for-byte identical results."""
+        candidates = [_make_candidate(dist=0.1)]  # no "doc_id" key
+
+        def _run(expand: bool):
+            with patch(
+                "brain.retrieval_engine.EmbeddingService"
+            ) as MockEmb, patch.object(
+                retrieval_engine, "_semantic_search", return_value=candidates
+            ), patch.object(
+                retrieval_engine, "_keyword_search", return_value=set()
+            ):
+                MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+                return retrieval_engine.retrieve(
+                    "q", corpus="brain", k=5, expand_structural=expand
+                )
+
+        assert _run(True) == _run(False)
+
+
+# ---------------------------------------------------------------------------
+# OR.V — keyword-candidate expansion (Stage 1c): _keyword_expand
+# ---------------------------------------------------------------------------
+
+
+def _apply_keyword_predicate(expr, row) -> bool:
+    """Best-effort evaluator for the WHERE predicates built inside
+    ``_keyword_expand``, so a fake query can genuinely filter fixture rows.
+
+    Handles the two predicate shapes ``_keyword_expand`` builds directly
+    (``model.id.notin_(existing_ids)`` and, via ``_apply_metadata_filters``,
+    ``col == value`` / ``col.overlap([value])``). The FTS ``tsv_col.op("@@")``
+    match predicate uses a custom operator this evaluator can't interpret —
+    treated as always-true, since the fixture rows in these tests are already
+    curated to represent "this row matched the FTS query".
+    """
+    op = getattr(expr, "operator", None)
+    left = getattr(expr, "left", None)
+    right = getattr(expr, "right", None)
+    col_key = getattr(left, "key", None)
+    if col_key is None:
+        return True
+    row_val = getattr(row, col_key, None)
+
+    op_name = getattr(op, "__name__", "")
+    if op_name == "eq":
+        return row_val == getattr(right, "value", right)
+    if op_name in ("not_in_op", "notin_op"):
+        vals = getattr(right, "value", right)
+        try:
+            return row_val not in vals
+        except TypeError:
+            return True
+    if op_name in ("in_op",):
+        vals = getattr(right, "value", right)
+        try:
+            return row_val in vals
+        except TypeError:
+            return True
+    # Unknown operator (FTS "@@" match, array .overlap, status != exclude) —
+    # assume it passes; these tests curate fixture rows to already satisfy it.
+    return True
+
+
+class _FakeKeywordExpandQuery:
+    """Chainable stand-in for the SQLAlchemy query used in ``_keyword_expand``.
+
+    Applies real WHERE predicates (via ``_apply_keyword_predicate``) against a
+    fixed ``(row, distance)`` fixture list, so ``existing_ids`` exclusion and
+    ``filters`` scoping are exercised against the actual expressions the
+    production code builds, not re-implemented by hand.
+    """
+
+    def __init__(self, rows_with_distance):
+        self._rows = rows_with_distance
+        self.filter_call_count = 0
+
+    def filter(self, *exprs):
+        rows = self._rows
+        for expr in exprs:
+            rows = [(row, dist) for row, dist in rows if _apply_keyword_predicate(expr, row)]
+        result = _FakeKeywordExpandQuery(rows)
+        result.filter_call_count = self.filter_call_count + 1
+        return result
+
+    def order_by(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, n):
+        result = _FakeKeywordExpandQuery(self._rows[:n])
+        result.filter_call_count = self.filter_call_count
+        return result
+
+    def all(self):
+        return self._rows
+
+
+def _make_brain_row(
+    row_id: uuid.UUID | None = None,
+    content: str = "keyword matched content",
+    file_path: str = "core/orchestrator/planning/status.md",
+    doc_id: str = "orchestrator-status",
+    title: str | None = "Status",
+    project: str | None = None,
+    status: str | None = None,
+):
+    """Build a fixture row shaped like a ``BrainDocument`` ORM row."""
+    row = MagicMock()
+    row.id = row_id or uuid.uuid4()
+    row.content = content
+    row.section = "## Status"
+    row.is_section_title = False
+    row.file_path = file_path
+    row.doc_id = doc_id
+    row.title = title
+    row.project = project
+    row.status = status
+    return row
+
+
+class TestKeywordExpand:
+    """Unit tests for _keyword_expand — mocked db_session, no live DB."""
+
+    def test_content_corpus_is_noop_without_touching_db(self):
+        """The content corpus declares no tsv_field — always [], DB never opened."""
+        with patch(
+            "brain.retrieval_engine.db_session"
+        ) as mock_db_session:
+            result = retrieval_engine._keyword_expand(
+                "query text", "content", [0.1] * 1024, set()
+            )
+        assert result == []
+        mock_db_session.assert_not_called()
+
+    def test_brain_corpus_returns_candidate_flagged_keyword_with_distance(self):
+        """A matching brain-corpus row is returned as a candidate dict with
+        via='keyword' and a real, non-null distance."""
+        row = _make_brain_row()
+        fake_query = _FakeKeywordExpandQuery([(row, 0.42)])
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._keyword_expand(
+                "OR.V graph resolver cleanup", "brain", [0.1] * 1024, set()
+            )
+
+        assert len(result) == 1
+        candidate = result[0]
+        assert candidate["via"] == "keyword"
+        assert candidate["id"] == row.id
+        assert candidate["distance"] is not None
+        assert candidate["distance"] == pytest.approx(0.42)
+
+    def test_existing_id_excluded_from_result(self):
+        """A row whose id is already in existing_ids is excluded — no duplicate."""
+        existing_row = _make_brain_row()
+        new_row = _make_brain_row()
+        fake_query = _FakeKeywordExpandQuery(
+            [(existing_row, 0.3), (new_row, 0.4)]
+        )
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._keyword_expand(
+                "query", "brain", [0.1] * 1024, {existing_row.id}
+            )
+
+        result_ids = {c["id"] for c in result}
+        assert existing_row.id not in result_ids
+        assert new_row.id in result_ids
+
+    def test_result_capped_at_keyword_candidate_limit(self):
+        """More matching rows than _KEYWORD_CANDIDATE_LIMIT are truncated."""
+        from brain.retrieval_engine import _KEYWORD_CANDIDATE_LIMIT
+
+        rows = [
+            (_make_brain_row(), 0.1 + i * 0.001)
+            for i in range(_KEYWORD_CANDIDATE_LIMIT + 5)
+        ]
+        fake_query = _FakeKeywordExpandQuery(rows)
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._keyword_expand(
+                "query", "brain", [0.1] * 1024, set()
+            )
+
+        assert len(result) == _KEYWORD_CANDIDATE_LIMIT
+
+    def test_metadata_filters_forwarded_into_query(self):
+        """filters is applied via _apply_metadata_filters the same way
+        _semantic_search applies it — a non-matching project row is excluded."""
+        matching_row = _make_brain_row(project="acme", status=None)
+        other_project_row = _make_brain_row(project="other-project", status=None)
+        rows = [(matching_row, 0.1), (other_project_row, 0.2)]
+        fake_query = _FakeKeywordExpandQuery(rows)
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            result = retrieval_engine._keyword_expand(
+                "query",
+                "brain",
+                [0.1] * 1024,
+                set(),
+                filters={"project": "acme"},
+                include_archived=True,
+            )
+
+        result_ids = {c["id"] for c in result}
+        assert matching_row.id in result_ids
+        assert other_project_row.id not in result_ids
+
+    def test_include_archived_and_filters_call_the_query_filter_hook(self):
+        """filters + include_archived are threaded into _keyword_expand's query
+        the same way _semantic_search applies them — verified via the number
+        of .filter() calls made, mirroring TestKeywordSearchShapes's style."""
+        row = _make_brain_row(project="acme", status=None)
+        fake_query = MagicMock()
+        fake_query.filter.return_value = fake_query
+        fake_query.order_by.return_value = fake_query
+        fake_query.limit.return_value = fake_query
+        fake_query.all.return_value = [(row, 0.1)]
+
+        fake_session = MagicMock()
+        fake_session.query.return_value = fake_query
+
+        def _fake_db_session():
+            yield fake_session
+
+        # include_archived=False: base "@@" match filter + archived-status
+        # exclusion filter = 2 filter() calls minimum.
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            retrieval_engine._keyword_expand(
+                "query", "brain", [0.1] * 1024, set(), include_archived=False
+            )
+        base_call_count = fake_query.filter.call_count
+
+        fake_query.filter.reset_mock()
+        fake_query.filter.return_value = fake_query
+        # include_archived=True + a metadata filter: base match + metadata
+        # filter = 2 filter() calls, one fewer than the archived-exclusion path
+        # would add on top.
+        with patch(
+            "brain.retrieval_engine.db_session",
+            _fake_db_session,
+        ):
+            retrieval_engine._keyword_expand(
+                "query",
+                "brain",
+                [0.1] * 1024,
+                set(),
+                filters={"project": "acme"},
+                include_archived=True,
+            )
+        filtered_call_count = fake_query.filter.call_count
+
+        assert base_call_count >= 2
+        assert filtered_call_count >= 2
+
+
+# ---------------------------------------------------------------------------
+# retrieve() — keyword-candidate expansion merged into the fused candidate set
+# ---------------------------------------------------------------------------
+
+
+class TestRetrieveKeywordExpansion:
+    """Integration tests for retrieve() merging _keyword_expand output."""
+
+    def test_keyword_only_candidate_appears_in_final_result_flagged(self):
+        """A candidate _keyword_expand finds (that Stage-1 semantic search did
+        NOT return) is unioned into the final candidate set, flagged via='keyword'."""
+        semantic_id = uuid.uuid4()
+        keyword_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=semantic_id)
+        keyword_candidate = _make_candidate(
+            dist=0.6, candidate_id=keyword_id, content="rescued by keyword match"
+        )
+        keyword_candidate["via"] = "keyword"
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=[]
+        ), patch.object(
+            retrieval_engine, "_keyword_expand", return_value=[keyword_candidate]
+        ) as mock_kw, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
+
+        mock_kw.assert_called_once()
+        result_by_id = {r["id"]: r for r in result}
+        assert keyword_id in result_by_id
+        assert result_by_id[keyword_id]["via"] == "keyword"
+        assert result_by_id[semantic_id]["via"] == "semantic"
+
+    def test_keyword_candidate_duplicate_id_not_double_counted(self):
+        """A keyword-expand candidate sharing an id with an existing candidate
+        is not duplicated in the fused result."""
+        dup_id = uuid.uuid4()
+        semantic_candidate = _make_candidate(dist=0.1, candidate_id=dup_id)
+        dup_keyword = _make_candidate(dist=0.7, candidate_id=dup_id)
+        dup_keyword["via"] = "keyword"
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[semantic_candidate]
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=[]
+        ), patch.object(
+            retrieval_engine, "_keyword_expand", return_value=[dup_keyword]
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="brain", k=5)
+
+        assert len(result) == 1
+        assert result[0]["via"] == "semantic"
+
+    def test_content_corpus_keyword_expand_real_noop_unaffected(self):
+        """For the 'content' corpus, the real (unmocked) _keyword_expand no-op
+        path is exercised — content-corpus output is unaffected by Stage 1c."""
+        candidate = _make_candidate(dist=0.2)
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=[candidate]
+        ), patch(
+            "brain.retrieval_engine.db_session"
+        ) as mock_db_session, patch.object(
+            retrieval_engine, "_keyword_search", return_value=set()
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="content", k=5)
+
+        # _keyword_expand's real no-op path never opens a DB session for content.
+        mock_db_session.assert_not_called()
+        assert len(result) == 1
+        assert result[0]["id"] == candidate["id"]
+
+
+# ---------------------------------------------------------------------------
+# _merge_candidates (renamed from _merge_structural_candidates) — regression
+# ---------------------------------------------------------------------------
+
+
+class TestMergeCandidatesRename:
+    """Confirms the renamed _merge_candidates still exercises the dedupe
+    behavior the structural-expansion tests already cover indirectly."""
+
+    def test_merge_candidates_dedupes_by_id_base_wins(self):
+        base_id = uuid.uuid4()
+        extra_id = uuid.uuid4()
+        base = [_make_candidate(candidate_id=base_id, content="base")]
+        extra = [
+            _make_candidate(candidate_id=base_id, content="dup-should-be-dropped"),
+            _make_candidate(candidate_id=extra_id, content="new"),
+        ]
+
+        result = retrieval_engine._merge_candidates(base, extra)
+
+        result_by_id = {c["id"]: c for c in result}
+        assert result_by_id[base_id]["content"] == "base"
+        assert extra_id in result_by_id
+        assert len(result) == 2
+
+    def test_merge_candidates_empty_extra_returns_base_unchanged(self):
+        base = [_make_candidate()]
+        result = retrieval_engine._merge_candidates(base, [])
+        assert result == base
+
+
+# ---------------------------------------------------------------------------
+# OR.K2 task 1 — byte-identical-ranking regression across the full pipeline
+# ---------------------------------------------------------------------------
+
+
+class TestByteIdenticalRankingRegression:
+    """A golden-ordering fixture captured against the pre-promotion algorithm
+    (score formula, merge/dedupe order, stable-sort tie handling): an
+    unscoped "brain"-corpus query exercising all four candidate sources
+    (semantic, structural, keyword-expand, keyword-search boost) must still
+    produce this exact order/score sequence after the OR.K2 promotion into
+    ``retrieval_engine`` — the promotion moved *where* the code lives, not
+    *what* it computes.
+
+    Score formula (unchanged): ``(1 - distance) * title_weight + kw_boost``,
+    no decay (no ``authored_at`` on any fixture candidate), stable-sorted
+    descending. Hand-derived expectations:
+
+    - A (semantic, distance=0.1, no keyword hit):      (1-0.1)*1 + 0    = 0.90
+    - E (keyword,  distance=0.4, kw_rank=0.05):         (1-0.4)*1 + 0.25 = 0.85
+    - D (structural, distance=0.2, no keyword hit):     (1-0.2)*1 + 0    = 0.80
+    - B (semantic, distance=0.3, no keyword hit):       (1-0.3)*1 + 0    = 0.70
+    """
+
+    def test_full_pipeline_unscoped_brain_query_matches_golden_order(self):
+        semantic_candidates = [
+            _make_candidate(dist=0.1, candidate_id="A", file_path="a.md"),
+            _make_candidate(dist=0.3, candidate_id="B", file_path="b.md"),
+        ]
+        structural_candidates = [
+            _make_candidate(
+                dist=0.2, candidate_id="D", file_path="d.md", content="structural neighbor"
+            )
+        ]
+        structural_candidates[0]["via"] = "structural"
+        keyword_expand_candidates = [
+            _make_candidate(
+                dist=0.4, candidate_id="E", file_path="e.md", content="keyword-only hit"
+            )
+        ]
+        keyword_expand_candidates[0]["via"] = "keyword"
+        # Graded FTS keyword-search boost: only "E" matches, ts_rank=0.05.
+        keyword_matches = {"E": 0.05}
+
+        with patch(
+            "brain.retrieval_engine.EmbeddingService"
+        ) as MockEmb, patch.object(
+            retrieval_engine, "_semantic_search", return_value=semantic_candidates
+        ), patch.object(
+            retrieval_engine, "_structural_expand", return_value=structural_candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_expand", return_value=keyword_expand_candidates
+        ), patch.object(
+            retrieval_engine, "_keyword_search", return_value=keyword_matches
+        ):
+            MockEmb.return_value.embed_text.return_value = [0.1] * 1024
+            result = retrieval_engine.retrieve("q", corpus="brain", k=4)
+
+        assert [r["id"] for r in result] == ["A", "E", "D", "B"]
+        golden_scores = {"A": 0.90, "E": 0.85, "D": 0.80, "B": 0.70}
+        for r in result:
+            assert r["score"] == pytest.approx(golden_scores[r["id"]])
+        assert {r["id"]: r["via"] for r in result} == {
+            "A": "semantic",
+            "E": "keyword",
+            "D": "structural",
+            "B": "semantic",
+        }
