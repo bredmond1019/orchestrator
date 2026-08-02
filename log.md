@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-02T11:45:12Z"
+timestamp: "2026-08-02T22:58:45Z"
 ---
 
 # log — Orchestration Repo
@@ -58,6 +58,23 @@ fleet-wide `validate-brain`; left untouched as a live parallel session's file.
 Plus: `groundedness_on_hits` reads −0.0626 purely as a **denominator artefact** (at recall@10 = 1.0
 it collapses onto `groundedness`) — read naively it argues for reverting the change that made recall
 perfect.
+
+### Session-12 findings triaged into durable state; handoff written
+
+- **What:** Converted the session-12 run findings into four `state.json` carryovers with
+  `clears_when` conditions — `planning-symlink-tracked-reverts-in-worktree` (I36),
+  `gate-blind-to-pass-to-skip-conversion` (I37),
+  `frontmatter-colon-parse-failures-recur-fleet-wide` (I38), and `eval-baseline-pin-is-prose-only` —
+  and wrote `planning/handoff.md` with the recommended fix for each already chosen, so the next
+  agent implements rather than re-derives. Recorded the ranked next work: the three harness fixes
+  (all **`base-template`**, not Synapse), then `OR.R` (Brain-as-MCP-server) as the best next build.
+- **Why:** The operator asked for the run's attention items to be written up as an actionable
+  handoff. The three harness defects each let a wrong result look like a right one during this run,
+  which makes them higher-value than any feature work currently queued — but they sit on the far
+  side of the Brain/Factory boundary, so the handoff names that explicitly to stop the next agent
+  building them here.
+- **Refs:** `planning/handoff.md` · `planning/orchestration-run-issues.md` § Session 12 ·
+  `planning/state.json` `carryover[]`
 
 ---
 
