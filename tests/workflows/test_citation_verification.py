@@ -18,7 +18,6 @@ Covers:
 import uuid
 
 import pytest
-
 from core.task import TaskContext
 from schemas.document_qa_schema import DocumentQAEventSchema
 from workflows.document_qa_workflow_nodes.answer_node import AnswerNode

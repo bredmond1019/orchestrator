@@ -1,13 +1,11 @@
 """Unit tests for incremental execution observability (node_runs, on_progress)."""
 
 import pytest
-from pydantic import BaseModel
-
 from core.nodes.base import Node
 from core.schema import NodeConfig, WorkflowSchema
 from core.task import NodeStatus, TaskContext
 from core.workflow import Workflow
-
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Shared event schema + stub nodes/workflows

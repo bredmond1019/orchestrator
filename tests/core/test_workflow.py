@@ -3,14 +3,12 @@
 import logging
 
 import pytest
-from pydantic import BaseModel
-
 from core.nodes.base import Node
 from core.nodes.router import BaseRouter, RouterNode
 from core.schema import NodeConfig, WorkflowSchema
 from core.task import NodeStatus, TaskContext
 from core.workflow import Workflow
-
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Shared event schema

@@ -9,16 +9,12 @@ Coverage:
 - Schema registry completeness     → every WorkflowRegistry member has a SCHEMA_MAP entry
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
-import pytest
+from api.schema_registry import SCHEMA_MAP
 from fastapi import status
 from fastapi.testclient import TestClient
-
-from api.schema_registry import SCHEMA_MAP
 from workflows.workflow_registry import WorkflowRegistry
-
 
 # ---------------------------------------------------------------------------
 # Helpers
