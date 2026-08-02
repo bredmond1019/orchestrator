@@ -111,6 +111,15 @@ Defined in `app/database/event.py`. One row per workflow run. There are **no** r
 terminal (`success`/`failed`). (A promoted indexed `status` column is a deferred optimization —
 orchestrator plan Phase 4 — not part of v1.0.0.)
 
+> **`retrieval_queries` (OR.K1) — not part of this contract.** A `retrieval_queries` table exists
+> (`app/database/retrieval_query.py`) logging one row per call into the retrieval core (`syn
+> recall`, `GET /recall`, `DOCUMENT_QA`), read via `syn queries`. It carries no `events`/
+> `task_context` shape, is not reachable over any HTTP or MCP surface, and **engine-rs neither
+> reads nor writes it** — it is purely internal to this repo. Per §8, a table with no shape
+> exposed through this contract's `events`/`task_context`/HTTP surfaces is not itself a contract
+> change, so this note does not bump the contract version; it exists only so a reader scanning
+> this document for "every table" doesn't miss it.
+
 ---
 
 ## 5. `task_context` JSON

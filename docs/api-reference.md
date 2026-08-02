@@ -90,6 +90,7 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 68. [MemoryConsolidationWorkflow](#memoryconsolidationworkflow)
 69. [Brain Read Core (recall / walk / pulse / syn CLI)](#brain-read-core-recall--walk--pulse--syn-cli)
 70. [Retrieval Eval Harness (app/brain/eval/, syn eval)](#retrieval-eval-harness-appbraineval-syn-eval)
+71. [Retrieval Query Log (app/brain/query_log.py, syn queries — OR.K1)](#retrieval-query-log-appbrainquery_logpy-syn-queries-or-k1)
 
 ---
 
@@ -4943,3 +4944,96 @@ automatically).
   imports `app/workflows/` nowhere; `app/brain/eval/` imports `app/evals/` nowhere).
 - `tests/brain/test_golden_set_schema.py` — loads `planning/retrieval-golden-set.yaml` and asserts
   required fields, the 40-case hard cap, and at least 3 negative (`expect_abstain: true`) cases.
+
+---
+
+## Retrieval Query Log (`app/brain/query_log.py`, `syn queries` — OR.K1)
+
+**Sources:** `app/database/retrieval_query.py`, `app/brain/query_log.py`, `app/brain/cli.py`
+
+Block **OR.K1**. Answers one question — "what did my agents actually ask the Brain this week, and
+how often did it come up empty?" — with one table (`retrieval_queries`), one fire-and-forget write
+at the single choke point inside the promoted retrieval core, and one read command (`syn
+queries`). Deliberately **zero aggregation**: no rollup table, no scheduled job, no dashboard, and
+no HTTP/MCP exposure of the log. The moment this needs any of those, that capability belongs in
+engine-rs (the D51 guard), not here.
+
+### `RetrievalQuery` SQLAlchemy model
+
+**Source:** `app/database/retrieval_query.py`
+
+One row per call into the retrieval core, `id` UUID primary key, `created_at` indexed. Columns:
+`query` (`Text`, not null), `surface` (`String(16)`, not null, default `"unknown"` — `"cli"` /
+`"http"` / `"workflow"` / `"mcp"` / `"unknown"`), `workspace_id` (`String(128)`, nullable),
+`hybrid` (`Boolean`, not null), `via_mix` (`JSON`, nullable — counts per returned candidate's
+`via`), `result_count` (`Integer`, not null), `top_score` (`Float`, nullable), `retrieval_confidence`
+(`Float`, nullable), `abstained` (`Boolean`, not null), `top_doc_ids` (`JSON`, nullable — up to the
+top 5, rank order), `latency_ms` (`Integer`, nullable). `via_mix`/`top_doc_ids` are `JSON` rather
+than Postgres `ARRAY` — deliberately SQLite-compilable, mirroring `eval_record.py`'s choice, so the
+unit suite exercises the table without Docker.
+
+### `log_retrieval(query, results, *, surface, workspace_id, hybrid, retrieval_confidence, latency_ms) -> None`
+
+**Source:** `app/brain/query_log.py`
+
+Writes exactly one `retrieval_queries` row describing a single call into the retrieval core.
+Derives `via_mix` (a `Counter` over each result's `via`), `result_count` (`len(results)`),
+`top_score` (the first result's `score`, if any), `top_doc_ids` (the first 5 results' `doc_id`s),
+and `abstained` (`retrieval_confidence < ABSTAIN_THRESHOLD`, imported live from
+`DocumentQAEventSchema.model_fields["confidence_threshold"].default` — the same source
+`app/brain/eval/scorer.py` uses, never re-hardcoded).
+
+**Fire-and-forget discipline:** opens its own independently created and committed session (open ->
+add -> commit -> close via `GenericRepository`, standing rule 7 — never a raw session write) inside
+its own `try`/`except`; any exception (a closed engine, a forced session failure, anything) is
+caught, logged via `logging.warning` (no f-string), and swallowed — never re-raised. A logging
+failure can never fail or roll back the retrieval call it describes. Mirrors the independent-session
+precedent in `worker/tasks.py`'s failure marker.
+
+**Test-suite inertness:** gated by `BRAIN_QUERY_LOG_ENABLED` (`"1"`/`"true"`, case-insensitive;
+read at call time, not import time, so per-test `monkeypatch.setenv` works). Defaults **on**;
+`tests/conftest.py` carries an autouse fixture forcing it off for the whole suite, and
+`tests/brain/conftest.py::enable_query_log` is the opt-in fixture individual tests request. See
+`docs/scripts.md` § `BRAIN_QUERY_LOG_ENABLED` for the operational note.
+
+**Call sites (the two that together cover every surface):** inside
+[`retrieval_engine.retrieve()`](#retrieval-engine-appbrainretrieval_enginepy) (the hybrid/full
+path) and inside [`retrieval.recall()`](#brain-read-core-recall--walk--pulse--syn-cli)'s
+exact-id/semantic returns — `_log_recall`, a private helper in `app/brain/retrieval.py`, is the
+one shared call point both of `recall()`'s branches use. `latency_ms` is measured by each caller
+around its own core call via `time.monotonic`. The optional `surface` kwarg threads from three
+thin adapters: `app/brain/cli.py`'s `syn recall` passes `"cli"`, `app/api/read.py`'s `GET /recall`
+passes `"http"`, and the `RetrieveChunksNode` adapter (`DOCUMENT_QA`) passes `"workflow"`. `None`
+(no adapter, e.g. a direct in-process call) logs as `"unknown"`. An MCP surface value (`"mcp"`) is
+reserved but currently unused — there is no MCP server yet.
+
+### `syn queries` CLI
+
+**Source:** `app/brain/cli.py`
+
+| Subcommand | Arguments | Behavior |
+|---|---|---|
+| `queries` | `--since WINDOW` (`<N>d` / `<N>h`, e.g. `7d`/`24h`; default: no lower bound), `--abstained`, `--json` | Reads every `retrieval_queries` row via `GenericRepository(session, RetrievalQuery).get_all()`, then filters/sorts in Python (newest first) — no SQL aggregation, no stored rollup. `--since` parses the window and keeps rows with `created_at >= now() - window`; an unparseable window is a typed `InvalidSinceWindowError`, routed through the same `_emit_error` non-zero-exit path every other `syn` command uses. `--abstained` keeps only `abstained=true` rows. |
+
+In `--json` mode, the payload is `{"queries": [...], "count": N, "abstain_rate": R}` — `R` is
+`abstained_count / count` over the *returned* (already filtered/windowed) rows, `0.0` when
+`count == 0`. This is computed once, in `_run_queries`, at read time; it is never written back to
+the database and there is no equivalent stored anywhere — the zero-aggregation rule stays visible
+directly in the code (see the comment at the computation site). Human (non-`--json`) mode prints
+one line per row: timestamp, surface, query, `via_mix`, confidence, `abstained`.
+
+### Test coverage
+
+- `tests/database/test_retrieval_query.py` — model schema/column-type assertions, a `GenericRepository`
+  round-trip on SQLite (scalar fields, JSON `via_mix`/`top_doc_ids`, nullable `workspace_id`), and a
+  Docker-gated Alembic up/down migration test against a real pgvector container.
+- `tests/brain/test_query_log.py` — `log_retrieval`'s row shape (`via_mix`, `top_doc_ids`,
+  `top_score`, `abstained` derivation); the inertness switch (default-off in the suite, opt-in via
+  `enable_query_log`); the fire-and-forget discipline (a forced session failure is swallowed with a
+  warning, and the retrieval call it describes still returns its results); surface threading from
+  all three thin adapters through to a single logged row.
+- `tests/brain/test_cli.py::TestQueriesDispatch` — `--json` row/`count`/`abstain_rate` shape;
+  `abstain_rate == 0.0` on an empty window; `--abstained` filtering; `--since` window filtering
+  (excludes older rows); `via_mix`/`retrieval_confidence` round-trip through the CLI; an invalid
+  `--since` window returns a non-zero exit with a typed JSON error payload; human mode never emits
+  raw JSON and prints a "No logged queries." message when the window is empty.

@@ -29,8 +29,10 @@ the exact-id/semantic paths — an exact-id hit is a perfect match, so
 """
 
 import re
+import time
 
 from brain import retrieval_engine
+from brain.query_log import log_retrieval
 
 # Matches structured brain identifiers like "D20", "OR.V", "MV.3B.Q": one to
 # five uppercase letters, followed by either a run of digits (D20) or one or
@@ -151,6 +153,7 @@ def hybrid_search(
     filters: dict | None = None,
     workspace: str | None = None,
     session=None,
+    surface: str | None = None,
 ) -> list[dict]:
     """Run the promoted `retrieval_engine.retrieve` fusion pipeline over the brain corpus.
 
@@ -170,6 +173,10 @@ def hybrid_search(
             are supplied and disagree — `workspace` is the common case).
         workspace: D47 workspace name; resolves to `filters={"project": ...}`.
         session: Optional SQLAlchemy session threaded through every stage.
+        surface: Optional calling-surface tag threaded through to
+            `retrieval_engine.retrieve` for the OR.K1 query log; `retrieve()`
+            is the single logging choke point for this path, so no separate
+            log write happens here.
 
     Returns:
         A list of up to `limit` normalized result dicts (the same
@@ -181,7 +188,13 @@ def hybrid_search(
         **(filters or {}),
     } or None
     chunks = retrieval_engine.retrieve(
-        query, corpus="brain", k=limit, filters=resolved_filters, session=session
+        query,
+        corpus="brain",
+        k=limit,
+        filters=resolved_filters,
+        workspace_id=workspace,
+        session=session,
+        surface=surface,
     )
     return [_normalize_engine_chunk(c) for c in chunks]
 
@@ -199,6 +212,26 @@ def _normalize_doc_row(doc, score: float, *, via: str) -> dict:
     }
 
 
+def _log_recall(
+    query: str, results: list[dict], *, workspace: str | None, surface: str | None, start: float
+) -> None:
+    """Shared OR.K1 logging call for `recall()`'s exact-id/semantic paths.
+
+    The hybrid path is logged once, inside `retrieval_engine.retrieve()`
+    (the single choke point) — this covers the other half: the two paths
+    that never call `retrieve()`.
+    """
+    log_retrieval(
+        query,
+        results,
+        surface=surface,
+        workspace_id=workspace,
+        hybrid=False,
+        retrieval_confidence=retrieval_engine.compute_retrieval_confidence(results),
+        latency_ms=int((time.monotonic() - start) * 1000),
+    )
+
+
 def recall(
     query: str,
     *,
@@ -207,6 +240,7 @@ def recall(
     workspace: str | None = None,
     session=None,
     embedding_service=None,
+    surface: str | None = None,
 ) -> list[dict]:
     """Dispatch exact-id -> semantic/hybrid exactly as `query_brain.main()` does.
 
@@ -228,6 +262,10 @@ def recall(
             `database.session.db_session` when omitted and not `hybrid`).
         embedding_service: An `EmbeddingService` instance (injected; built
             lazily when omitted and needed).
+        surface: Optional calling-surface tag (`"cli"` / `"http"` /
+            `"workflow"` / `"mcp"`) for the OR.K1 query log
+            (`app/brain/query_log.py`). `None` (the default) is logged as
+            `"unknown"`; has no effect on retrieval behavior.
 
     Returns:
         A list of normalized result dicts, one shape on every path:
@@ -235,7 +273,11 @@ def recall(
         `score` a similarity where higher is better on every path.
     """
     if hybrid:
-        return hybrid_search(query, limit=limit, workspace=workspace, session=session)
+        return hybrid_search(
+            query, limit=limit, workspace=workspace, session=session, surface=surface
+        )
+
+    start = time.monotonic()
 
     owns_session = session is None
     if owns_session:
@@ -250,7 +292,9 @@ def recall(
     exact_id = find_exact_id(query)
     if exact_id is not None:
         id_results = exact_id_lookup(exact_id, session, limit=limit, filters=filters)
-        return [_normalize_doc_row(doc, 1.0, via="exact-id") for doc in id_results]
+        results = [_normalize_doc_row(doc, 1.0, via="exact-id") for doc in id_results]
+        _log_recall(query, results, workspace=workspace, surface=surface, start=start)
+        return results
 
     if embedding_service is None:
         from services.embedding_service import (  # pylint: disable=import-outside-toplevel
@@ -260,6 +304,8 @@ def recall(
         embedding_service = EmbeddingService()
 
     results = semantic_search(query, session, embedding_service, limit=limit, filters=filters)
-    return [
+    normalized = [
         _normalize_doc_row(doc, 1.0 - distance, via="semantic") for doc, distance in results
     ]
+    _log_recall(query, normalized, workspace=workspace, surface=surface, start=start)
+    return normalized

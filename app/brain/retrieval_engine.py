@@ -31,6 +31,7 @@ byte-for-byte so unscoped-query rankings stay identical pre/post promotion.
 
 import math
 import re
+import time
 from contextlib import contextmanager, nullcontext
 from datetime import datetime
 
@@ -42,6 +43,8 @@ from memory.decay import effective_confidence, weeks_between
 from memory.memory_loader_node import MemoryLoaderNode
 from services.embedding_service import EmbeddingService
 from sqlalchemy import func, or_
+
+from brain.query_log import log_retrieval
 
 # ---------------------------------------------------------------------------
 # Corpus configuration map — extend here to add a third corpus
@@ -214,6 +217,7 @@ def retrieve(  # pylint: disable=too-many-arguments,too-many-locals
     apply_decay: bool = True,
     session=None,
     embedder=None,
+    surface: str | None = None,
 ) -> list[dict]:
     """Run the two-stage hybrid retrieval pipeline.
 
@@ -248,12 +252,17 @@ def retrieve(  # pylint: disable=too-many-arguments,too-many-locals
         embedder: Optional object exposing ``embed_text(query) -> list[float]``
             (e.g. an ``EmbeddingService`` instance). ``None`` constructs a
             fresh ``EmbeddingService()`` as before.
+        surface: Optional calling-surface tag (``"cli"`` / ``"http"`` /
+            ``"workflow"`` / ``"mcp"``) threaded through to the OR.K1 query
+            log (``app/brain/query_log.py``). ``None`` (the default) is
+            logged as ``"unknown"``; has no effect on retrieval behavior.
 
     Returns:
         List of up to ``k`` normalized chunk dicts, each containing
         ``{"content", "section_title", "score", "source", "file_path",
         "doc_id", "title", "via"}``, sorted by fused score descending.
     """
+    start = time.monotonic()
     embedder = embedder if embedder is not None else EmbeddingService()
     vector = embedder.embed_text(query)
     candidates = _semantic_search(
@@ -291,7 +300,17 @@ def retrieve(  # pylint: disable=too-many-arguments,too-many-locals
     memory_ids = {c["id"] for c in candidates if c.get("via") == "memory"}
     candidate_ids = [c["id"] for c in candidates if c["id"] not in memory_ids]
     keyword_matches = _keyword_search(query, candidate_ids, corpus, session=session)
-    return _fuse_and_rank(candidates, keyword_matches, k, threshold, apply_decay=apply_decay)
+    results = _fuse_and_rank(candidates, keyword_matches, k, threshold, apply_decay=apply_decay)
+    log_retrieval(
+        query,
+        results,
+        surface=surface,
+        workspace_id=workspace_id,
+        hybrid=True,
+        retrieval_confidence=compute_retrieval_confidence(results),
+        latency_ms=int((time.monotonic() - start) * 1000),
+    )
+    return results
 
 
 def _merge_candidates(candidates: list[dict], extra: list[dict]) -> list[dict]:

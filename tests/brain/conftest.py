@@ -9,6 +9,20 @@ needed (and a non-rootdir conftest can't use one), and no duplicated
 Testcontainers setup.
 """
 
+import pytest
+
 from tests.database.conftest import pgvector_engine, pgvector_session
 
-__all__ = ["pgvector_engine", "pgvector_session"]
+__all__ = ["pgvector_engine", "pgvector_session", "enable_query_log"]
+
+
+@pytest.fixture
+def enable_query_log(monkeypatch):
+    """Opt back into the OR.K1 retrieval query log for one test.
+
+    The top-level `tests/conftest.py::_disable_query_log` autouse fixture
+    forces `BRAIN_QUERY_LOG_ENABLED=0` for the whole suite; tests that
+    assert on written `retrieval_queries` rows request this fixture to flip
+    it back on.
+    """
+    monkeypatch.setenv("BRAIN_QUERY_LOG_ENABLED", "1")
