@@ -114,6 +114,27 @@ _MEMORY_CANDIDATE_LIMIT: int = 3
 # 0.99/wk it retains ~77%. Rows with authored_at=None are never decayed.
 _DOC_DECAY_FACTOR: float = 0.99
 
+# Multiplier applied to a candidate's semantic similarity when the chunk is a
+# header-only "section title" chunk (`is_section_title`, set at ingest by
+# `brain.ingest._is_header_only_chunk`). Ported from rag-engine-rs's
+# `two_stage_retrieval.rs` at 2.0 and never measured until
+# `OR.ticket.section-title-boost`, which found it a real ranking defect: at 2.0,
+# 11 of the 23 golden-set queries returned a header stub ("## Decision",
+# "## Amendment Log") at rank 1 and answers were grounded against near-empty
+# headers. Sweeping the weight on the live corpus: 2.0 -> 1.0 gives MRR +0.0877,
+# groundedness +0.0637, groundedness_on_hits +0.0774, recall@5 +0.0588, with
+# recall@10 and abstain_correctness unchanged; rank-1 stubs 11/23 -> 0/23 and
+# median rank-1 chunk length 527 -> 1105 chars.
+#
+# Why exactly 1.0 and not a sub-1.0 penalty: 0.9, 0.75, 0.5 and 0.0 all score
+# byte-identically to 1.0 — a flat plateau, because once a stub stops
+# out-ranking body chunks, pushing it lower only reorders results that never
+# reach the top-k. 1.0 is the most conservative point on the optimal plateau; a
+# penalty would be unmeasurable over-fitting to 23 cases. The flag itself is
+# still written, stored, and surfaced in results — only its ranking effect is
+# neutral, so a future block can still use the signal.
+_SECTION_TITLE_WEIGHT: float = 1.0
+
 
 def _session_scope(session=None):
     """Return a context manager yielding a SQLAlchemy session.
@@ -259,8 +280,10 @@ def retrieve(  # pylint: disable=too-many-arguments,too-many-locals
 
     Returns:
         List of up to ``k`` normalized chunk dicts, each containing
-        ``{"content", "section_title", "score", "source", "file_path",
-        "doc_id", "title", "via"}``, sorted by fused score descending.
+        ``{"content", "section_title", "is_section_title", "score", "source",
+        "file_path", "doc_id", "title", "via"}``, sorted by fused score
+        descending. ``is_section_title`` is informational only — it no longer
+        weights the score (see ``_SECTION_TITLE_WEIGHT``).
     """
     start = time.monotonic()
     embedder = embedder if embedder is not None else EmbeddingService()
@@ -659,8 +682,11 @@ def _fuse_and_rank(  # pylint: disable=too-many-locals
 
     Score formula (ported from rag-engine-rs ``two_stage_retrieval.rs``):
 
-        score = (1.0 - distance) * (2.0 if is_section_title else 1.0)
-                + keyword_contribution
+        title_weight = _SECTION_TITLE_WEIGHT if is_section_title else 1.0
+        score = (1.0 - distance) * title_weight + keyword_contribution
+
+    ``_SECTION_TITLE_WEIGHT`` is ``1.0`` (neutral) — the Rust port's ``2.0``
+    was measured as a ranking defect and retired; see the constant's comment.
 
     The keyword contribution depends on the shape of ``keyword_matches``:
 
@@ -692,9 +718,9 @@ def _fuse_and_rank(  # pylint: disable=too-many-locals
         apply_decay: Opt-out gate for the ``authored_at`` age decay.
 
     Returns:
-        List of normalized dicts ``{"content", "section_title", "score",
-        "source", "file_path", "doc_id", "title", "via"}`` sorted by score
-        descending, length <= ``k``.
+        List of normalized dicts ``{"content", "section_title",
+        "is_section_title", "score", "source", "file_path", "doc_id",
+        "title", "via"}`` sorted by score descending, length <= ``k``.
     """
     graded = isinstance(keyword_matches, dict)
     now = datetime.now()
@@ -705,7 +731,8 @@ def _fuse_and_rank(  # pylint: disable=too-many-locals
         if math.isnan(distance):
             continue
         similarity = 1.0 - distance
-        title_weight = 2.0 if c.get("is_section_title") else 1.0
+        is_section_title = bool(c.get("is_section_title"))
+        title_weight = _SECTION_TITLE_WEIGHT if is_section_title else 1.0
         if graded:
             keyword_boost = _KW_WEIGHT * keyword_matches.get(c["id"], 0.0)
         else:
@@ -725,6 +752,10 @@ def _fuse_and_rank(  # pylint: disable=too-many-locals
                 "id": c["id"],
                 "content": c["content"],
                 "section_title": c.get("section_title"),
+                # Surfaced (OR.ticket.section-title-boost) so callers — the eval
+                # harness above all — can tell a header-only stub from a body
+                # chunk without re-deriving it from content length.
+                "is_section_title": is_section_title,
                 "score": score,
                 "source": c.get("section_title") or "General",
                 # Provenance / citation fields (carried through from candidates).

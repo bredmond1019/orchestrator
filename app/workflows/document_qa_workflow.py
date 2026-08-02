@@ -69,7 +69,7 @@ class DocumentQAWorkflow(Workflow):
                 connections=[GroundingRouterNode],
                 description=(
                     "Two-stage hybrid retrieval: semantic candidate set -> "
-                    "keyword re-rank -> additive score fusion with section-title 2x weight."
+                    "keyword re-rank -> additive score fusion (section-title weight neutral)."
                 ),
             ),
             NodeConfig(

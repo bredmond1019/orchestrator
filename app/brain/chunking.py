@@ -98,9 +98,11 @@ def _is_header_only_chunk(section_header: str, chunk_text: str) -> bool:
     ``chunk_text.startswith("#")`` would flag *every* chunk. The flag must be
     measured on the **header-stripped body**: strip the leading header span,
     then treat the chunk as a section title only when what remains is empty or
-    trivially short (< 40 chars). This feeds the 2x section-title weight in
-    ``RetrieveChunksNode._fuse_and_rank`` — if it fired on every chunk the
-    weight would be pure noise.
+    trivially short (< 40 chars). The flag used to feed a 2x section-title
+    weight in ``_fuse_and_rank``; that boost was retired as a ranking defect by
+    ``OR.ticket.section-title-boost``, so the flag is now informational — but the
+    header-stripped measurement still matters, because a flag that fired on every
+    chunk would be useless to anything that wants to consume the signal.
     """
     body = chunk_text[len(section_header):].strip()
     return body == "" or len(body) < 40
