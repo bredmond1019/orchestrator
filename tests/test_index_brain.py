@@ -32,6 +32,8 @@ from index_brain import (  # noqa: E402
     _find_brain_root,
     _get_doc_type_for_path,
     _is_header_only_chunk,
+    _sub_repo_docs_files,
+    _sub_repo_files,
     _tier_container_slugs,
     _tier_docs_files,
     build_context_prefix,
@@ -1063,7 +1065,11 @@ class TestSubRepoFiles:
         assert "core/orchestrator/planning/status.md" in rels
         assert "core/orchestrator/CLAUDE.md" in rels
 
-    def test_sub_repo_docs_and_source_are_not_collected(self, tmp_path):
+    def test_sub_repo_source_is_never_collected(self, tmp_path):
+        # `OR.ticket.corpus-sub-repo-docs` admits docs/ via a dedicated fourth
+        # lane (see TestSubRepoDocsCorpus) — but this lane (OR.O's
+        # planning/CLAUDE.md widening) never reaches docs/ or source, and no
+        # lane ever admits source trees.
         config = self._config_with_repo()
         self._make_sub_repo(tmp_path)
 
@@ -1071,7 +1077,6 @@ class TestSubRepoFiles:
             p.relative_to(tmp_path).as_posix()
             for p, _, _ in _collect_files(tmp_path, config)
         }
-        assert "core/orchestrator/docs/api-reference.md" not in rels
         assert "core/orchestrator/app/main.py" not in rels
 
     def test_sub_repo_chunks_are_stamped_with_manifest_slug(self, tmp_path):
@@ -1263,13 +1268,16 @@ class TestTierDocsCorpus:
         assert by_rel["core/CLAUDE.md"][1] == "core"
         assert by_rel["core/orchestrator/planning/status.md"][1] == "orchestrator"
 
-    def test_leaf_repo_docs_are_still_excluded(self, tmp_path):
-        # OR.O's boundary is untouched: a leaf repo's docs/ stays out, whether
-        # it sits inside a tier or at the brain root.
+    def test_leaf_repo_docs_now_arrive_via_the_sub_repo_docs_lane(self, tmp_path):
+        # `OR.ticket.corpus-sub-repo-docs`: a leaf repo's docs/ is admitted by
+        # the fourth lane (slug-fallback attribution, no frontmatter here),
+        # whether the repo sits inside a tier or at the brain root — see
+        # TestSubRepoDocsCorpus for the dedicated coverage. OR.O's own
+        # planning/CLAUDE.md lane still never reaches docs/ or source.
         self._make_tree(tmp_path)
         by_rel = self._collect(tmp_path)
-        assert "core/orchestrator/docs/api-reference.md" not in by_rel
-        assert "learn-ai/docs/guide.md" not in by_rel
+        assert by_rel["core/orchestrator/docs/api-reference.md"][1] == "orchestrator"
+        assert by_rel["learn-ai/docs/guide.md"][1] == "learn-ai"
 
     def test_tier_docs_honour_skip_underscore_and_ephemeral_rules(self, tmp_path):
         tier, _leaf, _root_leaf = self._make_tree(tmp_path)
@@ -1310,6 +1318,159 @@ class TestTierDocsCorpus:
         (tmp_path / "core" / "planning").mkdir(parents=True)
         (tmp_path / "core" / "planning" / "status.md").write_text("# s", encoding="utf-8")
         assert _tier_docs_files(tmp_path, self._tiered_config(), set()) == []
+
+
+class TestSubRepoDocsCorpus:
+    """Sub-repo ``docs/`` trees are in the corpus, frontmatter-wins/slug-fallback.
+
+    `OR.ticket.corpus-sub-repo-docs`. Manifest-realistic config: a tier
+    container, a leaf repo inside it, and a ``_root`` leaf repo — matching
+    production (``core`` holds ``core/orchestrator``; ``learn-ai`` sits at the
+    brain root).
+    """
+
+    def _config(self):
+        return BrainConfig(
+            valid_layers=TEST_CONFIG.valid_layers,
+            valid_projects=frozenset(
+                {*TEST_CONFIG.valid_projects, "core", "orchestrator", "learn-ai"}
+            ),
+            valid_statuses=TEST_CONFIG.valid_statuses,
+            skip_dirs=("archive", "node_modules", ".git"),
+            repos=(
+                {"slug": "brain", "repo_path": ".", "tier": "_root"},
+                # `core` is a tier container: `orchestrator` declares it as its tier.
+                {"slug": "core", "repo_path": "core", "tier": "_root"},
+                {"slug": "orchestrator", "repo_path": "core/orchestrator", "tier": "core"},
+                # A leaf repo at the brain root — tier "_root", not a container.
+                {"slug": "learn-ai", "repo_path": "learn-ai", "tier": "_root"},
+            ),
+        )
+
+    def _make_tree(self, tmp_path):
+        tier = tmp_path / "core"
+        (tier / "docs").mkdir(parents=True)
+        (tier / "docs" / "index.md").write_text("# Tier docs", encoding="utf-8")
+
+        leaf = tier / "orchestrator"
+        (leaf / "docs").mkdir(parents=True)
+        (leaf / "docs" / "api-reference.md").write_text(
+            "---\nproject: orchestrator\n---\n\n# API Reference\n", encoding="utf-8"
+        )
+        (leaf / "docs" / "no-frontmatter.md").write_text(
+            "# No frontmatter here\n", encoding="utf-8"
+        )
+        (leaf / "planning").mkdir(parents=True)
+        (leaf / "planning" / "status.md").write_text("# Leaf status", encoding="utf-8")
+
+        root_leaf = tmp_path / "learn-ai"
+        (root_leaf / "docs").mkdir(parents=True)
+        (root_leaf / "docs" / "guide.md").write_text("# Guide", encoding="utf-8")
+        return tier, leaf, root_leaf
+
+    def _collect(self, tmp_path):
+        config = self._config()
+        return {
+            p.relative_to(tmp_path).as_posix(): (dt, project)
+            for p, dt, project in _collect_files(tmp_path, config)
+        }
+
+    def test_leaf_repo_docs_are_collected(self, tmp_path):
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert "core/orchestrator/docs/api-reference.md" in by_rel
+        assert "core/orchestrator/docs/no-frontmatter.md" in by_rel
+
+    def test_frontmatter_project_wins(self, tmp_path):
+        # Frontmatter-wins semantics: when the file carries its own project:
+        # field, the collect-time override is None (not the slug) — the
+        # normal frontmatter-driven pipeline in main() then applies the
+        # file's own value untouched, exactly as it does for every
+        # None-override lane.
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert by_rel["core/orchestrator/docs/api-reference.md"][1] is None
+
+    def test_slug_fallback_when_no_frontmatter_project(self, tmp_path):
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert by_rel["core/orchestrator/docs/no-frontmatter.md"][1] == "orchestrator"
+
+    def test_root_repos_included_with_slug_fallback(self, tmp_path):
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert "learn-ai/docs/guide.md" in by_rel
+        assert by_rel["learn-ai/docs/guide.md"][1] == "learn-ai"
+
+    def test_tier_containers_excluded_from_this_lane(self, tmp_path):
+        # core/docs/index.md arrives exactly once, via the tier lane, with its
+        # attribution unchanged (None override) — not re-collected here with
+        # slug-fallback semantics.
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert "core/docs/index.md" in by_rel
+        assert by_rel["core/docs/index.md"][1] is None
+
+    def test_skip_rules_honoured(self, tmp_path):
+        _tier, leaf, _root_leaf = self._make_tree(tmp_path)
+        (leaf / "docs" / "archive").mkdir(parents=True)
+        (leaf / "docs" / "archive" / "old.md").write_text("# old", encoding="utf-8")
+        (leaf / "docs" / "_scratch.md").write_text("# scratch", encoding="utf-8")
+        (leaf / "docs" / "handoff.md").write_text("# handoff", encoding="utf-8")
+
+        by_rel = self._collect(tmp_path)
+        assert "core/orchestrator/docs/archive/old.md" not in by_rel
+        assert "core/orchestrator/docs/_scratch.md" not in by_rel
+        assert "core/orchestrator/docs/handoff.md" not in by_rel
+
+    def test_no_double_index(self, tmp_path):
+        self._make_tree(tmp_path)
+        paths = [p for p, _, _ in _collect_files(tmp_path, self._config())]
+        assert len(paths) == len(set(paths))
+
+    def test_existing_lanes_output_is_byte_identical(self, tmp_path):
+        # Fixture with no sub-repo docs/ dirs beyond the tier's own (already
+        # tier-owned) docs/ — the new lane must contribute zero rows here, and
+        # the other three lanes' output (root walk, tier docs, OR.O sub-repo
+        # planning/CLAUDE.md) must be identical with vs. without the new lane
+        # wired into _collect_files.
+        (tmp_path / "core" / "docs").mkdir(parents=True)
+        (tmp_path / "core" / "docs" / "index.md").write_text("# t", encoding="utf-8")
+        (tmp_path / "core" / "planning").mkdir(parents=True)
+        (tmp_path / "core" / "planning" / "status.md").write_text("# s", encoding="utf-8")
+        (tmp_path / "core" / "CLAUDE.md").write_text("# c", encoding="utf-8")
+        (tmp_path / "core" / "orchestrator" / "planning").mkdir(parents=True)
+        (tmp_path / "core" / "orchestrator" / "planning" / "status.md").write_text(
+            "# leaf s", encoding="utf-8"
+        )
+        (tmp_path / "core" / "orchestrator" / "CLAUDE.md").write_text(
+            "# leaf c", encoding="utf-8"
+        )
+
+        config = self._config()
+
+        # "Before" = the three pre-existing lanes only, called directly.
+        seen_before: set[Path] = set()
+        before = set(_tier_docs_files(tmp_path, config, seen_before))
+        before |= set(_sub_repo_files(tmp_path, config, seen_before))
+
+        # "After" = the fourth lane's own contribution against the same seen set.
+        after_only_new = set(_sub_repo_docs_files(tmp_path, config, set(seen_before)))
+        assert after_only_new == set()  # nothing new in this docs-sparse fixture
+
+        # The full pipeline (all four lanes) reproduces the same three-lane rows.
+        full = set(_collect_files(tmp_path, config))
+        assert before <= full
+
+    def test_lane_respects_the_seen_set(self, tmp_path):
+        _tier, leaf, _root_leaf = self._make_tree(tmp_path)
+        already = {leaf / "docs" / "api-reference.md"}
+        rels = {
+            p.relative_to(tmp_path).as_posix()
+            for p, _, _ in _sub_repo_docs_files(tmp_path, self._config(), already)
+        }
+        assert "core/orchestrator/docs/api-reference.md" not in rels
+        assert "core/orchestrator/docs/no-frontmatter.md" in rels
 
 
 class TestNewColumnPopulation:
