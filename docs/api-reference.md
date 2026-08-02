@@ -1843,7 +1843,7 @@ similarity search from `RetrieveChunksNode` corpus `"brain"`) is available as of
 | `status` | `String(32)` | Yes | `NULL` | OKF `status` (e.g. `'active'`, `'draft'`, `'archived'`). Case-normalized to lowercase; `'archived'` rows are excluded from default brain retrieval. |
 | `keywords` | `ARRAY(String)` | Yes | `NULL` | OKF `keywords` tags; folded into `content_tsv` at FTS weight `'A'`. |
 | `related` | `ARRAY(String)` | Yes | `NULL` | OKF `related` paths to related docs (stored on the document row; the traversable graph index is `BrainEdge`, populated from this field by mev's `emit-graph` + `scripts/load_brain_edges.py`, and walked at query time by `RetrieveChunksNode`'s structural expansion stage). |
-| `is_section_title` | `Boolean` | No | `False` | `True` when the chunk is a header-only section (header-stripped body empty or `< 40` chars); drives the 2x section-title weight in `RetrieveChunksNode._fuse_and_rank`. |
+| `is_section_title` | `Boolean` | No | `False` | `True` when the chunk is a header-only section (header-stripped body empty or `< 40` chars). Written at ingest and surfaced on every retrieval result dict; **ranking-neutral** since `OR.ticket.section-title-boost` (`retrieval_engine._SECTION_TITLE_WEIGHT = 1.0`). |
 | `title` | `String(512)` | Yes | `NULL` | OKF frontmatter `title`; stored for FTS (weight `'A'`) and citation display. |
 | `description` | `Text` | Yes | `NULL` | OKF frontmatter `description`; stored for FTS (weight `'B'`) and citation display. |
 | `content_tsv` | `TSVECTOR` | Yes | generated | **Read-only generated column** — Postgres maintains it from `title`+`keywords` (weight `'A'`), `description` (`'B'`), and `content` (`'C'`). GIN-indexed (`ix_brain_documents_content_tsv`) for graded `ts_rank` full-text search. The indexer must **never** write it. |
@@ -2085,7 +2085,7 @@ rows during hybrid re-ranking (ported from the rag-engine-rs two-stage retrieval
 | `doc_id` | `UUID(as_uuid=True)` | No | — | Groups all chunks of one ingested document. Indexed (`ix_content_chunks_doc_id`). |
 | `position` | `Integer` | No | — | 0-based chunk order within the document. |
 | `section_title` | `String(256)` | Yes | — | Markdown header this chunk falls under; `None` for top-of-file content. |
-| `is_section_title` | `Boolean` | No | `False` | `True` for standalone heading chunks; drives the 2x retrieval weight boost. |
+| `is_section_title` | `Boolean` | No | `False` | `True` for standalone heading chunks; surfaced on retrieval results, ranking-neutral (see `_SECTION_TITLE_WEIGHT`). |
 | `content` | `Text` | No | — | The chunk text content. |
 | `embedding` | `Vector(1024)` | Yes | — | 1024-dim Voyage AI embedding written at storage time (pgvector). |
 | `created_at` | `DateTime` | Yes | `datetime.now` | Timestamp when the chunk was created. |
@@ -2254,7 +2254,11 @@ def compute_retrieval_confidence(chunks: list[dict]) -> float: ...
    candidate ids are excluded from the Stage 2 keyword query against `brain_documents`/
    `content_chunks` — they are never real rows in either table.
 3. **Additive score fusion:** `score = (1.0 − distance) × title_weight + keyword_contribution`,
-   where `title_weight = 2.0` for `is_section_title=True` chunks (section-title 2x weight). The
+   where `title_weight = _SECTION_TITLE_WEIGHT` for `is_section_title=True` chunks and `1.0`
+   otherwise. `_SECTION_TITLE_WEIGHT` is **`1.0`** — the ported `rag-engine-rs` value of `2.0` was
+   measured as a ranking defect (11 of 23 golden-set queries returned a header-only stub at rank 1)
+   and retired by `OR.ticket.section-title-boost`; every value below 1.0 scores identically, so
+   neutral is the most conservative point on the optimal plateau. The
    keyword contribution is graded for FTS corpora (`_KW_WEIGHT × ts_rank`) and a flat `_KW_BOOST`
    for the legacy set path. NaN distances are filtered out before sorting (mirrors the Rust
    `total_cmp` guard). For the brain corpus, when `apply_decay=True` (default) and a candidate
