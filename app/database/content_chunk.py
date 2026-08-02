@@ -6,9 +6,12 @@ text segment from an ingested document, together with its position, optional
 markdown section context, and a 1024-dim Voyage embedding written at storage time.
 
 The ``embedding`` column uses the pgvector ``Vector`` type (the pgvector extension
-is enabled by migration ``12a5c7643ab9``). The ``is_section_title`` flag drives
-the 2x retrieval weight boost applied to standalone heading chunks during hybrid
-re-ranking (ported from the rag-engine-rs two-stage retrieval pattern).
+is enabled by migration ``12a5c7643ab9``). The ``is_section_title`` flag marks
+standalone heading chunks. It used to carry a 2x retrieval weight boost (ported
+from the rag-engine-rs two-stage retrieval pattern); that boost was measured as a
+ranking defect and retired by ``OR.ticket.section-title-boost`` — the flag is now
+ranking-neutral and only surfaced in results (see
+``brain.retrieval_engine._SECTION_TITLE_WEIGHT``).
 """
 
 import uuid
@@ -58,7 +61,7 @@ class ContentChunk(Base):
     is_section_title = Column(
         Boolean,
         default=False,
-        doc="True for a standalone heading chunk; drives the retrieval 2x weight",
+        doc="True for a standalone heading chunk; ranking-neutral, surfaced in results",
     )
     content = Column(
         Text,
