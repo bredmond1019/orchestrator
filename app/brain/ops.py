@@ -1,5 +1,8 @@
 """app/brain/ops.py — the Brain write/ops core (embed, ingest, prune, refresh, stale, routine).
 
+Also home to `prune_queries`, the retention half of the OR.K1 query log —
+deletion, never aggregation (the D51 guard).
+
 Wraps `scripts/index_brain.py`'s incremental content-index path and the
 `mev emit-graph | scripts/load_brain_edges.py::load_edges` structural-edge path
 behind one set of typed functions, so `syn` (`app/brain/cli.py`) and the brain
@@ -9,9 +12,10 @@ chunk->embed->write path is introduced here (CLAUDE.md rule 10).
 
 import json
 import logging
+import os
 import subprocess
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from brain import _bootstrap  # noqa: F401  pylint: disable=unused-import
@@ -29,6 +33,15 @@ class UnknownRoutineError(Exception):
 
 class MevUnavailableError(Exception):
     """Raised when the `mev` binary is not on PATH for an edge refresh."""
+
+
+# Default retention window for `retrieval_queries`. 90 days is deliberate, not
+# arbitrary: the retained window is the sample the retrieval golden set gets
+# grown from (OR.K2), so tightening it below a quarter of real traffic shrinks
+# that sample — do not lower it without recording the trade in the ledger.
+DEFAULT_QUERY_KEEP_DAYS: int = 90
+
+_KEEP_DAYS_ENV_VAR = "BRAIN_QUERY_LOG_KEEP_DAYS"
 
 
 def embed_paths(paths: list[str], *, force: bool = False, brain_path: str | None = None) -> dict:
@@ -113,6 +126,122 @@ def prune_paths(paths: list[str], *, dry_run: bool = False, brain_path: str | No
         argv += ["--brain-path", brain_path]
     index_brain.main(argv)
     return {"pruned": list(paths), "dry_run": dry_run}
+
+
+def _resolve_keep_days(keep_days: int | None) -> int:
+    """Resolve the retention window: explicit argument > env var > 90.
+
+    The env var (`BRAIN_QUERY_LOG_KEEP_DAYS`) is read at CALL time, not
+    import time — mirroring `query_log._query_log_enabled`'s discipline, so a
+    long-lived process (or a test using `monkeypatch.setenv`) sees changes.
+    An unparsable or non-positive value never crashes a cron routine: it
+    falls back to the default with a `logging.warning`.
+
+    Args:
+        keep_days: Explicit override, or None to consult the environment.
+
+    Returns:
+        A positive number of days to retain.
+    """
+    if keep_days is not None:
+        if keep_days <= 0:
+            logger.warning(
+                "ignoring non-positive keep_days %s; falling back to %s",
+                keep_days,
+                DEFAULT_QUERY_KEEP_DAYS,
+            )
+            return DEFAULT_QUERY_KEEP_DAYS
+        return keep_days
+
+    raw = os.environ.get(_KEEP_DAYS_ENV_VAR)
+    if raw is None or not raw.strip():
+        return DEFAULT_QUERY_KEEP_DAYS
+
+    try:
+        parsed = int(raw.strip())
+    except ValueError:
+        logger.warning(
+            "unparsable %s=%r; falling back to %s days",
+            _KEEP_DAYS_ENV_VAR,
+            raw,
+            DEFAULT_QUERY_KEEP_DAYS,
+        )
+        return DEFAULT_QUERY_KEEP_DAYS
+
+    if parsed <= 0:
+        logger.warning(
+            "non-positive %s=%r; falling back to %s days",
+            _KEEP_DAYS_ENV_VAR,
+            raw,
+            DEFAULT_QUERY_KEEP_DAYS,
+        )
+        return DEFAULT_QUERY_KEEP_DAYS
+
+    return parsed
+
+
+def prune_queries(keep_days: int | None = None, *, dry_run: bool = False) -> dict:
+    """Delete `retrieval_queries` rows older than the retention window.
+
+    The OR.K1 query log is unbounded by design at ship time — one row per
+    retrieval call, `BRAIN_QUERY_LOG_ENABLED` defaulting on. This is its
+    retention half: a bounded, idempotent delete that is safe to run from
+    cron (`ROUTINES["queries_prune"]`).
+
+    Retention is **deletion, not aggregation** (the D51 guard): nothing is
+    rolled up, summarized, or persisted at prune time. `syn queries` remains
+    the only read surface and still computes every statistic over raw rows.
+
+    Bounded-delete shape mirrors `_delete_orphaned_chunks` (one filtered
+    delete, one commit, return the real count) rather than
+    `GenericRepository.delete`, which is one row per commit. `deleted` and
+    `kept` are derived from actual `GenericRepository.count()` reads around
+    the delete — never from what the caller asked for.
+
+    Args:
+        keep_days: Retention window in days. `None` (the default) consults
+            `BRAIN_QUERY_LOG_KEEP_DAYS`, then falls back to
+            `DEFAULT_QUERY_KEEP_DAYS` (90).
+        dry_run: Count what would be deleted and delete nothing. `deleted`
+            then reports the would-delete count (mirroring `prune_paths`,
+            whose `pruned` list is populated on a dry run too) and the
+            `dry_run` flag in the return distinguishes the two cases.
+
+    Returns:
+        `{"deleted": n, "kept": m, "cutoff": iso, "keep_days": d,
+        "dry_run": bool}` — rows with `created_at` exactly at the cutoff are
+        KEPT (the comparison is strictly older-than).
+    """
+    from database.repository import GenericRepository  # pylint: disable=import-outside-toplevel
+    from database.retrieval_query import RetrievalQuery  # pylint: disable=import-outside-toplevel
+    from database.session import db_session  # pylint: disable=import-outside-toplevel
+
+    resolved_days = _resolve_keep_days(keep_days)
+    # `RetrievalQuery.created_at` defaults to a naive `datetime.now()`, so the
+    # cutoff is computed naively too — comparing naive to aware would raise.
+    cutoff = datetime.now() - timedelta(days=resolved_days)
+
+    with next(db_session()) as session:  # type: ignore[arg-type]
+        repository = GenericRepository(session=session, model=RetrievalQuery)
+        stale_query = session.query(RetrievalQuery).filter(RetrievalQuery.created_at < cutoff)
+
+        if dry_run:
+            deleted = stale_query.count()
+            kept = repository.count() - deleted
+        else:
+            before = repository.count()
+            stale_query.delete(synchronize_session=False)
+            session.commit()
+            kept = repository.count()
+            deleted = before - kept
+
+    return {
+        "deleted": deleted,
+        "kept": kept,
+        "cutoff": cutoff.isoformat(),
+        "keep_days": resolved_days,
+        "dry_run": dry_run,
+    }
 
 
 def refresh_edges(brain_path: Path) -> int:
@@ -406,6 +535,15 @@ ROUTINES: dict[str, Callable[[], dict]] = {
     # Deep drift check, report-only — no `--repair` dispatch from a cron routine.
     "reconcile": lambda: _reconcile_routine(),  # pylint: disable=unnecessary-lambda
     "eval": lambda: _eval_routine(),  # pylint: disable=unnecessary-lambda
+    # The one DESTRUCTIVE routine, and deliberately so. `reconcile`/`eval` are
+    # report-only because they would otherwise *repair* or *write* — open-ended,
+    # judgement-shaped work that must not run unattended. Retention is the
+    # opposite: a bounded, idempotent delete of rows past a fixed window, which
+    # is exactly what a cron routine is for. It is deletion, not aggregation
+    # (the D51 guard), so it adds no rollup surface; running it twice in a row
+    # is a no-op the second time; and the window it keeps is the golden-set
+    # growth sample, so it can never delete recent traffic.
+    "queries_prune": lambda: prune_queries(),  # pylint: disable=unnecessary-lambda
 }
 
 

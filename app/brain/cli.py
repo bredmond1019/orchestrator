@@ -6,7 +6,8 @@ Wires the OR.N1 read cores (`brain.retrieval.recall`, `brain.graph.walk`,
 `brain.pulse.pulse`), the OR.N2 write/ops core (`brain.ops.embed_paths`,
 `ingest_dir`, `prune_paths`, `refresh`, `stale`, `run_routine`), and the OR.K1 query-log read
 (`queries` — raw `retrieval_queries` rows plus a read-time abstain rate; no aggregation table,
-no rollup, no dashboard) behind short, deterministic, agent-callable verbs (D52):
+no rollup, no dashboard — plus `queries --prune`, the retention half over `ops.prune_queries`)
+behind short, deterministic, agent-callable verbs (D52):
 `--json` on every command emits a machine-parseable payload and nothing else
 on stdout, exit codes are deterministic (0 success; non-zero on an unhealthy
 `pulse` verdict or a typed `--workspace` resolution error), and there are no
@@ -156,6 +157,23 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
     )
     queries_parser.add_argument(
         "--abstained", action="store_true", help="Only rows where abstained=true."
+    )
+    queries_parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="Retention mode: delete rows older than the keep window instead of reading.",
+    )
+    queries_parser.add_argument(
+        "--keep-days",
+        type=int,
+        default=None,
+        help="Retention window in days for --prune "
+        "(default: $BRAIN_QUERY_LOG_KEEP_DAYS, else 90).",
+    )
+    queries_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --prune: report what would be deleted and delete nothing.",
     )
     queries_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
@@ -537,15 +555,48 @@ def _row_to_dict(row) -> dict:
     }
 
 
+def _run_queries_prune(args: argparse.Namespace) -> int:
+    """Execute `syn queries --prune` and print its result; return the exit code.
+
+    Retention, not reading: delegates wholesale to `brain.ops.prune_queries`
+    (the single implementation the `queries_prune` cron routine also calls)
+    and renders its `{"deleted", "kept", "cutoff", "keep_days", "dry_run"}`
+    summary. Exit 0 on success including a zero-deletion no-op; non-zero
+    only on an actual error.
+    """
+    from brain.ops import prune_queries  # pylint: disable=import-outside-toplevel
+
+    try:
+        result = prune_queries(args.keep_days, dry_run=args.dry_run)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        verb = "would delete" if result["dry_run"] else "deleted"
+        print(
+            f"queries prune: {verb} {result['deleted']} row(s) older than "
+            f"{result['cutoff']} (keep_days={result['keep_days']}); "
+            f"{result['kept']} kept."
+        )
+
+    return 0
+
+
 def _run_queries(args: argparse.Namespace) -> int:
     """Execute `syn queries` and print its result; return the exit code.
 
-    Reads raw `retrieval_queries` rows (no aggregation table, no rollup,
+    Dispatches to `_run_queries_prune` in `--prune` (retention) mode;
+    otherwise reads raw `retrieval_queries` rows (no aggregation table, no rollup,
     no dashboard — `GenericRepository.get_all()` plus in-process
     filtering/sorting) and, in `--json` mode, includes a read-time
     `abstain_rate` computed over the returned window — never a stored
     number.
     """
+    if args.prune:
+        return _run_queries_prune(args)
+
     from database.repository import GenericRepository  # pylint: disable=import-outside-toplevel
     from database.retrieval_query import RetrievalQuery  # pylint: disable=import-outside-toplevel
     from database.session import db_session  # pylint: disable=import-outside-toplevel
@@ -599,6 +650,22 @@ def _emit_error(exc: Exception, *, as_json: bool) -> int:
     return 1
 
 
+def _validate_queries_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Enforce `syn queries --prune`'s mutual exclusion with the read filters.
+
+    `--since` and `--abstained` are combinable with each other, so this is
+    not expressible as one `add_mutually_exclusive_group`. `parser.error`
+    keeps it an argparse-native failure (usage to stderr, exit 2), the same
+    shape any other bad `syn` invocation produces.
+    """
+    if args.command != "queries":
+        return
+    if args.prune and (args.since is not None or args.abstained):
+        parser.error("--prune cannot be combined with the read filters --since/--abstained")
+    if not args.prune and (args.keep_days is not None or args.dry_run):
+        parser.error("--keep-days/--dry-run are only valid with --prune")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse `argv` and dispatch to the `recall` / `walk` / `pulse` subcommand.
 
@@ -608,6 +675,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
+    _validate_queries_args(parser, args)
 
     dispatch = {
         "recall": _run_recall,
