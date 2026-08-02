@@ -4,12 +4,10 @@ import threading
 import time
 
 import pytest
-
 from core.nodes.base import Node
 from core.nodes.parallel import ParallelNode
 from core.schema import NodeConfig
 from core.task import TaskContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers — stub nodes used across multiple tests
@@ -300,7 +298,7 @@ class _ReturnsValueNode(Node):
 
 class _ModifyEventNode(Node):
     """Modifies the event to prove isolation; the change should not leak back."""
-    
+
     def process(self, task_context: TaskContext) -> TaskContext:
         if isinstance(task_context.event, dict):
             task_context.event["modified"] = True
@@ -348,7 +346,7 @@ class TestMergeBehavior:
         )
         node = _ConcurrentParallelNode()
         node.execute_nodes_in_parallel(ctx)
-        
+
         # The main context event shouldn't be touched by the parallel threads
         assert ctx.event.get("modified") is None
         # The explicit output (nodes) should still be merged

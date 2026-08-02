@@ -1,10 +1,9 @@
 """Tests for GenericRepository: exists() SQLAlchemy 2.x fix and full CRUD suite."""
 
 import pytest
+from database.repository import GenericRepository
 from sqlalchemy import Column, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
-
-from database.repository import GenericRepository
 
 # ── fixtures used by TestExists (Bug-fix regression, step 2) ─────────────────
 

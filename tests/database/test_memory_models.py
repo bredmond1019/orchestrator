@@ -13,9 +13,8 @@ from database.agent_episode import EMBEDDING_DIM as EPISODE_EMBEDDING_DIM
 from database.agent_episode import AgentEpisode
 from database.peer import Peer, PeerType
 from database.repository import GenericRepository
-from database.semantic_memory import DEFAULT_DECAY_FACTOR
+from database.semantic_memory import DEFAULT_DECAY_FACTOR, SemanticMemory
 from database.semantic_memory import EMBEDDING_DIM as MEMORY_EMBEDDING_DIM
-from database.semantic_memory import SemanticMemory
 from database.session import Base
 from sqlalchemy import DateTime, Float, String, Text, create_engine
 from sqlalchemy.orm import sessionmaker

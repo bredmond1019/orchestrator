@@ -17,7 +17,6 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from core.task import TaskContext
 from schemas.document_ingest_schema import DocumentIngestEventSchema
 from workflows.document_ingest_workflow_nodes.chunk_document_node import (
@@ -28,7 +27,6 @@ from workflows.document_ingest_workflow_nodes.parse_document_node import (
     ParseDocumentNode,
 )
 from workflows.document_ingest_workflow_nodes.store_chunks_node import StoreChunksNode
-
 
 # ---------------------------------------------------------------------------
 # Helpers

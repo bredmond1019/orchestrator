@@ -109,7 +109,7 @@ cd app && alembic upgrade head
 # NOTE: the SDLC pipeline runs these (and more) from planning/harness.json — keep in sync.
 # Use `python -m <tool>` so the PROJECT venv's tool runs, not a global uv-tool install
 # (a bare `uv run pytest`/`uv run pylint` can resolve to a global tool missing this repo's deps).
-uv run python -m ruff check app/
+uv run python -m ruff check app/ tests/
 uv run python -m pylint app/
 
 # Run tests
@@ -158,7 +158,7 @@ After scaffolding:
 - **In `except` blocks, always `raise ... from e`** to preserve the exception chain.
 - **No f-strings in `logging` calls** — use `logging.info("msg: %s", value)`.
 
-Run `uv run python -m ruff check app/ --fix` before committing to auto-resolve most violations.
+Run `uv run python -m ruff check app/ tests/ --fix` before committing to auto-resolve most violations.
 
 ---
 

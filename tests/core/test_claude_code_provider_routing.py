@@ -10,12 +10,11 @@ without touching the network, the ``claude`` CLI, or the ``bastion`` binary.
 
 import asyncio
 
+from core.nodes.agent import AgentConfig, AgentNode, ModelProvider
+from core.task import NodeRun, NodeStatus, TaskContext
 from pydantic import BaseModel
 from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
-
-from core.nodes.agent import AgentConfig, AgentNode, ModelProvider
-from core.task import NodeRun, NodeStatus, TaskContext
 from services.claude_code import (
     BastionSessionBackend,
     ClaudeAgentSdkBackend,

@@ -18,7 +18,6 @@ from core.task import TaskContext
 from schemas.document_qa_schema import DocumentQAEventSchema
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import RetrieveChunksNode
 
-
 # ---------------------------------------------------------------------------
 # _compute_retrieval_confidence (pure function)
 # ---------------------------------------------------------------------------

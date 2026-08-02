@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from services.article_extraction_service import ArticleExtractionService, ArticleResult
 
 
