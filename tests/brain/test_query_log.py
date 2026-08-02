@@ -14,12 +14,11 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
+from brain import query_log, retrieval_engine
 from database.retrieval_query import RetrievalQuery
 from database.session import Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from brain import query_log, retrieval_engine
 
 
 def _fake_sqlite_db_session_factory():

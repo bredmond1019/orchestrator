@@ -29,16 +29,15 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
 import worker.tasks as worker_tasks
 from api.security import require_api_key
 from database.event import Event
 from database.session import Base, db_session
+from fastapi.testclient import TestClient
 from main import app
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from worker.config import celery_app
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "event_read"

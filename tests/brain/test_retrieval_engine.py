@@ -19,7 +19,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from brain import retrieval_engine
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -436,7 +435,7 @@ class TestKeywordSearchShapes:
             "brain.retrieval_engine.db_session",
             _fake_db_session,
         ):
-            result = retrieval_engine._keyword_search("python", candidate_ids, "content")
+            retrieval_engine._keyword_search("python", candidate_ids, "content")
 
         # Verify no array_to_string appears in the filter args string — content corpus
         # should only use the content column, not any extra fields

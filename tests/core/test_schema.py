@@ -1,12 +1,9 @@
 """Unit tests for NodeConfig and WorkflowSchema in app/core/schema.py."""
 
-import pytest
-from pydantic import BaseModel
-
 from core.nodes.base import Node
 from core.schema import NodeConfig, WorkflowSchema
 from core.task import TaskContext
-
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Stub helpers — minimal Node subclasses (satisfy the ABC only)

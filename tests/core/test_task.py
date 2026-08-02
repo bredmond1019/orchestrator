@@ -1,9 +1,7 @@
 """Unit tests for TaskContext in app/core/task.py."""
 
 import pytest
-
 from core.task import TaskContext
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

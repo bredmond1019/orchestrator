@@ -19,9 +19,7 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from core.task import TaskContext
-from database.chat_session import ChatSession
 from schemas.document_qa_schema import DocumentQAEventSchema
 from workflows.document_qa_workflow_nodes.abstain_node import (
     ABSTAIN_MESSAGE,

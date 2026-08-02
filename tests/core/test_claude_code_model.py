@@ -20,7 +20,6 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.usage import Usage
-
 from services.claude_code import ClaudeCodeModel
 from services.claude_code.backend import ClaudeResult
 

@@ -35,10 +35,9 @@ from database.peer import Peer, PeerType
 from database.semantic_memory import SemanticMemory
 from database.session import Base
 from pydantic import ValidationError
+from schemas.memory_schema import MemoryConsolidationEventSchema
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-from schemas.memory_schema import MemoryConsolidationEventSchema
 from workflows.memory_consolidation_workflow import MemoryConsolidationWorkflow
 from workflows.memory_consolidation_workflow_nodes.consolidation_node import ConsolidationNode
 from workflows.memory_consolidation_workflow_nodes.consolidation_write_node import (

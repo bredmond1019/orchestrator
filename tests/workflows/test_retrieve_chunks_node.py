@@ -23,10 +23,9 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.task import TaskContext
 from brain import retrieval_engine
+from core.task import TaskContext
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import RetrieveChunksNode
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -161,7 +160,6 @@ class TestProcess:
         ctx = _make_ctx(question="brain question", corpus="brain")
         with patch.object(retrieval_engine, "retrieve", return_value=[]) as mock_ret:
             self.node.process(ctx)
-        _, call_kwargs = mock_ret.call_args[0], mock_ret.call_args[1]
         assert mock_ret.call_args[1].get("corpus") == "brain" or \
                (len(mock_ret.call_args[0]) > 1 and mock_ret.call_args[0][1] == "brain")
 

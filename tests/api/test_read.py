@@ -10,14 +10,13 @@ core-vs-route parity against a live store is covered separately by
 from unittest.mock import patch
 
 import pytest
+from api.security import require_api_key
+from database.session import Base, db_session
 from fastapi.testclient import TestClient
+from main import app
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from api.security import require_api_key
-from database.session import Base, db_session
-from main import app
 
 MOCK_RECALL_RESULTS = [
     {

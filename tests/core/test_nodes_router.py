@@ -1,11 +1,9 @@
 """Unit tests for BaseRouter and RouterNode in app/core/nodes/router.py."""
 
 import pytest
-
 from core.nodes.base import Node
 from core.nodes.router import BaseRouter, RouterNode
 from core.task import TaskContext
-
 
 # ---------------------------------------------------------------------------
 # Stub helpers — minimal Node subclasses (satisfy the ABC only)
