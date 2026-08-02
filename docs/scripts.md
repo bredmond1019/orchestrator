@@ -194,7 +194,7 @@ warning is logged if any matched. This mode powers the brain repo's `post-commit
 hook (see `hooks/README.md` in the brain repo), which prunes automatically on delete/rename.
 
 **What gets indexed.** The corpus is derived from `brain.toml`, not from a hand-maintained
-list, by three lanes in `_collect_files` that share one `seen` set so no file is ever
+list, by four lanes in `_collect_files` that share one `seen` set so no file is ever
 collected twice:
 
 | # | Lane | What it contributes | `project` |
@@ -202,8 +202,9 @@ collected twice:
 | 1 | Brain root (`_corpus_roots`) | the brain root's `docs/**/*.md` + `planning/**/*.md`, plus its `README.md` and `CLAUDE.md` | from each file's own frontmatter |
 | 2 | Tier `docs/` (`_tier_docs_files`) | every **tier container**'s `docs/**/*.md` — `core/docs/`, `business/docs/`, `portfolio|side|client/docs/` | from each file's own frontmatter |
 | 3 | Sub-repo widening (`_sub_repo_files`, OR.O) | every gitignored sub-repo's `planning/**/*.md` + root `CLAUDE.md` | **stamped** with the manifest `slug` |
+| 4 | Sub-repo `docs/` (`_sub_repo_docs_files`, `OR.ticket.corpus-sub-repo-docs`) | every gitignored sub-repo's `docs/**/*.md`, excluding tier containers (whose `docs/` already arrive via lane 2) | **frontmatter wins, slug-fallback** |
 
-All three honour `[crawl].skip_dirs` (so `archive/` subtrees stay out) and skip
+All four honour `[crawl].skip_dirs` (so `archive/` subtrees stay out) and skip
 underscore-prefixed and ephemeral filenames (`handoff.md`).
 
 `doc_type` is a soft categorisation assigned by a path classifier (`_DOC_TYPE_RULES`)
@@ -228,8 +229,25 @@ un-excluding tiers in `_corpus_roots`: the root walk runs first and would claim
 manifest's `project` slug (the workspace identity), overriding any frontmatter `project:`
 value — sub-repo `planning/status.md` often carries none and `CLAUDE.md` has no frontmatter
 at all. `--dry-run` annotates these entries with `(project=<slug>)` so you can confirm the
-widened corpus before writing to the DB. A sub-repo's `docs/` and source are never reached;
-that boundary is deliberate and is what distinguishes lane 3 from lane 2.
+widened corpus before writing to the DB. A sub-repo's `docs/` and source are never reached
+by this lane; that boundary is what distinguishes lane 3 from lane 2 and is filled in by
+lane 4 below (`docs/` only — source stays out of the corpus).
+
+**Lane 4 — sub-repo `docs/` (`OR.ticket.corpus-sub-repo-docs`).** Every gitignored manifest
+repo with `repo_path != "."` that is **not** a tier container additionally contributes its
+own `docs/**/*.md` subtree (tier containers' `docs/` already arrive via lane 2; the shared
+`seen` set makes the exclusion belt-and-braces). Attribution is a third semantics, distinct
+from lanes 2/3's plain `None`/override: **frontmatter wins, slug-fallback.** The lane peeks
+each file's frontmatter at collect time — if `project:` is present, the triple's override is
+`None` (the file's own frontmatter value flows through the ingest pipeline untouched); if
+absent, the override is the repo's manifest `slug` (the same "truthy override wins" pipeline
+that lanes 2/3 already implement stamps the fallback). Rationale: sub-repo `docs/` files are
+OKF documents that mostly carry a correct `project:` of their own, but a file missing
+frontmatter should still land in its own repo's scope rather than falling through to `None`
+the way tier `docs/` (lane 2) does. `--dry-run` annotates fallback-attributed entries with
+`(project=<slug>)`, same as lane 3; frontmatter-attributed entries show no annotation, same
+as lanes 1/2. `--dry-run` reported a 864 -> 1021 file total (157 net new files) the first
+time this lane ran live, spread across every manifest repo's `docs/` tree.
 
 Chunking is section-header-based (H2/H3 splits) so each chunk maps to a named section.
 
