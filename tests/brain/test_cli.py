@@ -449,3 +449,107 @@ class TestQueriesDispatch:
         assert code == 0
         out = _read_stdout(capsys)
         assert "No logged queries." in out
+
+
+class TestQueriesPruneDispatch:
+    """`syn queries --prune` is the retention surface over `brain.ops.prune_queries`.
+
+    Deterministic exit codes (0 including a zero-deletion no-op), `--json` on
+    every path, and mutual exclusion with the read filters.
+    """
+
+    @pytest.fixture
+    def queries_db(self):
+        engine, session_factory, fake_db_session = _sqlite_db_session_factory()
+        with patch("database.session.db_session", fake_db_session):
+            yield session_factory
+        engine.dispose()
+
+    def test_prune_deletes_old_rows_and_exits_zero(self, queries_db, capsys):
+        now = datetime.now()
+        _make_row(queries_db, query="recent", created_at=now)
+        _make_row(queries_db, query="ancient", created_at=now - timedelta(days=400))
+
+        code = main(["queries", "--prune", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["deleted"] == 1
+        assert payload["kept"] == 1
+        assert payload["keep_days"] == 90
+        assert payload["dry_run"] is False
+
+    def test_keep_days_narrows_the_window(self, queries_db, capsys):
+        now = datetime.now()
+        _make_row(queries_db, query="recent", created_at=now - timedelta(days=2))
+        _make_row(queries_db, query="middling", created_at=now - timedelta(days=30))
+
+        code = main(["queries", "--prune", "--keep-days", "7", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["keep_days"] == 7
+        assert payload["deleted"] == 1
+
+    def test_dry_run_reports_without_deleting(self, queries_db, capsys):
+        now = datetime.now()
+        _make_row(queries_db, query="ancient", created_at=now - timedelta(days=400))
+
+        code = main(["queries", "--prune", "--dry-run", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["deleted"] == 1
+        assert payload["dry_run"] is True
+
+        # Nothing was actually removed — a follow-up read still sees the row.
+        code = main(["queries", "--json"])
+        assert code == 0
+        assert json.loads(_read_stdout(capsys))["count"] == 1
+
+    def test_zero_deletions_still_exits_zero(self, queries_db, capsys):
+        _make_row(queries_db, query="recent", created_at=datetime.now())
+
+        code = main(["queries", "--prune", "--json"])
+
+        assert code == 0
+        assert json.loads(_read_stdout(capsys))["deleted"] == 0
+
+    def test_human_mode_does_not_emit_raw_json(self, queries_db, capsys):
+        code = main(["queries", "--prune"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        assert "queries prune:" in out
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(out)
+
+    def test_error_is_typed_and_nonzero(self, capsys):
+        with patch("brain.ops.prune_queries", side_effect=RuntimeError("db is down")):
+            code = main(["queries", "--prune", "--json"])
+
+        assert code == 1
+        assert json.loads(_read_stdout(capsys))["error"] == "db is down"
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["queries", "--prune", "--since", "7d"],
+            ["queries", "--prune", "--abstained"],
+            ["queries", "--prune", "--since", "7d", "--abstained"],
+        ],
+    )
+    def test_prune_is_mutually_exclusive_with_read_filters(self, argv):
+        with pytest.raises(SystemExit) as excinfo:
+            main(argv)
+
+        assert excinfo.value.code == 2
+
+    @pytest.mark.parametrize(
+        "argv", [["queries", "--keep-days", "7"], ["queries", "--dry-run"]]
+    )
+    def test_retention_flags_require_prune(self, argv):
+        with pytest.raises(SystemExit) as excinfo:
+            main(argv)
+
+        assert excinfo.value.code == 2
