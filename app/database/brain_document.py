@@ -134,7 +134,8 @@ class BrainDocument(Base):
         default=False,
         doc=(
             "True when this chunk is a section-header-only chunk (body empty or < 40 chars); "
-            "enables 2x score weight in RetrieveChunksNode._fuse_and_rank"
+            "surfaced in retrieval results, ranking-neutral since "
+            "OR.ticket.section-title-boost (see retrieval_engine._SECTION_TITLE_WEIGHT)"
         ),
     )
     title = Column(

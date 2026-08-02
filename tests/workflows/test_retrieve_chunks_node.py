@@ -2,7 +2,8 @@
 
 These tests cover:
 - ``_fuse_and_rank`` (pure function): ordering, keyword boost, section-title
-  weighting, threshold filtering, top-k truncation, NaN safety.
+  weight neutrality (and the ``_SECTION_TITLE_WEIGHT`` knob that controls it),
+  threshold filtering, top-k truncation, NaN safety.
 - ``retrieve`` (integration path): patches ``_semantic_search``,
   ``_keyword_search``, and ``EmbeddingService`` to verify the full call
   contract without a live database or Voyage API key.
@@ -12,6 +13,7 @@ These tests cover:
 """
 
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -92,16 +94,63 @@ class TestFuseAndRank:
         # close: (1-0.1)*1 + 0.0 = 0.9
         assert results[0]["id"] == far_id
 
-    def test_section_title_chunk_weighted_2x(self):
-        """A section-title chunk with worse distance outranks a body chunk."""
+    def test_section_title_flag_is_ranking_neutral(self):
+        """A section-title chunk no longer out-ranks a closer body chunk.
+
+        This test previously asserted the opposite (the ported rag-engine-rs 2x
+        boost). ``OR.ticket.section-title-boost`` measured that boost as a real
+        ranking defect — 11 of 23 golden-set queries returned a header stub at
+        rank 1 — and set ``_SECTION_TITLE_WEIGHT`` to 1.0. The assertion is
+        inverted rather than deleted so the old behaviour stays pinned as
+        *wrong*, not merely unmentioned.
+        """
         body_id = uuid.uuid4()
         title_id = uuid.uuid4()
         body = _make_candidate(dist=0.05, is_section_title=False, candidate_id=body_id)
         title = _make_candidate(dist=0.3, is_section_title=True, candidate_id=title_id)
-        # body score:  (1-0.05)*1 = 0.95
-        # title score: (1-0.3)*2  = 1.40
+        # body score:  (1-0.05)*1.0 = 0.95
+        # title score: (1-0.3)*1.0  = 0.70
+        results = retrieval_engine._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
+        assert results[0]["id"] == body_id
+
+    def test_section_title_and_body_at_equal_distance_score_equally(self):
+        """At identical distance and no keyword hit, the flag changes nothing."""
+        body = _make_candidate(dist=0.2, is_section_title=False)
+        title = _make_candidate(dist=0.2, is_section_title=True)
+        results = retrieval_engine._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
+        assert results[0]["score"] == results[1]["score"]
+
+    def test_section_title_weight_constant_is_the_knob(self, monkeypatch):
+        """Restoring ``_SECTION_TITLE_WEIGHT`` to 2.0 restores the old ordering.
+
+        Falsifiability guard: proves the constant is live config and not dead
+        code, so anyone can re-run the measurement that retired the boost.
+        """
+        monkeypatch.setattr(retrieval_engine, "_SECTION_TITLE_WEIGHT", 2.0)
+        body_id = uuid.uuid4()
+        title_id = uuid.uuid4()
+        body = _make_candidate(dist=0.05, is_section_title=False, candidate_id=body_id)
+        title = _make_candidate(dist=0.3, is_section_title=True, candidate_id=title_id)
         results = retrieval_engine._fuse_and_rank([body, title], set(), k=2, threshold=0.0)
         assert results[0]["id"] == title_id
+
+    def test_output_carries_is_section_title_flag(self):
+        """Every emitted dict surfaces ``is_section_title`` (default False)."""
+        title = _make_candidate(dist=0.1, is_section_title=True)
+        body = _make_candidate(dist=0.2, is_section_title=False)
+        bare = {
+            "id": uuid.uuid4(),
+            "content": "no flag key at all",
+            "section_title": None,
+            "distance": 0.3,
+        }
+        results = retrieval_engine._fuse_and_rank([title, body, bare], set(), k=3, threshold=0.0)
+        by_id = {r["id"]: r for r in results}
+        assert by_id[title["id"]]["is_section_title"] is True
+        assert by_id[body["id"]]["is_section_title"] is False
+        # A candidate that omits the key entirely (memory candidates) must not
+        # KeyError and must default to False.
+        assert by_id[bare["id"]]["is_section_title"] is False
 
     def test_threshold_filters_low_scores(self):
         """Candidates with a fused score below threshold are excluded."""
@@ -162,8 +211,9 @@ class TestFuseAndRank:
         cid = uuid.uuid4()
         c = _make_candidate(dist=0.2, is_section_title=True, candidate_id=cid)
         results = retrieval_engine._fuse_and_rank([c], {cid}, k=1, threshold=0.0)
-        # score = (1-0.2)*2 + 1.0 = 1.6 + 1.0 = 2.6
-        assert abs(results[0]["score"] - 2.6) < 1e-9
+        # score = (1-0.2)*1.0 + 1.0 = 0.8 + 1.0 = 1.8 (weight neutral since
+        # OR.ticket.section-title-boost; it was 2.6 under the retired 2x boost)
+        assert abs(results[0]["score"] - 1.8) < 1e-9
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +409,65 @@ class TestProcess:
         output = ctx.get_node_output("RetrieveChunksNode")
         assert "result" in output
         assert output["result"]["chunks"] == fake_chunks
+
+    def test_node_ranks_through_the_shared_section_title_constant(self, monkeypatch):
+        """The node's ranking must move with ``_SECTION_TITLE_WEIGHT`` — the
+        single-source-of-truth pin.
+
+        ``RetrieveChunksNode`` used to carry its own copy of the whole two-stage
+        pipeline, including a duplicate ``2.0 if is_section_title`` rule; ``OR.K2``
+        promoted the pipeline into ``brain.retrieval_engine`` and the node became a
+        thin adapter. Nothing enforced that, so a private ranking path could
+        silently reappear and let eval and production ``DOCUMENT_QA`` diverge
+        again — which is exactly the defect this pin exists to catch. Runs the
+        node end-to-end (DB seams patched) at the default weight and at 2.0 and
+        asserts the stored chunk order flips.
+        """
+        body_id = uuid.uuid4()
+        title_id = uuid.uuid4()
+        candidates = [
+            _make_candidate(dist=0.05, is_section_title=False, candidate_id=body_id),
+            _make_candidate(dist=0.3, is_section_title=True, candidate_id=title_id),
+        ]
+
+        event = SimpleNamespace(
+            question="what does the section say?",
+            corpus="content",
+            filters=None,
+            include_archived=False,
+            expand_structural=False,
+            workspace_id=None,
+            peer_id=None,
+            include_memory=False,
+            apply_decay=False,
+        )
+
+        def _run() -> list:
+            ctx = TaskContext(event=event)
+            with patch(
+                "brain.retrieval_engine.EmbeddingService"
+            ) as mock_embed, patch.object(
+                retrieval_engine, "_semantic_search", return_value=list(candidates)
+            ), patch.object(
+                retrieval_engine, "_keyword_expand", return_value=[]
+            ), patch.object(
+                retrieval_engine, "_keyword_search", return_value=set()
+            ), patch.object(
+                retrieval_engine, "log_retrieval"
+            ):
+                mock_embed.return_value.embed_text.return_value = [0.1] * 1024
+                ctx = self.node.process(ctx)
+            return ctx.get_node_output("RetrieveChunksNode")["result"]["chunks"]
+
+        neutral = _run()
+        assert neutral[0]["id"] == body_id, "default weight must not favour a header stub"
+
+        monkeypatch.setattr(retrieval_engine, "_SECTION_TITLE_WEIGHT", 2.0)
+        boosted = _run()
+        assert boosted[0]["id"] == title_id, (
+            "node ranking did not follow the engine constant — a private ranking "
+            "path has reappeared in RetrieveChunksNode"
+        )
 
     def test_process_passes_corpus_from_event(self):
         """process() reads corpus from the event and passes it to retrieve."""
