@@ -32,6 +32,8 @@ from index_brain import (  # noqa: E402
     _find_brain_root,
     _get_doc_type_for_path,
     _is_header_only_chunk,
+    _tier_container_slugs,
+    _tier_docs_files,
     build_context_prefix,
     chunk_by_section,
     main,
@@ -1140,6 +1142,174 @@ class TestSubRepoFiles:
             if project is None
         }
         assert rels_before == rels_after_root_only
+
+
+class TestTierDocsCorpus:
+    """Tier ``docs/`` trees are in the corpus, with frontmatter-derived project.
+
+    `OR.ticket.corpus-tier-docs`. Every tier (``core``, ``business``, …) is
+    itself a ``[[repos]]`` manifest entry, so ``_corpus_roots`` excludes it and
+    the OR.O lane re-adds only ``planning/`` + ``CLAUDE.md``. That left 170
+    ``.md`` files — the whole of ``business/docs/`` among them — outside the
+    corpus. These tests use a **manifest-realistic** config: the tier container
+    *and* a leaf repo inside it, which is what production looks like.
+
+    Note ``TestCorpusDerivation.test_sub_brain_tier_docs_are_collected`` above
+    passes only because ``TEST_CONFIG.repos == ()`` — with an empty manifest no
+    tier is ever a repo, so it never saw this bug. It is kept (the no-manifest
+    path is still real) but it is not the guard; these are.
+    """
+
+    def _tiered_config(self):
+        """A manifest with a tier container, a leaf repo inside it, and a root leaf."""
+        return BrainConfig(
+            valid_layers=TEST_CONFIG.valid_layers,
+            valid_projects=frozenset({*TEST_CONFIG.valid_projects, "core"}),
+            valid_statuses=TEST_CONFIG.valid_statuses,
+            skip_dirs=("archive", "node_modules", ".git"),
+            repos=(
+                {"slug": "brain", "repo_path": ".", "tier": "_root"},
+                # `core` is a tier container: `orchestrator` declares it as its tier.
+                {"slug": "core", "repo_path": "core", "tier": "_root"},
+                {"slug": "orchestrator", "repo_path": "core/orchestrator", "tier": "core"},
+                # A leaf repo at the brain root — tier "_root", nothing declares it
+                # as a tier, so it is NOT a tier container.
+                {"slug": "learn-ai", "repo_path": "learn-ai", "tier": "_root"},
+            ),
+        )
+
+    def _make_tree(self, tmp_path):
+        """Brain root + a tier with docs/ and planning/ + a leaf repo inside it."""
+        tier = tmp_path / "core"
+        (tier / "docs" / "projects").mkdir(parents=True)
+        (tier / "docs" / "projects" / "bastion.md").write_text(
+            "---\nproject: bastion\n---\n\n# Bastion", encoding="utf-8"
+        )
+        (tier / "docs" / "index.md").write_text("# Index", encoding="utf-8")
+        (tier / "planning").mkdir(parents=True)
+        (tier / "planning" / "status.md").write_text("# Status", encoding="utf-8")
+        (tier / "CLAUDE.md").write_text("# Tier context", encoding="utf-8")
+
+        leaf = tier / "orchestrator"
+        (leaf / "docs").mkdir(parents=True)
+        (leaf / "docs" / "api-reference.md").write_text("# API", encoding="utf-8")
+        (leaf / "planning").mkdir(parents=True)
+        (leaf / "planning" / "status.md").write_text("# Leaf status", encoding="utf-8")
+        (leaf / "CLAUDE.md").write_text("# Leaf context", encoding="utf-8")
+
+        root_leaf = tmp_path / "learn-ai"
+        (root_leaf / "docs").mkdir(parents=True)
+        (root_leaf / "docs" / "guide.md").write_text("# Guide", encoding="utf-8")
+        return tier, leaf, root_leaf
+
+    def _collect(self, tmp_path):
+        config = self._tiered_config()
+        return {
+            p.relative_to(tmp_path).as_posix(): (dt, project)
+            for p, dt, project in _collect_files(tmp_path, config)
+        }
+
+    # --- tier-container derivation ---------------------------------------
+
+    def test_tier_container_slugs_derives_from_manifest(self):
+        assert _tier_container_slugs(self._tiered_config()) == frozenset({"core"})
+
+    def test_tier_container_slugs_empty_for_flat_manifest(self):
+        flat = BrainConfig(
+            valid_layers=frozenset(),
+            valid_projects=frozenset(),
+            valid_statuses=frozenset(),
+            skip_dirs=(),
+            repos=(
+                {"slug": "brain", "repo_path": ".", "tier": "_root"},
+                {"slug": "learn-ai", "repo_path": "learn-ai", "tier": "_root"},
+            ),
+        )
+        assert _tier_container_slugs(flat) == frozenset()
+
+    # --- the bug this ticket fixes ---------------------------------------
+
+    def test_tier_docs_collected_when_tier_is_a_manifest_repo(self, tmp_path):
+        # The regression the old suite could not see: with `core` in the
+        # manifest, _corpus_roots excludes it and only the tier-docs lane can
+        # bring core/docs/ back.
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert "core/docs/projects/bastion.md" in by_rel
+        assert "core/docs/index.md" in by_rel
+
+    def test_tier_docs_carry_no_project_override(self, tmp_path):
+        # Frontmatter governs — stamping the tier slug would drop the document
+        # ABOUT bastion out of a project=bastion-scoped query.
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert by_rel["core/docs/projects/bastion.md"][1] is None
+        assert by_rel["core/docs/index.md"][1] is None
+
+    def test_tier_docs_doc_type_strips_the_tier_component(self, tmp_path):
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert by_rel["core/docs/projects/bastion.md"][0] == "project"
+        assert by_rel["core/docs/index.md"][0] == "meta"
+
+    # --- guards on what must NOT change ----------------------------------
+
+    def test_tier_planning_attribution_is_unchanged(self, tmp_path):
+        # The regression guard for the "just un-exclude tiers from _corpus_roots"
+        # shortcut: it would re-stamp these rows project=None.
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert by_rel["core/planning/status.md"][1] == "core"
+        assert by_rel["core/CLAUDE.md"][1] == "core"
+        assert by_rel["core/orchestrator/planning/status.md"][1] == "orchestrator"
+
+    def test_leaf_repo_docs_are_still_excluded(self, tmp_path):
+        # OR.O's boundary is untouched: a leaf repo's docs/ stays out, whether
+        # it sits inside a tier or at the brain root.
+        self._make_tree(tmp_path)
+        by_rel = self._collect(tmp_path)
+        assert "core/orchestrator/docs/api-reference.md" not in by_rel
+        assert "learn-ai/docs/guide.md" not in by_rel
+
+    def test_tier_docs_honour_skip_underscore_and_ephemeral_rules(self, tmp_path):
+        tier, _leaf, _root_leaf = self._make_tree(tmp_path)
+        (tier / "docs" / "archive").mkdir(parents=True)
+        (tier / "docs" / "archive" / "old.md").write_text("# old", encoding="utf-8")
+        (tier / "docs" / "_scratch.md").write_text("# scratch", encoding="utf-8")
+        (tier / "docs" / "handoff.md").write_text("# handoff", encoding="utf-8")
+
+        by_rel = self._collect(tmp_path)
+        assert "core/docs/archive/old.md" not in by_rel
+        assert "core/docs/_scratch.md" not in by_rel
+        assert "core/docs/handoff.md" not in by_rel
+
+    def test_no_file_is_collected_twice(self, tmp_path):
+        # The double-index guard: three lanes share one `seen` set.
+        self._make_tree(tmp_path)
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "career.md").write_text("# c", encoding="utf-8")
+        (tmp_path / "planning").mkdir()
+        (tmp_path / "planning" / "status.md").write_text("# s", encoding="utf-8")
+        (tmp_path / "CLAUDE.md").write_text("# c", encoding="utf-8")
+
+        paths = [p for p, _, _ in _collect_files(tmp_path, self._tiered_config())]
+        assert len(paths) == len(set(paths))
+
+    def test_tier_docs_lane_respects_the_seen_set(self, tmp_path):
+        # Called directly with an already-populated `seen`, it must skip.
+        tier, _leaf, _root_leaf = self._make_tree(tmp_path)
+        already = {tier / "docs" / "index.md"}
+        rels = {
+            p.relative_to(tmp_path).as_posix()
+            for p, _, _ in _tier_docs_files(tmp_path, self._tiered_config(), already)
+        }
+        assert "core/docs/index.md" not in rels
+        assert "core/docs/projects/bastion.md" in rels
+
+    def test_tier_without_a_docs_dir_is_skipped_cleanly(self, tmp_path):
+        (tmp_path / "core" / "planning").mkdir(parents=True)
+        (tmp_path / "core" / "planning" / "status.md").write_text("# s", encoding="utf-8")
+        assert _tier_docs_files(tmp_path, self._tiered_config(), set()) == []
 
 
 class TestNewColumnPopulation:

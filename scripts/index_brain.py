@@ -68,6 +68,14 @@ from brain.chunking import (  # noqa: E402  pylint: disable=wrong-import-positio
 # of the brain root and each sub-brain tier (``core/``, ``portfolio/`` …), plus
 # each scope's ``README.md`` + ``CLAUDE.md``.
 #
+# Tier containers (``core``, ``business``, ``portfolio``, ``side``, ``client`` —
+# any manifest slug that is another repo's ``tier``) are themselves ``[[repos]]``
+# entries, so they are excluded from the root walk above. Their ``docs/`` trees
+# are collected by a dedicated lane with NO project override: they are
+# brain-repo-tracked OKF documents carrying their own ``project:`` frontmatter,
+# unlike the OR.O sub-repo files below. Their ``planning/`` + ``CLAUDE.md`` come
+# from the OR.O lane instead, which is what stamps them with the tier slug.
+#
 # Per Bastion program Block OR.O, each gitignored project repo named in the
 # manifest (``repo_path != "."``) additionally contributes its OWN
 # ``planning/`` subtree + root ``CLAUDE.md`` as its own workspace-scoped
@@ -329,12 +337,22 @@ def _is_skipped(rel_posix: str, skip_dirs: tuple[str, ...]) -> bool:
 
 
 def _corpus_roots(brain_path: Path, config: BrainConfig) -> list[Path]:
-    """The brain root plus every immediate sub-brain tier directory.
+    """The brain root, plus any immediate child directory not named in the manifest.
 
-    A sub-brain is an immediate child directory that has a ``docs/`` or
-    ``planning/`` subtree and is neither a skipped dir nor a gitignored project
-    repo named in the manifest (so ``core/`` is a root but ``core/orchestrator``
-    and the top-level ``learn-ai``/``base-template`` repos are not).
+    In practice this is **the brain root alone**: every tier (``core``,
+    ``business``, ``portfolio``, ``side``, ``client``) is itself a ``[[repos]]``
+    entry, so every tier is excluded here. Tiers reach the corpus through the two
+    dedicated lanes in :func:`_collect_files` instead — :func:`_tier_docs_files`
+    for ``<tier>/docs/**`` and :func:`_sub_repo_files` for ``<tier>/planning/**``
+    plus the root ``CLAUDE.md``.
+
+    Do **not** "fix" this by dropping tier containers from ``excluded`` so they
+    become full corpus roots. ``_collect_files`` walks roots *before* the
+    sub-repo lane and shares one ``seen`` set, so the root walk would claim
+    ``<tier>/planning/**`` first and stamp it ``project=None`` — silently
+    re-attributing every tier planning row away from its ``project=<tier slug>``
+    workspace identity and breaking tier-scoped retrieval. The separate
+    ``docs/``-only lane has no such effect.
     """
     excluded = {
         (brain_path / r["repo_path"]).resolve()
@@ -352,6 +370,70 @@ def _corpus_roots(brain_path: Path, config: BrainConfig) -> list[Path]:
         if (child / "docs").is_dir() or (child / "planning").is_dir():
             roots.append(child)
     return roots
+
+
+def _tier_container_slugs(config: BrainConfig) -> frozenset[str]:
+    """Manifest slugs that are *tier containers* — repos other repos live inside.
+
+    A repo is a tier container iff its ``slug`` appears as some other repo's
+    ``tier`` value: ``core`` holds ``core/orchestrator``, ``business`` holds
+    ``business/bastiel``, and so on. Derived purely from the manifest and never
+    hardcoded — registering a new tier in ``brain.toml`` is enough to bring its
+    ``docs/`` tree into the corpus.
+
+    Leaf code repos that happen to sit at the brain root (``learn-ai``,
+    ``base-template`` — both ``tier = "_root"``) are deliberately *not* tier
+    containers: nothing declares them as its tier, so they keep their OR.O
+    treatment (``planning/`` + ``CLAUDE.md``, never ``docs/`` or source).
+    """
+    slugs = {r["slug"] for r in config.repos if r.get("slug")}
+    tiers = {r["tier"] for r in config.repos if r.get("tier")}
+    return frozenset(slugs & tiers)
+
+
+def _tier_docs_files(
+    brain_path: Path, config: BrainConfig, seen: set[Path]
+) -> list[tuple[Path, str, None]]:
+    """Return (absolute_path, doc_type, None) triples for each tier's ``docs/`` tree.
+
+    Every tier container (:func:`_tier_container_slugs`) contributes its own
+    ``docs/**/*.md`` subtree, honouring the same ``[crawl].skip_dirs`` (so
+    ``archive/`` subtrees stay out), underscore-prefix, and ephemeral-filename
+    rules as every other lane. Only ``docs/`` — a tier's ``planning/`` and root
+    ``CLAUDE.md`` already arrive via :func:`_sub_repo_files`, and re-collecting
+    them here would change their project attribution.
+
+    **The project override is ``None`` on purpose.** Unlike OR.O sub-repo files
+    — whose manifest-slug stamp exists precisely because ``planning/status.md``
+    carries no ``project:`` and ``CLAUDE.md`` has no frontmatter at all — tier
+    ``docs/`` files are brain-repo-tracked OKF documents that carry their own,
+    meaningful ``project:`` value. ``core/docs/projects/bastion.md`` declares
+    ``project: bastion``; stamping the tier slug would drop the document *about*
+    bastion out of a ``project=bastion``-scoped query. Frontmatter wins here,
+    exactly as it does for the brain root's own ``docs/``.
+    """
+    result: list[tuple[Path, str, None]] = []
+    containers = _tier_container_slugs(config)
+    for repo in config.repos:
+        slug = repo.get("slug")
+        repo_path = repo.get("repo_path")
+        if not slug or not repo_path or repo_path == "." or slug not in containers:
+            continue
+        tier_root = (brain_path / repo_path).resolve()
+        docs_dir = tier_root / "docs"
+        if not docs_dir.is_dir():
+            continue
+        for md_file in sorted(docs_dir.rglob("*.md")):
+            if md_file.name.startswith("_") or md_file.name in _EPHEMERAL_FILENAMES:
+                continue
+            rel_to_tier = md_file.relative_to(tier_root).as_posix()
+            if _is_skipped(rel_to_tier, config.skip_dirs):
+                continue
+            if md_file in seen:
+                continue
+            seen.add(md_file)
+            result.append((md_file, _classify_doc_type(rel_to_tier), None))
+    return result
 
 
 def _sub_repo_files(
@@ -402,14 +484,23 @@ def _sub_repo_files(
 def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, str, str | None]]:
     """Return (absolute_path, doc_type, project_override) triples for the corpus.
 
-    Crawls the ``docs/`` and ``planning/`` subtrees plus the README/CLAUDE of the
-    brain root and each sub-brain tier, honouring ``[crawl].skip_dirs`` and
-    skipping underscore-prefixed and ephemeral files — these entries carry no
-    project override (``None``; ``project`` is read from each file's own
-    frontmatter as before). It then adds each gitignored sub-repo's own
-    ``planning/`` subtree + root ``CLAUDE.md`` (Block OR.O), each stamped with
-    that repo's manifest slug as the project override — sub-repo ``docs/`` and
-    source are never reached.
+    Three lanes, in order, sharing one ``seen`` set so no file is ever collected
+    twice:
+
+    1. **Brain-root subtrees** (:func:`_corpus_roots`) — ``docs/`` + ``planning/``
+       plus ``README.md``/``CLAUDE.md``. No project override (``None``);
+       ``project`` comes from each file's own frontmatter.
+    2. **Tier ``docs/``** (:func:`_tier_docs_files`) — every manifest tier
+       container's ``docs/**/*.md``. Also no project override, for the same
+       reason: these are brain-repo-tracked OKF documents with their own
+       ``project:`` values.
+    3. **Sub-repo widening** (:func:`_sub_repo_files`, Block OR.O) — each
+       gitignored sub-repo's ``planning/`` subtree + root ``CLAUDE.md``, each
+       stamped with that repo's manifest slug as the project override. Sub-repo
+       ``docs/`` and source are never reached.
+
+    All three honour ``[crawl].skip_dirs`` and skip underscore-prefixed and
+    ephemeral files.
     """
     result: list[tuple[Path, str, str | None]] = []
     seen: set[Path] = set()
@@ -434,6 +525,7 @@ def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, st
                 seen.add(root_file)
                 result.append((root_file, _classify_doc_type(fname), None))
 
+    result.extend(_tier_docs_files(brain_path, config, seen))
     result.extend(_sub_repo_files(brain_path, config, seen))
     return result
 
