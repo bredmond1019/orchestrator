@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import tiktoken
-
 from services.chunking_service import ChunkingService
 
 

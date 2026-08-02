@@ -20,7 +20,7 @@ from database.brain_document import BrainDocument
 from database.content_chunk import EMBEDDING_DIM, ContentChunk
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import bindparam, text
-from sqlalchemy.exc import DBAPIError, DataError
+from sqlalchemy.exc import DataError, DBAPIError
 
 pytestmark = pytest.mark.integration
 

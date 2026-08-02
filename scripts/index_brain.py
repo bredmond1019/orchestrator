@@ -82,8 +82,15 @@ from brain.chunking import (  # noqa: E402  pylint: disable=wrong-import-positio
 # corpus, keyed by that repo's manifest ``slug`` (stamped into the
 # ``BrainDocument.project`` column, overriding any frontmatter ``project:``
 # value — the slug is the workspace identity, not the file's own metadata).
-# Their ``docs/`` and source trees remain out of scope (that is Block O/P
-# territory respectively) — only ``planning/`` + root ``CLAUDE.md`` are added.
+# Their source trees remain out of scope (Block P territory).
+#
+# `OR.ticket.corpus-sub-repo-docs` adds a fourth lane: every manifest repo with
+# ``repo_path != "."`` that is NOT a tier container also contributes its
+# ``docs/**/*.md`` subtree (tier containers' ``docs/`` already arrive via the
+# tier-docs lane above). Attribution there is frontmatter-wins/slug-fallback —
+# a sub-repo doc's own ``project:`` frontmatter is honoured when present, and
+# only falls back to the repo's manifest slug when the file carries none. See
+# :func:`_sub_repo_docs_files` for the mechanism.
 #
 # ``doc_type`` is a soft categorisation column (retrieval filters on ``status`` and
 # ``corpus``, never on ``doc_type``); it is assigned by a path classifier applied
@@ -481,10 +488,67 @@ def _sub_repo_files(
     return result
 
 
+def _sub_repo_docs_files(
+    brain_path: Path, config: BrainConfig, seen: set[Path]
+) -> list[tuple[Path, str, str | None]]:
+    """Return (absolute_path, doc_type, project_override) triples for sub-repo ``docs/``.
+
+    `OR.ticket.corpus-sub-repo-docs`. Every manifest ``[[repos]]`` entry with
+    ``repo_path != "."`` that is **not** a tier container (:func:`_tier_container_slugs`
+    — tier containers' ``docs/`` already arrive via :func:`_tier_docs_files`)
+    additionally contributes its own ``docs/**/*.md`` subtree. Source trees stay
+    out of scope (the OR.O boundary against source code is unchanged); only
+    ``docs/`` is added here.
+
+    **Attribution is frontmatter-wins, slug-fallback** — a third semantics,
+    distinct from both other lanes' plain ``None``/override. Sub-repo ``docs/``
+    files are OKF documents (standing rule 11) and mostly carry a correct
+    ``project:`` of their own (this repo's ``docs/`` all say ``orchestrator``),
+    but a sub-repo doc with no frontmatter ``project:`` field should still land
+    in its own repo's scope rather than falling through to ``None`` the way
+    tier ``docs/`` does. Implementation choice: **(b) — this lane peeks each
+    file's frontmatter at collect time** (before ``_collect_files``'s caller
+    ever sees the triple) and emits ``None`` when a ``project:`` field is
+    present (so the later frontmatter-driven pipeline in ``main()`` — which
+    only stamps ``project_override`` when it is truthy — applies the file's own
+    value untouched) or the repo's manifest ``slug`` when the field is absent
+    (so the same "truthy override wins" pipeline stamps the fallback). This
+    keeps the ingest path in ``main()`` completely unchanged: no new override
+    semantics need to be taught to ``_backfill_dates``/the incremental-skip
+    check/the upsert loop, because ``None`` vs "a slug string" is exactly the
+    contract they already implement.
+    """
+    result: list[tuple[Path, str, str | None]] = []
+    containers = _tier_container_slugs(config)
+    for repo in config.repos:
+        slug = repo.get("slug")
+        repo_path = repo.get("repo_path")
+        if not slug or not repo_path or repo_path == "." or slug in containers:
+            continue
+        repo_root = (brain_path / repo_path).resolve()
+        docs_dir = repo_root / "docs"
+        if not docs_dir.is_dir():
+            continue
+        for md_file in sorted(docs_dir.rglob("*.md")):
+            if md_file.name.startswith("_") or md_file.name in _EPHEMERAL_FILENAMES:
+                continue
+            rel_to_repo = md_file.relative_to(repo_root).as_posix()
+            if _is_skipped(rel_to_repo, config.skip_dirs):
+                continue
+            if md_file in seen:
+                continue
+            seen.add(md_file)
+            raw_content = md_file.read_text(encoding="utf-8")
+            meta, _body = parse_document(raw_content)
+            project_override = None if meta.get("project") else slug
+            result.append((md_file, _classify_doc_type(rel_to_repo), project_override))
+    return result
+
+
 def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, str, str | None]]:
     """Return (absolute_path, doc_type, project_override) triples for the corpus.
 
-    Three lanes, in order, sharing one ``seen`` set so no file is ever collected
+    Four lanes, in order, sharing one ``seen`` set so no file is ever collected
     twice:
 
     1. **Brain-root subtrees** (:func:`_corpus_roots`) — ``docs/`` + ``planning/``
@@ -497,9 +561,12 @@ def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, st
     3. **Sub-repo widening** (:func:`_sub_repo_files`, Block OR.O) — each
        gitignored sub-repo's ``planning/`` subtree + root ``CLAUDE.md``, each
        stamped with that repo's manifest slug as the project override. Sub-repo
-       ``docs/`` and source are never reached.
+       ``docs/`` and source are never reached by this lane.
+    4. **Sub-repo ``docs/``** (:func:`_sub_repo_docs_files`,
+       `OR.ticket.corpus-sub-repo-docs`) — every non-tier-container manifest
+       repo's ``docs/**/*.md``, frontmatter-wins/slug-fallback attribution.
 
-    All three honour ``[crawl].skip_dirs`` and skip underscore-prefixed and
+    All four honour ``[crawl].skip_dirs`` and skip underscore-prefixed and
     ephemeral files.
     """
     result: list[tuple[Path, str, str | None]] = []
@@ -527,6 +594,7 @@ def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, st
 
     result.extend(_tier_docs_files(brain_path, config, seen))
     result.extend(_sub_repo_files(brain_path, config, seen))
+    result.extend(_sub_repo_docs_files(brain_path, config, seen))
     return result
 
 

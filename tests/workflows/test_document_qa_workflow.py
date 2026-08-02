@@ -13,9 +13,8 @@ Two layers:
 import uuid
 
 import pytest
-from pydantic import ValidationError
-
 from core.validate import WorkflowValidator
+from pydantic import ValidationError
 from schemas.document_qa_schema import DocumentQAEventSchema
 from workflows.document_qa_workflow import DocumentQAWorkflow
 from workflows.document_qa_workflow_nodes.abstain_node import AbstainNode

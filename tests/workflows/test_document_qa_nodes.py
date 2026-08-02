@@ -22,8 +22,6 @@ import json
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.task import TaskContext
 from database.chat_session import ChatSession
 from schemas.document_qa_schema import DocumentQAEventSchema
@@ -33,7 +31,6 @@ from workflows.document_qa_workflow_nodes.embed_question_node import EmbedQuesti
 from workflows.document_qa_workflow_nodes.update_session_memory_node import (
     UpdateSessionMemoryNode,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

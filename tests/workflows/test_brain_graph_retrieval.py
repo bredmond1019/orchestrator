@@ -38,9 +38,9 @@ SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from brain import retrieval_engine  # noqa: E402
 from database.brain_edge import BrainEdge  # noqa: E402
 from load_brain_edges import build_edge_rows  # noqa: E402
-from brain import retrieval_engine  # noqa: E402
 from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (  # noqa: E402
     RetrieveChunksNode,
 )

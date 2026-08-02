@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from core.nodes.tool_use import ToolUseNode
 from core.task import TaskContext
 
