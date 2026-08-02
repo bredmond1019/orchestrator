@@ -10,8 +10,7 @@ This is the YouTube-pipeline gap class: unit tests can all pass while nodes
 silently disagree about the key they publish/consume.
 """
 
-import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from core.task import TaskContext
 from schemas.document_ingest_schema import DocumentIngestEventSchema
@@ -97,7 +96,6 @@ class TestDocumentIngestPipelineE2E:
     def test_section_title_chunks_survive_full_pipeline(self):
         """is_section_title=True chunks from ChunkDocument are stored correctly."""
         _, _, persisted = self._run_pipeline()
-        from database.content_chunk import ContentChunk
         title_chunks = [c for c in persisted if c.is_section_title]
         assert len(title_chunks) >= 2  # "Introduction" and "Details"
 

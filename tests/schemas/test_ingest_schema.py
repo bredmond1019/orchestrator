@@ -11,13 +11,11 @@ from datetime import datetime
 
 import pytest
 from pydantic import ValidationError
-
 from schemas.ingest_schema import (
     ArtifactIngestPayload,
     IngestResponse,
     ProposalIngestPayload,
 )
-
 
 # ---------------------------------------------------------------------------
 # ProposalIngestPayload

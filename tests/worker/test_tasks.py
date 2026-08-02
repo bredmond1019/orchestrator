@@ -12,7 +12,6 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
-
 import worker.tasks as worker_tasks
 from core.task import NodeRun, NodeStatus, TaskContext
 
