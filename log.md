@@ -2,12 +2,50 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-02T01:30:00Z"
+timestamp: "2026-08-02T09:05:00Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+---
+
+## [2026-08-02] (session 10)
+
+### Brain-quality follow-ups — all six items orchestrated, shipped, and merged
+
+- **What:** Executed the four specs session 9 queued, then two more the run itself surfaced.
+  (1) `chore-data-contract-repin` — bastion + engine-rs consumer pins 1.4.0 → **1.6.0**, closing the
+  window in which `EN.6.K` could ship a consumer that ranks `GET /recall` results backwards.
+  (2) `OR.ticket.corpus-prune-backlog` — all 150 `deleted_but_embedded` paths classified and pruned
+  (1558 rows; `brain_documents` 7997 → 6439); a pure ops pass, no code changed.
+  (3) `OR.ticket.queries-retention` — `prune_queries` (90-day default, env-overridable),
+  `syn queries --prune [--keep-days N] [--dry-run] [--json]`, and `ROUTINES["queries_prune"]`.
+  (4) `OR.ticket.groundedness-baseline` — decomposed the metric by live measurement (31% recall-miss
+  coupling, 31% first-not-best chunk sampling, 23% lexical floor, 15% the section-title boost); the
+  tokenizer hypothesis was **refuted**. Shipped an additive `groundedness_on_hits`. Verdict: E1.1
+  **GO**, E1.2 **NO-GO**.
+  (5) `OR.ticket.corpus-tier-docs` — a third indexer lane `_tier_docs_files()` admitted **+170
+  previously-uncrawled tier-`docs/` files**; the brain can answer from `business/docs/` for the first
+  time. The obvious one-line fix was rejected — it would have silently broken tier-scoped retrieval.
+  (6) `OR.ticket.section-title-boost` — retired the `is_section_title` 2× fusion boost (which was
+  already shipping and over-ranking header stubs) to a documented `_SECTION_TITLE_WEIGHT = 1.0`.
+  Net vs the honest post-prune baseline: **recall@5 +0.1177, recall@10 +0.1764, MRR +0.1235,
+  groundedness +0.1667**; rank-1 header stubs 11/23 → **0/23**, median rank-1 chunk 527 → 1105 chars.
+  Gate: ruff clean · pylint 10.00/10 · **1393 passed / 7 skipped** (+47) · `mev validate-brain
+  --state` 0 errors. Three off-spec fixes: applied `OR.K1`'s never-run migration to the dev DB (the
+  query log had been silently discarding every row since it shipped), flipped a block status
+  `sdlc-task` failed to flip, and corrected a wrong claim in ledger `A4b`.
+- **Why:** Session 9 analyzed the brain-quality attention ledger and converted every actionable
+  finding into a ready-to-run spec, but ran none of them. The operator asked for the whole queue to
+  be driven to completion via orchestrated subagent flows, with a running on-disk tab of anything
+  needing later attention. Items 5–6 were surfaced *by* items 2 and 4 and approved mid-session —
+  item 5 because the corpus gap made three golden cases unfixable by any amount of retrieval tuning,
+  item 6 because the E1.1 verdict came back GO but **backwards from how the ledger framed it**.
+- **Refs:** `planning/orchestration-run-issues.md` (the 34-issue problem log, `I1`–`I34`) ·
+  `planning/brain-quality-attention.md` § Session 10 (the what-shipped record) ·
+  `planning/handoff.md` · merges `90ce39e`, `ddee87c`, `108ecf9`, `07bfa90`
 
 ---
 
