@@ -50,9 +50,13 @@ class RetrievalRunReport:
 
     `aggregate` keys: `recall_at_5`, `recall_at_10`, `mrr`, `groundedness`
     (each the mean over *positive* cases — those with non-empty
-    `expect_docs`; `None` averages nowhere near meaningless negative cases)
-    and `abstain_correctness` (the mean over *every* case — the abstain
-    signal is meaningful for negatives and positives alike).
+    `expect_docs`; `None` averages nowhere near meaningless negative cases),
+    `groundedness_on_hits` (the same mean restricted to cases that actually
+    matched an expected document — added by `ticket-groundedness-baseline`
+    to separate recall coupling from lexical support; see
+    `runner._aggregate`), and `abstain_correctness` (the mean over *every*
+    case — the abstain signal is meaningful for negatives and positives
+    alike).
     """
 
     generated_at: str

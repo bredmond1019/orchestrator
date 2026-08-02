@@ -168,6 +168,95 @@ def test_run_eval_is_deterministic_across_two_runs():
     ]
 
 
+# ---------------------------------------------------------------------------
+# groundedness_on_hits — the additive metric added by
+# ticket-groundedness-baseline to decouple the headline groundedness from
+# recall. See app/brain/eval/scorer.py::_groundedness "KNOWN STRUCTURAL
+# BIASES" and planning/artifacts/groundedness-baseline-analysis.md.
+# ---------------------------------------------------------------------------
+
+
+_MISS_CASE = RetrievalCase(
+    case_id="fixture-miss",
+    query="What are my hourly rates for contracting engagements?",
+    expect_docs=("docs/business/rates.md",),
+    expect_abstain=False,
+)
+
+
+def _grounded_retrieve(query, **_kwargs):
+    """Hit for the Bastion case, total miss for the rates case."""
+    if "Bastion" in query:
+        return [_chunk()]
+    return [_chunk(doc_id="unrelated", file_path="docs/unrelated.md", content="noise")]
+
+
+def test_groundedness_on_hits_excludes_recall_misses():
+    """The headline `groundedness` averages the 0.0 a recall-miss is scored;
+    `groundedness_on_hits` must not — that difference is the whole point of
+    the additive metric (0.3608 vs 0.5576 on the 2026-08-02 baseline)."""
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_grounded_retrieve):
+        report = run_eval([_POSITIVE_CASE, _MISS_CASE])
+
+    hit = next(r for r in report.results if r.case_id == "fixture-positive")
+    miss = next(r for r in report.results if r.case_id == "fixture-miss")
+    assert miss.groundedness == 0.0
+    assert miss.matched_docs == ()
+
+    assert report.aggregate["groundedness"] == pytest.approx(hit.groundedness / 2)
+    assert report.aggregate["groundedness_on_hits"] == pytest.approx(hit.groundedness)
+    assert report.aggregate["groundedness_on_hits"] > report.aggregate["groundedness"]
+
+
+def test_groundedness_on_hits_equals_groundedness_when_every_case_hits():
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_grounded_retrieve):
+        report = run_eval([_POSITIVE_CASE])
+
+    assert report.aggregate["groundedness_on_hits"] == pytest.approx(
+        report.aggregate["groundedness"]
+    )
+
+
+def test_groundedness_on_hits_is_zero_when_nothing_hits():
+    """No hits at all -> 0.0, not a ZeroDivisionError."""
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_grounded_retrieve):
+        report = run_eval([_MISS_CASE])
+
+    assert report.aggregate["groundedness_on_hits"] == 0.0
+
+
+def test_groundedness_on_hits_ignores_negative_cases():
+    """A negative case scores `groundedness=None` and matches nothing; it must
+    contribute to neither groundedness aggregate."""
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_grounded_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    hit = next(r for r in report.results if r.case_id == "fixture-positive")
+    assert report.aggregate["groundedness"] == pytest.approx(hit.groundedness)
+    assert report.aggregate["groundedness_on_hits"] == pytest.approx(hit.groundedness)
+
+
+def test_new_aggregate_key_does_not_break_an_older_baseline_file():
+    """`compare_to_baseline` iterates the BASELINE's keys, so a run carrying
+    the new `groundedness_on_hits` key compares cleanly against a baseline
+    written before it existed — no spurious regression, no KeyError. This is
+    what makes the metric additive rather than a baseline reset."""
+    baseline = {"aggregate": {"recall_at_5": 0.5, "mrr": 0.5, "groundedness": 0.5}}
+    current = {
+        "aggregate": {
+            "recall_at_5": 0.5,
+            "mrr": 0.5,
+            "groundedness": 0.5,
+            "groundedness_on_hits": 0.9,
+        }
+    }
+
+    deltas, regressed = compare_to_baseline(current, baseline)
+
+    assert regressed is False
+    assert "groundedness_on_hits" not in deltas
+
+
 def test_run_eval_forwards_case_scope_as_project_filter():
     scoped_case = RetrievalCase(
         case_id="scoped",
