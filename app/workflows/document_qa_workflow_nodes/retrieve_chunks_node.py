@@ -36,6 +36,7 @@ class RetrieveChunksNode(Node):
             peer_id=getattr(event, "peer_id", None),
             include_memory=getattr(event, "include_memory", False),
             apply_decay=getattr(event, "apply_decay", True),
+            surface="workflow",
         )
         task_context.update_node(
             node_name=self.node_name,
