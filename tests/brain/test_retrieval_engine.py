@@ -19,10 +19,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from brain import retrieval_engine
 
+
 @pytest.fixture(autouse=True)
 def _mock_db_session_for_retrieval():
     """Ensure no unpatched code (like _keyword_expand) accidentally hits the live database.
-    
+
     Tests in this file are unit tests and must not require a live Postgres connection.
     By default, any unpatched query will return [] to keep the pipeline pure and crash-free.
     """
