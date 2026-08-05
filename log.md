@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-02T22:58:45Z"
+timestamp: "2026-08-05T13:01:00Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,13 @@ timestamp: "2026-08-02T22:58:45Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
+
+## [2026-08-05]
+
+### Isolated brain-rag DB connections for Github CI
+- **What:** Modified `tests/brain/test_retrieval_engine.py` to use a mocked db session fixture (`_mock_db_session_for_retrieval`) instead of attempting to connect to a live postgres database.
+- **Why:** The tests were failing in Github Actions because it lacked a running database. This isolation allows unit tests to pass in the CI environment without an external DB dependency, keeping the pipeline green.
+- **Refs:** None
 
 ## [2026-08-02] (session 12)
 
