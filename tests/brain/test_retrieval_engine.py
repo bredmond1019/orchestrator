@@ -827,6 +827,33 @@ class TestDiversityCap:
             c["id"] for c in same_file[:cap]
         }
 
+    def test_max_per_file_constant_is_the_knob(self, monkeypatch):
+        """Changing ``_MAX_PER_FILE`` changes how many same-file results survive.
+
+        Falsifiability guard: proves the constant is live config and not dead
+        code, so anyone can trust the sweep (``OR.0.A``) that measured it by
+        monkeypatching this same attribute.
+        """
+        monkeypatch.setattr(retrieval_engine, "_MAX_PER_FILE", 1)
+        same_file = [
+            _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(3)
+        ]
+        other = _make_candidate(dist=0.5, file_path="docs/b.md")
+        results = retrieval_engine._fuse_and_rank(
+            same_file + [other], set(), k=2, threshold=0.0
+        )
+        a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
+        b_count = sum(1 for r in results if r["file_path"] == "docs/b.md")
+        assert a_count == 1
+        assert b_count == 1
+
+        monkeypatch.setattr(retrieval_engine, "_MAX_PER_FILE", 3)
+        results = retrieval_engine._fuse_and_rank(
+            same_file + [other], set(), k=3, threshold=0.0
+        )
+        a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
+        assert a_count == 3
+
     def test_distinct_files_unaffected_by_cap(self):
         """When every candidate is from a distinct file, output is identical to
         the uncapped ranking (same ids, same order)."""
