@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-05T13:01:00Z"
+timestamp: "2026-08-06T18:20:00Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,44 @@ timestamp: "2026-08-05T13:01:00Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ---
+
+## [2026-08-06]
+
+### Digest-crowding retrieval recovery planned as OR.0.A-C; specs written for A and C
+
+- **What:** Turned the 2026-08-06 retrieval regression (golden-set `recall@10` 1.0000 -> 0.8824,
+  mrr 0.6644 -> 0.6201, groundedness 0.5779 -> 0.5338) into a three-block ad-hoc mini-roadmap under
+  the `brain-quality` epic: `OR.0.A` ranking-constant sweep (sdlc-flow), `OR.0.B` land the verdict +
+  harden the diversity cap's tests (sdlc-flow), `OR.0.C` exclude `planning/artifacts/review/runs/**`
+  and measure the arm (sdlc-task). Wrote the roadmap
+  (`planning/plan-brain-retrieval-digest-crowding/plan.md`) plus full `tasks.md` + `tasks.json` specs
+  for A (7 tasks) and C (4 tasks). B is deliberately left un-specced until A's verdict exists.
+  Re-verified the diagnosis against the live DB (all four expected docs indexed - a ranking problem,
+  not coverage) and measured the exclusion scope exactly: 13 files / 284 chunks at 19.9 chunks/file
+  against a corpus average of 11.9. Confirmed both crawlers already honour path-style `skip_dirs`
+  (`scripts/index_brain.py:338`, `core/mev/src/brain/crawl.rs:98`), so C needs no new code.
+  Resumed the `brain-quality` epic from `paused` and restored `resume-epic`'s collateral
+  (`OR.J`, `EN.6.K`, `EN.6.L`) to `deferred`. `mev validate-brain` 0 errors on all four flags.
+- **Why:** The regression had sat across four eval runs while two separate sessions proposed a fix
+  that already exists (`_apply_diversity_cap`). The operator asked for it to be captured as a real
+  SDLC block chain so it runs through structured testing and review rather than as ad-hoc tuning.
+- **Refs:** `planning/plan-brain-retrieval-digest-crowding/plan.md` - `planning/plan-ranking-sweep/`
+  - `planning/plan-review-artifact-exclusion/` - commit `2a930083`
+
+**Three corrections to the prior handoff, all load-bearing.** A **third** case had regressed
+unnoticed: `archive-12-content-ideas` (rr 1.000 -> 0.500, still in top-10) - with the two known
+misses that is the *entire* mrr delta, every other case byte-identical. The **corpus moved twice**
+on 08-06 (13:45 runs read 0.9412; 13:56 onward 0.8824), so the index was still being written during
+the diagnosis - hence the hard control-reproduction gate in `OR.0.A` task 1. And `state.json` is
+**`ensure_ascii=False` fleet-wide**, not `True` as the handoff claimed: HQ 450 raw non-ASCII bytes /
+0 escapes, engine-rs 134/0, mev 114/0, and `mev emit-state` normalizes to it. Orchestrator's escaped
+copy was a local anomaly from a prior hand-edit.
+
+**One harness defect found:** `/generate-tasks --from` derives the spec slug from the plan file's
+*parent directory* regardless of the `phaseN-blockX` selector, so a multi-block `/plan` output cannot
+be driven by `/orchestrate` from one directory - every block collides on a single `tasks.md`.
+Worked around by splitting into three sibling spec dirs; carryover
+`generate-tasks-from-slug-is-parent-dir`.
 
 ## [2026-08-05]
 
