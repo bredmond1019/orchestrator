@@ -802,24 +802,57 @@ class TestDiversityCap:
     """_fuse_and_rank caps results-per-file_path in the final top-K."""
 
     def test_caps_same_file_results_when_alternative_exists(self):
-        """>2 candidates sharing one file_path yield at most 2 from that file,
-        with the freed slot filled by a distinct-file candidate."""
+        """More than ``_MAX_PER_FILE`` candidates sharing one file_path yield at
+        most ``_MAX_PER_FILE`` from that file, with the freed slot filled by a
+        distinct-file candidate."""
+        cap = retrieval_engine._MAX_PER_FILE
+        # cap == 0 is a measurement-only degenerate case (backfill returns
+        # everything, so the assertions below would not hold); never a
+        # shipping candidate. See task notes.
+        assert cap >= 1
         same_file = [
-            _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(4)
+            _make_candidate(dist=0.05 * i, file_path="docs/a.md")
+            for i in range(cap + 2)
         ]
         other = _make_candidate(dist=0.5, file_path="docs/b.md")
+        results = retrieval_engine._fuse_and_rank(
+            same_file + [other], set(), k=cap + 1, threshold=0.0
+        )
+        a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
+        b_count = sum(1 for r in results if r["file_path"] == "docs/b.md")
+        assert a_count == cap
+        assert b_count == 1
+        # The best-scoring docs/a.md candidates (lowest distance) win the slots.
+        assert {r["id"] for r in results if r["file_path"] == "docs/a.md"} == {
+            c["id"] for c in same_file[:cap]
+        }
+
+    def test_max_per_file_constant_is_the_knob(self, monkeypatch):
+        """Changing ``_MAX_PER_FILE`` changes how many same-file results survive.
+
+        Falsifiability guard: proves the constant is live config and not dead
+        code, so anyone can trust the sweep (``OR.0.A``) that measured it by
+        monkeypatching this same attribute.
+        """
+        monkeypatch.setattr(retrieval_engine, "_MAX_PER_FILE", 1)
+        same_file = [
+            _make_candidate(dist=0.05 * i, file_path="docs/a.md") for i in range(3)
+        ]
+        other = _make_candidate(dist=0.5, file_path="docs/b.md")
+        results = retrieval_engine._fuse_and_rank(
+            same_file + [other], set(), k=2, threshold=0.0
+        )
+        a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
+        b_count = sum(1 for r in results if r["file_path"] == "docs/b.md")
+        assert a_count == 1
+        assert b_count == 1
+
+        monkeypatch.setattr(retrieval_engine, "_MAX_PER_FILE", 3)
         results = retrieval_engine._fuse_and_rank(
             same_file + [other], set(), k=3, threshold=0.0
         )
         a_count = sum(1 for r in results if r["file_path"] == "docs/a.md")
-        b_count = sum(1 for r in results if r["file_path"] == "docs/b.md")
-        assert a_count == 2
-        assert b_count == 1
-        # The two best-scoring docs/a.md candidates (lowest distance) win the slots.
-        assert {r["id"] for r in results if r["file_path"] == "docs/a.md"} == {
-            same_file[0]["id"],
-            same_file[1]["id"],
-        }
+        assert a_count == 3
 
     def test_distinct_files_unaffected_by_cap(self):
         """When every candidate is from a distinct file, output is identical to

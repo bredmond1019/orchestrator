@@ -13,6 +13,40 @@ timestamp: "2026-08-06T18:20:00Z"
 
 ## [run: 2026-08-06]
 
+`/sdlc-flow plan-ranking-land` ran Tasks 1-3 to a PASS verdict on branch `plan-ranking-land-flow`,
+landing `OR.0.B` as hardening-only per `OR.0.A`'s null verdict (no winning ranking-constant value to
+land). Task 1 rewrote `test_caps_same_file_results_when_alternative_exists` to derive its cap,
+candidate counts, `k`, and winner ids from `retrieval_engine._MAX_PER_FILE` instead of hardcoded 2/3
+literals, stating `cap >= 1` as an explicit precondition rather than handling `cap == 0` as a case.
+Task 2 added `test_max_per_file_constant_is_the_knob`, a falsifiability guard modelled on the
+existing `test_section_title_weight_constant_is_the_knob` pattern (two `monkeypatch.setattr` passes
+asserting 1-per-file and 3-from-same-file behavior), and verified it fails when `_apply_diversity_cap`'s
+`_MAX_PER_FILE` lookup is temporarily hardcoded to `2`, with the revert confirmed by an empty
+`git diff app/brain/retrieval_engine.py`. Task 3 was validation-only (no files in its scope) and
+confirmed the block's full acceptance bar: 1403 passed / 7 skipped, ruff clean, pylint 10.00/10, and
+both `retrieval_engine.py` and the two docs guards (`docs/api-reference.md`, `docs/brain-rag.md`)
+show empty diffs — the null-verdict block ships tests only, no production constant moved. Review
+PASSed in 1 attempt with no findings. `state.json` block `OR.0.B` flipped `closed`, unblocking
+`OR.0.C` (exclude review-run artifacts from the corpus and measure the arm).
+
+Next: `OR.0.C` (exclude review-run artifacts from the corpus and measure the arm), now unblocked;
+or `OR.W` (external-knowledge memory layer) / `OR.R` (Brain-as-MCP-server), both open.
+
+```
+04e3a66 test: add falsifiability guard for _MAX_PER_FILE diversity cap
+a1b6e65 test: rewrite diversity cap test to derive from _MAX_PER_FILE
+695bba6 merge: OR.0.A ranking-constant sweep — NULL verdict, incumbent constants retained
+5cebba0 chore: wrap up plan-ranking-sweep
+73989f3 docs: log the OR.0.A-C digest-crowding planning session
+41c4297 log.txt
+bbee7be refactor(harness): rename /lane to /begin-orchestration
+ec26da3 fix(harness): /lane requires --roadmap; focused-epic inference dropped
+```
+
+---
+
+## [run: 2026-08-06]
+
 `/sdlc-flow plan-ranking-sweep` ran Tasks 1–7 to a PASS verdict on branch `plan-ranking-sweep-flow`.
 Task 1 built the untracked `scripts/sweep_ranking.py` driver and ran the seven-step blocking preflight
 (corpus at 13054 chunks / 1094 files, four coverage docs present, Ollama up, cache-cold control
