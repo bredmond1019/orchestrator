@@ -11,6 +11,48 @@ timestamp: "2026-08-06T18:20:00Z"
 
 ---
 
+## [run: 2026-08-06]
+
+`/sdlc-flow plan-ranking-sweep` ran Tasks 1–7 to a PASS verdict on branch `plan-ranking-sweep-flow`.
+Task 1 built the untracked `scripts/sweep_ranking.py` driver and ran the seven-step blocking preflight
+(corpus at 13054 chunks / 1094 files, four coverage docs present, Ollama up, cache-cold control
+reproduced the current baseline to 4dp on all five gated metrics). Task 2 scaffolded
+`planning/artifacts/ranking-sweep-2026-08-06.md` with the decision rule transcribed verbatim before
+any results existed. Tasks 3–5 swept the three levers in isolation against the fixed rule —
+`_MAX_PER_FILE` over {0,1,2,3}, `_KW_WEIGHT` over {0.0,0.5,1.0,2.0,3.0,5.0}, `_DOC_DECAY_FACTOR` over
+{0.99,0.995,1.0} plus a free `apply_decay=False` equivalence check that matched float-exact — each
+appending its per-point/per-case table and an overfit report to the artifact, no winner declared per
+lever yet. Task 6 ran the closing safety checks (cache-warm re-run matched cache-cold exactly;
+`brain_documents` byte-identical pre/post-sweep) and applied the pre-registered decision rule: **NULL
+verdict** — every above-control point on levers A and B is an isolated peak with no plateau and no
+pre-stated mechanism explaining its location (disqualifier 3), lever C's whole grid ties the control,
+and the 2-D cross-check gate was never reached since neither A nor B produced a surviving candidate.
+No production constant changes; a durable lesson was appended to `planning/knowledge.md`. Task 7 ran
+the full validation suite (4 core imports clean, ruff 0 violations, pylint 10.00/10, 1402 passed / 7
+skipped, all four `mev validate-brain` flags clean, `scripts/sweep_ranking.py` still untracked, `app/`
+untouched). Review PASSed in 1 attempt with no findings. `scripts/sweep_ranking.py` stays deliberately
+gitignored per the spec's own acceptance criteria, and the artifact + `knowledge.md` edits live in the
+HQ vault repo through the `planning/` symlink — no tracked file in this repo's own git tree changed
+across Tasks 1–6, so this run produced no `core/orchestrator` commits until this wrap-up. `OR.0.B`
+(land the ranking change + harden the diversity cap's tests) now needs re-scoping to hardening-only,
+since there is no winning value to land.
+
+Next: re-scope `OR.0.B` to diversity-cap test hardening only (no constant change to land), or pick up
+`OR.0.C` (exclude review-run artifacts from the corpus and measure the arm).
+
+```
+73989f3 docs: log the OR.0.A-C digest-crowding planning session
+41c4297 log.txt
+bbee7be refactor(harness): rename /lane to /begin-orchestration
+ec26da3 fix(harness): /lane requires --roadmap; focused-epic inference dropped
+a7e9be6 fix(harness): /lane roadmap resolution is non-circular, with a lane-header cross-check
+50b54f8 feat(harness): add /lane — open one lane of a multi-repo roadmap run
+d5919c2 chore(harness): sync /orchestrate — no subagent block work, commit state, report to the lane log
+9cfe975 docs: log work on isolating brain-rag DB connections for Github CI
+```
+
+---
+
 ## [2026-08-06]
 
 ### Digest-crowding retrieval recovery planned as OR.0.A-C; specs written for A and C
