@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-06T18:20:00Z"
+timestamp: "2026-08-06T22:40:39Z"
 ---
 
 # log — Orchestration Repo
@@ -88,6 +88,55 @@ d5919c2 chore(harness): sync /orchestrate — no subagent block work, commit sta
 ---
 
 ## [2026-08-06]
+
+### Ran the OR.0.A-C chain: null verdict, test hardening landed, corpus exclusion rolled back
+
+- **What:** Drove `/orchestrate OR.0.A OR.0.B OR.0.C --no-worktree` end to end. **`OR.0.A` (closed)**
+  swept all three ranking levers against the golden set and returned a **NULL VERDICT** — no candidate
+  survived the pre-registered decision rule, so `_MAX_PER_FILE=2` / `_KW_WEIGHT=5.0` /
+  `_DOC_DECAY_FACTOR=0.99` are retained. The cache-cold control reproduced
+  `2026-08-06T14-26-04Z.json` to 4dp on all five metrics and the corpus stayed frozen at 13054/1094
+  throughout, so the null is trustworthy rather than a muddled measurement. Full grid in
+  `planning/artifacts/ranking-sweep-2026-08-06.md`. **`OR.0.B` (closed)** consequently shipped only
+  its test half: `test_caps_same_file_results_when_alternative_exists` now derives cap, candidate
+  count, `k`, and winner ids from `_MAX_PER_FILE` instead of four spellings of the literal `2`, and a
+  new `test_max_per_file_constant_is_the_knob` falsifiability guard was added **and proven to fail**
+  when the constant is bypassed with a hardcoded value. `retrieval_engine.py`, `docs/api-reference.md`
+  and `docs/brain-rag.md` are byte-unchanged, enforced by `git diff --exit-code` in the spec.
+  1403 passed / 7 skipped. **`OR.0.C` (open, rolled back)** bailed at task 2 and was fully reverted
+  (`3c13e1e3` reverts `87c4cb73`).
+- **Why:** The 2026-08-06 retrieval regression (`recall@10` 1.0000 → 0.8824) had sat across four eval
+  runs while two sessions proposed a fix that already existed. The operator asked for it to run as a
+  real SDLC chain with structured testing and review rather than ad-hoc tuning — so that a *null*
+  result would be recorded as a legitimate finding instead of quietly retuned away.
+- **Refs:** `planning/plan-brain-retrieval-digest-crowding/plan.md` ·
+  `planning/plan-brain-retrieval-digest-crowding/lane-log.jsonl` ·
+  `planning/artifacts/ranking-sweep-2026-08-06.md` · carryover
+  `or-0-c-exclusion-scope-and-gate-rework`
+
+**`OR.0.C` failed usefully, and its findings are recorded at the top of
+`planning/plan-review-artifact-exclusion/tasks.md` for the re-run to decide.** Excluding all of
+`planning/artifacts/review/runs` orphaned **9 `related:` edges across 6 files**, turning
+`validate-brain --graph` red fleet-wide against a 0 baseline — evidence the run docs are load-bearing
+in the knowledge graph, not disposable. A narrower scope (`runs/2026-08-02-pass2-superseded/` only:
+5 files / 140 chunks, self-marked obsolete, one `doc_id`, **2** inbound edges) gets about half the
+crowding relief while leaving the graph intact; the block owns that call. Separately the bail itself
+was a **false failure** — task 2's `syn stale --deep` is a *fleet-wide* health check and tripped on
+151 `deleted_but_embedded` entries that are archive residue from the 179-folder fleet archive run
+(the same event that caused this regression), with zero `review/runs` presence. Same zombie class as
+session 10's `OR.ticket.corpus-prune-backlog` (150 paths / 1558 rows), regrown to 151. It needs to be
+delta-scoped, per D64's reasoning for the push gate.
+
+**Concurrency was the dominant hazard of this run, not the code.** Four lanes wrote to HQ throughout.
+The arm measurement was contaminated — the corpus moved 13054 → 13032 chunks and 1094 → 1100 files
+mid-block, because concurrent lanes added **+262 chunks / +19 files** while the exclusion removed
+exactly 284/13; the spec's own "any other delta halts the block" AC correctly caught it. `mev
+emit-state --write` twice regenerated fleet-wide surfaces derived from *other* lanes' uncommitted
+work, which had to be attributed line-by-line and reverted rather than committed. And two harness
+defects surfaced: `sdlc-flow`'s setup agent ran its clean-tree `git status` through the `planning/`
+symlink and reported three other lanes' dirt as this repo's (a plain retry cleared it), and no engine
+commits its own `sdlc/` artifacts, so every running lane permanently dirties HQ until someone cleans
+up behind it.
 
 ### Digest-crowding retrieval recovery planned as OR.0.A-C; specs written for A and C
 
