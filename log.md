@@ -9,7 +9,27 @@ timestamp: "2026-08-07T09:05:00Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
-## [run: 2026-08-07]
+## [run: 2026-08-07] (correction — supersedes the entry below)
+
+The `[run: 2026-08-07]` entry directly below this one is **inaccurate**: it describes a bailed
+attempt-1 run whose `task_validation_1` spec defect (a relative path that only resolves from the HQ
+repo root) was never fixed retroactively in that entry. A later re-run on the same day, after the
+`tasks.json` `validation_commands` path defect was corrected, completed all 5 tasks to a `passed`
+verdict — confirmed directly from `plan-review-artifact-exclusion/sdlc/sdlc-flow-state.json`
+(`status: "passed"`, `current_task: 5`, all five task entries `status: "passed"`). Task 1 re-verified
+the corpus/config restore (11533 chunks / 962 files / 284 chunks and 13 files scoped to
+`review/runs` / 2212 edges); task 2 recorded the pre-change baseline; task 3 applied the BROAD
+`skip_dirs` exclusion to HQ `brain.toml`, reconciled the corpus via a scoped `syn prune`, and
+repointed all 10 orphaned `related:` edges (`validate-brain --graph` clean); task 4 ran the
+exclusion-arm eval (a negative result, reported plainly — recall/mrr/groundedness all regressed
+versus `OR.0.B`'s end state); task 5 confirmed the full validation suite green end-to-end. All of
+this work lives in the HQ repo (commits `f86c6350`, `be16f5ca`, and others, each an explicit-pathspec
+HQ commit through the `planning/` symlink per standing rule 10) — nothing was left uncommitted.
+`state.json`'s `OR.0.C` entry itself still reads `open` as of this correction and needs a manual
+status flip separate from this log fix; this entry exists only to correct the log's own
+misrepresentation of the run's outcome, not to close the block.
+
+## [run: 2026-08-07] (superseded, see correction above)
 
 `/sdlc-flow plan-review-artifact-exclusion` ran tasks 1–5 and BAILED after task 1. Task 1 itself
 completed real work — it restored the `review/runs` corpus/config consistency via a scoped `syn
