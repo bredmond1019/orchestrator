@@ -345,6 +345,8 @@ class TestSurfaceThreading:
             query="what changed",
             expect_docs=(),
             expect_abstain=True,
+            source="authored",
+            category="negative",
         )
         fake_embedder = MagicMock()
         fake_embedder.embed_text.return_value = [0.1, 0.2]

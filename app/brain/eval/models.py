@@ -11,19 +11,29 @@ from datetime import UTC, datetime
 
 
 @dataclass(frozen=True)
-class RetrievalCase:
+class RetrievalCase:  # pylint: disable=too-many-instance-attributes
     """One golden-set case (`planning/retrieval-golden-set.yaml`).
 
     Mirrors the YAML schema `tests/brain/test_golden_set_schema.py` enforces:
     `id`, `query`, `expect_docs` (file_path/doc_id set membership, not
-    rank-sensitive), `expect_abstain`, optional `scope` (a D47 workspace/
-    project filter), optional `notes` (provenance — not consumed by scoring).
+    rank-sensitive), `expect_abstain`, `source` (required — one of
+    `authored | mined | archived`, provenance of the case's query text),
+    `category` (required — one of `archive | identifier | negative | hijack |
+    mined`, the same taxonomy the id-prefix convention already encodes;
+    `category` is metadata alongside that convention, never a replacement for
+    it), optional `source_query_id` (a `retrieval_queries.id`, only meaningful
+    when `source == "mined"`), optional `scope` (a D47 workspace/project
+    filter), optional `notes` (provenance — not consumed by scoring). `source`
+    and `category` are metadata only — never inputs to scoring.
     """
 
     case_id: str
     query: str
     expect_docs: tuple[str, ...]
     expect_abstain: bool
+    source: str
+    category: str
+    source_query_id: int | None = None
     scope: str | None = None
     notes: str = ""
 
