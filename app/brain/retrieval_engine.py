@@ -350,6 +350,11 @@ def retrieve(  # pylint: disable=too-many-arguments,too-many-locals
         hybrid=True,
         retrieval_confidence=compute_retrieval_confidence(results),
         latency_ms=int((time.monotonic() - start) * 1000),
+        k=k,
+        corpus=corpus,
+        embedding_model=getattr(embedder, "stamp", None),
+        filters=filters,
+        top_scores=[r.get("score") for r in results[:5]],
     )
     return results
 

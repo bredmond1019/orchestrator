@@ -74,7 +74,7 @@ def _session_scope():
     return contextmanager(db_session)()
 
 
-def log_retrieval(  # pylint: disable=too-many-arguments
+def log_retrieval(  # pylint: disable=too-many-arguments,too-many-locals
     query: str,
     results: list[dict],
     *,
@@ -83,6 +83,11 @@ def log_retrieval(  # pylint: disable=too-many-arguments
     hybrid: bool,
     retrieval_confidence: float | None,
     latency_ms: int | None,
+    k: int | None = None,
+    corpus: str | None = None,
+    embedding_model: str | None = None,
+    filters: dict | None = None,
+    top_scores: list[float] | None = None,
 ) -> None:
     """Write one `retrieval_queries` row describing a single retrieval call.
 
@@ -101,10 +106,26 @@ def log_retrieval(  # pylint: disable=too-many-arguments
             (e.g. `retrieval_engine.compute_retrieval_confidence`), if any.
         latency_ms: Wall-clock latency of the retrieval call, measured by
             the caller around the core call via `time.monotonic`.
+        k: Requested result count for this call (OR.2.E), making
+            `result_count` interpretable. Keyword-only, defaults to `None`
+            so neither existing call site breaks mid-deploy.
+        corpus: Corpus the query was scoped to (e.g. `"brain"`,
+            `"content"`), OR.2.E. `None` by default.
+        embedding_model: The `EmbeddingService.stamp` (`"{provider}:{model}"`)
+            live at call time, OR.2.E. Read from the retrieval path's
+            already-constructed embedder rather than building a fresh
+            `EmbeddingService()` just to ask. `None` by default.
+        filters: Filters applied to this retrieval call, if any (OR.2.E).
+            `None` by default.
+        top_scores: Top 5 candidate scores in rank order, aligned with
+            `top_doc_ids` (OR.2.E). `None` by default; when omitted here
+            it is derived from `results` the same way `top_doc_ids` is.
 
     Never raises: any failure (env flag aside) is caught, logged via
     `logging.warning`, and swallowed so the retrieval call this describes
-    is never affected.
+    is never affected. Every new (OR.2.E) field is computed inside this
+    same try block so a malformed value degrades the log row rather than
+    escaping to the caller.
     """
     if not _query_log_enabled():
         return
@@ -114,6 +135,9 @@ def log_retrieval(  # pylint: disable=too-many-arguments
         top_doc_ids = [r.get("doc_id") for r in results[:5] if r.get("doc_id")]
         top_score = results[0].get("score") if results else None
         abstained = retrieval_confidence is not None and retrieval_confidence < ABSTAIN_THRESHOLD
+        resolved_top_scores = (
+            top_scores if top_scores is not None else [r.get("score") for r in results[:5]]
+        )
 
         row = RetrievalQuery(
             id=uuid.uuid4(),
@@ -128,6 +152,11 @@ def log_retrieval(  # pylint: disable=too-many-arguments
             abstained=abstained,
             top_doc_ids=top_doc_ids,
             latency_ms=latency_ms,
+            k=k,
+            corpus=corpus,
+            embedding_model=embedding_model,
+            filters=filters,
+            top_scores=resolved_top_scores,
         )
         with _session_scope() as session:
             repository = GenericRepository(session=session, model=RetrievalQuery)
