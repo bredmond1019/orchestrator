@@ -198,7 +198,26 @@ def _load_brain_config(brain_path: Path) -> BrainConfig:
     )
 
 
-def parse_document(text: str) -> tuple[dict, str]:
+class DocumentParseError(Exception):
+    """Raised when YAML frontmatter fails to parse for a corpus file.
+
+    Carries the source ``file_path`` and the underlying ``cause`` so a call
+    site can log both without re-deriving either, and so this failure is
+    distinguishable (via ``isinstance``) from an IO error (file missing/
+    unreadable) or a DB error (both raised as bare exceptions elsewhere in
+    this module) rather than collapsing into one generic ``Exception``.
+    """
+
+    def __init__(self, file_path: "Path | str", cause: Exception) -> None:
+        self.file_path = file_path
+        self.cause = cause
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        return f"{self.file_path}: frontmatter parse error — {self.cause}"
+
+
+def parse_document(text: str, file_path: "Path | str | None" = None) -> tuple[dict, str]:
     """Parse YAML frontmatter from a markdown document.
 
     Uses ``python-frontmatter`` to split the document into its metadata
@@ -208,12 +227,24 @@ def parse_document(text: str) -> tuple[dict, str]:
 
     Args:
         text: Raw file contents, possibly starting with a YAML frontmatter block.
+        file_path: Optional source path, used only to enrich the
+            :class:`DocumentParseError` raised on a malformed YAML block.
+            Callers that already wrap this call in their own path-aware
+            error handling may omit it.
 
     Returns:
         A ``(metadata, body)`` tuple where ``body`` contains no YAML delimiters
         or frontmatter fields.
+
+    Raises:
+        DocumentParseError: if the YAML frontmatter block is malformed.
     """
-    post = frontmatter.loads(text)
+    try:
+        post = frontmatter.loads(text)
+    except Exception as exc:  # pylint: disable=broad-except
+        raise DocumentParseError(
+            file_path if file_path is not None else "<unknown>", exc
+        ) from exc
     return dict(post.metadata), post.content
 
 
@@ -489,7 +520,11 @@ def _sub_repo_files(
 
 
 def _sub_repo_docs_files(
-    brain_path: Path, config: BrainConfig, seen: set[Path]
+    brain_path: Path,
+    config: BrainConfig,
+    seen: set[Path],
+    errors: list[str] | None = None,
+    parse_failed_paths: list[str] | None = None,
 ) -> list[tuple[Path, str, str | None]]:
     """Return (absolute_path, doc_type, project_override) triples for sub-repo ``docs/``.
 
@@ -517,6 +552,14 @@ def _sub_repo_docs_files(
     semantics need to be taught to ``_backfill_dates``/the incremental-skip
     check/the upsert loop, because ``None`` vs "a slug string" is exactly the
     contract they already implement.
+
+    A file with malformed YAML frontmatter is recorded (path + cause) into
+    ``errors`` if supplied, skipped, and does **not** abort the rest of this
+    lane or the overall corpus walk — this is the fix for the aborting lane
+    documented at the call site in :func:`_collect_files`. Its brain-root-relative
+    path is additionally recorded into ``parse_failed_paths`` if supplied — the
+    same relative form the main loop stores in ``brain_documents.file_path`` —
+    so the caller can report/prune its quarantined rows (``--prune-failed``).
     """
     result: list[tuple[Path, str, str | None]] = []
     containers = _tier_container_slugs(config)
@@ -539,13 +582,26 @@ def _sub_repo_docs_files(
                 continue
             seen.add(md_file)
             raw_content = md_file.read_text(encoding="utf-8")
-            meta, _body = parse_document(raw_content)
+            try:
+                meta, _body = parse_document(raw_content, file_path=md_file)
+            except DocumentParseError as exc:
+                logger.error("Failed to parse %s: %s", exc.file_path, exc.cause)
+                if errors is not None:
+                    errors.append(str(exc))
+                if parse_failed_paths is not None:
+                    parse_failed_paths.append(md_file.relative_to(brain_path).as_posix())
+                continue
             project_override = None if meta.get("project") else slug
             result.append((md_file, _classify_doc_type(rel_to_repo), project_override))
     return result
 
 
-def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, str, str | None]]:
+def _collect_files(
+    brain_path: Path,
+    config: BrainConfig,
+    errors: list[str] | None = None,
+    parse_failed_paths: list[str] | None = None,
+) -> list[tuple[Path, str, str | None]]:
     """Return (absolute_path, doc_type, project_override) triples for the corpus.
 
     Four lanes, in order, sharing one ``seen`` set so no file is ever collected
@@ -568,6 +624,12 @@ def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, st
 
     All four honour ``[crawl].skip_dirs`` and skip underscore-prefixed and
     ephemeral files.
+
+    A file with malformed YAML frontmatter (lane 4 only — the other three
+    lanes do not parse frontmatter during collection) is recorded into
+    ``errors`` if supplied and skipped rather than aborting the whole walk.
+    Its relative path is additionally recorded into ``parse_failed_paths`` if
+    supplied (see :func:`_sub_repo_docs_files`).
     """
     result: list[tuple[Path, str, str | None]] = []
     seen: set[Path] = set()
@@ -594,7 +656,9 @@ def _collect_files(brain_path: Path, config: BrainConfig) -> list[tuple[Path, st
 
     result.extend(_tier_docs_files(brain_path, config, seen))
     result.extend(_sub_repo_files(brain_path, config, seen))
-    result.extend(_sub_repo_docs_files(brain_path, config, seen))
+    result.extend(
+        _sub_repo_docs_files(brain_path, config, seen, errors, parse_failed_paths)
+    )
     return result
 
 
@@ -731,6 +795,90 @@ def _prune_paths(
         )
 
 
+def _report_and_prune_failed_files(
+    failed_paths: list[str],
+    dry_run: bool = False,
+    project: str | None = None,
+    prune: bool = False,
+) -> dict[str, int]:
+    """Report (and, opt-in, delete) stale rows for files that failed to parse.
+
+    **The bug this closes:** the per-file upsert is delete-then-insert keyed on
+    ``file_path`` + ``section`` — when parsing raises, that delete never runs,
+    so the file's previously-indexed rows survive untouched and keep being
+    retrieved. The corpus quietly serves a stale copy of a now-broken file
+    indefinitely rather than losing the document.
+
+    **Quarantine, not delete, is the default** — this matches the repo's own
+    precedent (``reconcile.py`` reports, ``ops.repair_deep_stale`` repairs,
+    kept separate) and avoids destroying retrievable content with no preview
+    on what may be a transient YAML typo. Only ``--prune-failed`` deletes.
+
+    Args:
+        failed_paths: Brain-root-relative ``file_path`` values (the same form
+            stored in ``brain_documents.file_path``) for every file that
+            failed to parse this run — collection-time (sub-repo ``docs/``
+            lane) and per-file (main loop) failures alike.
+        dry_run:      When True, report what ``--prune-failed`` would delete
+            without writing anything.
+        project:      Workspace-mode project scope — mirrors every other
+            delete path in this module (``None`` in brain mode).
+        prune:        ``--prune-failed``. Default False — retain (quarantine).
+
+    Returns:
+        A ``{file_path: stale_rows_retained}`` map, one entry per failed path
+        (post-delete count is ``0`` once a path has actually been pruned).
+    """
+    if not failed_paths:
+        return {}
+
+    from database.brain_document import BrainDocument
+    from database.session import db_session
+
+    retained: dict[str, int] = {}
+    with next(db_session()) as session:  # type: ignore[arg-type]
+        for file_path in failed_paths:
+            query = session.query(BrainDocument).filter(
+                BrainDocument.file_path == file_path
+            )
+            if project is not None:
+                query = query.filter(BrainDocument.project == project)
+            count = query.count()
+
+            if not prune:
+                logger.warning(
+                    "%s: stale_rows_retained=%d%s",
+                    file_path,
+                    count,
+                    " (quarantined — retained; use --prune-failed to delete)"
+                    if count
+                    else " (no surviving rows)",
+                )
+                retained[file_path] = count
+                continue
+
+            if dry_run:
+                logger.warning(
+                    "%s: stale_rows_retained=%d (dry run — --prune-failed would "
+                    "delete these; nothing deleted)",
+                    file_path,
+                    count,
+                )
+                retained[file_path] = count
+                continue
+
+            deleted = query.delete(synchronize_session=False)
+            session.commit()
+            logger.warning(
+                "%s: stale_rows_retained=0 (--prune-failed deleted %d row(s))",
+                file_path,
+                deleted,
+            )
+            retained[file_path] = 0
+
+    return retained
+
+
 def _backfill_dates(
     files: list[tuple[Path, str, str | None]],
     brain_path: Path,
@@ -785,8 +933,17 @@ def _backfill_dates(
         )
 
 
-def main(argv: list[str] | None = None) -> None:
-    """Entry point for the brain corpus indexer."""
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for the brain corpus indexer.
+
+    Returns:
+        ``0`` on a clean run, ``1`` if any file failed to parse, embed, or
+        write (the failed paths are named in the logged summary). Every
+        early-return branch (``--prune-paths``, ``--backfill-dates``,
+        ``--dry-run``) also returns a code so ``sys.exit(main())`` and the
+        in-process ``app/brain/ops.py`` call sites both see a real result
+        rather than the ``None`` this used to return unconditionally.
+    """
     parser = argparse.ArgumentParser(
         description="Index the company brain markdown corpus into brain_documents table."
     )
@@ -860,6 +1017,17 @@ def main(argv: list[str] | None = None) -> None:
         help="Disable the per-file incremental skip so the targeted files fully re-embed "
         "(distinct from --rebuild, which deletes all non-diagnostic rows corpus-wide).",
     )
+    parser.add_argument(
+        "--prune-failed",
+        action="store_true",
+        help="Delete brain_documents rows for files that failed to parse this run, "
+        "instead of retaining them. Default is retain (quarantine, not delete) — a "
+        "parse failure never runs the per-file delete-then-insert upsert, so without "
+        "this flag the file's pre-existing rows keep being retrieved, reported per "
+        "path as stale_rows_retained in the summary. Respects --dry-run (reports "
+        "what would be deleted, deletes nothing) and the same workspace/project "
+        "delete scoping as --rebuild/--prune-paths.",
+    )
     args = parser.parse_args(argv)
 
     workspace_mode = bool(args.workspace or args.root)
@@ -916,7 +1084,22 @@ def main(argv: list[str] | None = None) -> None:
     # (so it needs no VOYAGE_API_KEY and never touches the corpus walk).
     if args.prune_paths:
         _prune_paths(args.prune_paths, brain_path, dry_run=args.dry_run, project=project_scope)
-        return
+        return 0
+
+    # Accumulates every failure across this run — collection-time parse
+    # failures (lane 4 of _collect_files, brain-mode only) plus the
+    # per-file embed/DB/parse failures appended later in the main loop.
+    # Declared here (not after the dry-run/backfill branches) so it is a
+    # single list threaded through the whole function and nothing that
+    # happens during file discovery is silently dropped.
+    errors: list[str] = []
+    # Subset of the above: brain-root-relative paths of files that failed to
+    # *parse* specifically (not embed/DB failures), in the same relative form
+    # stored in brain_documents.file_path. Feeds the stale_rows_retained /
+    # --prune-failed reporting — the quarantine read (and opt-in delete) side
+    # of a parse failure, since the delete-then-insert upsert never runs when
+    # parsing raises.
+    parse_failed_paths: list[str] = []
 
     if workspace_mode:
         workspace_files = _collect_workspace_files(brain_path)
@@ -932,7 +1115,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         # Load the manifest (vocab + crawl rules + repo list), then collect files.
         config = _load_brain_config(brain_path)
-        files = _collect_files(brain_path, config)
+        files = _collect_files(brain_path, config, errors, parse_failed_paths)
     if args.limit is not None:
         files = files[: args.limit]
         logger.info("--limit %d: processing first %d file(s) only", args.limit, len(files))
@@ -954,7 +1137,7 @@ def main(argv: list[str] | None = None) -> None:
     # embedding work (no VOYAGE_API_KEY needed, no full-corpus re-index).
     if args.backfill_dates:
         _backfill_dates(files, brain_path, dry_run=args.dry_run)
-        return
+        return 1 if errors else 0
 
     if args.dry_run:
         logger.info("Dry run — no DB writes, no API calls.")
@@ -966,7 +1149,18 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 logger.info("  [%s] %s", doc_type, rel)
         logger.info("Total: %d files", len(files))
-        return
+        if errors:
+            logger.warning("Collection errors (%d):", len(errors))
+            for err in errors:
+                logger.warning("  %s", err)
+        if parse_failed_paths:
+            _report_and_prune_failed_files(
+                parse_failed_paths,
+                dry_run=True,
+                project=project_scope,
+                prune=args.prune_failed,
+            )
+        return 1 if errors else 0
 
     # Import DB and service dependencies only when not dry-run
     from database.brain_document import BrainDocument
@@ -979,7 +1173,9 @@ def main(argv: list[str] | None = None) -> None:
     total_chunks = 0
     total_embeddings = 0
     skipped_files = 0
-    errors: list[str] = []
+    # NOTE: `errors` was already declared above (before the dry-run/
+    # backfill-dates early returns) so any collection-time parse failures
+    # from _collect_files are preserved here rather than reset.
 
     # Handle --rebuild: delete all non-diagnostic rows
     if args.rebuild:
@@ -1033,7 +1229,7 @@ def main(argv: list[str] | None = None) -> None:
 
             # Read, parse frontmatter, and chunk the body only (no YAML)
             raw_content = file_path.read_text(encoding="utf-8")
-            meta, body = parse_document(raw_content)
+            meta, body = parse_document(raw_content, file_path=rel_str)
             norm = normalize_metadata(meta, file_path, brain_path, config)
             if project_override:
                 # Sub-repo files (Block OR.O): the manifest slug is the
@@ -1126,6 +1322,14 @@ def main(argv: list[str] | None = None) -> None:
             total_chunks += len(final_chunks)
             logger.info("Indexed %s -> %d chunks", rel_str, len(final_chunks))
 
+        except DocumentParseError as parse_err:
+            # Distinguishable from the IO/DB errors below: a malformed YAML
+            # frontmatter block, not a filesystem or database failure.
+            # __str__ already names the path, so log/record it as-is rather
+            # than re-prefixing rel_str a second time.
+            logger.error("Failed to parse %s: %s", parse_err.file_path, parse_err.cause)
+            errors.append(str(parse_err))
+            parse_failed_paths.append(rel_str)
         except Exception as file_err:  # pylint: disable=broad-except
             logger.error("Failed to process %s: %s", rel_str, file_err)
             errors.append(f"{rel_str}: {file_err}")
@@ -1142,6 +1346,16 @@ def main(argv: list[str] | None = None) -> None:
         for err in errors:
             logger.warning("  %s", err)
 
+    if parse_failed_paths:
+        _report_and_prune_failed_files(
+            parse_failed_paths,
+            dry_run=False,
+            project=project_scope,
+            prune=args.prune_failed,
+        )
+
+    return 1 if errors else 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

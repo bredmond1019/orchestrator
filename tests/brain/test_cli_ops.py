@@ -22,7 +22,7 @@ class TestEmbedDispatch:
     """`syn embed` wires argparse args to `brain.ops.embed_paths`."""
 
     def test_embed_json_forwards_force_and_emits_sole_payload(self, capsys):
-        fake_result = {"embedded": ["a.md"], "forced": True}
+        fake_result = {"embedded": ["a.md"], "forced": True, "exit_code": 0, "success": True, "errors": []}
         with patch("brain.ops.embed_paths", return_value=fake_result) as mock_embed:
             code = main(["embed", "a.md", "--force", "--json"])
 
@@ -32,7 +32,7 @@ class TestEmbedDispatch:
         assert json.loads(out) == fake_result
 
     def test_embed_without_force_defaults_false(self, capsys):
-        fake_result = {"embedded": ["a.md"], "forced": False}
+        fake_result = {"embedded": ["a.md"], "forced": False, "exit_code": 0, "success": True, "errors": []}
         with patch("brain.ops.embed_paths", return_value=fake_result) as mock_embed:
             code = main(["embed", "a.md", "--json"])
 
@@ -40,7 +40,7 @@ class TestEmbedDispatch:
         mock_embed.assert_called_once_with(["a.md"], force=False, brain_path=None)
 
     def test_embed_human_mode_does_not_emit_raw_json(self, capsys):
-        fake_result = {"embedded": ["a.md"], "forced": False}
+        fake_result = {"embedded": ["a.md"], "forced": False, "exit_code": 0, "success": True, "errors": []}
         with patch("brain.ops.embed_paths", return_value=fake_result):
             code = main(["embed", "a.md"])
 
@@ -56,12 +56,35 @@ class TestEmbedDispatch:
         payload = json.loads(_read_stdout(capsys))
         assert "error" in payload
 
+    def test_embed_parse_failure_exits_nonzero(self, capsys):
+        """OR.2.C task 3: a reported (not raised) parse failure must also exit
+        non-zero — `index_brain.main()`'s result must reach `syn embed`'s own."""
+        fake_result = {
+            "embedded": ["a.md"],
+            "forced": False,
+            "exit_code": 1,
+            "success": False,
+            "errors": ["a.md: frontmatter parse error"],
+        }
+        with patch("brain.ops.embed_paths", return_value=fake_result):
+            code = main(["embed", "a.md", "--json"])
+
+        assert code == 1
+        out = _read_stdout(capsys)
+        assert json.loads(out) == fake_result
+
 
 class TestIngestDispatch:
     """`syn ingest --dir` wires argparse args to `brain.ops.ingest_dir`."""
 
     def test_ingest_json_forwards_directory_and_force(self, capsys):
-        fake_result = {"ingested": ["d/a.md", "d/b.md"], "forced": False}
+        fake_result = {
+            "ingested": ["d/a.md", "d/b.md"],
+            "forced": False,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
         with patch("brain.ops.ingest_dir", return_value=fake_result) as mock_ingest:
             code = main(["ingest", "--dir", "d", "--json"])
 
@@ -71,7 +94,13 @@ class TestIngestDispatch:
         assert json.loads(out) == fake_result
 
     def test_ingest_force_forwards_true(self, capsys):
-        fake_result = {"ingested": ["d/a.md"], "forced": True}
+        fake_result = {
+            "ingested": ["d/a.md"],
+            "forced": True,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
         with patch("brain.ops.ingest_dir", return_value=fake_result) as mock_ingest:
             code = main(["ingest", "--dir", "d", "--force", "--json"])
 
@@ -86,12 +115,35 @@ class TestIngestDispatch:
         payload = json.loads(_read_stdout(capsys))
         assert "error" in payload
 
+    def test_ingest_parse_failure_exits_nonzero(self, capsys):
+        """OR.2.C task 3: `syn ingest` must exit non-zero on a reported parse
+        failure, not just on a raised exception."""
+        fake_result = {
+            "ingested": ["d/bad.md"],
+            "forced": False,
+            "exit_code": 1,
+            "success": False,
+            "errors": ["d/bad.md: frontmatter parse error"],
+        }
+        with patch("brain.ops.ingest_dir", return_value=fake_result):
+            code = main(["ingest", "--dir", "d", "--json"])
+
+        assert code == 1
+        out = _read_stdout(capsys)
+        assert json.loads(out) == fake_result
+
 
 class TestPruneDispatch:
     """`syn prune` wires argparse args to `brain.ops.prune_paths`."""
 
     def test_prune_json_forwards_paths(self, capsys):
-        fake_result = {"pruned": ["a.md", "b.md"], "dry_run": False}
+        fake_result = {
+            "pruned": ["a.md", "b.md"],
+            "dry_run": False,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
         with patch("brain.ops.prune_paths", return_value=fake_result) as mock_prune:
             code = main(["prune", "a.md", "b.md", "--json"])
 
@@ -101,7 +153,13 @@ class TestPruneDispatch:
         assert json.loads(out) == fake_result
 
     def test_prune_dry_run_forwards_true(self, capsys):
-        fake_result = {"pruned": ["a.md"], "dry_run": True}
+        fake_result = {
+            "pruned": ["a.md"],
+            "dry_run": True,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
         with patch("brain.ops.prune_paths", return_value=fake_result) as mock_prune:
             code = main(["prune", "a.md", "--dry-run", "--json"])
 
@@ -121,7 +179,10 @@ class TestRefreshDispatch:
     """`syn refresh` wires argparse args to `brain.ops.refresh`."""
 
     def test_refresh_json_forwards_rebuild_and_dry_run(self, capsys):
-        fake_result = {"documents": {"dry_run": False}, "edges": {"loaded": 3}}
+        fake_result = {
+            "documents": {"dry_run": False, "exit_code": 0, "success": True, "errors": []},
+            "edges": {"loaded": 3},
+        }
         with patch("brain.ops.refresh", return_value=fake_result) as mock_refresh:
             code = main(["refresh", "--rebuild", "--json"])
 
@@ -131,12 +192,35 @@ class TestRefreshDispatch:
         assert json.loads(out) == fake_result
 
     def test_refresh_dry_run_forwards_true(self, capsys):
-        fake_result = {"documents": {"dry_run": True}, "edges": {"skipped": True}}
+        fake_result = {
+            "documents": {"dry_run": True, "exit_code": 0, "success": True, "errors": []},
+            "edges": {"skipped": True},
+        }
         with patch("brain.ops.refresh", return_value=fake_result) as mock_refresh:
             code = main(["refresh", "--dry-run", "--json"])
 
         assert code == 0
         mock_refresh.assert_called_once_with(rebuild=False, dry_run=True, brain_path=None)
+
+    def test_refresh_parse_failure_exits_nonzero(self, capsys):
+        """OR.2.C task 3: `syn refresh` must exit non-zero when the documents
+        step reported a parse/embed/DB failure, even though the edges step
+        succeeded."""
+        fake_result = {
+            "documents": {
+                "dry_run": False,
+                "exit_code": 1,
+                "success": False,
+                "errors": ["docs/bad.md: db error — boom"],
+            },
+            "edges": {"loaded": 2},
+        }
+        with patch("brain.ops.refresh", return_value=fake_result):
+            code = main(["refresh", "--json"])
+
+        assert code == 1
+        out = _read_stdout(capsys)
+        assert json.loads(out) == fake_result
 
 
 class TestStaleDispatch:

@@ -8,6 +8,15 @@ Wraps `scripts/index_brain.py`'s incremental content-index path and the
 behind one set of typed functions, so `syn` (`app/brain/cli.py`) and the brain
 repo's post-commit freshness hook share a single implementation. No second
 chunk->embed->write path is introduced here (CLAUDE.md rule 10).
+
+`OR.2.C` task 3: `embed_paths`/`ingest_dir`/`prune_paths`/`refresh` all run
+`index_brain.main()` in-process and, before this task, discarded its return
+value — a real parse/embed/DB failure never reached `syn ingest`/`syn
+refresh`/`syn embed`'s exit code. `_run_index_brain` is now the single choke
+point every in-process caller goes through; it returns `index_brain.main()`'s
+real exit code plus its captured error summary, and every public function
+here folds both into its own return payload as `exit_code`/`success`/
+`errors`.
 """
 
 import json
@@ -43,6 +52,68 @@ DEFAULT_QUERY_KEEP_DAYS: int = 90
 
 _KEEP_DAYS_ENV_VAR = "BRAIN_QUERY_LOG_KEEP_DAYS"
 
+# The module name `index_brain.main()` logs under. `import index_brain` below
+# resolves it as a top-level module (via the `scripts/` sys.path shim shared
+# by every call site in this file), so `logging.getLogger(__name__)` inside
+# `scripts/index_brain.py` always names this logger — pinned here rather than
+# re-derived so a rename of that module would fail loudly (empty capture)
+# instead of silently.
+_INDEX_BRAIN_LOGGER_NAME = "index_brain"
+
+
+class _IndexBrainErrorCapture(logging.Handler):
+    """Captures `index_brain`'s ERROR-level log records for one `main()` call.
+
+    `index_brain.main()` returns only an int exit code (task 1) — it has no
+    second, structured error-reporting channel, and adding one would mean two
+    places describing the same failure (out of scope for this task's file
+    list). Every per-file failure it records is *also* `logger.error(...)`'d
+    immediately before the matching `errors.append(...)` (parse, embed, DB,
+    and generic-processing cases alike), so capturing ERROR-level records
+    from its logger for the duration of one `main()` call reconstructs the
+    same failed-path summary the log carries — without index_brain.py
+    exposing anything new. Deliberately ERROR-only: the WARNING-level
+    "Errors (N):" recap `main()` also logs would otherwise duplicate every
+    entry captured here.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def _run_index_brain(argv: list[str]) -> tuple[int, list[str]]:
+    """Run `index_brain.main(argv)`, returning its exit code and error summary.
+
+    The single choke point every in-process caller of `index_brain.main()` in
+    this module goes through, so `embed_paths`, `prune_paths`, and `refresh`
+    all surface the same shape rather than three call sites each discarding
+    the result their own way (the bug this task exists to close — see the
+    module docstring's task-3 note).
+
+    Args:
+        argv: Argument vector forwarded to `index_brain.main()`.
+
+    Returns:
+        `(exit_code, error_messages)` — `exit_code` is `index_brain.main()`'s
+        real return value (0 clean, 1 on any parse/embed/DB failure);
+        `error_messages` names each failure captured from its ERROR-level log
+        records for this call only.
+    """
+    import index_brain  # pylint: disable=import-outside-toplevel,import-error
+
+    index_logger = logging.getLogger(_INDEX_BRAIN_LOGGER_NAME)
+    capture = _IndexBrainErrorCapture()
+    index_logger.addHandler(capture)
+    try:
+        code = index_brain.main(argv)
+    finally:
+        index_logger.removeHandler(capture)
+    return code, capture.messages
+
 
 def embed_paths(paths: list[str], *, force: bool = False, brain_path: str | None = None) -> dict:
     """Re-embed exactly the named files via `index_brain`'s `--only-paths` path.
@@ -57,17 +128,24 @@ def embed_paths(paths: list[str], *, force: bool = False, brain_path: str | None
         brain_path: Optional brain root override (forwarded to `--brain-path`).
 
     Returns:
-        A summary dict: `{"embedded": [...], "forced": bool}`.
+        A summary dict: `{"embedded": [...], "forced": bool, "exit_code": int,
+        "success": bool, "errors": [...]}`. `success` is `exit_code == 0` —
+        `syn embed` (`app/brain/cli.py::_run_embed`) exits non-zero on it
+        rather than silently discarding what `index_brain.main()` reported.
     """
-    import index_brain  # pylint: disable=import-outside-toplevel,import-error
-
     argv: list[str] = ["--only-paths", *paths]
     if force:
         argv.append("--force")
     if brain_path:
         argv += ["--brain-path", brain_path]
-    index_brain.main(argv)
-    return {"embedded": list(paths), "forced": force}
+    code, errors = _run_index_brain(argv)
+    return {
+        "embedded": list(paths),
+        "forced": force,
+        "exit_code": code,
+        "success": code == 0,
+        "errors": errors,
+    }
 
 
 def ingest_dir(directory: str, *, force: bool = False, brain_path: str | None = None) -> dict:
@@ -84,10 +162,11 @@ def ingest_dir(directory: str, *, force: bool = False, brain_path: str | None = 
         brain_path: Optional brain root override.
 
     Returns:
-        A summary dict: `{"ingested": [...], "forced": bool}`.
-
-    Raises:
-        NotADirectoryError: `directory` does not exist or is not a directory.
+        A summary dict: `{"ingested": [...], "forced": bool, "exit_code": int,
+        "success": bool, "errors": [...]}` — `exit_code`/`success`/`errors`
+        are `embed_paths`'s (this function has no direct `index_brain.main()`
+        call site of its own); an empty directory reports a clean `(0, True,
+        [])` rather than skipping the embed step's own contract.
     """
     root = Path(directory)
     if not root.is_dir():
@@ -95,10 +174,16 @@ def ingest_dir(directory: str, *, force: bool = False, brain_path: str | None = 
 
     files = [str(p) for p in sorted(root.rglob("*.md"))]
     if not files:
-        return {"ingested": [], "forced": force}
+        return {"ingested": [], "forced": force, "exit_code": 0, "success": True, "errors": []}
 
-    embed_paths(files, force=force, brain_path=brain_path)
-    return {"ingested": files, "forced": force}
+    embed_result = embed_paths(files, force=force, brain_path=brain_path)
+    return {
+        "ingested": files,
+        "forced": force,
+        "exit_code": embed_result["exit_code"],
+        "success": embed_result["success"],
+        "errors": embed_result["errors"],
+    }
 
 
 def prune_paths(paths: list[str], *, dry_run: bool = False, brain_path: str | None = None) -> dict:
@@ -115,17 +200,26 @@ def prune_paths(paths: list[str], *, dry_run: bool = False, brain_path: str | No
         brain_path: Optional brain root override (forwarded to `--brain-path`).
 
     Returns:
-        A summary dict: `{"pruned": [...], "dry_run": bool}`.
+        A summary dict: `{"pruned": [...], "dry_run": bool, "exit_code": int,
+        "success": bool, "errors": [...]}`. `--prune-paths` exits before the
+        corpus walk that can raise `DocumentParseError`, so `exit_code` is
+        `0`/`success` is `True` today — captured anyway so this function's
+        contract matches `embed_paths`/`refresh` rather than being the one
+        exception a future caller has to special-case.
     """
-    import index_brain  # pylint: disable=import-outside-toplevel,import-error
-
     argv: list[str] = ["--prune-paths", *paths]
     if dry_run:
         argv.append("--dry-run")
     if brain_path:
         argv += ["--brain-path", brain_path]
-    index_brain.main(argv)
-    return {"pruned": list(paths), "dry_run": dry_run}
+    code, errors = _run_index_brain(argv)
+    return {
+        "pruned": list(paths),
+        "dry_run": dry_run,
+        "exit_code": code,
+        "success": code == 0,
+        "errors": errors,
+    }
 
 
 def _resolve_keep_days(keep_days: int | None) -> int:
@@ -295,7 +389,11 @@ def refresh(*, rebuild: bool = False, dry_run: bool = False, brain_path: str | N
         brain_path: Optional brain root override.
 
     Returns:
-        `{"documents": {...}, "edges": {"loaded": N} | {"skipped": True}}`.
+        `{"documents": {"dry_run": bool, "exit_code": int, "success": bool,
+        "errors": [...]}, "edges": {"loaded": N} | {"skipped": True}}` —
+        `documents.success` is `False` whenever `index_brain.main()` reported
+        a parse/embed/DB failure, so `syn refresh` (and `syn routine refresh`)
+        surface it instead of always reporting a clean run.
     """
     import index_brain  # pylint: disable=import-outside-toplevel,import-error
 
@@ -307,16 +405,22 @@ def refresh(*, rebuild: bool = False, dry_run: bool = False, brain_path: str | N
     if dry_run:
         index_argv.append("--dry-run")
 
-    index_brain.main(index_argv)
+    code, errors = _run_index_brain(index_argv)
+    documents_payload = {
+        "dry_run": dry_run,
+        "exit_code": code,
+        "success": code == 0,
+        "errors": errors,
+    }
 
     if dry_run:
-        return {"documents": {"dry_run": True}, "edges": {"skipped": True}}
+        return {"documents": documents_payload, "edges": {"skipped": True}}
 
     resolved = (
         Path(brain_path) if brain_path else index_brain._DEFAULT_BRAIN_PATH  # pylint: disable=protected-access
     )
     loaded = refresh_edges(resolved)
-    return {"documents": {"dry_run": False}, "edges": {"loaded": loaded}}
+    return {"documents": documents_payload, "edges": {"loaded": loaded}}
 
 
 def _changed_files(root: Path, files: list, session) -> list[str]:

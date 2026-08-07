@@ -72,19 +72,58 @@ class TestEmbedPaths:
 
     @patch("index_brain.main")
     def test_forwards_only_paths(self, mock_main):
+        mock_main.return_value = 0
+
         result = embed_paths(["docs/a.md"])
 
         mock_main.assert_called_once_with(["--only-paths", "docs/a.md"])
-        assert result == {"embedded": ["docs/a.md"], "forced": False}
+        assert result == {
+            "embedded": ["docs/a.md"],
+            "forced": False,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
 
     @patch("index_brain.main")
     def test_forwards_force_and_brain_path(self, mock_main):
+        mock_main.return_value = 0
+
         result = embed_paths(["docs/a.md"], force=True, brain_path="/tmp/brain")
 
         mock_main.assert_called_once_with(
             ["--only-paths", "docs/a.md", "--force", "--brain-path", "/tmp/brain"]
         )
         assert result["forced"] is True
+
+    @patch("index_brain.main")
+    def test_nonzero_exit_surfaces_as_failure(self, mock_main):
+        """OR.2.C task 3: `index_brain.main()`'s non-zero result must reach the
+        payload, not be silently discarded like it was before this task."""
+
+        def fake_main(_argv):
+            logging.getLogger("index_brain").error("Failed to parse %s: %s", "docs/bad.md", "boom")
+            return 1
+
+        mock_main.side_effect = fake_main
+
+        result = embed_paths(["docs/bad.md"])
+
+        assert result["exit_code"] == 1
+        assert result["success"] is False
+        assert result["errors"] == ["Failed to parse docs/bad.md: boom"]
+
+    @patch("index_brain.main")
+    def test_error_capture_handler_is_removed_after_the_call(self, mock_main):
+        """The capturing handler must not leak onto `index_brain`'s logger across calls
+        — a leaked handler would accumulate every subsequent run's log records."""
+        index_logger = logging.getLogger("index_brain")
+        before = list(index_logger.handlers)
+        mock_main.return_value = 0
+
+        embed_paths(["docs/a.md"])
+
+        assert index_logger.handlers == before
 
 
 class TestIngestDir:
@@ -95,6 +134,13 @@ class TestIngestDir:
         (tmp_path / "a.md").write_text("A", encoding="utf-8")
         (tmp_path / "b.md").write_text("B", encoding="utf-8")
         (tmp_path / "c.txt").write_text("C", encoding="utf-8")
+        mock_embed_paths.return_value = {
+            "embedded": [],
+            "forced": True,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
 
         result = ingest_dir(str(tmp_path), force=True)
 
@@ -102,6 +148,7 @@ class TestIngestDir:
         assert {p.split("/")[-1] for p in called_files} == {"a.md", "b.md"}
         assert mock_embed_paths.call_args.kwargs["force"] is True
         assert set(result["ingested"]) == set(called_files)
+        assert result["success"] is True
 
     def test_non_directory_raises(self, tmp_path):
         missing = tmp_path / "nope"
@@ -114,7 +161,32 @@ class TestIngestDir:
         result = ingest_dir(str(tmp_path))
 
         mock_embed_paths.assert_not_called()
-        assert result == {"ingested": [], "forced": False}
+        assert result == {
+            "ingested": [],
+            "forced": False,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
+
+    @patch("brain.ops.embed_paths")
+    def test_forwards_embed_paths_failure(self, mock_embed_paths, tmp_path):
+        """`ingest_dir` has no direct `index_brain.main()` call site of its own —
+        it must forward `embed_paths`'s exit_code/success/errors verbatim."""
+        (tmp_path / "a.md").write_text("A", encoding="utf-8")
+        mock_embed_paths.return_value = {
+            "embedded": ["a.md"],
+            "forced": False,
+            "exit_code": 1,
+            "success": False,
+            "errors": ["a.md: parse error"],
+        }
+
+        result = ingest_dir(str(tmp_path))
+
+        assert result["exit_code"] == 1
+        assert result["success"] is False
+        assert result["errors"] == ["a.md: parse error"]
 
 
 class TestPrunePaths:
@@ -122,13 +194,23 @@ class TestPrunePaths:
 
     @patch("index_brain.main")
     def test_forwards_paths(self, mock_main):
+        mock_main.return_value = 0
+
         result = prune_paths(["docs/old.md", "docs/gone.md"])
 
         mock_main.assert_called_once_with(["--prune-paths", "docs/old.md", "docs/gone.md"])
-        assert result == {"pruned": ["docs/old.md", "docs/gone.md"], "dry_run": False}
+        assert result == {
+            "pruned": ["docs/old.md", "docs/gone.md"],
+            "dry_run": False,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
 
     @patch("index_brain.main")
     def test_forwards_dry_run_and_brain_path(self, mock_main):
+        mock_main.return_value = 0
+
         result = prune_paths(["docs/old.md"], dry_run=True, brain_path="/tmp/brain")
 
         mock_main.assert_called_once_with(
@@ -139,12 +221,20 @@ class TestPrunePaths:
     @patch("index_brain.main")
     def test_accepts_ingested_lane_synthetic_paths(self, mock_main):
         """`ingested/%` paths are exact-match deletes like any other path (OR.ticket task 3)."""
+        mock_main.return_value = 0
+
         result = prune_paths(["ingested/proposal/abc123.md"])
 
         mock_main.assert_called_once_with(
             ["--prune-paths", "ingested/proposal/abc123.md"]
         )
-        assert result == {"pruned": ["ingested/proposal/abc123.md"], "dry_run": False}
+        assert result == {
+            "pruned": ["ingested/proposal/abc123.md"],
+            "dry_run": False,
+            "exit_code": 0,
+            "success": True,
+            "errors": [],
+        }
 
 
 class TestRefreshEdges:
@@ -190,6 +280,7 @@ class TestRefresh:
     @patch("brain.ops.refresh_edges")
     @patch("index_brain.main")
     def test_default_run_calls_both_steps_in_order(self, mock_index_main, mock_refresh_edges):
+        mock_index_main.return_value = 0
         parent = MagicMock()
         parent.attach_mock(mock_index_main, "index_main")
         parent.attach_mock(mock_refresh_edges, "refresh_edges")
@@ -199,20 +290,29 @@ class TestRefresh:
 
         assert [c[0] for c in parent.mock_calls] == ["index_main", "refresh_edges"]
         mock_index_main.assert_called_once_with([])
-        assert result == {"documents": {"dry_run": False}, "edges": {"loaded": 5}}
+        assert result == {
+            "documents": {"dry_run": False, "exit_code": 0, "success": True, "errors": []},
+            "edges": {"loaded": 5},
+        }
 
     @patch("brain.ops.refresh_edges")
     @patch("index_brain.main")
     def test_dry_run_skips_edge_step(self, mock_index_main, mock_refresh_edges):
+        mock_index_main.return_value = 0
+
         result = refresh(dry_run=True)
 
         mock_index_main.assert_called_once_with(["--dry-run"])
         mock_refresh_edges.assert_not_called()
-        assert result == {"documents": {"dry_run": True}, "edges": {"skipped": True}}
+        assert result == {
+            "documents": {"dry_run": True, "exit_code": 0, "success": True, "errors": []},
+            "edges": {"skipped": True},
+        }
 
     @patch("brain.ops.refresh_edges")
     @patch("index_brain.main")
     def test_forwards_rebuild_and_brain_path(self, mock_index_main, mock_refresh_edges):
+        mock_index_main.return_value = 0
         mock_refresh_edges.return_value = 0
 
         refresh(rebuild=True, brain_path="/tmp/some-brain")
@@ -220,6 +320,45 @@ class TestRefresh:
         mock_index_main.assert_called_once_with(["--brain-path", "/tmp/some-brain", "--rebuild"])
         called_path = mock_refresh_edges.call_args[0][0]
         assert str(called_path) == "/tmp/some-brain"
+
+    @patch("brain.ops.refresh_edges")
+    @patch("index_brain.main")
+    def test_parse_failure_surfaces_in_documents_payload(self, mock_index_main, mock_refresh_edges):
+        """OR.2.C task 3: `syn refresh` (and `syn routine refresh`) must be able to
+        see a parse/embed/DB failure `index_brain.main()` reported, not just log it."""
+
+        def fake_main(_argv):
+            logging.getLogger("index_brain").error("docs/bad.md: db error — boom")
+            return 1
+
+        mock_index_main.side_effect = fake_main
+        mock_refresh_edges.return_value = 2
+
+        result = refresh()
+
+        assert result["documents"]["exit_code"] == 1
+        assert result["documents"]["success"] is False
+        assert result["documents"]["errors"] == ["docs/bad.md: db error — boom"]
+        # The edge step still runs — a documents-side failure must not raise and
+        # must not abort the edge reload (routines stay cron-safe).
+        assert result["edges"] == {"loaded": 2}
+
+    @patch("brain.ops.refresh_edges")
+    @patch("index_brain.main")
+    def test_dry_run_parse_failure_surfaces_without_edge_step(
+        self, mock_index_main, mock_refresh_edges
+    ):
+        def fake_main(_argv):
+            logging.getLogger("index_brain").error("docs/bad.md: frontmatter parse error")
+            return 1
+
+        mock_index_main.side_effect = fake_main
+
+        result = refresh(dry_run=True)
+
+        mock_refresh_edges.assert_not_called()
+        assert result["documents"]["success"] is False
+        assert result["edges"] == {"skipped": True}
 
 
 class _FakePulseReport:

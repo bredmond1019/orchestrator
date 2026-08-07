@@ -27,11 +27,13 @@ if str(SCRIPTS_DIR) not in sys.path:
 from index_brain import (  # noqa: E402
     _DEFAULT_BRAIN_PATH,
     BrainConfig,
+    DocumentParseError,
     _classify_doc_type,
     _collect_files,
     _find_brain_root,
     _get_doc_type_for_path,
     _is_header_only_chunk,
+    _report_and_prune_failed_files,
     _sub_repo_docs_files,
     _sub_repo_files,
     _tier_container_slugs,
@@ -550,6 +552,58 @@ class TestParseDocument:
 
 
 # ---------------------------------------------------------------------------
+# DocumentParseError — malformed YAML frontmatter (OR.2.C task 1)
+# ---------------------------------------------------------------------------
+
+_MALFORMED_YAML = "---\ntitle: [unclosed\nfoo: bar\n---\n\nBody text.\n"
+
+
+class TestDocumentParseError:
+    """parse_document raises a typed, path-carrying error on malformed YAML."""
+
+    def test_malformed_yaml_raises_document_parse_error(self):
+        with pytest.raises(DocumentParseError):
+            parse_document(_MALFORMED_YAML)
+
+    def test_error_carries_file_path_and_cause(self):
+        with pytest.raises(DocumentParseError) as excinfo:
+            parse_document(_MALFORMED_YAML, file_path="docs/broken.md")
+        err = excinfo.value
+        assert err.file_path == "docs/broken.md"
+        assert err.cause is not None
+        assert isinstance(err.cause, Exception)
+
+    def test_str_names_both_path_and_cause(self):
+        with pytest.raises(DocumentParseError) as excinfo:
+            parse_document(_MALFORMED_YAML, file_path="docs/broken.md")
+        text = str(excinfo.value)
+        assert "docs/broken.md" in text
+        # The underlying yaml.parser.ParserError message should be present too.
+        assert "pars" in text.lower() or "expect" in text.lower()
+
+    def test_missing_file_path_falls_back_to_placeholder(self):
+        with pytest.raises(DocumentParseError) as excinfo:
+            parse_document(_MALFORMED_YAML)
+        assert excinfo.value.file_path == "<unknown>"
+
+    def test_is_distinguishable_from_generic_exception(self):
+        """DocumentParseError must not be caught by an `except OSError`/DB-style
+        narrow handler — it's a distinct type an IO or DB error would not be."""
+        with pytest.raises(DocumentParseError):
+            try:
+                parse_document(_MALFORMED_YAML)
+            except OSError:
+                pytest.fail("DocumentParseError must not be an OSError subclass")
+            # Re-raise so the outer pytest.raises still sees it.
+            raise
+
+    def test_valid_yaml_does_not_raise(self):
+        # Sanity: a clean document never raises DocumentParseError.
+        meta, _body = parse_document("---\ntitle: Fine\n---\n\nBody.")
+        assert meta.get("title") == "Fine"
+
+
+# ---------------------------------------------------------------------------
 # normalize_metadata tests
 # ---------------------------------------------------------------------------
 
@@ -839,6 +893,484 @@ class TestFrontmatterIntegration:
             main(["--brain-path", str(tmp_path)])
 
         assert mock_embed.embed_batch.called
+
+
+# ---------------------------------------------------------------------------
+# Parse-failure gating: main() exit code, summary, sub-repo lane no longer
+# aborting the run (OR.2.C task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestParseFailureHandling:
+    """A malformed-frontmatter file is a real gate now, not a silent drop."""
+
+    def _make_mock_session(self, mock_doc: MagicMock = None) -> MagicMock:
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.filter_by.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.first.return_value = mock_doc
+        mock_query.delete.return_value = 0
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session
+
+    def test_clean_run_returns_zero(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "career.md").write_text("## Section\nContent.", encoding="utf-8")
+
+        def fake_db_session():
+            yield self._make_mock_session(mock_doc=None)
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            result = main(["--brain-path", str(tmp_path)])
+
+        assert result == 0
+
+    def test_malformed_file_logged_others_still_index_and_main_returns_1(
+        self, tmp_path, caplog
+    ):
+        import logging
+
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "career.md").write_text("## Section\nGood content.", encoding="utf-8")
+        (docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        def fake_db_session():
+            yield self._make_mock_session(mock_doc=None)
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(["--brain-path", str(tmp_path)])
+
+        assert result == 1
+        # career.md still made it through the pipeline to embed_batch.
+        assert mock_embed.embed_batch.called
+        # broken.md's path is named in the logged summary.
+        assert "broken.md" in caplog.text
+
+    def test_malformed_sub_repo_doc_does_not_abort_the_run(self, tmp_path, caplog):
+        """A malformed file in the sub-repo docs/ lane used to abort the whole
+        run before anything indexed (bare `parse_document` call). It must now
+        be recorded and skipped, with the rest of the corpus still indexing."""
+        import logging
+
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "career.md").write_text(
+            "## Section\nGood root content.", encoding="utf-8"
+        )
+
+        leaf_docs = tmp_path / "leaf" / "docs"
+        leaf_docs.mkdir(parents=True)
+        (leaf_docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        brain_toml = _TEST_BRAIN_TOML + (
+            '\n[[repos]]\nslug = "leaf"\ntier = "_root"\nrepo_path = "leaf"\n'
+        )
+        (tmp_path / "brain.toml").write_text(brain_toml, encoding="utf-8")
+
+        def fake_db_session():
+            yield self._make_mock_session(mock_doc=None)
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(["--brain-path", str(tmp_path)])
+
+        assert result == 1
+        # The run did not abort before indexing — the root doc still embedded.
+        assert mock_embed.embed_batch.called
+        assert "broken.md" in caplog.text
+
+    def test_sub_repo_docs_files_records_failure_and_continues(self, tmp_path):
+        """Unit-level check on `_sub_repo_docs_files` directly: the malformed
+        file is skipped and recorded, the well-formed sibling still collects."""
+        config = BrainConfig(
+            valid_layers=TEST_CONFIG.valid_layers,
+            valid_projects=frozenset({*TEST_CONFIG.valid_projects, "leaf"}),
+            valid_statuses=TEST_CONFIG.valid_statuses,
+            skip_dirs=(),
+            repos=(
+                {"slug": "brain", "repo_path": ".", "tier": "_root"},
+                {"slug": "leaf", "repo_path": "leaf", "tier": "_root"},
+            ),
+        )
+        leaf_docs = tmp_path / "leaf" / "docs"
+        leaf_docs.mkdir(parents=True)
+        (leaf_docs / "good.md").write_text("# Good\nContent.", encoding="utf-8")
+        (leaf_docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        errors: list[str] = []
+        result = _sub_repo_docs_files(tmp_path, config, set(), errors)
+
+        rels = {p.relative_to(tmp_path).as_posix() for p, _, _ in result}
+        assert "leaf/docs/good.md" in rels
+        assert "leaf/docs/broken.md" not in rels
+        assert len(errors) == 1
+        assert "broken.md" in errors[0]
+
+    def test_collect_files_propagates_sub_repo_parse_failures(self, tmp_path):
+        config = BrainConfig(
+            valid_layers=TEST_CONFIG.valid_layers,
+            valid_projects=frozenset({*TEST_CONFIG.valid_projects, "leaf"}),
+            valid_statuses=TEST_CONFIG.valid_statuses,
+            skip_dirs=(),
+            repos=(
+                {"slug": "brain", "repo_path": ".", "tier": "_root"},
+                {"slug": "leaf", "repo_path": "leaf", "tier": "_root"},
+            ),
+        )
+        leaf_docs = tmp_path / "leaf" / "docs"
+        leaf_docs.mkdir(parents=True)
+        (leaf_docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        errors: list[str] = []
+        files = _collect_files(tmp_path, config, errors)
+        rels = {p.relative_to(tmp_path).as_posix() for p, _, _ in files}
+        assert "leaf/docs/broken.md" not in rels
+        assert len(errors) == 1
+
+    def test_collect_files_errors_default_is_optional(self, tmp_path):
+        """_collect_files without an errors collector must not raise even
+        when a sub-repo file is malformed (the collector is opt-in)."""
+        config = BrainConfig(
+            valid_layers=TEST_CONFIG.valid_layers,
+            valid_projects=frozenset({*TEST_CONFIG.valid_projects, "leaf"}),
+            valid_statuses=TEST_CONFIG.valid_statuses,
+            skip_dirs=(),
+            repos=(
+                {"slug": "brain", "repo_path": ".", "tier": "_root"},
+                {"slug": "leaf", "repo_path": "leaf", "tier": "_root"},
+            ),
+        )
+        leaf_docs = tmp_path / "leaf" / "docs"
+        leaf_docs.mkdir(parents=True)
+        (leaf_docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        files = _collect_files(tmp_path, config)  # no errors collector passed
+        rels = {p.relative_to(tmp_path).as_posix() for p, _, _ in files}
+        assert "leaf/docs/broken.md" not in rels
+
+    def test_dry_run_still_reports_nonzero_on_collection_failure(self, tmp_path, caplog):
+        """--dry-run must also surface collection-time parse failures via the
+        return code, since it now shares the same `errors` accumulation."""
+        import logging
+
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "career.md").write_text("## S\nContent.", encoding="utf-8")
+
+        leaf_docs = tmp_path / "leaf" / "docs"
+        leaf_docs.mkdir(parents=True)
+        (leaf_docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        brain_toml = _TEST_BRAIN_TOML + (
+            '\n[[repos]]\nslug = "leaf"\ntier = "_root"\nrepo_path = "leaf"\n'
+        )
+        (tmp_path / "brain.toml").write_text(brain_toml, encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="index_brain"):
+            result = main(["--brain-path", str(tmp_path), "--dry-run"])
+
+        assert result == 1
+        assert "broken.md" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# stale_rows_retained reporting + --prune-failed (OR.2.C task 2)
+# ---------------------------------------------------------------------------
+
+
+class TestReportAndPruneFailedFiles:
+    """Unit tests directly against `_report_and_prune_failed_files`.
+
+    A malformed file's parse failure means the per-file delete-then-insert
+    upsert never runs, so its pre-existing rows survive untouched. This is
+    the read side of that quarantine (and, opt-in via `prune=True`, the
+    delete side).
+    """
+
+    def _make_mock_session(self, count: int = 0, deleted: int = 0):
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.count.return_value = count
+        mock_query.delete.return_value = deleted
+        mock_session = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session, mock_query
+
+    def test_empty_list_is_a_no_op(self):
+        with patch("database.session.db_session") as mock_db_session:
+            result = _report_and_prune_failed_files([])
+
+        assert result == {}
+        mock_db_session.assert_not_called()
+
+    def test_retain_by_default_reports_count_and_does_not_delete(self, caplog):
+        import logging
+
+        mock_session, mock_query = self._make_mock_session(count=3)
+
+        def fake_db_session():
+            yield mock_session
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = _report_and_prune_failed_files(["docs/broken.md"])
+
+        assert result == {"docs/broken.md": 3}
+        mock_query.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+        assert "docs/broken.md" in caplog.text
+        assert "stale_rows_retained=3" in caplog.text
+
+    def test_never_indexed_reports_stale_rows_retained_zero(self):
+        mock_session, _ = self._make_mock_session(count=0)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(["docs/never-indexed.md"])
+
+        assert result == {"docs/never-indexed.md": 0}
+
+    def test_prune_failed_deletes_and_commits_when_not_dry_run(self):
+        mock_session, mock_query = self._make_mock_session(count=2, deleted=2)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(
+                ["docs/broken.md"], prune=True, dry_run=False
+            )
+
+        mock_query.delete.assert_called_once()
+        mock_session.commit.assert_called_once()
+        assert result == {"docs/broken.md": 0}
+
+    def test_prune_failed_dry_run_deletes_nothing(self):
+        mock_session, mock_query = self._make_mock_session(count=2)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(
+                ["docs/broken.md"], prune=True, dry_run=True
+            )
+
+        mock_query.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+        # Not actually pruned — the reported count is still the retained count.
+        assert result == {"docs/broken.md": 2}
+
+    def test_workspace_project_scoping_is_applied(self):
+        mock_session, mock_query = self._make_mock_session(count=1)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            _report_and_prune_failed_files(["docs/broken.md"], project="acme-co")
+
+        # filter() is called once for file_path and once for the project scope.
+        assert mock_query.filter.call_count == 2
+
+    def test_no_project_scoping_in_brain_mode(self):
+        mock_session, mock_query = self._make_mock_session(count=1)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            _report_and_prune_failed_files(["docs/broken.md"], project=None)
+
+        # Only the file_path filter — no project scoping applied.
+        assert mock_query.filter.call_count == 1
+
+    def test_multiple_failed_paths_all_reported(self):
+        mock_session, _ = self._make_mock_session(count=1)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(["docs/a.md", "docs/b.md"])
+
+        assert result == {"docs/a.md": 1, "docs/b.md": 1}
+
+
+class TestStaleRowsRetainedInFullRun:
+    """End-to-end `main()` runs asserting the summary reports
+    `stale_rows_retained` per failed path, and that `--prune-failed` (with
+    its `--dry-run` variant) is respected.
+    """
+
+    def _make_mock_session(self, count: int = 0, deleted: int = 0):
+        """A session mock supporting both the incremental-skip chain
+        (filter/filter_by/order_by/first) and the stale-rows chain
+        (filter/count/delete) used by `_report_and_prune_failed_files`."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.filter_by.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.first.return_value = None
+        mock_query.count.return_value = count
+        mock_query.delete.return_value = deleted
+        mock_session = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session, mock_query
+
+    def _build_corpus(self, tmp_path):
+        # Only the malformed file — a well-formed sibling would also route
+        # through the normal upsert's own delete-then-insert, muddying the
+        # delete-call assertions this class makes about the quarantine path
+        # specifically. Coverage that a well-formed sibling keeps indexing
+        # alongside a malformed one already lives in TestParseFailureHandling.
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+        return docs
+
+    def test_malformed_file_reports_stale_rows_retained_and_keeps_rows_default(
+        self, tmp_path, caplog
+    ):
+        """(a) A file that parsed before and now fails keeps its rows (default
+        retain) and is reported with the right stale_rows_retained count."""
+        import logging
+
+        self._build_corpus(tmp_path)
+        mock_session, mock_query = self._make_mock_session(count=3)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(["--brain-path", str(tmp_path)])
+
+        assert result == 1
+        assert "stale_rows_retained=3" in caplog.text
+        assert "broken.md" in caplog.text
+        # Default is retain — no delete issued for the stale-rows quarantine.
+        mock_query.delete.assert_not_called()
+
+    def test_never_indexed_file_reports_stale_rows_retained_zero(self, tmp_path, caplog):
+        """(d) A file that never indexed before reports stale_rows_retained: 0."""
+        import logging
+
+        self._build_corpus(tmp_path)
+        mock_session, _mock_query = self._make_mock_session(count=0)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(["--brain-path", str(tmp_path)])
+
+        assert result == 1
+        assert "stale_rows_retained=0" in caplog.text
+
+    def test_prune_failed_deletes_the_retained_rows(self, tmp_path):
+        """(b) The same run under --prune-failed deletes the quarantined rows."""
+        self._build_corpus(tmp_path)
+        mock_session, mock_query = self._make_mock_session(count=3, deleted=3)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            result = main(["--brain-path", str(tmp_path), "--prune-failed"])
+
+        assert result == 1
+        mock_query.delete.assert_called_once()
+        mock_session.commit.assert_called()
+
+    def test_prune_failed_dry_run_reports_without_deleting(self, tmp_path, caplog):
+        """(c) --prune-failed --dry-run reports what would be deleted and
+        deletes nothing. --dry-run never parses file bodies (it only lists
+        the already-collected corpus), so the failure exercised here is a
+        collection-time one — the sub-repo docs/ lane, same as the existing
+        dry-run collection-failure coverage in TestParseFailureHandling."""
+        import logging
+
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "career.md").write_text("## S\nContent.", encoding="utf-8")
+
+        leaf_docs = tmp_path / "leaf" / "docs"
+        leaf_docs.mkdir(parents=True)
+        (leaf_docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        brain_toml = _TEST_BRAIN_TOML + (
+            '\n[[repos]]\nslug = "leaf"\ntier = "_root"\nrepo_path = "leaf"\n'
+        )
+        (tmp_path / "brain.toml").write_text(brain_toml, encoding="utf-8")
+
+        mock_session, mock_query = self._make_mock_session(count=2)
+
+        def fake_db_session():
+            yield mock_session
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(
+                ["--brain-path", str(tmp_path), "--dry-run", "--prune-failed"]
+            )
+
+        assert result == 1
+        mock_query.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+        assert "stale_rows_retained=2" in caplog.text
+        assert "broken.md" in caplog.text
 
 
 # ---------------------------------------------------------------------------
