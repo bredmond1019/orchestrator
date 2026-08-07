@@ -435,6 +435,20 @@ def test_run_eval_forwards_case_scope_as_project_filter():
     assert kwargs["filters"] == {"project": "orchestrator"}
 
 
+def test_run_eval_passes_surface_eval():
+    """`run_eval`'s `retrieve()` call stamps `surface="eval"` (the only
+    genuine plumbing gap this block closes — the other three surfaces
+    were already landed in `a660715`, see `tests/brain/test_query_log.py`).
+    """
+    with patch(
+        "brain.eval.runner.retrieval_engine.retrieve", return_value=[]
+    ) as mock_retrieve:
+        run_eval([_POSITIVE_CASE])
+
+    _, kwargs = mock_retrieve.call_args
+    assert kwargs["surface"] == "eval"
+
+
 # ---------------------------------------------------------------------------
 # write_report / compare_to_baseline (the --baseline regression gate)
 # ---------------------------------------------------------------------------
