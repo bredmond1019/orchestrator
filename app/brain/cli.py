@@ -142,7 +142,14 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
     eval_parser.add_argument(
         "--baseline",
         default=None,
-        help="Prior run JSON to diff against; exits non-zero on a significant regression.",
+        help="Prior run JSON to diff against; defaults to the promoted pin "
+        "(planning/retrieval-eval-runs/baseline.json) when omitted. Exits "
+        "non-zero on a significant regression.",
+    )
+    eval_parser.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="Skip comparison entirely (including the default pin lookup); always exits 0.",
     )
     eval_parser.add_argument(
         "--strict",
@@ -157,6 +164,25 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
         help="Score and print the report but do not persist it under "
         "planning/retrieval-eval-runs/.",
     )
+
+    eval_subparsers = eval_parser.add_subparsers(dest="eval_subcommand")
+    promote_parser = eval_subparsers.add_parser(
+        "promote",
+        help="Promote a run to the baseline pin "
+        "(planning/retrieval-eval-runs/baseline.json).",
+    )
+    promote_parser.add_argument(
+        "run", help="Path to a run JSON under planning/retrieval-eval-runs/."
+    )
+    promote_parser.add_argument(
+        "--reason", required=True, help="Non-empty reason for the promotion (required)."
+    )
+    promote_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Promote even if significantly worse than the current pin.",
+    )
+    promote_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
     queries_parser = subparsers.add_parser(
         "queries",
@@ -549,10 +575,18 @@ def _render_eval_result(
     written_path: str | None,
     baseline_result: tuple[dict, dict] | None,
     warnings: list[str],
+    *,
+    baseline_label: str | None = None,
 ) -> None:
     """Print (JSON or human) the `syn eval` result — factored out of
     `_run_eval` purely to keep that function's local-variable count in
-    check; carries no behavior beyond what `_run_eval` used to do inline."""
+    check; carries no behavior beyond what `_run_eval` used to do inline.
+
+    `baseline_label` names which run was compared against (an explicit
+    `--baseline` path or the promoted pin's `run` field) — printed/emitted
+    so `syn eval`'s default pin comparison names the run, not just the
+    numbers.
+    """
     deltas, verdict = baseline_result if baseline_result is not None else (None, None)
 
     if args.json:
@@ -561,11 +595,13 @@ def _render_eval_result(
         if deltas is not None:
             payload["baseline_deltas"] = deltas
             payload["baseline_verdict"] = verdict
+            payload["baseline_label"] = baseline_label
         print(json.dumps(payload))
         return
 
     _print_eval_report(report_dict)
     if deltas is not None:
+        print(f"-- comparing against baseline: {baseline_label} --")
         print("-- baseline deltas (signed; negative = regression) --")
         for metric, delta in sorted(deltas.items()):
             entry = verdict.get(metric, {})
@@ -594,30 +630,67 @@ def _render_eval_result(
         print("(--no-write: report not persisted)")
 
 
+def _eval_baseline_comparison(
+    args: argparse.Namespace, report_dict: dict
+) -> tuple[int, tuple[dict, dict] | None, str | None, list[str]]:
+    """Resolve which baseline (if any) `syn eval` compares against and run
+    the comparison — factored out of `_run_eval` purely to keep its local
+    count down; carries no behavior beyond what `_run_eval` used to do
+    inline. Returns `(exit_code, baseline_result, baseline_label,
+    warnings)`; `baseline_result` is `None` when `--no-baseline` was passed
+    or no baseline (explicit or pinned) is available."""
+    from brain.eval import compare_to_baseline  # pylint: disable=import-outside-toplevel
+    from brain.eval.runner import (  # pylint: disable=import-outside-toplevel
+        corpus_divergence_warning,
+        resolve_baseline,
+    )
+
+    if args.no_baseline:
+        return 0, None, None, []
+
+    resolved = resolve_baseline(args.baseline)
+    if resolved is None:
+        return 0, None, None, []
+
+    baseline, baseline_label = resolved
+    deltas, regressed, verdict = compare_to_baseline(report_dict, baseline)
+    exit_code, warnings = _eval_exit_code(regressed, verdict, strict=args.strict)
+    if not args.baseline:
+        # Comparing against the pin specifically (not an explicit
+        # --baseline override) — proactively warn if the live corpus has
+        # drifted from what the pin was measured against. Never a gate;
+        # see `corpus_divergence_warning`.
+        divergence = corpus_divergence_warning(report_dict.get("corpus"), baseline.get("corpus"))
+        if divergence:
+            warnings.append(divergence)
+
+    return exit_code, (deltas, verdict), baseline_label, warnings
+
+
 def _run_eval(args: argparse.Namespace) -> int:
     """Execute `syn eval` and print its result; return the exit code.
 
     Runs the golden set, writes a dated JSON report (unless `--no-write` is
     passed, in which case the report is scored and printed but not
-    persisted), and prints per-case + aggregate metrics. With `--baseline
-    <path>`, also prints a signed per-metric delta and a paired per-case
-    verdict against that prior run (`brain.eval.compare_to_baseline`).
-    Exit code: 1 iff some metric's paired verdict is
-    `regressed-significant`; a `regressed-within-noise` metric warns loudly
-    but exits 0. `--strict` restores the old strict-sign tripwire (exit 1 on
-    ANY metric decrease). `--no-write` gates persistence only and never
-    affects the verdict or the exit code.
+    persisted), and prints per-case + aggregate metrics. Compares against a
+    baseline unless `--no-baseline` is passed: an explicit `--baseline
+    <path>` wins, otherwise the promoted pin
+    (`planning/retrieval-eval-runs/baseline.json`) is used when one exists.
+    Either way, prints a signed per-metric delta and a paired per-case
+    verdict against that prior run (`brain.eval.compare_to_baseline`), and
+    names which run was compared against. Exit code: 1 iff some metric's
+    paired verdict is `regressed-significant`; a `regressed-within-noise`
+    metric warns loudly but exits 0. `--strict` restores the old
+    strict-sign tripwire (exit 1 on ANY metric decrease). `--no-baseline`
+    always exits 0 regardless of metrics. `--no-write` gates persistence
+    only and never affects the verdict or the exit code.
     """
     from brain.eval import (  # pylint: disable=import-outside-toplevel
-        compare_to_baseline,
         load_cases,
         run_eval,
         write_report,
     )
-    from brain.eval.runner import (  # pylint: disable=import-outside-toplevel
-        DEFAULT_GOLDEN_SET_PATH,
-        load_report,
-    )
+    from brain.eval.runner import DEFAULT_GOLDEN_SET_PATH  # pylint: disable=import-outside-toplevel
 
     golden_set_path = args.golden_set or DEFAULT_GOLDEN_SET_PATH
 
@@ -629,21 +702,44 @@ def _run_eval(args: argparse.Namespace) -> int:
         return _emit_error(exc, as_json=args.json)
 
     report_dict = report.to_dict()
-    exit_code = 0
-    baseline_result = None
-    warnings: list[str] = []
 
-    if args.baseline:
-        try:
-            baseline = load_report(args.baseline)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            return _emit_error(exc, as_json=args.json)
-        deltas, regressed, verdict = compare_to_baseline(report_dict, baseline)
-        baseline_result = (deltas, verdict)
-        exit_code, warnings = _eval_exit_code(regressed, verdict, strict=args.strict)
+    try:
+        exit_code, baseline_result, baseline_label, warnings = _eval_baseline_comparison(
+            args, report_dict
+        )
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return _emit_error(exc, as_json=args.json)
 
-    _render_eval_result(args, report_dict, written_path, baseline_result, warnings)
+    _render_eval_result(
+        args, report_dict, written_path, baseline_result, warnings, baseline_label=baseline_label
+    )
     return exit_code
+
+
+def _run_eval_promote(args: argparse.Namespace) -> int:
+    """Execute `syn eval promote <run> --reason "..."`; return the exit code.
+
+    Delegates the guards to `brain.eval.promote_run` (existence/tracked-dir,
+    required stamps, `--reason` non-empty, `--force`-gated regression) and
+    reports its `PromotionError` the same way every other `syn` command
+    reports a typed user-facing error.
+    """
+    from brain.eval import promote_run  # pylint: disable=import-outside-toplevel
+    from brain.eval.runner import PromotionError  # pylint: disable=import-outside-toplevel
+
+    try:
+        pointer = promote_run(args.run, reason=args.reason, force=args.force)
+    except PromotionError as exc:
+        return _emit_error(exc, as_json=args.json)
+
+    if args.json:
+        print(json.dumps(pointer))
+    else:
+        print(f"promoted {pointer['run']} -> planning/retrieval-eval-runs/baseline.json")
+        print(f"  reason: {pointer['reason']}")
+        print(f"  promoted_by: {pointer['promoted_by']}  promoted_at: {pointer['promoted_at']}")
+
+    return 0
 
 
 _SINCE_RE = re.compile(r"^(\d+)([dh])$")
@@ -822,6 +918,8 @@ def main(argv: list[str] | None = None) -> int:
         "eval": _run_eval,
         "queries": _run_queries,
     }
+    if args.command == "eval" and getattr(args, "eval_subcommand", None) == "promote":
+        return _run_eval_promote(args)
     return dispatch[args.command](args)
 
 
