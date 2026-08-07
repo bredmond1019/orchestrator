@@ -313,16 +313,38 @@ def test_all_pre_existing_run_files_still_load_and_compare():
     """All 15 pre-task-2 run files lack `aggregate_stats` entirely — they
     must still load via `load_report` and compare via `compare_to_baseline`
     without error (mirrors `test_load_report_and_compare_to_baseline_work_
-    on_pre_existing_run_files` for the corpus/ranking_constants fields)."""
+    on_pre_existing_run_files` for the corpus/ranking_constants fields).
+
+    This is a frozen, named list rather than a directory glob: the
+    directory legitimately grows new run files over time (each carrying
+    `aggregate_stats`, as it must post-task-2), so "everything in the
+    directory that isn't baseline.json" is not the same set as "the runs
+    that predate task 2". Globbing would make this test fail every time a
+    new run is written, for a reason unrelated to backwards compatibility."""
     runs_dir = Path(__file__).resolve().parents[2] / "planning" / "retrieval-eval-runs"
     if not runs_dir.exists():
         pytest.skip("retrieval-eval-runs fixture directory not present in this checkout")
 
-    # Exclude `baseline.json` (plan-eval-statistical-honesty task 5) — a
-    # pointer file with a different schema (no `aggregate` key), not a run.
-    run_files = sorted(p for p in runs_dir.glob("*.json") if p.name != "baseline.json")
+    pre_task_2_run_names = [
+        "2026-08-01T22-43-33Z.json",
+        "2026-08-02T01-36-14Z.json",
+        "2026-08-02T02-06-57Z.json",
+        "2026-08-02T08-02-50Z.json",
+        "2026-08-02T08-19-57Z.json",
+        "2026-08-02T08-54-46Z.json",
+        "2026-08-02T10-15-24Z.json",
+        "2026-08-06T13-45-07Z.json",
+        "2026-08-06T13-45-35Z.json",
+        "2026-08-06T13-56-48Z.json",
+        "2026-08-06T14-15-48Z.json",
+        "2026-08-06T14-22-45Z.json",
+        "2026-08-06T14-26-04Z.json",
+        "2026-08-07T10-12-04Z.json",
+        "2026-08-07T13-01-37Z.json",
+    ]
+    run_files = [runs_dir / name for name in pre_task_2_run_names if (runs_dir / name).exists()]
     if not run_files:
-        pytest.skip("no run files present in this checkout")
+        pytest.skip("no pre-task-2 run files present in this checkout")
 
     for run_file in run_files:
         baseline = load_report(run_file)
