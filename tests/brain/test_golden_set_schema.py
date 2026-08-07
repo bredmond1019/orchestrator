@@ -2,7 +2,7 @@
 
 Guards the golden set's structural contract so a future edit can't silently
 break the eval harness (OR.K2 task 3, which loads this file): every case has
-the required fields, the case count stays within the 40-case hard cap, at
+the required fields, the case count stays within the 60-case hard cap, at
 least 3 cases are deliberate negatives (broad NL questions with no in-corpus
 answer, asserting `expect_abstain: true`), and at least 2 are exact-ID-hijack
 cases (query text contains a token `app/brain/retrieval.py::ID_PATTERN`
@@ -24,11 +24,28 @@ _GOLDEN_SET_PATH = (
 # not imported, so this test stays a pure-YAML check with zero app/ coupling).
 _ID_PATTERN = re.compile(r"\b[A-Z]{1,5}(?:[0-9]{1,4}|(?:\.[A-Z0-9]{1,5})+)\b")
 
-_REQUIRED_FIELDS = {"id", "query", "expect_docs", "expect_abstain"}
-_ALLOWED_FIELDS = _REQUIRED_FIELDS | {"scope", "notes"}
-_MAX_CASES = 40
+_REQUIRED_FIELDS = {"id", "query", "expect_docs", "expect_abstain", "source", "category"}
+_ALLOWED_FIELDS = _REQUIRED_FIELDS | {"scope", "notes", "source_query_id"}
+# ~3s/case means 60 cases is a ~3-minute eval — still interactive — and ~60
+# hand-verified cases is the realistic ceiling one person can keep accurate.
+_MAX_CASES = 60
 _MIN_NEGATIVES = 3
 _MIN_HIJACK_CASES = 2
+
+_VALID_SOURCES = {"authored", "mined", "archived"}
+_VALID_CATEGORIES = {"archive", "identifier", "negative", "hijack", "mined"}
+
+# First `-`-delimited id segment -> the category it must agree with. Keyed on
+# the segment, NOT a substring match — `archive-11-or-v-hijack` contains the
+# literal token "hijack" but is an `archive` case (see file-header note in the
+# golden set and CLAUDE.md ground truth #4 for this block).
+_PREFIX_TO_CATEGORY = {
+    "archive": "archive",
+    "id": "identifier",
+    "neg": "negative",
+    "hijack": "hijack",
+    "mined": "mined",
+}
 
 
 @pytest.fixture(name="golden_set")
@@ -53,7 +70,7 @@ def test_case_count_within_hard_cap(golden_set):
     cases = golden_set["cases"]
     assert len(cases) <= _MAX_CASES, (
         f"golden set has {len(cases)} cases, exceeding the hard cap of {_MAX_CASES} "
-        "(CLAUDE.md standing rule + this block's Acceptance Criteria)"
+        "(this block's Acceptance Criteria — see the cap comment above)"
     )
 
 
@@ -88,6 +105,17 @@ def test_case_field_types(golden_set):
         assert isinstance(case["expect_abstain"], bool), (
             f"case {case['id']!r} expect_abstain must be a bool"
         )
+        assert case["source"] in _VALID_SOURCES, (
+            f"case {case['id']!r} source {case['source']!r} must be one of {_VALID_SOURCES}"
+        )
+        assert case["category"] in _VALID_CATEGORIES, (
+            f"case {case['id']!r} category {case['category']!r} must be one of "
+            f"{_VALID_CATEGORIES}"
+        )
+        if "source_query_id" in case and case["source_query_id"] is not None:
+            assert isinstance(case["source_query_id"], int), (
+                f"case {case['id']!r} source_query_id must be an int or null"
+            )
         if "scope" in case and case["scope"] is not None:
             assert isinstance(case["scope"], str) and case["scope"], (
                 f"case {case['id']!r} scope must be a non-empty str or null"
@@ -168,3 +196,42 @@ def test_expect_docs_or_abstain_present_for_every_case(golden_set):
             f"case {case['id']!r} has neither expect_docs nor expect_abstain=true "
             "— it can never score a pass"
         )
+
+
+def test_id_prefix_agrees_with_category(golden_set):
+    """The id-prefix convention and the new `category` field must agree,
+    keyed on the FIRST `-`-delimited segment of the id — not a substring
+    match. `archive-11-or-v-hijack` contains the literal token "hijack" but
+    is an `archive` case; this assertion must pass on it while the existing
+    substring-based `test_explicitly_tagged_hijack_cases_match_id_pattern`
+    (which uses `"hijack" in case["id"]`) keeps matching it unchanged."""
+    for case in golden_set["cases"]:
+        prefix = case["id"].split("-", 1)[0]
+        assert prefix in _PREFIX_TO_CATEGORY, (
+            f"case {case['id']!r} has an unrecognized id prefix {prefix!r} — "
+            f"add it to _PREFIX_TO_CATEGORY or rename the case"
+        )
+        expected_category = _PREFIX_TO_CATEGORY[prefix]
+        assert case["category"] == expected_category, (
+            f"case {case['id']!r} has category {case['category']!r} but its id "
+            f"prefix {prefix!r} implies category {expected_category!r}"
+        )
+
+    # Pin the exact case this rule exists to protect: an id containing the
+    # literal substring "hijack" that is nonetheless an `archive` case.
+    hijack_shaped_archive_case = next(
+        c for c in golden_set["cases"] if c["id"] == "archive-11-or-v-hijack"
+    )
+    assert hijack_shaped_archive_case["category"] == "archive"
+
+
+def test_source_query_id_only_set_for_mined_cases(golden_set):
+    """`source_query_id` is optional metadata that is only meaningful (and
+    only ever set) when `source: mined` — reject it anywhere else."""
+    for case in golden_set["cases"]:
+        source_query_id = case.get("source_query_id")
+        if source_query_id is not None:
+            assert case["source"] == "mined", (
+                f"case {case['id']!r} sets source_query_id but source is "
+                f"{case['source']!r}, not 'mined'"
+            )

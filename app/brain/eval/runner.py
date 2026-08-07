@@ -39,12 +39,27 @@ def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase
 
     cases = []
     for raw in document["cases"]:
+        # `source` and `category` are required — direct dict access raises
+        # KeyError (a parse error) rather than silently defaulting, same
+        # contract `id`/`query` already have above.
+        source = raw["source"]
+        category = raw["category"]
+        source_query_id = raw.get("source_query_id")
+        if source_query_id is not None and source != "mined":
+            raise ValueError(
+                f"case {raw.get('id', raw)!r} sets source_query_id but source is "
+                f"{source!r}, not 'mined' — source_query_id is only meaningful for "
+                "mined cases"
+            )
         cases.append(
             RetrievalCase(
                 case_id=raw["id"],
                 query=raw["query"],
                 expect_docs=tuple(raw.get("expect_docs") or ()),
                 expect_abstain=bool(raw.get("expect_abstain", False)),
+                source=source,
+                category=category,
+                source_query_id=source_query_id,
                 scope=raw.get("scope"),
                 notes=raw.get("notes", ""),
             )

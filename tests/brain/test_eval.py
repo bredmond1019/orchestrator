@@ -19,8 +19,8 @@ from unittest.mock import patch
 import pytest
 from brain import retrieval_engine
 from brain.eval import scorer
-from brain.eval.models import RetrievalCase, RetrievalRunReport
-from brain.eval.runner import compare_to_baseline, load_report, run_eval, write_report
+from brain.eval.models import CaseResult, RetrievalCase, RetrievalRunReport
+from brain.eval.runner import _aggregate, compare_to_baseline, load_report, run_eval, write_report
 from brain.eval.scorer import ABSTAIN_THRESHOLD, score_case
 from workflows.document_qa_workflow_nodes.verify_citations_node import (
     split_sentences as node_split_sentences,
@@ -52,6 +52,8 @@ _POSITIVE_CASE = RetrievalCase(
     query="What is Bastion?",
     expect_docs=("docs/decisions/D26-example.md",),
     expect_abstain=False,
+    source="authored",
+    category="identifier",
 )
 
 _NEGATIVE_CASE = RetrievalCase(
@@ -59,6 +61,8 @@ _NEGATIVE_CASE = RetrievalCase(
     query="What is the meaning of life and how do I bake a souffle?",
     expect_docs=(),
     expect_abstain=True,
+    source="authored",
+    category="negative",
 )
 
 
@@ -342,6 +346,8 @@ _MISS_CASE = RetrievalCase(
     query="What are my hourly rates for contracting engagements?",
     expect_docs=("docs/business/rates.md",),
     expect_abstain=False,
+    source="archived",
+    category="archive",
 )
 
 
@@ -397,6 +403,63 @@ def test_groundedness_on_hits_ignores_negative_cases():
     assert report.aggregate["groundedness_on_hits"] == pytest.approx(hit.groundedness)
 
 
+def test_aggregate_output_unchanged_by_golden_set_schema_v2():
+    """`_aggregate` scores off `CaseResult` fields only — `source`/`category`/
+    `source_query_id` (OR.2.A task 3's golden-set schema v2 additions) live on
+    `RetrievalCase`, never on `CaseResult`, and are metadata, never scoring
+    inputs. Pin `_aggregate`'s output against a fixed `CaseResult` fixture set
+    so the schema change is provably byte-identical to scoring."""
+    results = [
+        CaseResult(
+            case_id="hit",
+            recall_at_5=1.0,
+            recall_at_10=1.0,
+            reciprocal_rank=1.0,
+            predicted_abstain=False,
+            expected_abstain=False,
+            abstain_correct=True,
+            groundedness=0.8,
+            retrieval_confidence=0.9,
+            matched_docs=("some-doc",),
+        ),
+        CaseResult(
+            case_id="miss",
+            recall_at_5=0.0,
+            recall_at_10=0.0,
+            reciprocal_rank=0.0,
+            predicted_abstain=False,
+            expected_abstain=False,
+            abstain_correct=True,
+            groundedness=0.0,
+            retrieval_confidence=0.7,
+            matched_docs=(),
+        ),
+        CaseResult(
+            case_id="negative",
+            recall_at_5=None,
+            recall_at_10=None,
+            reciprocal_rank=None,
+            predicted_abstain=True,
+            expected_abstain=True,
+            abstain_correct=True,
+            groundedness=None,
+            retrieval_confidence=0.1,
+            matched_docs=(),
+        ),
+    ]
+
+    aggregate = _aggregate(results)
+
+    assert aggregate == {
+        "abstain_correctness": 1.0,
+        "recall_at_5": 0.5,
+        "recall_at_10": 0.5,
+        "mrr": 0.5,
+        "groundedness": 0.4,
+        "groundedness_on_hits": 0.8,
+    }
+
+
 def test_new_aggregate_key_does_not_break_an_older_baseline_file():
     """`compare_to_baseline` iterates the BASELINE's keys, so a run carrying
     the new `groundedness_on_hits` key compares cleanly against a baseline
@@ -424,6 +487,8 @@ def test_run_eval_forwards_case_scope_as_project_filter():
         query="OR.K2 retrieval eval harness",
         expect_docs=("planning/or-k2-retrieval-eval-harness/tasks.md",),
         expect_abstain=False,
+        source="authored",
+        category="identifier",
         scope="orchestrator",
     )
     with patch(
