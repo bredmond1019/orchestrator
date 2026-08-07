@@ -568,10 +568,26 @@ def _render_eval_result(
     if deltas is not None:
         print("-- baseline deltas (signed; negative = regression) --")
         for metric, delta in sorted(deltas.items()):
-            print(f"  {metric}: {delta:+.4f}")
+            entry = verdict.get(metric, {})
+            confound_marker = ""
+            if entry.get("confounded") is True:
+                confound_marker = "  [CONFOUNDED: corpus changed]"
+            elif entry.get("confounded") == "unknown":
+                confound_marker = "  [confounded: unknown, missing corpus stamp]"
+            print(f"  {metric}: {delta:+.4f}{confound_marker}")
         print("-- paired verdict --")
         for metric, entry in sorted(verdict.items()):
-            print(f"  {metric}: {entry['classification']} (pairable={entry['pairable']})")
+            ids_note = ""
+            if entry["classification"] == "incomparable" and (
+                entry.get("added_case_ids") or entry.get("removed_case_ids")
+            ):
+                ids_note = (
+                    f"  (added={entry['added_case_ids']} removed={entry['removed_case_ids']})"
+                )
+            print(f"  {metric}: {entry['classification']} (pairable={entry['pairable']}){ids_note}")
+        ranking_changed = next(iter(verdict.values()), {}).get("ranking_constants_changed")
+        if ranking_changed:
+            print(f"-- ranking constants changed: {', '.join(ranking_changed)} --")
     for warning in warnings:
         print(warning)
     if args.no_write:

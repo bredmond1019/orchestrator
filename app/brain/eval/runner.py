@@ -368,9 +368,18 @@ def _case_values_for_metric(results: list[dict], metric: str) -> dict[str, float
     return values
 
 
-def _unpairable_verdict() -> dict:
+def _unpairable_verdict(
+    *,
+    added_case_ids: set[str] | None = None,
+    removed_case_ids: set[str] | None = None,
+) -> dict:
     """The `verdict` entry for a metric with no usable per-case data on one
-    or both sides, or whose paired case-id sets don't match."""
+    or both sides, or whose paired case-id sets don't match.
+
+    `added_case_ids`/`removed_case_ids` name the specific ids present in one
+    run's case set but not the other's (task 4's fingerprint guard) — `[]`,
+    never omitted, when there is nothing to name (e.g. one side has no
+    per-case `results` at all)."""
     return {
         "pairable": False,
         "n": 0,
@@ -379,6 +388,8 @@ def _unpairable_verdict() -> dict:
         "sign_test_p": None,
         "paired_delta": None,
         "classification": "incomparable",
+        "added_case_ids": sorted(added_case_ids) if added_case_ids else [],
+        "removed_case_ids": sorted(removed_case_ids) if removed_case_ids else [],
     }
 
 
@@ -412,6 +423,80 @@ def _classify_continuous(interval: dict) -> str:
     return "improved-significant" if excludes_zero else "improved-within-noise"
 
 
+# Corpus fields whose disagreement makes two runs' deltas potentially
+# confounded by "we measured a different corpus," not "retrieval got
+# better/worse." `edge_count` is deliberately excluded — it tracks the
+# structural graph, not what the retrieval core scores against.
+_CORPUS_FINGERPRINT_FIELDS = ("chunk_count", "file_count", "max_indexed_at")
+
+
+def _overall_case_ids(run: dict) -> set[str] | None:
+    """Every `case_id` in `run['results']`, or `None` if the run carries no
+    per-case `results` at all — distinct from an empty set, so a run with
+    genuinely zero cases doesn't get silently treated as "no data"."""
+    results = run.get("results")
+    if not results:
+        return None
+    return {r.get("case_id") for r in results if r.get("case_id") is not None}
+
+
+def _case_set_guard(current: dict, baseline: dict) -> tuple[set[str], set[str]] | None:
+    """CLAUDE.md's Brain-RAG rule 2, mechanized: never compare two runs
+    without checking what they were measured against. Returns
+    `(added, removed)` case ids when BOTH runs carry per-case `results` and
+    their overall case-id sets disagree — the "the golden set changed
+    underneath this comparison" guard. Returns `None` when the runs are
+    pairable at the whole-run level (including when one side is too
+    incomplete to say either way; `_metric_verdict`'s per-metric check is
+    the fallback for that).
+
+    Deliberately checks the OVERALL case-id set, not any one metric's
+    applicable subset — this is what stops a golden-set definition change
+    (e.g. two cases moved out of the denominator) from reporting a
+    fictitious improvement on metrics whose narrower subset happens to
+    still match."""
+    current_ids = _overall_case_ids(current)
+    baseline_ids = _overall_case_ids(baseline)
+    if current_ids is None or baseline_ids is None or current_ids == baseline_ids:
+        return None
+    return current_ids - baseline_ids, baseline_ids - current_ids
+
+
+def _corpus_confounded(current: dict, baseline: dict) -> bool | str:
+    """Whether the two runs' corpus fingerprints agree on the fields that
+    matter to retrieval (`_CORPUS_FINGERPRINT_FIELDS`).
+
+    Returns `True`/`False` when both runs carry a `corpus` stamp, or the
+    string `"unknown"` when either is missing it (the 14 pre-task-1 legacy
+    runs) — a missing fingerprint is never treated as a match, so it can
+    never read as silently green."""
+    current_corpus = current.get("corpus")
+    baseline_corpus = baseline.get("corpus")
+    if not current_corpus or not baseline_corpus:
+        return "unknown"
+    return any(
+        current_corpus.get(field) != baseline_corpus.get(field)
+        for field in _CORPUS_FINGERPRINT_FIELDS
+    )
+
+
+def _ranking_constants_changed(current: dict, baseline: dict) -> list[str] | None:
+    """The specific ranking levers that moved between the two runs, so a
+    ranking change is never conflated with a corpus change (the confusion
+    that cost `OR.0.C` its result). `None` when either run lacks a
+    `ranking_constants` stamp (can't say); `[]` when both are present and
+    identical; otherwise the sorted lever names that differ."""
+    current_rc = current.get("ranking_constants")
+    baseline_rc = baseline.get("ranking_constants")
+    if not current_rc or not baseline_rc:
+        return None
+    return sorted(
+        key
+        for key in set(current_rc) | set(baseline_rc)
+        if current_rc.get(key) != baseline_rc.get(key)
+    )
+
+
 def _metric_verdict(metric: str, current: dict, baseline: dict) -> dict:
     """Paired per-case verdict for one metric — see `compare_to_baseline`."""
     current_results = current.get("results") or []
@@ -423,7 +508,10 @@ def _metric_verdict(metric: str, current: dict, baseline: dict) -> dict:
     baseline_values = _case_values_for_metric(baseline_results, metric)
 
     if set(current_values) != set(baseline_values):
-        return _unpairable_verdict()
+        return _unpairable_verdict(
+            added_case_ids=set(current_values) - set(baseline_values),
+            removed_case_ids=set(baseline_values) - set(current_values),
+        )
 
     case_ids = sorted(current_values)
     n = len(case_ids)
@@ -487,7 +575,29 @@ def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float]
       improved-within-noise | improved-significant | flat | incomparable`.
       A metric with no per-case data on either side, or whose paired
       case-id sets don't match, is `incomparable` — deliberately never
-      reported as an improvement.
+      reported as an improvement — and names the mismatched ids via
+      `added_case_ids`/`removed_case_ids`.
+
+    Three fingerprint guards run BEFORE any per-metric verdict is computed
+    (CLAUDE.md's Brain-RAG rule 2, mechanized — never compare two runs
+    without checking what they were measured against), and every metric's
+    entry additionally carries:
+
+    - `confounded`: `True` if the two runs' `corpus` fingerprints disagree
+      on chunk/file count or newest `max_indexed_at`, `False` if they
+      agree, or `"unknown"` if either run lacks a `corpus` stamp — a
+      missing fingerprint is never treated as a match.
+    - `ranking_constants_changed`: the sorted lever names that differ
+      between the two runs' `ranking_constants`, `[]` if none did, or
+      `None` if either run lacks the stamp — so a ranking change is never
+      conflated with a corpus change.
+
+    When the runs' OVERALL case-id sets disagree (not any one metric's
+    narrower applicable subset — a golden-set definition change must not
+    let a metric whose subset happens to still match report a fictitious
+    improvement), every metric's verdict is forced `incomparable`, naming
+    the added/removed ids, regardless of what the per-metric check alone
+    would have said.
 
     Shaped like the deleted `app/evals/gate.py::gate_change` comparison for
     `deltas`/`regressed`; not imported from it (OR.X2 removed that module).
@@ -499,5 +609,20 @@ def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float]
         for metric in baseline_agg
     }
     regressed = any(delta < 0 for delta in deltas.values())
-    verdict = {metric: _metric_verdict(metric, current, baseline) for metric in baseline_agg}
+
+    case_set_mismatch = _case_set_guard(current, baseline)
+    confounded = _corpus_confounded(current, baseline)
+    ranking_constants_changed = _ranking_constants_changed(current, baseline)
+
+    verdict = {}
+    for metric in baseline_agg:
+        if case_set_mismatch is not None:
+            added, removed = case_set_mismatch
+            entry = _unpairable_verdict(added_case_ids=added, removed_case_ids=removed)
+        else:
+            entry = _metric_verdict(metric, current, baseline)
+        entry["confounded"] = confounded
+        entry["ranking_constants_changed"] = ranking_constants_changed
+        verdict[metric] = entry
+
     return deltas, regressed, verdict
