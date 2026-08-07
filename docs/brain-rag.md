@@ -316,9 +316,18 @@ hand-authored golden set (`planning/retrieval-golden-set.yaml`) through the prom
 abstain-correctness, and groundedness — deterministic, no LLM anywhere in the scoring:
 
 ```bash
-syn eval                                                          # score, write a dated report
-syn eval --baseline planning/retrieval-eval-runs/<prior-run>.json # signed deltas; non-zero on regression
+syn eval                                                          # score, write a dated report;
+                                                                   # compares against the promoted pin by default
+syn eval --baseline planning/retrieval-eval-runs/<prior-run>.json # explicit baseline override
+syn eval --strict                                                 # old strict-sign tripwire (any decrease)
 ```
+
+Every run also stamps `aggregate_stats` — a 95% interval (Wilson for proportion metrics, seeded
+bootstrap for the rest) alongside each metric's point estimate — and, unless `--no-baseline` is
+passed, prints a paired per-case verdict (exact sign test / paired bootstrap) against the baseline,
+not just a signed delta. See `docs/api-reference.md` §
+[Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbraineval-syn-eval) for the full
+statistical-honesty contract (`plan-eval-statistical-honesty`).
 
 Run `syn stale --deep` first so a drifted index doesn't get measured as a retrieval-quality
 regression. This is the method to reach for after any change to `retrieval_engine.py`,
