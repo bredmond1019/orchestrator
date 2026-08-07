@@ -9,6 +9,37 @@ timestamp: "2026-08-07T09:05:00Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-07]
+
+`/sdlc-flow plan-review-artifact-exclusion` ran tasks 1–5 and BAILED after task 1. Task 1 itself
+completed real work — it restored the `review/runs` corpus/config consistency via a scoped `syn
+ingest`, verified an exact +284 chunk / +13 file delta against a zero pre-ingest baseline, and
+recorded a fresh consistent-state fingerprint (11533 chunks / 962 files / 2212 edges) for the
+block's later tasks to compare against — but its `task_validation_1` check failed and could never
+have passed: it shells out to the relative path `planning/artifacts/review/runs`, which only
+resolves from the HQ repo root (`/Users/brandon/Dev/agentic-portfolio/planning/artifacts/review/runs`
+— confirmed to exist there with exactly 13 `.md` files). This flow runs from `core/orchestrator`,
+whose `planning/` is a symlink to `core/_planning/orchestrator`, a vault with no `review/` or
+`artifacts/review` subtree at all (confirmed: `ls planning/artifacts/review/` in this repo errors
+"No such file or directory"). No implementation choice inside task 1 could have made the check pass
+from this repo's cwd — it is a spec defect in `tasks.json`'s `validation_commands` (relative path
+assumes the wrong execution root), not a fixable code/content defect. `state.json`'s `OR.0.C` was
+left `open`, unchanged by this run; `planning/status.md` and the spec's own Amendment Log
+(`planning/plan-review-artifact-exclusion/tasks.md`) were updated to flag the block. Next: fix
+`tasks.json`'s `validation_commands` for the `review/runs` check to use an absolute path (or one
+resolved against the HQ repo root) before re-running `plan-review-artifact-exclusion`.
+
+```
+9302806 docs: log the fleet cleanup — 5 gate errors fixed, 151 zombie paths pruned
+a35cfbe docs: log the OR.0.C re-scope and session handoff
+4b0f784 docs: log the OR.0.A-C digest-crowding chain — null verdict, test hardening, OR.0.C rolled back
+c08e9f7 chore(harness): stamp harness manifest for base-template a5e22fee
+a7ddf30 chore(harness): sync from base-template a5e22fee
+75d980a merge: OR.0.B diversity-cap test hardening — null verdict, no constant changed
+8a3d2a3 chore: wrap up plan-ranking-land
+04e3a66 test: add falsifiability guard for _MAX_PER_FILE diversity cap
+```
+
 ---
 
 ## [run: 2026-08-06]
