@@ -377,6 +377,146 @@ class TestHealthyCorpus:
         assert report.drift is False
 
 
+def _write_brain_toml(root, skip_dirs=()):
+    skip_list = ", ".join(f'"{d}"' for d in skip_dirs)
+    (root / "brain.toml").write_text(
+        "[vocab]\n"
+        'layer = ["brain"]\n'
+        'status = ["active"]\n'
+        "[crawl]\n"
+        f"skip_dirs = [{skip_list}]\n",
+        encoding="utf-8",
+    )
+
+
+class TestIngestCeiling:
+    """Axis 7 (informational): the filesystem -> DB gap none of the other axes see."""
+
+    def test_uncovered_file_has_no_db_rows(self, pgvector_session, tmp_path):
+        _write_brain_toml(tmp_path)
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "never-indexed.md").write_text(
+            "## A\n\nbody\n", encoding="utf-8"
+        )
+        pgvector_session.flush()
+
+        report = deep_stale(
+            brain_path=str(tmp_path),
+            session=pgvector_session,
+            embedding_service=_FakeEmbeddingService(),
+        )
+
+        assert "docs/never-indexed.md" in report.uncovered_files
+        # Axis 7 is informational — it never contributes to drift.
+        assert report.drift is False
+
+    def test_malformed_frontmatter_is_unparseable_not_raising(
+        self, pgvector_session, tmp_path
+    ):
+        _write_brain_toml(tmp_path)
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "broken.md").write_text(
+            "---\nlayer: [brain\n---\nbody\n", encoding="utf-8"
+        )
+        pgvector_session.flush()
+
+        # Must not raise — this is the fix for the bare parse_document call
+        # in _section_orphans that used to make deep_stale itself blow up.
+        report = deep_stale(
+            brain_path=str(tmp_path),
+            session=pgvector_session,
+            embedding_service=_FakeEmbeddingService(),
+        )
+
+        assert "docs/broken.md" in report.unparseable_files
+        assert "docs/broken.md" not in report.uncovered_files
+        assert report.drift is False
+
+    def test_excluded_count_breaks_down_by_reason(self, pgvector_session, tmp_path):
+        _write_brain_toml(tmp_path, skip_dirs=["archive"])
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "_draft.md").write_text("body\n", encoding="utf-8")
+        (tmp_path / "docs" / "handoff.md").write_text("body\n", encoding="utf-8")
+        archive_dir = tmp_path / "docs" / "archive"
+        archive_dir.mkdir()
+        (archive_dir / "old.md").write_text("body\n", encoding="utf-8")
+        pgvector_session.flush()
+
+        report = deep_stale(
+            brain_path=str(tmp_path),
+            session=pgvector_session,
+            embedding_service=_FakeEmbeddingService(),
+        )
+
+        assert report.excluded_count["leading_underscore"] == 1
+        assert report.excluded_count["ephemeral_filename"] == 1
+        assert report.excluded_count["skip_dir"] == 1
+
+    def test_enumeration_is_imported_from_index_brain_not_reimplemented(
+        self, pgvector_session, tmp_path, monkeypatch
+    ):
+        _write_brain_toml(tmp_path)
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "real.md").write_text("body\n", encoding="utf-8")
+
+        import index_brain
+
+        fake_file = tmp_path / "docs" / "fake-from-monkeypatch.md"
+        fake_file.write_text("body\n", encoding="utf-8")
+
+        def _fake_collect_files(brain_path, config, errors=None, parse_failed_paths=None):
+            return [(fake_file, "content", None)]
+
+        monkeypatch.setattr(index_brain, "_collect_files", _fake_collect_files)
+        pgvector_session.flush()
+
+        report = deep_stale(
+            brain_path=str(tmp_path),
+            session=pgvector_session,
+            embedding_service=_FakeEmbeddingService(),
+        )
+
+        # Only the monkeypatched file is reflected — proves the axis calls
+        # through index_brain._collect_files rather than walking the
+        # filesystem itself.
+        assert report.uncovered_files == ["docs/fake-from-monkeypatch.md"]
+        assert "docs/real.md" not in report.uncovered_files
+
+    def test_no_brain_toml_degrades_to_empty_axis(self, pgvector_session, tmp_path):
+        # No brain.toml written — every other axis test in this file relies
+        # on this not raising.
+        (tmp_path / "doc.md").write_text("## A\n\nbody\n", encoding="utf-8")
+        pgvector_session.flush()
+
+        report = deep_stale(
+            brain_path=str(tmp_path),
+            session=pgvector_session,
+            embedding_service=_FakeEmbeddingService(),
+        )
+
+        assert report.uncovered_files == []
+        assert report.unparseable_files == []
+        assert report.excluded_count == {}
+
+    def test_healthy_corpus_drift_axes_unaffected_by_axis7(self, pgvector_session, tmp_path):
+        """Existing drift semantics (bool of axes 1-5) are unchanged by axis 7."""
+        _write_brain_toml(tmp_path)
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "doc.md").write_text("## Current\n\nbody\n", encoding="utf-8")
+        pgvector_session.add(_make_doc("docs/doc.md", doc_id="D1", section="## Current"))
+        pgvector_session.flush()
+
+        report = deep_stale(
+            brain_path=str(tmp_path),
+            session=pgvector_session,
+            embedding_service=_FakeEmbeddingService(),
+        )
+
+        assert report.drift is False
+        assert report.deleted_but_embedded == []
+        assert report.section_orphans == []
+
+
 class TestReconcileReportSerialization:
     """`to_dict()` produces a JSON-serializable payload."""
 
