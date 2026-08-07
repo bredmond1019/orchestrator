@@ -5,7 +5,7 @@ Fixtures are hand-computed and pinned exactly (to 4dp for Wilson); this is
 the module OR.2.B exists to make trustworthy, so no "close enough" assertions.
 """
 
-from brain.eval.stats import Interval, bootstrap_mean_interval, wilson_interval
+from brain.eval.stats import Interval, bootstrap_mean_interval, exact_sign_test, wilson_interval
 
 
 def _round4(x: float) -> float:
@@ -123,3 +123,49 @@ class TestBootstrapMeanInterval:
         assert d["method"] == "bootstrap"
         assert d["seed"] == 42
         assert d["n"] == 3
+
+
+class TestExactSignTest:
+    """Hand-computed two-sided exact binomial sign-test fixtures — pinned in
+    the block's Acceptance Criteria table. The (5, 0) vs (6, 0) boundary is
+    the whole regression gate (`compare_to_baseline`'s `--strict`-free exit
+    code): 0.0625 is not significant at alpha=0.05, 0.03125 is."""
+
+    def test_1_0(self):
+        assert exact_sign_test(1, 0) == 1.0
+
+    def test_3_0(self):
+        assert round(exact_sign_test(3, 0), 5) == 0.25000
+
+    def test_5_0_not_significant(self):
+        p = exact_sign_test(5, 0)
+        assert round(p, 5) == 0.06250
+        assert p >= 0.05
+
+    def test_6_0_significant(self):
+        p = exact_sign_test(6, 0)
+        assert round(p, 5) == 0.03125
+        assert p < 0.05
+
+    def test_7_0(self):
+        assert round(exact_sign_test(7, 0), 5) == 0.01562
+
+    def test_5_1(self):
+        assert round(exact_sign_test(5, 1), 5) == 0.21875
+
+    def test_4_2(self):
+        assert round(exact_sign_test(4, 2), 5) == 0.68750
+
+    def test_0_0_no_discordant_pairs(self):
+        assert exact_sign_test(0, 0) == 1.0
+
+    def test_symmetric_in_b_and_c(self):
+        assert exact_sign_test(5, 1) == exact_sign_test(1, 5)
+
+    def test_negative_counts_raise(self):
+        import pytest  # pylint: disable=import-outside-toplevel
+
+        with pytest.raises(ValueError):
+            exact_sign_test(-1, 0)
+        with pytest.raises(ValueError):
+            exact_sign_test(0, -1)

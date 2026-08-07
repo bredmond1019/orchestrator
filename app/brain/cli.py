@@ -142,7 +142,13 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
     eval_parser.add_argument(
         "--baseline",
         default=None,
-        help="Prior run JSON to diff against; exits non-zero on any metric regression.",
+        help="Prior run JSON to diff against; exits non-zero on a significant regression.",
+    )
+    eval_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="With --baseline: exit non-zero on ANY metric decrease (the old strict-sign "
+        "tripwire), not only a statistically significant one.",
     )
     eval_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
     eval_parser.add_argument(
@@ -502,15 +508,89 @@ def _print_eval_report(report_dict: dict) -> None:
             print(f"  {metric}: {value:.4f}")
 
 
+def _eval_exit_code(regressed: bool, verdict: dict, *, strict: bool) -> tuple[int, list[str]]:
+    """The `syn eval --baseline` exit-code policy plus any warning lines to
+    print.
+
+    `--strict` restores the old strict-sign tripwire: exit 1 iff `regressed`
+    (any metric strictly decreased), regardless of significance. Without
+    `--strict`, exit 1 only when some metric's paired verdict classifies as
+    `regressed-significant`; a `regressed-within-noise` metric prints a loud
+    warning but exits 0 — `regressed` itself keeps its exact strict-sign
+    semantics either way (see `compare_to_baseline`).
+    """
+    if strict:
+        return (1 if regressed else 0), []
+
+    significant = sorted(
+        metric
+        for metric, entry in verdict.items()
+        if entry["classification"] == "regressed-significant"
+    )
+    within_noise = sorted(
+        metric
+        for metric, entry in verdict.items()
+        if entry["classification"] == "regressed-within-noise"
+    )
+
+    warnings = []
+    if within_noise:
+        warnings.append(
+            "WARNING: regressed-within-noise (not statistically significant, exit 0): "
+            + ", ".join(within_noise)
+        )
+
+    return (1 if significant else 0), warnings
+
+
+def _render_eval_result(
+    args: argparse.Namespace,
+    report_dict: dict,
+    written_path: str | None,
+    baseline_result: tuple[dict, dict] | None,
+    warnings: list[str],
+) -> None:
+    """Print (JSON or human) the `syn eval` result — factored out of
+    `_run_eval` purely to keep that function's local-variable count in
+    check; carries no behavior beyond what `_run_eval` used to do inline."""
+    deltas, verdict = baseline_result if baseline_result is not None else (None, None)
+
+    if args.json:
+        payload = dict(report_dict)
+        payload["written_path"] = written_path
+        if deltas is not None:
+            payload["baseline_deltas"] = deltas
+            payload["baseline_verdict"] = verdict
+        print(json.dumps(payload))
+        return
+
+    _print_eval_report(report_dict)
+    if deltas is not None:
+        print("-- baseline deltas (signed; negative = regression) --")
+        for metric, delta in sorted(deltas.items()):
+            print(f"  {metric}: {delta:+.4f}")
+        print("-- paired verdict --")
+        for metric, entry in sorted(verdict.items()):
+            print(f"  {metric}: {entry['classification']} (pairable={entry['pairable']})")
+    for warning in warnings:
+        print(warning)
+    if args.no_write:
+        print("(--no-write: report not persisted)")
+
+
 def _run_eval(args: argparse.Namespace) -> int:
     """Execute `syn eval` and print its result; return the exit code.
 
     Runs the golden set, writes a dated JSON report (unless `--no-write` is
     passed, in which case the report is scored and printed but not
     persisted), and prints per-case + aggregate metrics. With `--baseline
-    <path>`, also prints a signed per-metric delta against that prior run
-    and returns non-zero on any regression (`brain.eval.compare_to_baseline`)
-    — `--no-write` gates persistence only and never affects the verdict.
+    <path>`, also prints a signed per-metric delta and a paired per-case
+    verdict against that prior run (`brain.eval.compare_to_baseline`).
+    Exit code: 1 iff some metric's paired verdict is
+    `regressed-significant`; a `regressed-within-noise` metric warns loudly
+    but exits 0. `--strict` restores the old strict-sign tripwire (exit 1 on
+    ANY metric decrease). `--no-write` gates persistence only and never
+    affects the verdict or the exit code.
     """
     from brain.eval import (  # pylint: disable=import-outside-toplevel
         compare_to_baseline,
@@ -534,31 +614,19 @@ def _run_eval(args: argparse.Namespace) -> int:
 
     report_dict = report.to_dict()
     exit_code = 0
+    baseline_result = None
+    warnings: list[str] = []
 
-    deltas = None
     if args.baseline:
         try:
             baseline = load_report(args.baseline)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             return _emit_error(exc, as_json=args.json)
-        deltas, regressed = compare_to_baseline(report_dict, baseline)
-        exit_code = 1 if regressed else 0
+        deltas, regressed, verdict = compare_to_baseline(report_dict, baseline)
+        baseline_result = (deltas, verdict)
+        exit_code, warnings = _eval_exit_code(regressed, verdict, strict=args.strict)
 
-    if args.json:
-        payload = dict(report_dict)
-        payload["written_path"] = written_path
-        if deltas is not None:
-            payload["baseline_deltas"] = deltas
-        print(json.dumps(payload))
-    else:
-        _print_eval_report(report_dict)
-        if deltas is not None:
-            print("-- baseline deltas (signed; negative = regression) --")
-            for metric, delta in sorted(deltas.items()):
-                print(f"  {metric}: {delta:+.4f}")
-        if args.no_write:
-            print("(--no-write: report not persisted)")
-
+    _render_eval_result(args, report_dict, written_path, baseline_result, warnings)
     return exit_code
 
 
