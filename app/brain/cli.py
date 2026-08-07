@@ -780,6 +780,11 @@ def _row_to_dict(row) -> dict:
         "top_doc_ids": row.top_doc_ids,
         "latency_ms": row.latency_ms,
         "created_at": row.created_at.isoformat() if row.created_at else None,
+        "k": row.k,
+        "corpus": row.corpus,
+        "embedding_model": row.embedding_model,
+        "filters": row.filters,
+        "top_scores": row.top_scores,
     }
 
 

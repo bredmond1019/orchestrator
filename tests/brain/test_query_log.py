@@ -253,6 +253,7 @@ class TestFireAndForget:
         }
         fake_embedder = MagicMock()
         fake_embedder.embed_text.return_value = [0.1, 0.2]
+        fake_embedder.stamp = "ollama:mxbai-embed-large"
 
         def _raising_db_session():
             raise RuntimeError("closed engine")
@@ -300,6 +301,7 @@ class TestSurfaceThreading:
         }
         fake_embedder = MagicMock()
         fake_embedder.embed_text.return_value = [0.1, 0.2]
+        fake_embedder.stamp = "ollama:mxbai-embed-large"
 
         with (
             patch("brain.retrieval_engine._semantic_search", return_value=[candidate]),
@@ -350,6 +352,7 @@ class TestSurfaceThreading:
         )
         fake_embedder = MagicMock()
         fake_embedder.embed_text.return_value = [0.1, 0.2]
+        fake_embedder.stamp = "ollama:mxbai-embed-large"
 
         with (
             patch("brain.retrieval_engine._semantic_search", return_value=[candidate]),
@@ -477,4 +480,273 @@ class TestMiningCaptureColumns:
         for name in self.NEW_COLUMNS:
             assert getattr(row, name) is None
         session.close()
+
+
+# ---------------------------------------------------------------------------
+# OR.2.E task 2 — capturing the five new fields at the write path
+# ---------------------------------------------------------------------------
+
+
+class TestMiningCaptureWritePath:
+    """`log_retrieval`'s new keyword-only params, threaded from the two
+    logging choke points (`retrieval_engine.retrieve` and
+    `retrieval.recall`'s exact-id/semantic paths) into the row."""
+
+    def _semantic_candidate(self, doc_id="D1"):
+        return {
+            "id": uuid.uuid4(),
+            "content": "some content",
+            "section_title": None,
+            "is_section_title": False,
+            "distance": 0.1,
+            "file_path": None,
+            "doc_id": doc_id,
+            "title": None,
+            "authored_at": None,
+            "via": "semantic",
+        }
+
+    def test_log_retrieval_writes_new_fields_directly(self, query_log_db, enable_query_log):
+        query_log.log_retrieval(
+            "q",
+            _fake_results(vias=("semantic", "keyword")),
+            surface="cli",
+            workspace_id=None,
+            hybrid=True,
+            retrieval_confidence=0.9,
+            latency_ms=1,
+            k=5,
+            corpus="brain",
+            embedding_model="ollama:mxbai-embed-large",
+            filters={"project": "orchestrator"},
+            top_scores=[0.9, 0.7],
+        )
+        session = query_log_db()
+        row = session.query(RetrievalQuery).one()
+        assert row.k == 5
+        assert row.corpus == "brain"
+        assert row.embedding_model == "ollama:mxbai-embed-large"
+        assert row.filters == {"project": "orchestrator"}
+        assert row.top_scores == [0.9, 0.7]
         session.close()
+
+    def test_top_scores_derived_from_results_when_omitted(self, query_log_db, enable_query_log):
+        results = _fake_results(vias=("semantic",) * 7)
+        query_log.log_retrieval(
+            "q",
+            results,
+            surface="cli",
+            workspace_id=None,
+            hybrid=True,
+            retrieval_confidence=0.9,
+            latency_ms=1,
+        )
+        session = query_log_db()
+        row = session.query(RetrievalQuery).one()
+        assert row.top_scores == [r["score"] for r in results[:5]]
+        assert row.top_scores == pytest.approx(row.top_scores)
+        assert len(row.top_scores) == len(row.top_doc_ids) == 5
+        session.close()
+
+    def test_retrieve_writes_non_null_k_corpus_embedding_model(
+        self, query_log_db, enable_query_log
+    ):
+        """The hybrid choke point (`retrieval_engine.retrieve`, which
+        `syn recall --hybrid` and `hybrid_search` both go through)."""
+        fake_embedder = MagicMock()
+        fake_embedder.embed_text.return_value = [0.1, 0.2]
+        fake_embedder.stamp = "ollama:mxbai-embed-large"
+        fake_embedder.stamp = "ollama:mxbai-embed-large"
+
+        with (
+            patch("brain.retrieval_engine._semantic_search", return_value=[self._semantic_candidate()]),
+            patch("brain.retrieval_engine._keyword_search", return_value=set()),
+        ):
+            retrieval_engine.retrieve(
+                "what changed",
+                corpus="content",
+                k=5,
+                embedder=fake_embedder,
+                surface="cli",
+            )
+
+        session = query_log_db()
+        row = session.query(RetrievalQuery).one()
+        assert row.k == 5
+        assert row.corpus == "content"
+        assert row.embedding_model == "ollama:mxbai-embed-large"
+        assert row.top_scores
+        assert row.top_scores[: len(row.top_doc_ids)] or row.top_doc_ids == []
+        session.close()
+
+    def test_recall_semantic_path_writes_non_null_k_corpus_embedding_model(
+        self, query_log_db, enable_query_log
+    ):
+        """The non-hybrid `syn recall` default — `recall()`'s semantic path."""
+        from brain.retrieval import recall
+
+        fake_doc = MagicMock()
+        fake_doc.doc_id = "D1"
+        fake_doc.file_path = "docs/x.md"
+        fake_doc.title = "X"
+        fake_doc.section = ""
+        fake_doc.content = "content"
+
+        fake_embedding_service = MagicMock()
+        fake_embedding_service.stamp = "ollama:mxbai-embed-large"
+
+        with (
+            patch("brain.retrieval.find_exact_id", return_value=None),
+            patch("brain.retrieval.semantic_search", return_value=[(fake_doc, 0.1)]),
+        ):
+            recall(
+                "what changed",
+                limit=5,
+                session=MagicMock(),
+                embedding_service=fake_embedding_service,
+                surface="cli",
+            )
+
+        session = query_log_db()
+        row = session.query(RetrievalQuery).one()
+        assert row.k == 5
+        assert row.corpus == "brain"
+        assert row.embedding_model == "ollama:mxbai-embed-large"
+        assert row.top_scores == [0.9]
+        session.close()
+
+    def test_recall_exact_id_path_writes_k_and_corpus_but_no_embedding_model(
+        self, query_log_db, enable_query_log
+    ):
+        """The exact-id path never touches an embedder, so `embedding_model`
+        stays `None` — but `k`/`corpus` are still populated."""
+        from brain.retrieval import recall
+
+        fake_doc = MagicMock()
+        fake_doc.doc_id = "D20"
+        fake_doc.file_path = "docs/decisions/D20.md"
+        fake_doc.title = "D20"
+        fake_doc.section = ""
+        fake_doc.content = "content"
+
+        with patch("brain.retrieval.exact_id_lookup", return_value=[fake_doc]):
+            recall("What is D20?", limit=5, session=MagicMock(), surface="cli")
+
+        session = query_log_db()
+        row = session.query(RetrievalQuery).one()
+        assert row.k == 5
+        assert row.corpus == "brain"
+        assert row.embedding_model is None
+        assert row.top_scores == [1.0]
+        session.close()
+
+    def test_top_scores_aligned_with_top_doc_ids(self, query_log_db, enable_query_log):
+        fake_embedder = MagicMock()
+        fake_embedder.embed_text.return_value = [0.1, 0.2]
+        fake_embedder.stamp = "ollama:mxbai-embed-large"
+        fake_embedder.stamp = "ollama:mxbai-embed-large"
+        candidates = [self._semantic_candidate(doc_id=f"D{i}") for i in range(7)]
+
+        with (
+            patch("brain.retrieval_engine._semantic_search", return_value=candidates),
+            patch("brain.retrieval_engine._keyword_search", return_value=set()),
+        ):
+            results = retrieval_engine.retrieve(
+                "what changed",
+                corpus="content",
+                k=10,
+                embedder=fake_embedder,
+                surface="cli",
+            )
+
+        session = query_log_db()
+        row = session.query(RetrievalQuery).one()
+        assert len(row.top_scores) <= 5
+        assert len(row.top_doc_ids) <= 5
+        assert row.top_scores == [r["score"] for r in results[:5]]
+        assert row.top_doc_ids == [r["doc_id"] for r in results[:5]]
+        session.close()
+
+    def test_cli_row_to_dict_renders_new_fields(self):
+        """`syn queries` must render the five new fields via `_row_to_dict`."""
+        from brain.cli import _row_to_dict
+
+        row = MagicMock()
+        row.id = uuid.uuid4()
+        row.query = "q"
+        row.surface = "cli"
+        row.workspace_id = None
+        row.hybrid = True
+        row.via_mix = {"semantic": 1}
+        row.result_count = 1
+        row.top_score = 0.9
+        row.retrieval_confidence = 0.9
+        row.abstained = False
+        row.top_doc_ids = ["D1"]
+        row.latency_ms = 5
+        row.created_at = None
+        row.k = 5
+        row.corpus = "brain"
+        row.embedding_model = "ollama:mxbai-embed-large"
+        row.filters = {"project": "orchestrator"}
+        row.top_scores = [0.9]
+
+        rendered = _row_to_dict(row)
+        assert rendered["k"] == 5
+        assert rendered["corpus"] == "brain"
+        assert rendered["embedding_model"] == "ollama:mxbai-embed-large"
+        assert rendered["filters"] == {"project": "orchestrator"}
+        assert rendered["top_scores"] == [0.9]
+
+
+# ---------------------------------------------------------------------------
+# OR.2.E task 2 — the never-raises guarantee, asserted per new field
+# ---------------------------------------------------------------------------
+
+
+class _Unserializable:
+    """A plain object neither `json.dumps` nor sqlite3's DBAPI can bind —
+    a stand-in for a 'bad value' in a JSON- or String-typed column."""
+
+
+class TestBadValuesPerFieldAreSwallowed:
+    """A bad value in each of the five new fields must be swallowed by
+    `log_retrieval`'s existing broad `except` — never propagate out of the
+    retrieval call that produced it. Asserted per-field, not just once."""
+
+    def _assert_swallowed(self, query_log_db, enable_query_log, caplog, **bad_kwargs):
+        with caplog.at_level("WARNING"):
+            query_log.log_retrieval(
+                "q",
+                _fake_results(),
+                surface="cli",
+                workspace_id=None,
+                hybrid=True,
+                retrieval_confidence=0.9,
+                latency_ms=1,
+                **bad_kwargs,
+            )
+        assert any(
+            "retrieval query log write failed" in record.message for record in caplog.records
+        )
+
+    def test_bad_k_is_swallowed(self, query_log_db, enable_query_log, caplog):
+        # sqlite3's DBAPI only binds None/int/float/str/bytes — an arbitrary
+        # object is the reliable way to force a real bind failure here,
+        # since SQLite's loose type affinity would silently accept a
+        # malformed string.
+        self._assert_swallowed(query_log_db, enable_query_log, caplog, k=object())
+
+    def test_bad_corpus_is_swallowed(self, query_log_db, enable_query_log, caplog):
+        self._assert_swallowed(query_log_db, enable_query_log, caplog, corpus=object())
+
+    def test_bad_embedding_model_is_swallowed(self, query_log_db, enable_query_log, caplog):
+        self._assert_swallowed(query_log_db, enable_query_log, caplog, embedding_model=object())
+
+    def test_bad_filters_is_swallowed(self, query_log_db, enable_query_log, caplog):
+        self._assert_swallowed(query_log_db, enable_query_log, caplog, filters=_Unserializable())
+
+    def test_bad_top_scores_is_swallowed(self, query_log_db, enable_query_log, caplog):
+        self._assert_swallowed(
+            query_log_db, enable_query_log, caplog, top_scores=[_Unserializable()]
+        )
