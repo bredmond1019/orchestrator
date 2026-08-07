@@ -12,7 +12,9 @@ diff — at most shaped like `app/evals/gate.py`'s deleted `gate_change`
 (OR.X2 removed that module entirely), never imported from it.
 """
 
+import hashlib
 import json
+import os
 from pathlib import Path
 
 import yaml
@@ -21,15 +23,67 @@ from database.brain_edge import BrainEdge
 from sqlalchemy import func
 
 from brain import retrieval_engine
-from brain.eval import scorer
+from brain.eval import scorer, stats
 from brain.eval.models import CaseResult, RetrievalCase, RetrievalRunReport
 from brain.eval.scorer import score_case
+
+# Fixed, distinct-per-metric seeds for the bootstrap metrics — pinned so two
+# consecutive runs on the same cases produce byte-identical `aggregate_stats`
+# (see `test_run_eval_is_deterministic_across_two_runs` and the block's
+# determinism acceptance criterion). Distinct per metric only so a shared
+# resample sequence across metrics is never mistaken for a coincidence; the
+# exact values carry no other meaning.
+_BOOTSTRAP_SEEDS = {
+    "mrr": 0,
+    "groundedness": 1,
+    "groundedness_on_hits": 2,
+}
+
+# Separate, still-distinct seeds for `compare_to_baseline`'s PAIRED bootstrap
+# over per-case deltas (task 3) — deliberately not reused from
+# `_BOOTSTRAP_SEEDS` above so the two resample sequences (one over raw
+# per-case values, one over paired deltas between two runs) can never be
+# mistaken for each other; the exact values carry no other meaning.
+_PAIRED_BOOTSTRAP_SEEDS = {
+    "mrr": 10,
+    "groundedness": 11,
+    "groundedness_on_hits": 12,
+}
+
+# Metrics whose per-case reading is a 0/1 outcome — paired via the exact
+# sign test on discordant flips. Everything else in `aggregate` is treated
+# as continuous and paired via a bootstrap over per-case deltas.
+_PROPORTION_METRICS = frozenset({"recall_at_5", "recall_at_10", "abstain_correctness"})
+
+_SIGNIFICANCE_ALPHA = 0.05
 
 # app/brain/eval/runner.py -> app/brain/eval -> app/brain -> app -> repo root
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 DEFAULT_GOLDEN_SET_PATH = _REPO_ROOT / "planning" / "retrieval-golden-set.yaml"
 DEFAULT_RUNS_DIR = _REPO_ROOT / "planning" / "retrieval-eval-runs"
+DEFAULT_BASELINE_POINTER = DEFAULT_RUNS_DIR / "baseline.json"
+
+# Bumped only when a metric's FORMULA changes (out of scope for this block —
+# see the spec's Notes). Stamped into `baseline.json` at promotion time so a
+# later formula change is visible in the pointer's git diff rather than
+# silently reinterpreting an old promotion.
+METRIC_DEFINITION_VERSION = "1"
+
+# Fields `golden_set_fingerprint` hashes — the SCORING-relevant subset of a
+# `RetrievalCase`. `source`/`category`/`source_query_id` are provenance
+# metadata never consumed by scoring (see `RetrievalCase`'s docstring) and
+# `notes` is documentation-only, so none of the four participate — that is
+# what makes the fingerprint stable under a `notes:`-only edit while still
+# moving when `expect_docs` (or `query`/`expect_abstain`/`scope`) changes.
+_FINGERPRINT_FIELDS = ("case_id", "query", "expect_docs", "expect_abstain", "scope")
+
+
+class PromotionError(ValueError):
+    """Raised by `promote_run` when a run fails a promotion guard — the
+    message names exactly which guard failed and, where relevant, what is
+    missing, so `syn eval promote`'s CLI error is actionable rather than a
+    bare traceback."""
 
 
 def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase]:
@@ -65,6 +119,30 @@ def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase
             )
         )
     return cases
+
+
+def golden_set_fingerprint(cases: list[RetrievalCase]) -> str:
+    """Stable hash of the golden set's SCORING-relevant content
+    (`_FINGERPRINT_FIELDS`), sorted by `case_id` so case ORDER in the YAML
+    never perturbs the hash.
+
+    Changes whenever a case's `expect_docs` (or `query`/`expect_abstain`/
+    `scope`) changes — the fields that actually move a score — and is
+    stable under a `notes:`-only edit (the precedent `archive-01-rates`
+    established: factual corrections go in `notes:` without redefining the
+    case). Used to stamp `baseline.json` at promotion time with the golden
+    set as it existed at that moment.
+    """
+    payload = [
+        {field: getattr(case, field) for field in _FINGERPRINT_FIELDS}
+        for case in sorted(cases, key=lambda c: c.case_id)
+    ]
+    # `expect_docs` is a tuple; json.dumps needs a list, and sorting it
+    # makes the hash independent of `expect_docs`' authored order too.
+    for entry in payload:
+        entry["expect_docs"] = sorted(entry["expect_docs"])
+    blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
 
 
 def _aggregate(results: list[CaseResult]) -> dict[str, float]:
@@ -111,6 +189,63 @@ def _aggregate(results: list[CaseResult]) -> dict[str, float]:
     aggregate["groundedness_on_hits"] = sum(on_hits) / len(on_hits) if on_hits else 0.0
 
     return aggregate
+
+
+def _aggregate_stats(results: list[CaseResult]) -> dict[str, dict]:
+    """Per-metric `n` / point estimate / 95% interval / method / seed, keyed
+    exactly like `_aggregate`'s output — a SIBLING top-level report field
+    (`RetrievalRunReport.aggregate_stats`), never nested inside `aggregate`
+    itself (`compare_to_baseline` iterates `aggregate` as a flat
+    `dict[str, float]` and subtracts; nesting an interval in there raises
+    `TypeError`).
+
+    Each metric's `n` is the denominator `_aggregate` actually divides by —
+    read from the same per-result field checks as `_aggregate`, not assumed,
+    so a wrong `n` here would be exactly the class of plausible-wrong-number
+    this block exists to prevent:
+
+    - `recall_at_5`/`recall_at_10`/`mrr` — positive cases only (the field is
+      non-`None`); `recall_at_5`/`recall_at_10` are always exactly 0.0 or
+      1.0 so Wilson applies directly with `successes = sum(values)`. `mrr`
+      is a discrete ladder ({0, 1, 1/2, 1/3, ...}) with mass at 0, so it
+      gets the seeded bootstrap instead.
+    - `abstain_correctness` — every case (the abstain signal is meaningful
+      for negatives and positives alike) — Wilson.
+    - `groundedness` — positive cases only, continuous [0, 1] — bootstrap.
+    - `groundedness_on_hits` — cases that actually matched an expected
+      document (`matched_docs` non-empty) — bootstrap; may be `n=0`.
+    """
+    out: dict[str, dict] = {}
+
+    abstain_values = [1.0 if r.abstain_correct else 0.0 for r in results]
+    out["abstain_correctness"] = stats.wilson_interval(
+        successes=int(sum(abstain_values)), n=len(abstain_values)
+    ).to_dict()
+
+    for out_key, field_name in (("recall_at_5", "recall_at_5"), ("recall_at_10", "recall_at_10")):
+        values = [getattr(r, field_name) for r in results if getattr(r, field_name) is not None]
+        out[out_key] = stats.wilson_interval(
+            successes=int(sum(values)), n=len(values)
+        ).to_dict()
+
+    mrr_values = [r.reciprocal_rank for r in results if r.reciprocal_rank is not None]
+    out["mrr"] = stats.bootstrap_mean_interval(
+        mrr_values, seed=_BOOTSTRAP_SEEDS["mrr"]
+    ).to_dict()
+
+    groundedness_values = [r.groundedness for r in results if r.groundedness is not None]
+    out["groundedness"] = stats.bootstrap_mean_interval(
+        groundedness_values, seed=_BOOTSTRAP_SEEDS["groundedness"]
+    ).to_dict()
+
+    on_hits_values = [
+        r.groundedness for r in results if r.groundedness is not None and r.matched_docs
+    ]
+    out["groundedness_on_hits"] = stats.bootstrap_mean_interval(
+        on_hits_values, seed=_BOOTSTRAP_SEEDS["groundedness_on_hits"]
+    ).to_dict()
+
+    return out
 
 
 def _fingerprint_corpus(session=None) -> dict:
@@ -210,6 +345,7 @@ def run_eval(
         case_count=len(cases),
         results=tuple(results),
         aggregate=_aggregate(results),
+        aggregate_stats=_aggregate_stats(results),
         corpus=_fingerprint_corpus(session),
         ranking_constants=_live_ranking_constants(),
     )
@@ -232,14 +368,457 @@ def load_report(path: str | Path) -> dict:
         return json.load(handle)
 
 
-def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float], bool]:
-    """Signed per-metric delta of `current`'s aggregate vs. `baseline`'s.
+def load_baseline_pointer(path: str | Path | None = None) -> dict | None:
+    """Load the `baseline.json` pointer file (default `DEFAULT_BASELINE_
+    POINTER`, re-read from the module at call time — never bound as a
+    mutable default arg — so tests can monkeypatch the module constant), or
+    `None` when it doesn't exist yet (no run has ever been promoted) — never
+    raises for a missing pointer, since that is a legitimate "nothing
+    pinned" state, distinct from a pointer that exists but is malformed
+    (which still raises)."""
+    path = Path(path if path is not None else DEFAULT_BASELINE_POINTER)
+    if not path.exists():
+        return None
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
 
-    Returns `(deltas, regressed)` — `deltas[metric] = current - baseline`
-    (positive is improvement, every metric here is higher-is-better) and
-    `regressed` is True iff any metric strictly decreased. Shaped like the
-    deleted `app/evals/gate.py::gate_change` comparison; not imported from
-    it (OR.X2 removed that module).
+
+def resolve_baseline(
+    explicit_path: str | Path | None,
+    *,
+    pointer_path: str | Path | None = None,
+    runs_dir: str | Path | None = None,
+) -> tuple[dict, str] | None:
+    """Resolve which run `syn eval` should compare against.
+
+    An explicit `--baseline <path>` always wins. Otherwise falls back to the
+    promoted pin (`baseline.json`'s `run` field, resolved under
+    `runs_dir`, default `DEFAULT_RUNS_DIR`). Returns `(baseline_dict,
+    label)` — `label` is the path `syn eval` names in its output — or
+    `None` when there is nothing to compare against (no `--baseline` and no
+    pin has ever been promoted).
+    """
+    if explicit_path:
+        return load_report(explicit_path), str(explicit_path)
+
+    pointer = load_baseline_pointer(pointer_path)
+    if pointer is None:
+        return None
+    run_path = Path(runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR) / pointer["run"]
+    return load_report(run_path), pointer["run"]
+
+
+def corpus_divergence_warning(
+    current_corpus: dict | None, pinned_corpus: dict | None
+) -> str | None:
+    """A proactive nudge, never a gate: when the live corpus fingerprint
+    (`current_corpus`) diverges from the promoted pin's (`pinned_corpus`)
+    on any of `_CORPUS_FINGERPRINT_FIELDS`, name the fields that moved.
+    Returns `None` when either fingerprint is absent (nothing to compare)
+    or both agree — mirrors `_corpus_confounded`'s "missing is never a
+    match" rule by simply having nothing to say rather than warning falsely.
+    """
+    if not current_corpus or not pinned_corpus:
+        return None
+    diverged = [
+        field
+        for field in _CORPUS_FINGERPRINT_FIELDS
+        if current_corpus.get(field) != pinned_corpus.get(field)
+    ]
+    if not diverged:
+        return None
+    return (
+        "WARNING: live corpus diverges from the pinned baseline's corpus "
+        f"({', '.join(diverged)}) — see planning/retrieval-eval-runs/baseline.json"
+    )
+
+
+def promote_run(
+    run_path: str | Path,
+    *,
+    reason: str,
+    force: bool = False,
+    runs_dir: str | Path | None = None,
+    pointer_path: str | Path | None = None,
+    golden_set_path: str | Path | None = None,
+    promoted_by: str | None = None,
+) -> dict:
+    """Promote `run_path` to the baseline pin (`syn eval promote`), guarded.
+    Writes and returns the new pointer dict.
+
+    Guards, in order (each raises `PromotionError` naming what failed):
+
+    1. `--reason` must be non-empty.
+    2. `run_path` must exist and live under `runs_dir` (only tracked runs
+       are promotable) and must parse as JSON.
+    3. It must carry `corpus`, `ranking_constants`, AND `aggregate_stats` —
+       ALL THREE, named individually when missing. This mechanically makes
+       every one of the 15 pre-`plan-eval-statistical-honesty` run files
+       permanently ineligible, including the historical prose pin
+       `2026-08-02T10-15-24Z.json` (it predates all three stamps). That is
+       intended, not a bug to work around.
+    4. If a pin already exists and the new run is `regressed-significant`
+       on any metric relative to it (via `compare_to_baseline`'s paired
+       verdict), `--force` is required.
+
+    Deliberately NOT a guard: live-corpus compatibility between `run_path`
+    and the corpus at promotion time — you are promoting an *observation*,
+    and gating on live-corpus match would mean only ever promoting in the
+    same minute the corpus was indexed. `syn eval` warns about live-corpus
+    divergence on every run instead (`corpus_divergence_warning`).
+    """
+    if not reason or not reason.strip():
+        raise PromotionError("--reason is required and must be non-empty")
+
+    runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    pointer_path = pointer_path if pointer_path is not None else DEFAULT_BASELINE_POINTER
+    golden_set_path = golden_set_path if golden_set_path is not None else DEFAULT_GOLDEN_SET_PATH
+
+    run_path = Path(run_path).resolve()
+    runs_dir_resolved = Path(runs_dir).resolve()
+    if runs_dir_resolved not in run_path.parents:
+        raise PromotionError(
+            f"{run_path} is not under {runs_dir_resolved} — only tracked runs "
+            "under planning/retrieval-eval-runs/ may be promoted"
+        )
+    if not run_path.exists():
+        raise PromotionError(f"{run_path} does not exist")
+
+    try:
+        run = load_report(run_path)
+    except json.JSONDecodeError as exc:
+        raise PromotionError(f"{run_path} does not parse as JSON: {exc}") from exc
+
+    missing = [
+        field
+        for field in ("corpus", "ranking_constants", "aggregate_stats")
+        if not run.get(field)
+    ]
+    if missing:
+        raise PromotionError(
+            f"{run_path.name} is missing required stamp(s) {missing} — only runs "
+            "written by the statistical-honesty harness (aggregate_stats onward) "
+            "are promotable"
+        )
+
+    pointer = load_baseline_pointer(pointer_path)
+    if pointer is not None and not force:
+        current_pin_path = Path(runs_dir) / pointer["run"]
+        current_pin = load_report(current_pin_path)
+        _, _, verdict = compare_to_baseline(run, current_pin)
+        worse = sorted(
+            metric
+            for metric, entry in verdict.items()
+            if entry["classification"] == "regressed-significant"
+        )
+        if worse:
+            raise PromotionError(
+                f"{run_path.name} is significantly worse than the current pin "
+                f"({pointer['run']}) on {worse} — pass --force to promote anyway"
+            )
+
+    cases = load_cases(golden_set_path)
+    new_pointer = {
+        "run": run_path.name,
+        "promoted_at": RetrievalRunReport.now_iso(),
+        "promoted_by": promoted_by or os.environ.get("USER") or "unknown",
+        "reason": reason,
+        "corpus": run.get("corpus"),
+        "golden_set_fingerprint": golden_set_fingerprint(cases),
+        "case_count": run.get("case_count"),
+        "metric_definition_version": METRIC_DEFINITION_VERSION,
+    }
+
+    pointer_path = Path(pointer_path)
+    pointer_path.parent.mkdir(parents=True, exist_ok=True)
+    with pointer_path.open("w", encoding="utf-8") as handle:
+        json.dump(new_pointer, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+    return new_pointer
+
+
+def _case_values_for_metric(results: list[dict], metric: str) -> dict[str, float]:
+    """Per-case readings for `metric`, keyed by `case_id`, restricted to the
+    cases where the metric is actually defined — the same denominator
+    `_aggregate`/`_aggregate_stats` use, read from each case's `results`
+    dict rather than assumed.
+
+    `abstain_correctness` is defined on every case (its bool is never
+    `None`). `recall_at_5`/`recall_at_10`/`mrr` (`reciprocal_rank`) are
+    defined on positive cases only. `groundedness` is defined wherever the
+    scorer set it (positive cases); `groundedness_on_hits` further
+    restricts to cases whose `matched_docs` is non-empty.
+    """
+    field_by_metric = {
+        "recall_at_5": "recall_at_5",
+        "recall_at_10": "recall_at_10",
+        "mrr": "reciprocal_rank",
+        "groundedness": "groundedness",
+        "groundedness_on_hits": "groundedness",
+    }
+
+    values: dict[str, float] = {}
+    for result in results:
+        case_id = result.get("case_id")
+        if case_id is None:
+            continue
+
+        if metric == "abstain_correctness":
+            values[case_id] = 1.0 if result.get("abstain_correct") else 0.0
+            continue
+
+        field_name = field_by_metric.get(metric)
+        if field_name is None:
+            # An unrecognized metric key (e.g. a future addition) — fall
+            # back to reading it directly, same permissive contract
+            # `compare_to_baseline`'s flat-delta path already has.
+            raw = result.get(metric)
+        else:
+            raw = result.get(field_name)
+
+        if raw is None:
+            continue
+        if metric == "groundedness_on_hits" and not result.get("matched_docs"):
+            continue
+        values[case_id] = float(raw)
+
+    return values
+
+
+def _unpairable_verdict(
+    *,
+    added_case_ids: set[str] | None = None,
+    removed_case_ids: set[str] | None = None,
+) -> dict:
+    """The `verdict` entry for a metric with no usable per-case data on one
+    or both sides, or whose paired case-id sets don't match.
+
+    `added_case_ids`/`removed_case_ids` name the specific ids present in one
+    run's case set but not the other's (task 4's fingerprint guard) — `[]`,
+    never omitted, when there is nothing to name (e.g. one side has no
+    per-case `results` at all)."""
+    return {
+        "pairable": False,
+        "n": 0,
+        "flips_to_worse": None,
+        "flips_to_better": None,
+        "sign_test_p": None,
+        "paired_delta": None,
+        "classification": "incomparable",
+        "added_case_ids": sorted(added_case_ids) if added_case_ids else [],
+        "removed_case_ids": sorted(removed_case_ids) if removed_case_ids else [],
+    }
+
+
+def _classify_sign(worse: int, better: int, p_value: float) -> str:
+    """Classification for a proportion metric's discordant-flip counts."""
+    if worse == better:
+        # Includes (0, 0) — genuinely nothing moved — and symmetric
+        # flip counts, which cancel by construction.
+        return "flat"
+    significant = p_value < _SIGNIFICANCE_ALPHA
+    if worse > better:
+        return "regressed-significant" if significant else "regressed-within-noise"
+    return "improved-significant" if significant else "improved-within-noise"
+
+
+def _classify_continuous(interval: dict) -> str:
+    """Classification for a continuous metric's paired-bootstrap delta
+    interval. Deliberately never keys on interval OVERLAP between the two
+    runs' own intervals — that is strictly less conservative than this
+    paired test on the SAME cases (see the block's Trap 1) — only on
+    whether this delta interval itself excludes zero."""
+    point, lo, hi = interval["point"], interval["lo"], interval["hi"]
+    if point is None:
+        return "incomparable"
+    if point == 0.0:
+        return "flat"
+    if point < 0.0:
+        excludes_zero = hi is not None and hi < 0.0
+        return "regressed-significant" if excludes_zero else "regressed-within-noise"
+    excludes_zero = lo is not None and lo > 0.0
+    return "improved-significant" if excludes_zero else "improved-within-noise"
+
+
+# Corpus fields whose disagreement makes two runs' deltas potentially
+# confounded by "we measured a different corpus," not "retrieval got
+# better/worse." `edge_count` is deliberately excluded — it tracks the
+# structural graph, not what the retrieval core scores against.
+_CORPUS_FINGERPRINT_FIELDS = ("chunk_count", "file_count", "max_indexed_at")
+
+
+def _overall_case_ids(run: dict) -> set[str] | None:
+    """Every `case_id` in `run['results']`, or `None` if the run carries no
+    per-case `results` at all — distinct from an empty set, so a run with
+    genuinely zero cases doesn't get silently treated as "no data"."""
+    results = run.get("results")
+    if not results:
+        return None
+    return {r.get("case_id") for r in results if r.get("case_id") is not None}
+
+
+def _case_set_guard(current: dict, baseline: dict) -> tuple[set[str], set[str]] | None:
+    """CLAUDE.md's Brain-RAG rule 2, mechanized: never compare two runs
+    without checking what they were measured against. Returns
+    `(added, removed)` case ids when BOTH runs carry per-case `results` and
+    their overall case-id sets disagree — the "the golden set changed
+    underneath this comparison" guard. Returns `None` when the runs are
+    pairable at the whole-run level (including when one side is too
+    incomplete to say either way; `_metric_verdict`'s per-metric check is
+    the fallback for that).
+
+    Deliberately checks the OVERALL case-id set, not any one metric's
+    applicable subset — this is what stops a golden-set definition change
+    (e.g. two cases moved out of the denominator) from reporting a
+    fictitious improvement on metrics whose narrower subset happens to
+    still match."""
+    current_ids = _overall_case_ids(current)
+    baseline_ids = _overall_case_ids(baseline)
+    if current_ids is None or baseline_ids is None or current_ids == baseline_ids:
+        return None
+    return current_ids - baseline_ids, baseline_ids - current_ids
+
+
+def _corpus_confounded(current: dict, baseline: dict) -> bool | str:
+    """Whether the two runs' corpus fingerprints agree on the fields that
+    matter to retrieval (`_CORPUS_FINGERPRINT_FIELDS`).
+
+    Returns `True`/`False` when both runs carry a `corpus` stamp, or the
+    string `"unknown"` when either is missing it (the 14 pre-task-1 legacy
+    runs) — a missing fingerprint is never treated as a match, so it can
+    never read as silently green."""
+    current_corpus = current.get("corpus")
+    baseline_corpus = baseline.get("corpus")
+    if not current_corpus or not baseline_corpus:
+        return "unknown"
+    return any(
+        current_corpus.get(field) != baseline_corpus.get(field)
+        for field in _CORPUS_FINGERPRINT_FIELDS
+    )
+
+
+def _ranking_constants_changed(current: dict, baseline: dict) -> list[str] | None:
+    """The specific ranking levers that moved between the two runs, so a
+    ranking change is never conflated with a corpus change (the confusion
+    that cost `OR.0.C` its result). `None` when either run lacks a
+    `ranking_constants` stamp (can't say); `[]` when both are present and
+    identical; otherwise the sorted lever names that differ."""
+    current_rc = current.get("ranking_constants")
+    baseline_rc = baseline.get("ranking_constants")
+    if not current_rc or not baseline_rc:
+        return None
+    return sorted(
+        key
+        for key in set(current_rc) | set(baseline_rc)
+        if current_rc.get(key) != baseline_rc.get(key)
+    )
+
+
+def _metric_verdict(metric: str, current: dict, baseline: dict) -> dict:
+    """Paired per-case verdict for one metric — see `compare_to_baseline`."""
+    current_results = current.get("results") or []
+    baseline_results = baseline.get("results") or []
+    if not current_results or not baseline_results:
+        return _unpairable_verdict()
+
+    current_values = _case_values_for_metric(current_results, metric)
+    baseline_values = _case_values_for_metric(baseline_results, metric)
+
+    if set(current_values) != set(baseline_values):
+        return _unpairable_verdict(
+            added_case_ids=set(current_values) - set(baseline_values),
+            removed_case_ids=set(baseline_values) - set(current_values),
+        )
+
+    case_ids = sorted(current_values)
+    n = len(case_ids)
+
+    if metric in _PROPORTION_METRICS:
+        flips_to_worse = [
+            case_id for case_id in case_ids if current_values[case_id] < baseline_values[case_id]
+        ]
+        flips_to_better = [
+            case_id for case_id in case_ids if current_values[case_id] > baseline_values[case_id]
+        ]
+        p_value = stats.exact_sign_test(len(flips_to_worse), len(flips_to_better))
+        return {
+            "pairable": True,
+            "n": n,
+            "flips_to_worse": flips_to_worse,
+            "flips_to_better": flips_to_better,
+            "sign_test_p": p_value,
+            "paired_delta": None,
+            "classification": _classify_sign(len(flips_to_worse), len(flips_to_better), p_value),
+        }
+
+    per_case_deltas = [current_values[case_id] - baseline_values[case_id] for case_id in case_ids]
+    seed = _PAIRED_BOOTSTRAP_SEEDS.get(metric, 0)
+    interval = stats.bootstrap_mean_interval(per_case_deltas, seed=seed).to_dict()
+    return {
+        "pairable": True,
+        "n": n,
+        "flips_to_worse": None,
+        "flips_to_better": None,
+        "sign_test_p": None,
+        "paired_delta": interval,
+        "classification": _classify_continuous(interval),
+    }
+
+
+def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float], bool, dict]:
+    """Signed per-metric delta of `current`'s aggregate vs. `baseline`'s,
+    plus a paired per-case `verdict`.
+
+    Returns `(deltas, regressed, verdict)`:
+
+    - `deltas[metric] = current - baseline` (positive is improvement, every
+      metric here is higher-is-better), iterated over the **baseline's**
+      keys — never the current run's — so a run that has grown a new
+      aggregate key (e.g. `groundedness_on_hits`, added after some existing
+      baselines) simply reports no delta for it rather than raising or
+      being penalized (`test_new_aggregate_key_does_not_break_an_older_
+      baseline_file`).
+    - `regressed` is the ORIGINAL strict-sign tripwire, unchanged: True iff
+      any metric strictly decreased. It stays a tripwire on purpose — see
+      `verdict` for the statistically-honest read.
+    - `verdict[metric]` is a paired, per-case comparison on `case_id`:
+      `pairable` (did the metric's case-id sets from both runs match?),
+      `n`, `flips_to_worse`/`flips_to_better` (proportion metrics — the
+      case ids themselves) or `paired_delta` (continuous metrics — a
+      seeded bootstrap interval over per-case deltas), `sign_test_p`
+      (proportion metrics — the EXACT two-sided binomial sign test on
+      discordant flips, never a normal approximation), and
+      `classification` in `regressed-significant | regressed-within-noise |
+      improved-within-noise | improved-significant | flat | incomparable`.
+      A metric with no per-case data on either side, or whose paired
+      case-id sets don't match, is `incomparable` — deliberately never
+      reported as an improvement — and names the mismatched ids via
+      `added_case_ids`/`removed_case_ids`.
+
+    Three fingerprint guards run BEFORE any per-metric verdict is computed
+    (CLAUDE.md's Brain-RAG rule 2, mechanized — never compare two runs
+    without checking what they were measured against), and every metric's
+    entry additionally carries:
+
+    - `confounded`: `True` if the two runs' `corpus` fingerprints disagree
+      on chunk/file count or newest `max_indexed_at`, `False` if they
+      agree, or `"unknown"` if either run lacks a `corpus` stamp — a
+      missing fingerprint is never treated as a match.
+    - `ranking_constants_changed`: the sorted lever names that differ
+      between the two runs' `ranking_constants`, `[]` if none did, or
+      `None` if either run lacks the stamp — so a ranking change is never
+      conflated with a corpus change.
+
+    When the runs' OVERALL case-id sets disagree (not any one metric's
+    narrower applicable subset — a golden-set definition change must not
+    let a metric whose subset happens to still match report a fictitious
+    improvement), every metric's verdict is forced `incomparable`, naming
+    the added/removed ids, regardless of what the per-metric check alone
+    would have said.
+
+    Shaped like the deleted `app/evals/gate.py::gate_change` comparison for
+    `deltas`/`regressed`; not imported from it (OR.X2 removed that module).
     """
     current_agg = current["aggregate"]
     baseline_agg = baseline["aggregate"]
@@ -248,4 +827,20 @@ def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float]
         for metric in baseline_agg
     }
     regressed = any(delta < 0 for delta in deltas.values())
-    return deltas, regressed
+
+    case_set_mismatch = _case_set_guard(current, baseline)
+    confounded = _corpus_confounded(current, baseline)
+    ranking_constants_changed = _ranking_constants_changed(current, baseline)
+
+    verdict = {}
+    for metric in baseline_agg:
+        if case_set_mismatch is not None:
+            added, removed = case_set_mismatch
+            entry = _unpairable_verdict(added_case_ids=added, removed_case_ids=removed)
+        else:
+            entry = _metric_verdict(metric, current, baseline)
+        entry["confounded"] = confounded
+        entry["ranking_constants_changed"] = ranking_constants_changed
+        verdict[metric] = entry
+
+    return deltas, regressed, verdict

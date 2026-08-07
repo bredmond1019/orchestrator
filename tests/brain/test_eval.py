@@ -20,7 +20,19 @@ import pytest
 from brain import retrieval_engine
 from brain.eval import scorer
 from brain.eval.models import CaseResult, RetrievalCase, RetrievalRunReport
-from brain.eval.runner import _aggregate, compare_to_baseline, load_report, run_eval, write_report
+from brain.eval.runner import (
+    PromotionError,
+    _aggregate,
+    compare_to_baseline,
+    corpus_divergence_warning,
+    golden_set_fingerprint,
+    load_baseline_pointer,
+    load_report,
+    promote_run,
+    resolve_baseline,
+    run_eval,
+    write_report,
+)
 from brain.eval.scorer import ABSTAIN_THRESHOLD, score_case
 from workflows.document_qa_workflow_nodes.verify_citations_node import (
     split_sentences as node_split_sentences,
@@ -193,10 +205,133 @@ def test_run_eval_is_deterministic_across_two_runs():
         report_two = run_eval(cases)
 
     assert report_one.aggregate == report_two.aggregate
+    assert report_one.aggregate_stats == report_two.aggregate_stats
     assert [r.case_id for r in report_one.results] == [r.case_id for r in report_two.results]
     assert [r.recall_at_5 for r in report_one.results] == [
         r.recall_at_5 for r in report_two.results
     ]
+
+
+# ---------------------------------------------------------------------------
+# aggregate_stats — n / point estimate / 95% interval / method / seed per
+# metric (plan-eval-statistical-honesty task 2)
+# ---------------------------------------------------------------------------
+
+
+def test_aggregate_remains_flat_dict_of_floats():
+    """`aggregate` itself must never carry a nested interval — `compare_to_
+    baseline` iterates it and subtracts, which raises `TypeError` on a
+    non-float value."""
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    assert isinstance(report.aggregate, dict)
+    for value in report.aggregate.values():
+        assert isinstance(value, float)
+
+
+def test_aggregate_stats_is_a_sibling_top_level_key_with_all_six_metrics():
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    assert set(report.aggregate_stats) == {
+        "recall_at_5",
+        "recall_at_10",
+        "mrr",
+        "groundedness",
+        "groundedness_on_hits",
+        "abstain_correctness",
+    }
+    for metric, interval in report.aggregate_stats.items():
+        assert "n" in interval, metric
+        assert "point" in interval, metric
+        assert "lo" in interval, metric
+        assert "hi" in interval, metric
+        assert "method" in interval, metric
+        assert "seed" in interval, metric
+
+
+def test_aggregate_stats_n_matches_the_denominator_aggregate_actually_averages_over():
+    """Two positive cases, one negative case. `recall_at_5`/`recall_at_10`/
+    `mrr`/`groundedness` average over the 2 positive cases only;
+    `abstain_correctness` averages over all 3; `groundedness_on_hits`
+    averages over whichever positive cases actually matched (1, per
+    `_grounded_retrieve`'s Bastion-only hit)."""
+    cases = [_POSITIVE_CASE, _MISS_CASE, _NEGATIVE_CASE]
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_grounded_retrieve):
+        report = run_eval(cases)
+
+    stats_ = report.aggregate_stats
+    assert stats_["recall_at_5"]["n"] == 2
+    assert stats_["recall_at_10"]["n"] == 2
+    assert stats_["mrr"]["n"] == 2
+    assert stats_["groundedness"]["n"] == 2
+    assert stats_["groundedness_on_hits"]["n"] == 1
+    assert stats_["abstain_correctness"]["n"] == 3
+
+
+def test_aggregate_stats_wilson_metrics_use_wilson_method():
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    for metric in ("recall_at_5", "recall_at_10", "abstain_correctness"):
+        assert report.aggregate_stats[metric]["method"] == "wilson"
+
+
+def test_aggregate_stats_bootstrap_metrics_use_bootstrap_method_and_are_seeded():
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    for metric in ("mrr", "groundedness", "groundedness_on_hits"):
+        assert report.aggregate_stats[metric]["method"] == "bootstrap"
+        assert report.aggregate_stats[metric]["seed"] is not None
+
+
+def test_write_report_round_trips_aggregate_stats(tmp_path):
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+    out_path = write_report(report, out_dir=tmp_path)
+
+    on_disk = json.loads(out_path.read_text(encoding="utf-8"))
+    assert on_disk["aggregate_stats"] == report.aggregate_stats
+
+    loaded = load_report(out_path)
+    assert loaded["aggregate_stats"] == report.aggregate_stats
+
+
+def test_to_dict_defaults_aggregate_stats_to_none():
+    """A report built without `aggregate_stats` (mirroring pre-task-2
+    callers) still serializes cleanly — key present but null."""
+    report = RetrievalRunReport(
+        generated_at="2026-08-07T00-00-00Z", case_count=0, results=(), aggregate={}
+    )
+
+    assert report.to_dict()["aggregate_stats"] is None
+
+
+def test_all_pre_existing_run_files_still_load_and_compare():
+    """All 15 pre-task-2 run files lack `aggregate_stats` entirely — they
+    must still load via `load_report` and compare via `compare_to_baseline`
+    without error (mirrors `test_load_report_and_compare_to_baseline_work_
+    on_pre_existing_run_files` for the corpus/ranking_constants fields)."""
+    runs_dir = Path(__file__).resolve().parents[2] / "planning" / "retrieval-eval-runs"
+    if not runs_dir.exists():
+        pytest.skip("retrieval-eval-runs fixture directory not present in this checkout")
+
+    # Exclude `baseline.json` (plan-eval-statistical-honesty task 5) — a
+    # pointer file with a different schema (no `aggregate` key), not a run.
+    run_files = sorted(p for p in runs_dir.glob("*.json") if p.name != "baseline.json")
+    if not run_files:
+        pytest.skip("no run files present in this checkout")
+
+    for run_file in run_files:
+        baseline = load_report(run_file)
+        assert "aggregate_stats" not in baseline
+        current = {"aggregate": dict(baseline["aggregate"])}
+        deltas, regressed, verdict = compare_to_baseline(current, baseline)
+        assert isinstance(deltas, dict)
+        assert regressed is False
+        assert isinstance(verdict, dict)
 
 
 # ---------------------------------------------------------------------------
@@ -327,10 +462,13 @@ def test_load_report_and_compare_to_baseline_work_on_pre_existing_run_files():
     current = {"aggregate": dict(baseline["aggregate"])}
     current["aggregate"]["recall_at_5"] = 1.0
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is False
     assert deltas["recall_at_5"] == pytest.approx(1.0 - baseline["aggregate"]["recall_at_5"])
+    # `current` here has no per-case `results` at all — the paired verdict
+    # can't be computed and must say so rather than guessing.
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
 
 
 # ---------------------------------------------------------------------------
@@ -475,10 +613,320 @@ def test_new_aggregate_key_does_not_break_an_older_baseline_file():
         }
     }
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is False
     assert "groundedness_on_hits" not in deltas
+    assert "groundedness_on_hits" not in verdict
+
+
+# ---------------------------------------------------------------------------
+# compare_to_baseline's paired verdict (plan-eval-statistical-honesty task 3)
+# ---------------------------------------------------------------------------
+
+
+def _case_row(case_id: str, *, recall_at_5: float, groundedness: float) -> dict:
+    """A minimal per-case `results` row shaped like `RetrievalRunReport.to_dict()`."""
+    return {
+        "case_id": case_id,
+        "recall_at_5": recall_at_5,
+        "recall_at_10": recall_at_5,
+        "reciprocal_rank": recall_at_5,
+        "abstain_correct": True,
+        "groundedness": groundedness,
+        "matched_docs": ["doc"] if recall_at_5 else [],
+    }
+
+
+def test_compare_to_baseline_verdict_names_flips_and_is_significant_at_6_0():
+    """Six of six positive cases flip `recall_at_5` from 1 to 0 (b=6, c=0,
+    p=0.03125) — past the 5-vs-6 significance boundary."""
+    case_ids = [f"c{i}" for i in range(6)]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 0.0},
+        "results": [_case_row(c, recall_at_5=0.0, groundedness=0.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+    entry = verdict["recall_at_5"]
+
+    assert entry["pairable"] is True
+    assert sorted(entry["flips_to_worse"]) == case_ids
+    assert entry["flips_to_better"] == []
+    assert entry["sign_test_p"] == pytest.approx(0.03125)
+    assert entry["classification"] == "regressed-significant"
+
+
+def test_compare_to_baseline_verdict_is_within_noise_at_5_0():
+    """Five of five positive cases flip worse (b=5, c=0, p=0.0625) — just
+    short of significance."""
+    case_ids = [f"c{i}" for i in range(5)]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 0.0},
+        "results": [_case_row(c, recall_at_5=0.0, groundedness=0.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+    entry = verdict["recall_at_5"]
+
+    assert entry["sign_test_p"] == pytest.approx(0.0625)
+    assert entry["classification"] == "regressed-within-noise"
+
+
+def test_compare_to_baseline_verdict_flat_when_no_case_flips():
+    case_ids = [f"c{i}" for i in range(4)]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["classification"] == "flat"
+    assert verdict["recall_at_5"]["flips_to_worse"] == []
+    assert verdict["recall_at_5"]["flips_to_better"] == []
+
+
+def test_compare_to_baseline_verdict_continuous_metric_uses_paired_bootstrap():
+    """`groundedness` is continuous — its verdict carries a `paired_delta`
+    bootstrap interval over per-case deltas, not a sign test."""
+    case_ids = [f"c{i}" for i in range(8)]
+    baseline = {
+        "aggregate": {"groundedness": 0.5},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=0.9) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"groundedness": 0.1},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=0.1) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+    entry = verdict["groundedness"]
+
+    assert entry["pairable"] is True
+    assert entry["sign_test_p"] is None
+    assert entry["paired_delta"] is not None
+    assert entry["paired_delta"]["method"] == "bootstrap"
+    assert entry["paired_delta"]["point"] == pytest.approx(0.1 - 0.9)
+    assert entry["classification"] == "regressed-significant"
+
+
+def test_compare_to_baseline_verdict_never_reports_improvement_when_case_ids_differ():
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("b", recall_at_5=1.0, groundedness=1.0)],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["pairable"] is False
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
+    assert verdict["recall_at_5"]["added_case_ids"] == ["b"]
+    assert verdict["recall_at_5"]["removed_case_ids"] == ["a"]
+
+
+def test_compare_to_baseline_iterates_baseline_keys_for_verdict_too():
+    """A `verdict` entry is only ever computed for keys present in the
+    BASELINE's aggregate — mirrors `deltas`' existing contract, so a run
+    with a new metric key never produces a spurious verdict for it either."""
+    baseline = {"aggregate": {"recall_at_5": 0.5}, "results": []}
+    current = {
+        "aggregate": {"recall_at_5": 0.5, "groundedness_on_hits": 0.9},
+        "results": [],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert set(verdict) == {"recall_at_5"}
+
+
+# ---------------------------------------------------------------------------
+# compare_to_baseline's fingerprint guards (plan-eval-statistical-honesty
+# task 4) — CLAUDE.md's Brain-RAG rule 2, mechanized: never compare two runs
+# without checking the corpus they were measured against.
+# ---------------------------------------------------------------------------
+
+
+def test_compare_to_baseline_overall_case_set_mismatch_forces_every_metric_incomparable():
+    """A golden-set definition change (two cases moved out of the
+    denominator) must not let a metric whose narrower subset happens to
+    still agree report a fictitious improvement — every metric is forced
+    `incomparable`, not just the ones whose own subset disagrees."""
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5, "groundedness": 0.4},
+        "results": [
+            _case_row("a", recall_at_5=1.0, groundedness=0.5),
+            _case_row("b", recall_at_5=0.0, groundedness=0.3),
+        ],
+    }
+    current = {
+        # groundedness's own per-case subset (case "a" only, both sides)
+        # still agrees — the overall-case-set guard must override that.
+        "aggregate": {"recall_at_5": 1.0, "groundedness": 0.9},
+        "results": [
+            _case_row("a", recall_at_5=1.0, groundedness=0.9),
+            _case_row("c", recall_at_5=1.0, groundedness=0.9),
+        ],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
+    assert verdict["recall_at_5"]["pairable"] is False
+    assert verdict["recall_at_5"]["added_case_ids"] == ["c"]
+    assert verdict["recall_at_5"]["removed_case_ids"] == ["b"]
+    assert verdict["groundedness"]["classification"] == "incomparable"
+    assert verdict["groundedness"]["added_case_ids"] == ["c"]
+    assert verdict["groundedness"]["removed_case_ids"] == ["b"]
+
+
+def test_compare_to_baseline_same_overall_case_set_is_unaffected_by_the_guard():
+    """When the overall case-id sets DO match, the guard is a no-op and the
+    normal per-metric paired verdict runs as before."""
+    case_ids = ["a", "b", "c"]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["classification"] == "flat"
+    assert verdict["recall_at_5"]["pairable"] is True
+
+
+def test_compare_to_baseline_differing_corpus_flags_every_delta_confounded():
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"},
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": {"chunk_count": 105, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"},
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["confounded"] is True
+
+
+def test_compare_to_baseline_matching_corpus_is_not_confounded():
+    corpus = {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"}
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": dict(corpus),
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": dict(corpus),
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["confounded"] is False
+
+
+def test_compare_to_baseline_missing_corpus_is_confounded_unknown_never_silently_green():
+    baseline = {"aggregate": {"recall_at_5": 0.5}, "results": []}
+    current = {"aggregate": {"recall_at_5": 1.0}, "results": []}
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["confounded"] == "unknown"
+
+
+def test_compare_to_baseline_real_legacy_run_missing_corpus_is_confounded_unknown():
+    """Uses a real pre-existing run file as the fixture — the actual
+    compatibility surface, per the task's own instruction."""
+    pre_existing_path = (
+        Path(__file__).resolve().parents[2]
+        / "planning"
+        / "retrieval-eval-runs"
+        / "2026-08-02T10-15-24Z.json"
+    )
+    if not pre_existing_path.exists():
+        pytest.skip("pre-existing run file fixture not present in this checkout")
+
+    baseline = load_report(pre_existing_path)
+    assert "corpus" not in baseline
+    current = {"aggregate": dict(baseline["aggregate"])}
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    for entry in verdict.values():
+        assert entry["confounded"] == "unknown"
+
+
+def test_compare_to_baseline_differing_ranking_constants_are_named():
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "ranking_constants": {"kw_weight": 0.3, "max_per_file": 3},
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "ranking_constants": {"kw_weight": 0.5, "max_per_file": 3},
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["ranking_constants_changed"] == ["kw_weight"]
+
+
+def test_compare_to_baseline_matching_ranking_constants_report_no_change():
+    ranking_constants = {"kw_weight": 0.3, "max_per_file": 3}
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [],
+        "ranking_constants": dict(ranking_constants),
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [],
+        "ranking_constants": dict(ranking_constants),
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["ranking_constants_changed"] == []
+
+
+def test_compare_to_baseline_missing_ranking_constants_is_unknown_not_empty():
+    baseline = {"aggregate": {"recall_at_5": 0.5}, "results": []}
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [],
+        "ranking_constants": {"kw_weight": 0.3},
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["ranking_constants_changed"] is None
 
 
 def test_run_eval_forwards_case_scope_as_project_filter():
@@ -515,6 +963,335 @@ def test_run_eval_passes_surface_eval():
 
 
 # ---------------------------------------------------------------------------
+# golden_set_fingerprint (plan-eval-statistical-honesty task 5)
+# ---------------------------------------------------------------------------
+
+
+def test_golden_set_fingerprint_changes_when_expect_docs_changes():
+    case_a = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/a.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+    )
+    case_b = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/b.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+    )
+
+    assert golden_set_fingerprint([case_a]) != golden_set_fingerprint([case_b])
+
+
+def test_golden_set_fingerprint_stable_under_notes_only_edit():
+    base = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/a.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+        notes="original note",
+    )
+    edited = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/a.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+        notes="corrected note — path fix per precedent",
+    )
+
+    assert golden_set_fingerprint([base]) == golden_set_fingerprint([edited])
+
+
+def test_golden_set_fingerprint_stable_under_source_and_category_edit():
+    """`source`/`category`/`source_query_id` are metadata never consumed by
+    scoring (`RetrievalCase`'s docstring) — the fingerprint must not move
+    when only they change."""
+    base = RetrievalCase(
+        case_id="c1", query="q", expect_docs=(), expect_abstain=True,
+        source="authored", category="negative",
+    )
+    edited = RetrievalCase(
+        case_id="c1", query="q", expect_docs=(), expect_abstain=True,
+        source="mined", category="mined", source_query_id=42,
+    )
+
+    assert golden_set_fingerprint([base]) == golden_set_fingerprint([edited])
+
+
+def test_golden_set_fingerprint_independent_of_case_order():
+    case_a = RetrievalCase(
+        case_id="a", query="qa", expect_docs=(), expect_abstain=True,
+        source="authored", category="negative",
+    )
+    case_b = RetrievalCase(
+        case_id="b", query="qb", expect_docs=(), expect_abstain=True,
+        source="authored", category="negative",
+    )
+
+    assert golden_set_fingerprint([case_a, case_b]) == golden_set_fingerprint([case_b, case_a])
+
+
+# ---------------------------------------------------------------------------
+# baseline pin — load_baseline_pointer / resolve_baseline /
+# corpus_divergence_warning (plan-eval-statistical-honesty task 5)
+# ---------------------------------------------------------------------------
+
+
+def test_load_baseline_pointer_returns_none_when_missing(tmp_path):
+    assert load_baseline_pointer(tmp_path / "no-such-baseline.json") is None
+
+
+def test_load_baseline_pointer_loads_existing_file(tmp_path):
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "x.json"}), encoding="utf-8")
+
+    assert load_baseline_pointer(pointer_path) == {"run": "x.json"}
+
+
+def test_resolve_baseline_returns_none_with_no_explicit_path_and_no_pin(tmp_path):
+    assert resolve_baseline(None, pointer_path=tmp_path / "missing.json") is None
+
+
+def test_resolve_baseline_explicit_path_wins_over_pin(tmp_path):
+    explicit_path = tmp_path / "explicit.json"
+    explicit_path.write_text(json.dumps({"aggregate": {"recall_at_5": 0.5}}), encoding="utf-8")
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "pinned.json"}), encoding="utf-8")
+
+    baseline, label = resolve_baseline(str(explicit_path), pointer_path=pointer_path)
+
+    assert label == str(explicit_path)
+    assert baseline == {"aggregate": {"recall_at_5": 0.5}}
+
+
+def test_resolve_baseline_falls_back_to_the_pin(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    pinned_run = runs_dir / "pinned.json"
+    pinned_run.write_text(json.dumps({"aggregate": {"recall_at_5": 0.9}}), encoding="utf-8")
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "pinned.json"}), encoding="utf-8")
+
+    baseline, label = resolve_baseline(None, pointer_path=pointer_path, runs_dir=runs_dir)
+
+    assert label == "pinned.json"
+    assert baseline == {"aggregate": {"recall_at_5": 0.9}}
+
+
+def test_corpus_divergence_warning_names_diverged_fields():
+    current = {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-07T00:00:00"}
+    pinned = {"chunk_count": 90, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"}
+
+    warning = corpus_divergence_warning(current, pinned)
+
+    assert warning is not None
+    assert "chunk_count" in warning
+    assert "max_indexed_at" in warning
+    assert "file_count" not in warning
+
+
+def test_corpus_divergence_warning_none_when_matching():
+    same = {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-07T00:00:00"}
+
+    assert corpus_divergence_warning(dict(same), dict(same)) is None
+
+
+def test_corpus_divergence_warning_none_when_either_side_missing():
+    assert corpus_divergence_warning(None, {"chunk_count": 1}) is None
+    assert corpus_divergence_warning({"chunk_count": 1}, None) is None
+
+
+# ---------------------------------------------------------------------------
+# promote_run — the guarded `syn eval promote` path (plan-eval-statistical-
+# honesty task 5)
+# ---------------------------------------------------------------------------
+
+
+def _write_run(path: Path, **overrides) -> None:
+    payload = {
+        "generated_at": "2026-08-07T00-00-00Z",
+        "case_count": 1,
+        "aggregate": {"recall_at_5": 0.9},
+        "results": [{"case_id": "c1", "recall_at_5": 1.0}],
+        "corpus": {"chunk_count": 10, "file_count": 5, "edge_count": 1, "max_indexed_at": None},
+        "ranking_constants": {"kw_weight": 0.5},
+        "aggregate_stats": {
+            "recall_at_5": {"point": 0.9, "lo": 0.6, "hi": 1.0, "n": 1, "method": "wilson"}
+        },
+    }
+    payload.update(overrides)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_golden_set(path: Path) -> None:
+    path.write_text(
+        "cases:\n"
+        "  - id: c1\n"
+        "    query: q\n"
+        "    source: authored\n"
+        "    category: identifier\n",
+        encoding="utf-8",
+    )
+
+
+def test_promote_run_requires_non_empty_reason(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path)
+
+    with pytest.raises(PromotionError, match="reason"):
+        promote_run(run_path, reason="", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json")
+
+    with pytest.raises(PromotionError, match="reason"):
+        promote_run(
+            run_path, reason="   ", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json"
+        )
+
+
+def test_promote_run_rejects_run_outside_runs_dir(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    outside_dir = tmp_path / "elsewhere"
+    outside_dir.mkdir()
+    run_path = outside_dir / "r1.json"
+    _write_run(run_path)
+
+    with pytest.raises(PromotionError, match="not under"):
+        promote_run(
+            run_path, reason="x", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json"
+        )
+
+
+def test_promote_run_rejects_missing_run_file(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+
+    with pytest.raises(PromotionError, match="does not exist"):
+        promote_run(
+            runs_dir / "no-such-run.json",
+            reason="x",
+            runs_dir=runs_dir,
+            pointer_path=tmp_path / "baseline.json",
+        )
+
+
+def test_promote_run_names_each_missing_stamp():
+    runs_dir = Path(__file__).resolve().parents[2] / "planning" / "retrieval-eval-runs"
+    if not runs_dir.exists():
+        pytest.skip("retrieval-eval-runs fixture directory not present in this checkout")
+    legacy_run = runs_dir / "2026-08-02T10-15-24Z.json"
+    if not legacy_run.exists():
+        pytest.skip("legacy pin run file not present in this checkout")
+
+    with pytest.raises(PromotionError) as excinfo:
+        promote_run(legacy_run, reason="x")
+
+    message = str(excinfo.value)
+    assert "corpus" in message
+    assert "ranking_constants" in message
+    assert "aggregate_stats" in message
+
+
+def test_promote_run_rejects_run_missing_only_aggregate_stats(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path, aggregate_stats=None)
+
+    with pytest.raises(PromotionError) as excinfo:
+        promote_run(run_path, reason="x", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json")
+
+    message = str(excinfo.value)
+    assert "['aggregate_stats']" in message
+    assert "'corpus'" not in message
+    assert "'ranking_constants'" not in message
+
+
+def test_promote_run_succeeds_and_writes_pointer(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path)
+    golden_set_path = tmp_path / "golden-set.yaml"
+    _write_golden_set(golden_set_path)
+    pointer_path = tmp_path / "baseline.json"
+
+    pointer = promote_run(
+        run_path,
+        reason="first promotion",
+        runs_dir=runs_dir,
+        pointer_path=pointer_path,
+        golden_set_path=golden_set_path,
+        promoted_by="tester",
+    )
+
+    assert pointer["run"] == "r1.json"
+    assert pointer["reason"] == "first promotion"
+    assert pointer["promoted_by"] == "tester"
+    assert pointer["case_count"] == 1
+    assert pointer["metric_definition_version"] == "1"
+    assert pointer["corpus"] == {
+        "chunk_count": 10, "file_count": 5, "edge_count": 1, "max_indexed_at": None
+    }
+    assert isinstance(pointer["golden_set_fingerprint"], str) and pointer["golden_set_fingerprint"]
+    assert pointer_path.exists()
+    on_disk = json.loads(pointer_path.read_text(encoding="utf-8"))
+    assert on_disk == pointer
+
+
+def test_promote_run_requires_force_when_significantly_worse_than_current_pin(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    golden_set_path = tmp_path / "golden-set.yaml"
+    _write_golden_set(golden_set_path)
+    pointer_path = tmp_path / "baseline.json"
+
+    case_ids = [f"case-{i}" for i in range(6)]
+    good_run = runs_dir / "good.json"
+    _write_run(
+        good_run,
+        case_count=6,
+        aggregate={"recall_at_5": 1.0},
+        results=[{"case_id": cid, "recall_at_5": 1.0} for cid in case_ids],
+    )
+    promote_run(
+        good_run, reason="seed pin", runs_dir=runs_dir, pointer_path=pointer_path,
+        golden_set_path=golden_set_path,
+    )
+
+    worse_run = runs_dir / "worse.json"
+    _write_run(
+        worse_run,
+        case_count=6,
+        aggregate={"recall_at_5": 0.0},
+        results=[{"case_id": cid, "recall_at_5": 0.0} for cid in case_ids],
+    )
+
+    with pytest.raises(PromotionError, match="worse"):
+        promote_run(
+            worse_run, reason="regression attempt", runs_dir=runs_dir, pointer_path=pointer_path,
+            golden_set_path=golden_set_path,
+        )
+
+    # --force overrides the guard.
+    pointer = promote_run(
+        worse_run, reason="regression, forced", force=True, runs_dir=runs_dir,
+        pointer_path=pointer_path, golden_set_path=golden_set_path,
+    )
+    assert pointer["run"] == "worse.json"
+
+
+# ---------------------------------------------------------------------------
 # write_report / compare_to_baseline (the --baseline regression gate)
 # ---------------------------------------------------------------------------
 
@@ -534,11 +1311,12 @@ def test_compare_to_baseline_no_regression_when_metrics_improve():
     baseline = {"aggregate": {"recall_at_5": 0.5, "mrr": 0.5}}
     current = {"aggregate": {"recall_at_5": 0.8, "mrr": 0.6}}
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is False
     assert deltas["recall_at_5"] == pytest.approx(0.3)
     assert deltas["mrr"] == pytest.approx(0.1)
+    assert isinstance(verdict, dict)
 
 
 def test_compare_to_baseline_flags_seeded_regression():
@@ -546,15 +1324,30 @@ def test_compare_to_baseline_flags_seeded_regression():
     # Seeded regression: recall_at_5 drops.
     current = {"aggregate": {"recall_at_5": 0.4, "mrr": 0.6, "groundedness": 0.7}}
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is True
     assert deltas["recall_at_5"] == pytest.approx(-0.4)
+    # No per-case `results` on either side — the strict-sign tripwire still
+    # fires, but the paired verdict can't be computed and says so.
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
 
 
 def test_cli_eval_baseline_exits_non_zero_on_seeded_regression():
-    """End-to-end through `syn eval --baseline` (CLI dispatch, everything
-    else patched): a seeded regression must produce a non-zero exit code."""
+    """End-to-end through `syn eval --baseline --strict` (CLI dispatch,
+    everything else patched): a seeded regression must produce a non-zero
+    exit code.
+
+    Amendment (plan-eval-statistical-honesty task 3): both fixture reports
+    carry `results: []` — no per-case data — so the new paired verdict
+    cannot classify any metric as `regressed-significant` (an empty case
+    set is `incomparable`, never a false "significant"). This test now
+    exercises `--strict`, which restores the pre-task-3 strict-sign
+    tripwire: exit 1 on ANY metric decrease, exactly the semantics this
+    test originally pinned. See
+    `test_cli_eval_baseline_exits_one_when_regressed_significant` below for
+    the new paired, statistically-significant path.
+    """
     from brain.cli import main  # pylint: disable=import-outside-toplevel
 
     good_report = {
@@ -588,12 +1381,109 @@ def test_cli_eval_baseline_exits_non_zero_on_seeded_regression():
     ), patch("brain.eval.write_report", return_value=Path("/dev/null")), patch(
         "brain.eval.runner.load_report", return_value=good_report
     ):
+        code = main(["eval", "--baseline", "/fake/baseline.json", "--strict", "--json"])
+
+    assert code == 1
+
+
+def _paired_case_results(case_ids: list[str], *, recall_at_5: float) -> list[dict]:
+    """Minimal per-case `results` rows for the paired-verdict CLI tests
+    below — only the fields `_case_values_for_metric` reads for
+    `recall_at_5` are populated with meaningful values."""
+    return [
+        {
+            "case_id": case_id,
+            "recall_at_5": recall_at_5,
+            "recall_at_10": recall_at_5,
+            "reciprocal_rank": recall_at_5,
+            "abstain_correct": True,
+            "groundedness": recall_at_5,
+            "matched_docs": ["doc"] if recall_at_5 else [],
+        }
+        for case_id in case_ids
+    ]
+
+
+def test_cli_eval_baseline_exits_one_when_regressed_significant():
+    """Six paired cases flip `recall_at_5` from 1 to 0 (b=6, c=0) — the
+    exact two-sided sign test gives p=0.03125, past the 5-vs-6 significance
+    boundary — so `syn eval --baseline` (no `--strict` needed) must exit 1."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    case_ids = [f"case-{i}" for i in range(6)]
+    good_report = {
+        "generated_at": "2026-08-01T00-00-00Z",
+        "case_count": 6,
+        "aggregate": {"recall_at_5": 1.0},
+        "results": _paired_case_results(case_ids, recall_at_5=1.0),
+    }
+    regressed_report_obj = type(
+        "FakeReport",
+        (),
+        {
+            "to_dict": lambda self: {
+                "generated_at": "2026-08-01T00-01-00Z",
+                "case_count": 6,
+                "aggregate": {"recall_at_5": 0.0},
+                "results": _paired_case_results(case_ids, recall_at_5=0.0),
+            }
+        },
+    )()
+
+    with patch("brain.eval.load_cases", return_value=[]), patch(
+        "brain.eval.run_eval", return_value=regressed_report_obj
+    ), patch("brain.eval.write_report", return_value=Path("/dev/null")), patch(
+        "brain.eval.runner.load_report", return_value=good_report
+    ):
         code = main(["eval", "--baseline", "/fake/baseline.json", "--json"])
 
     assert code == 1
 
 
+def test_cli_eval_baseline_exits_zero_with_warning_when_regressed_within_noise():
+    """Five paired cases flip `recall_at_5` from 1 to 0 (b=5, c=0) — the
+    exact sign test gives p=0.0625, just short of significance — so `syn
+    eval --baseline` must exit 0 (regressed-within-noise), not 1, and must
+    print a warning naming the metric."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    case_ids = [f"case-{i}" for i in range(5)]
+    good_report = {
+        "generated_at": "2026-08-01T00-00-00Z",
+        "case_count": 5,
+        "aggregate": {"recall_at_5": 1.0},
+        "results": _paired_case_results(case_ids, recall_at_5=1.0),
+    }
+    regressed_report_obj = type(
+        "FakeReport",
+        (),
+        {
+            "to_dict": lambda self: {
+                "generated_at": "2026-08-01T00-01-00Z",
+                "case_count": 5,
+                "aggregate": {"recall_at_5": 0.0},
+                "results": _paired_case_results(case_ids, recall_at_5=0.0),
+            }
+        },
+    )()
+
+    with patch("brain.eval.load_cases", return_value=[]), patch(
+        "brain.eval.run_eval", return_value=regressed_report_obj
+    ), patch("brain.eval.write_report", return_value=Path("/dev/null")), patch(
+        "brain.eval.runner.load_report", return_value=good_report
+    ):
+        # Human mode (not --json) so the warning line is checked via stdout.
+        code = main(["eval", "--baseline", "/fake/baseline.json"])
+
+    assert code == 0
+
+
 def test_cli_eval_without_baseline_exits_zero():
+    """`--no-baseline` (plan-eval-statistical-honesty task 5) skips
+    comparison entirely, including the default pin lookup — the bare
+    "no baseline compared at all" case this test's name describes. Bare
+    `syn eval` (no flag) now falls back to the promoted pin by default; see
+    the `syn eval` default-pin tests below for that behavior."""
     from brain.cli import main  # pylint: disable=import-outside-toplevel
 
     report_obj = type(
@@ -612,9 +1502,96 @@ def test_cli_eval_without_baseline_exits_zero():
     with patch("brain.eval.load_cases", return_value=[]), patch(
         "brain.eval.run_eval", return_value=report_obj
     ), patch("brain.eval.write_report", return_value=Path("/dev/null")):
+        code = main(["eval", "--no-baseline", "--json"])
+
+    assert code == 0
+
+
+def test_cli_eval_bare_compares_to_the_pin_and_names_it(tmp_path, capsys):
+    """Bare `syn eval` (no `--baseline`, no `--no-baseline`) falls back to
+    the promoted pin and names which run it compared against."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    pinned_run = runs_dir / "pinned.json"
+    pinned_run.write_text(
+        json.dumps({"aggregate": {"recall_at_5": 0.9}, "results": []}), encoding="utf-8"
+    )
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "pinned.json"}), encoding="utf-8")
+
+    report_obj = type(
+        "FakeReport",
+        (),
+        {
+            "to_dict": lambda self: {
+                "generated_at": "2026-08-07T00-00-00Z",
+                "case_count": 0,
+                "aggregate": {"recall_at_5": 0.9},
+                "results": [],
+            }
+        },
+    )()
+
+    with (
+        patch("brain.eval.load_cases", return_value=[]),
+        patch("brain.eval.run_eval", return_value=report_obj),
+        patch("brain.eval.write_report", return_value=Path("/dev/null")),
+        patch("brain.eval.runner.DEFAULT_BASELINE_POINTER", pointer_path),
+        patch("brain.eval.runner.DEFAULT_RUNS_DIR", runs_dir),
+    ):
         code = main(["eval", "--json"])
 
     assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["baseline_label"] == "pinned.json"
+    assert payload["baseline_deltas"] == {"recall_at_5": pytest.approx(0.0)}
+
+
+def test_cli_eval_promote_requires_reason_and_names_missing_stamps(tmp_path):
+    """`syn eval promote` fails a run missing the required stamps, naming
+    them, and reports through the same typed-error path every other `syn`
+    command uses."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    incomplete_run = runs_dir / "incomplete.json"
+    incomplete_run.write_text(
+        json.dumps({"aggregate": {"recall_at_5": 0.9}, "results": [], "case_count": 0}),
+        encoding="utf-8",
+    )
+
+    with patch("brain.eval.runner.DEFAULT_RUNS_DIR", runs_dir):
+        code = main(["eval", "promote", str(incomplete_run), "--reason", "x", "--json"])
+
+    assert code != 0
+
+
+def test_cli_eval_promote_writes_the_pointer_on_success(tmp_path):
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path)
+    golden_set_path = tmp_path / "golden-set.yaml"
+    _write_golden_set(golden_set_path)
+    pointer_path = tmp_path / "baseline.json"
+
+    with (
+        patch("brain.eval.runner.DEFAULT_RUNS_DIR", runs_dir),
+        patch("brain.eval.runner.DEFAULT_BASELINE_POINTER", pointer_path),
+        patch("brain.eval.runner.DEFAULT_GOLDEN_SET_PATH", golden_set_path),
+    ):
+        code = main(["eval", "promote", str(run_path), "--reason", "landed", "--json"])
+
+    assert code == 0
+    assert pointer_path.exists()
+    on_disk = json.loads(pointer_path.read_text(encoding="utf-8"))
+    assert on_disk["run"] == "r1.json"
+    assert on_disk["reason"] == "landed"
 
 
 # ---------------------------------------------------------------------------
