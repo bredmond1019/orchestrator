@@ -9,6 +9,42 @@ timestamp: "2026-08-07T09:05:00Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-07] (wrap-up — OR.0.C closed)
+
+`/sdlc-flow plan-review-artifact-exclusion` ran tasks 1–5 to a **PASS** verdict, closing `OR.0.C`.
+Task 1 re-verified the `review/runs` corpus/config restore (11533 chunks / 962 files, 284/13 scoped
+to `review/runs`, 2212 edges — matching the prior attempt's committed baseline). Task 2 recorded the
+pre-change fingerprint as a fresh, explicitly-dated re-run subsection of the tracking artifact,
+without touching `brain.toml`. Task 3 applied the operator-decided **BROAD** `skip_dirs` exclusion
+(`planning/artifacts/review/runs`) to HQ `brain.toml`, reconciled the corpus via a scoped `syn
+prune` (−284 chunks / −13 files), and repointed all 10 orphaned `related:` edges (the spec's
+enumerated list of 9 missed a 10th, caught live by re-running `validate-brain --graph`) to
+`review-artifacts-index` — the graph gate went 0 errors. Task 4 ran one clean end-to-end eval and
+recorded the exclusion arm's five metrics against `OR.0.B`'s end state: a **negative** result
+(recall@5 −0.0588, recall@10 −0.0589, MRR −0.0882, groundedness −0.0393, abstain_correctness
++0.0000) — not the hoped-for recovery from the digest-crowding regression; per-case output showed
+the excluded review artifacts had been supplying grounding for some golden-set cases even while
+crowding others. Task 5 confirmed the full validation suite green end-to-end (imports, ruff,
+pylint, pytest, all four `mev validate-brain` flags, `scripts/validate_brain.sh`). All corpus/config
+substance landed as explicit-pathspec commits in the HQ repo through the `planning/` symlink (per
+standing rule 10); the orchestrator repo's own working tree had nothing to commit for tasks 1–5.
+`state.json`'s `OR.0.C` flipped `open` → `closed`; `mev emit-state --write` regenerated derived
+surfaces fleet-wide. `brain-retrieval-digest-crowding` remains **open** — the exclusion did not
+recover `recall@10`, which still sits below the canonical 2026-08-02 baseline; no further exclusion
+scope is planned. Next: `OR.R` (Brain-as-MCP-server) / `OR.W` (external-knowledge memory layer),
+both open and unblocked.
+
+```
+e3fc5d2 fix: review pass 1 for plan-review-artifact-exclusion
+051057a chore: wrap up plan-review-artifact-exclusion
+9302806 docs: log the fleet cleanup — 5 gate errors fixed, 151 zombie paths pruned
+a35cfbe docs: log the OR.0.C re-scope and session handoff
+4b0f784 docs: log the OR.0.A-C digest-crowding chain — null verdict, test hardening, OR.0.C rolled back
+c08e9f7 chore(harness): stamp harness manifest for base-template a5e22fee
+a7ddf30 chore(harness): sync from base-template a5e22fee
+75d980a merge: OR.0.B diversity-cap test hardening — null verdict, no constant changed
+```
+
 ## [run: 2026-08-07] (correction — supersedes the entry below)
 
 The `[run: 2026-08-07]` entry directly below this one is **inaccurate**: it describes a bailed
