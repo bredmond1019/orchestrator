@@ -723,6 +723,8 @@ def test_compare_to_baseline_verdict_never_reports_improvement_when_case_ids_dif
 
     assert verdict["recall_at_5"]["pairable"] is False
     assert verdict["recall_at_5"]["classification"] == "incomparable"
+    assert verdict["recall_at_5"]["added_case_ids"] == ["b"]
+    assert verdict["recall_at_5"]["removed_case_ids"] == ["a"]
 
 
 def test_compare_to_baseline_iterates_baseline_keys_for_verdict_too():
@@ -738,6 +740,179 @@ def test_compare_to_baseline_iterates_baseline_keys_for_verdict_too():
     _, _, verdict = compare_to_baseline(current, baseline)
 
     assert set(verdict) == {"recall_at_5"}
+
+
+# ---------------------------------------------------------------------------
+# compare_to_baseline's fingerprint guards (plan-eval-statistical-honesty
+# task 4) — CLAUDE.md's Brain-RAG rule 2, mechanized: never compare two runs
+# without checking the corpus they were measured against.
+# ---------------------------------------------------------------------------
+
+
+def test_compare_to_baseline_overall_case_set_mismatch_forces_every_metric_incomparable():
+    """A golden-set definition change (two cases moved out of the
+    denominator) must not let a metric whose narrower subset happens to
+    still agree report a fictitious improvement — every metric is forced
+    `incomparable`, not just the ones whose own subset disagrees."""
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5, "groundedness": 0.4},
+        "results": [
+            _case_row("a", recall_at_5=1.0, groundedness=0.5),
+            _case_row("b", recall_at_5=0.0, groundedness=0.3),
+        ],
+    }
+    current = {
+        # groundedness's own per-case subset (case "a" only, both sides)
+        # still agrees — the overall-case-set guard must override that.
+        "aggregate": {"recall_at_5": 1.0, "groundedness": 0.9},
+        "results": [
+            _case_row("a", recall_at_5=1.0, groundedness=0.9),
+            _case_row("c", recall_at_5=1.0, groundedness=0.9),
+        ],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
+    assert verdict["recall_at_5"]["pairable"] is False
+    assert verdict["recall_at_5"]["added_case_ids"] == ["c"]
+    assert verdict["recall_at_5"]["removed_case_ids"] == ["b"]
+    assert verdict["groundedness"]["classification"] == "incomparable"
+    assert verdict["groundedness"]["added_case_ids"] == ["c"]
+    assert verdict["groundedness"]["removed_case_ids"] == ["b"]
+
+
+def test_compare_to_baseline_same_overall_case_set_is_unaffected_by_the_guard():
+    """When the overall case-id sets DO match, the guard is a no-op and the
+    normal per-metric paired verdict runs as before."""
+    case_ids = ["a", "b", "c"]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["classification"] == "flat"
+    assert verdict["recall_at_5"]["pairable"] is True
+
+
+def test_compare_to_baseline_differing_corpus_flags_every_delta_confounded():
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"},
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": {"chunk_count": 105, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"},
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["confounded"] is True
+
+
+def test_compare_to_baseline_matching_corpus_is_not_confounded():
+    corpus = {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"}
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": dict(corpus),
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "corpus": dict(corpus),
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["confounded"] is False
+
+
+def test_compare_to_baseline_missing_corpus_is_confounded_unknown_never_silently_green():
+    baseline = {"aggregate": {"recall_at_5": 0.5}, "results": []}
+    current = {"aggregate": {"recall_at_5": 1.0}, "results": []}
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["confounded"] == "unknown"
+
+
+def test_compare_to_baseline_real_legacy_run_missing_corpus_is_confounded_unknown():
+    """Uses a real pre-existing run file as the fixture — the actual
+    compatibility surface, per the task's own instruction."""
+    pre_existing_path = (
+        Path(__file__).resolve().parents[2]
+        / "planning"
+        / "retrieval-eval-runs"
+        / "2026-08-02T10-15-24Z.json"
+    )
+    if not pre_existing_path.exists():
+        pytest.skip("pre-existing run file fixture not present in this checkout")
+
+    baseline = load_report(pre_existing_path)
+    assert "corpus" not in baseline
+    current = {"aggregate": dict(baseline["aggregate"])}
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    for entry in verdict.values():
+        assert entry["confounded"] == "unknown"
+
+
+def test_compare_to_baseline_differing_ranking_constants_are_named():
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "ranking_constants": {"kw_weight": 0.3, "max_per_file": 3},
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+        "ranking_constants": {"kw_weight": 0.5, "max_per_file": 3},
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["ranking_constants_changed"] == ["kw_weight"]
+
+
+def test_compare_to_baseline_matching_ranking_constants_report_no_change():
+    ranking_constants = {"kw_weight": 0.3, "max_per_file": 3}
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [],
+        "ranking_constants": dict(ranking_constants),
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [],
+        "ranking_constants": dict(ranking_constants),
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["ranking_constants_changed"] == []
+
+
+def test_compare_to_baseline_missing_ranking_constants_is_unknown_not_empty():
+    baseline = {"aggregate": {"recall_at_5": 0.5}, "results": []}
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [],
+        "ranking_constants": {"kw_weight": 0.3},
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["ranking_constants_changed"] is None
 
 
 def test_run_eval_forwards_case_scope_as_project_filter():
