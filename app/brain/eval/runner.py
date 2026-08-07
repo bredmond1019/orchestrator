@@ -21,9 +21,21 @@ from database.brain_edge import BrainEdge
 from sqlalchemy import func
 
 from brain import retrieval_engine
-from brain.eval import scorer
+from brain.eval import scorer, stats
 from brain.eval.models import CaseResult, RetrievalCase, RetrievalRunReport
 from brain.eval.scorer import score_case
+
+# Fixed, distinct-per-metric seeds for the bootstrap metrics — pinned so two
+# consecutive runs on the same cases produce byte-identical `aggregate_stats`
+# (see `test_run_eval_is_deterministic_across_two_runs` and the block's
+# determinism acceptance criterion). Distinct per metric only so a shared
+# resample sequence across metrics is never mistaken for a coincidence; the
+# exact values carry no other meaning.
+_BOOTSTRAP_SEEDS = {
+    "mrr": 0,
+    "groundedness": 1,
+    "groundedness_on_hits": 2,
+}
 
 # app/brain/eval/runner.py -> app/brain/eval -> app/brain -> app -> repo root
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -111,6 +123,63 @@ def _aggregate(results: list[CaseResult]) -> dict[str, float]:
     aggregate["groundedness_on_hits"] = sum(on_hits) / len(on_hits) if on_hits else 0.0
 
     return aggregate
+
+
+def _aggregate_stats(results: list[CaseResult]) -> dict[str, dict]:
+    """Per-metric `n` / point estimate / 95% interval / method / seed, keyed
+    exactly like `_aggregate`'s output — a SIBLING top-level report field
+    (`RetrievalRunReport.aggregate_stats`), never nested inside `aggregate`
+    itself (`compare_to_baseline` iterates `aggregate` as a flat
+    `dict[str, float]` and subtracts; nesting an interval in there raises
+    `TypeError`).
+
+    Each metric's `n` is the denominator `_aggregate` actually divides by —
+    read from the same per-result field checks as `_aggregate`, not assumed,
+    so a wrong `n` here would be exactly the class of plausible-wrong-number
+    this block exists to prevent:
+
+    - `recall_at_5`/`recall_at_10`/`mrr` — positive cases only (the field is
+      non-`None`); `recall_at_5`/`recall_at_10` are always exactly 0.0 or
+      1.0 so Wilson applies directly with `successes = sum(values)`. `mrr`
+      is a discrete ladder ({0, 1, 1/2, 1/3, ...}) with mass at 0, so it
+      gets the seeded bootstrap instead.
+    - `abstain_correctness` — every case (the abstain signal is meaningful
+      for negatives and positives alike) — Wilson.
+    - `groundedness` — positive cases only, continuous [0, 1] — bootstrap.
+    - `groundedness_on_hits` — cases that actually matched an expected
+      document (`matched_docs` non-empty) — bootstrap; may be `n=0`.
+    """
+    out: dict[str, dict] = {}
+
+    abstain_values = [1.0 if r.abstain_correct else 0.0 for r in results]
+    out["abstain_correctness"] = stats.wilson_interval(
+        successes=int(sum(abstain_values)), n=len(abstain_values)
+    ).to_dict()
+
+    for out_key, field_name in (("recall_at_5", "recall_at_5"), ("recall_at_10", "recall_at_10")):
+        values = [getattr(r, field_name) for r in results if getattr(r, field_name) is not None]
+        out[out_key] = stats.wilson_interval(
+            successes=int(sum(values)), n=len(values)
+        ).to_dict()
+
+    mrr_values = [r.reciprocal_rank for r in results if r.reciprocal_rank is not None]
+    out["mrr"] = stats.bootstrap_mean_interval(
+        mrr_values, seed=_BOOTSTRAP_SEEDS["mrr"]
+    ).to_dict()
+
+    groundedness_values = [r.groundedness for r in results if r.groundedness is not None]
+    out["groundedness"] = stats.bootstrap_mean_interval(
+        groundedness_values, seed=_BOOTSTRAP_SEEDS["groundedness"]
+    ).to_dict()
+
+    on_hits_values = [
+        r.groundedness for r in results if r.groundedness is not None and r.matched_docs
+    ]
+    out["groundedness_on_hits"] = stats.bootstrap_mean_interval(
+        on_hits_values, seed=_BOOTSTRAP_SEEDS["groundedness_on_hits"]
+    ).to_dict()
+
+    return out
 
 
 def _fingerprint_corpus(session=None) -> dict:
@@ -210,6 +279,7 @@ def run_eval(
         case_count=len(cases),
         results=tuple(results),
         aggregate=_aggregate(results),
+        aggregate_stats=_aggregate_stats(results),
         corpus=_fingerprint_corpus(session),
         ranking_constants=_live_ranking_constants(),
     )

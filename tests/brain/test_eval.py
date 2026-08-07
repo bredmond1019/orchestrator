@@ -193,10 +193,130 @@ def test_run_eval_is_deterministic_across_two_runs():
         report_two = run_eval(cases)
 
     assert report_one.aggregate == report_two.aggregate
+    assert report_one.aggregate_stats == report_two.aggregate_stats
     assert [r.case_id for r in report_one.results] == [r.case_id for r in report_two.results]
     assert [r.recall_at_5 for r in report_one.results] == [
         r.recall_at_5 for r in report_two.results
     ]
+
+
+# ---------------------------------------------------------------------------
+# aggregate_stats — n / point estimate / 95% interval / method / seed per
+# metric (plan-eval-statistical-honesty task 2)
+# ---------------------------------------------------------------------------
+
+
+def test_aggregate_remains_flat_dict_of_floats():
+    """`aggregate` itself must never carry a nested interval — `compare_to_
+    baseline` iterates it and subtracts, which raises `TypeError` on a
+    non-float value."""
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    assert isinstance(report.aggregate, dict)
+    for value in report.aggregate.values():
+        assert isinstance(value, float)
+
+
+def test_aggregate_stats_is_a_sibling_top_level_key_with_all_six_metrics():
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    assert set(report.aggregate_stats) == {
+        "recall_at_5",
+        "recall_at_10",
+        "mrr",
+        "groundedness",
+        "groundedness_on_hits",
+        "abstain_correctness",
+    }
+    for metric, interval in report.aggregate_stats.items():
+        assert "n" in interval, metric
+        assert "point" in interval, metric
+        assert "lo" in interval, metric
+        assert "hi" in interval, metric
+        assert "method" in interval, metric
+        assert "seed" in interval, metric
+
+
+def test_aggregate_stats_n_matches_the_denominator_aggregate_actually_averages_over():
+    """Two positive cases, one negative case. `recall_at_5`/`recall_at_10`/
+    `mrr`/`groundedness` average over the 2 positive cases only;
+    `abstain_correctness` averages over all 3; `groundedness_on_hits`
+    averages over whichever positive cases actually matched (1, per
+    `_grounded_retrieve`'s Bastion-only hit)."""
+    cases = [_POSITIVE_CASE, _MISS_CASE, _NEGATIVE_CASE]
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_grounded_retrieve):
+        report = run_eval(cases)
+
+    stats_ = report.aggregate_stats
+    assert stats_["recall_at_5"]["n"] == 2
+    assert stats_["recall_at_10"]["n"] == 2
+    assert stats_["mrr"]["n"] == 2
+    assert stats_["groundedness"]["n"] == 2
+    assert stats_["groundedness_on_hits"]["n"] == 1
+    assert stats_["abstain_correctness"]["n"] == 3
+
+
+def test_aggregate_stats_wilson_metrics_use_wilson_method():
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    for metric in ("recall_at_5", "recall_at_10", "abstain_correctness"):
+        assert report.aggregate_stats[metric]["method"] == "wilson"
+
+
+def test_aggregate_stats_bootstrap_metrics_use_bootstrap_method_and_are_seeded():
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+
+    for metric in ("mrr", "groundedness", "groundedness_on_hits"):
+        assert report.aggregate_stats[metric]["method"] == "bootstrap"
+        assert report.aggregate_stats[metric]["seed"] is not None
+
+
+def test_write_report_round_trips_aggregate_stats(tmp_path):
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE, _NEGATIVE_CASE])
+    out_path = write_report(report, out_dir=tmp_path)
+
+    on_disk = json.loads(out_path.read_text(encoding="utf-8"))
+    assert on_disk["aggregate_stats"] == report.aggregate_stats
+
+    loaded = load_report(out_path)
+    assert loaded["aggregate_stats"] == report.aggregate_stats
+
+
+def test_to_dict_defaults_aggregate_stats_to_none():
+    """A report built without `aggregate_stats` (mirroring pre-task-2
+    callers) still serializes cleanly — key present but null."""
+    report = RetrievalRunReport(
+        generated_at="2026-08-07T00-00-00Z", case_count=0, results=(), aggregate={}
+    )
+
+    assert report.to_dict()["aggregate_stats"] is None
+
+
+def test_all_pre_existing_run_files_still_load_and_compare():
+    """All 15 pre-task-2 run files lack `aggregate_stats` entirely — they
+    must still load via `load_report` and compare via `compare_to_baseline`
+    without error (mirrors `test_load_report_and_compare_to_baseline_work_
+    on_pre_existing_run_files` for the corpus/ranking_constants fields)."""
+    runs_dir = Path(__file__).resolve().parents[2] / "planning" / "retrieval-eval-runs"
+    if not runs_dir.exists():
+        pytest.skip("retrieval-eval-runs fixture directory not present in this checkout")
+
+    run_files = sorted(runs_dir.glob("*.json"))
+    if not run_files:
+        pytest.skip("no run files present in this checkout")
+
+    for run_file in run_files:
+        baseline = load_report(run_file)
+        assert "aggregate_stats" not in baseline
+        current = {"aggregate": dict(baseline["aggregate"])}
+        deltas, regressed = compare_to_baseline(current, baseline)
+        assert isinstance(deltas, dict)
+        assert regressed is False
 
 
 # ---------------------------------------------------------------------------
