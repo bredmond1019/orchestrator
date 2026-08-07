@@ -9,6 +9,51 @@ timestamp: "2026-08-07T18:20:00Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-07]
+
+### Shipped `OR.2.C` — corpus integrity at ingest (`plan-corpus-integrity-at-ingest`)
+
+- **What:** `/sdlc-flow` PASSED all 6 tasks, reviewed PASS in 1 attempt. Task 1 made a YAML
+  frontmatter parse failure a real gate: `scripts/index_brain.py` gained `DocumentParseError`
+  (file path + cause), both `parse_document` call sites (main loop + `_sub_repo_docs_files`) now
+  catch it and skip the file rather than aborting the run, and `main()` returns 0/1 propagated via
+  `sys.exit(main())`. Task 2 stopped a malformed file from serving stale rows forever: parse-failed
+  files' pre-existing `brain_documents` rows are quarantined (retained) by default, reported as
+  `stale_rows_retained` in the run summary, with an opt-in `--prune-failed` flag to delete them
+  instead. Task 3 closed the gap where none of the three in-process `index_brain.main()` callers in
+  `app/brain/ops.py` (`embed_files`, `prune_paths`, `refresh`) inspected the return value — a single
+  `_run_index_brain` choke point now captures the real exit code and ERROR-level log messages, so
+  `syn embed`/`ingest`/`refresh` (the actual operator surfaces) now exit non-zero on a parse/embed/DB
+  failure, not just on a raised exception. Task 4 added reconciliation axis 7 to
+  `app/brain/reconcile.py` — `uncovered_files`/`unparseable_files`/`excluded_count` (by reason) —
+  reusing `index_brain._collect_files` rather than reimplementing discovery, and fixed the bare
+  `parse_document` call in `_section_orphans` so a malformed file now lands in `unparseable_files`
+  instead of making `deep_stale` raise; `drift` stays `bool(axes 1-5)`, axis 7 is explicitly
+  non-drift. Task 5 documented the ingest gate, `--prune-failed`, and the new reconcile axis in
+  `docs/scripts.md`. Task 6 validated the full gate: 7/7 harness checks pass (imports,
+  standing-rules, ruff net-new 0, pylint 10.00/10, pytest-count 1468 collected with no decrease,
+  full pytest 1461 passed / 7 skipped), and confirmed the live corpus fingerprint unchanged at
+  11533 chunks / 962 files / 2295 edges.
+- **Why:** `syn eval`'s golden set can never see past files that silently failed to parse or
+  drifted between the filesystem and `brain_documents` — this block builds the ingest-time floor
+  the Brain RAG quality program's measurement work (`OR.2.A` done, `OR.2.B` next) depends on not
+  having a hidden recall ceiling under it.
+- **Notable deviations:** new tests for `scripts/index_brain.py` landed in the pre-existing,
+  correctly-scoped `tests/test_index_brain.py` rather than `tests/brain/test_ingest.py` (the tasks
+  spec's literal file list), since the latter is the unrelated `brain.ingest.ingest_artifact` suite
+  — see the spec's Amendment Log.
+- **Next:** `OR.2.B` (statistical honesty, trustworthy comparison, and the gates that protect them)
+  is next in the Brain RAG quality program's sequential chain, pending its serialization edge.
+
+```
+23d0649 docs: update docs for plan-corpus-integrity-at-ingest
+c219d21 feat: implement plan-corpus-integrity-at-ingest-task5
+bc72968 feat: implement plan-corpus-integrity-at-ingest-task4
+cfbe88c feat: implement plan-corpus-integrity-at-ingest-task3
+835dc22 feat: implement plan-corpus-integrity-at-ingest-task2
+bbe1dac feat: implement plan-corpus-integrity-at-ingest-task1
+```
+
 ## [2026-08-07]
 
 ### Planned and registered the Brain RAG quality program (OR.2.A–E)
