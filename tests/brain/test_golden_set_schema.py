@@ -29,8 +29,18 @@ _ALLOWED_FIELDS = _REQUIRED_FIELDS | {"scope", "notes", "source_query_id"}
 # ~3s/case means 60 cases is a ~3-minute eval — still interactive — and ~60
 # hand-verified cases is the realistic ceiling one person can keep accurate.
 _MAX_CASES = 60
-_MIN_NEGATIVES = 3
+# OR.2.D converted id-or-k2-self and id-or-k1-query-log (both dead expect_docs
+# paths, verified absent from disk 2026-08-07) into abstain cases. That raised
+# the negative count from 6 to 8: archive-03-parallelnode, neg-01..03,
+# hijack-01..02 (all pre-existing), plus the two newly renamed neg-04/neg-05.
+_MIN_NEGATIVES = 8
 _MIN_HIJACK_CASES = 2
+
+# HQ brain root that `expect_docs` paths are relative to — matches how the
+# corpus indexer resolves and indexes these paths. Derived from this test
+# file's location (tests/brain/ -> core/orchestrator/ -> core/ -> HQ root),
+# never hardcoded, so the guard below stays correct if the repo moves.
+_HQ_ROOT = Path(__file__).resolve().parents[4]
 
 _VALID_SOURCES = {"authored", "mined", "archived"}
 _VALID_CATEGORIES = {"archive", "identifier", "negative", "hijack", "mined"}
@@ -223,6 +233,49 @@ def test_id_prefix_agrees_with_category(golden_set):
         c for c in golden_set["cases"] if c["id"] == "archive-11-or-v-hijack"
     )
     assert hijack_shaped_archive_case["category"] == "archive"
+
+
+def test_negative_case_count_matches_expected(golden_set):
+    """Pin the exact negative count so a future edit that silently adds or
+    removes a negative case is caught rather than sliding past a `>=` floor."""
+    negatives = [
+        case
+        for case in golden_set["cases"]
+        if case["expect_abstain"] is True and not case["expect_docs"]
+    ]
+    assert len(negatives) == _MIN_NEGATIVES, (
+        f"expected exactly {_MIN_NEGATIVES} negative cases (expect_abstain=true, "
+        f"expect_docs=[]), found {len(negatives)}: {[c['id'] for c in negatives]}"
+    )
+
+
+def test_expect_docs_paths_exist_on_disk(golden_set):
+    """No case may name an `expect_docs` path that is absent from disk.
+
+    This is the permanent guard OR.2.D adds: `id-or-k2-self` and
+    `id-or-k1-query-log` each named a path under an archived planning
+    directory that no longer exists, so they permanently scored 0.0 in
+    recall instead of being converted to abstain cases. This test would
+    have caught both the day their directories were archived.
+
+    Paths are resolved against the HQ brain root (`_HQ_ROOT`), matching how
+    the corpus indexer resolves and indexes `expect_docs` entries (they are
+    HQ-relative, e.g. `core/orchestrator/planning/status.md`).
+    """
+    missing = []
+    for case in golden_set["cases"]:
+        for doc_path in case["expect_docs"]:
+            resolved = _HQ_ROOT / doc_path
+            if not resolved.is_file():
+                missing.append((case["id"], doc_path, str(resolved)))
+    assert not missing, (
+        "golden set names expect_docs paths absent from disk (resolved against "
+        f"HQ root {_HQ_ROOT}):\n"
+        + "\n".join(
+            f"  case {case_id!r}: {doc_path!r} -> {resolved!r}"
+            for case_id, doc_path, resolved in missing
+        )
+    )
 
 
 def test_source_query_id_only_set_for_mined_cases(golden_set):
