@@ -205,8 +205,8 @@ Developer reference docs in `docs/`:
    before and after every eval run.** If any moves between a control and its arm, that pair is void.
 3. **Never modify an existing run file**, and never re-scope a golden-set case to flatter a metric —
    factual path corrections are allowed and go in the case's `notes:` (precedent: `archive-01-rates`).
-4. **`syn eval` always writes a tracked run file.** For throwaway experiments call `run_eval()`
-   without `write_report()`.
+4. **`syn eval` always writes a tracked run file.** For throwaway experiments use `syn eval
+   --no-write` — same scoring and exit-code behaviour, zero files written.
 5. **A `python -c` one-liner silently connects to the WRONG (empty) database.** `load_dotenv()`
    resolves `core/.env` (`DATABASE_NAME=orchestration_dev`) only when running a *script file*; with
    `-c` it falls back to `postgres`, which has 0 brain rows. Always put diagnostics in a `.py` file.
