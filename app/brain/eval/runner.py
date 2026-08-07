@@ -12,7 +12,9 @@ diff — at most shaped like `app/evals/gate.py`'s deleted `gate_change`
 (OR.X2 removed that module entirely), never imported from it.
 """
 
+import hashlib
 import json
+import os
 from pathlib import Path
 
 import yaml
@@ -60,6 +62,28 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 DEFAULT_GOLDEN_SET_PATH = _REPO_ROOT / "planning" / "retrieval-golden-set.yaml"
 DEFAULT_RUNS_DIR = _REPO_ROOT / "planning" / "retrieval-eval-runs"
+DEFAULT_BASELINE_POINTER = DEFAULT_RUNS_DIR / "baseline.json"
+
+# Bumped only when a metric's FORMULA changes (out of scope for this block —
+# see the spec's Notes). Stamped into `baseline.json` at promotion time so a
+# later formula change is visible in the pointer's git diff rather than
+# silently reinterpreting an old promotion.
+METRIC_DEFINITION_VERSION = "1"
+
+# Fields `golden_set_fingerprint` hashes — the SCORING-relevant subset of a
+# `RetrievalCase`. `source`/`category`/`source_query_id` are provenance
+# metadata never consumed by scoring (see `RetrievalCase`'s docstring) and
+# `notes` is documentation-only, so none of the four participate — that is
+# what makes the fingerprint stable under a `notes:`-only edit while still
+# moving when `expect_docs` (or `query`/`expect_abstain`/`scope`) changes.
+_FINGERPRINT_FIELDS = ("case_id", "query", "expect_docs", "expect_abstain", "scope")
+
+
+class PromotionError(ValueError):
+    """Raised by `promote_run` when a run fails a promotion guard — the
+    message names exactly which guard failed and, where relevant, what is
+    missing, so `syn eval promote`'s CLI error is actionable rather than a
+    bare traceback."""
 
 
 def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase]:
@@ -95,6 +119,30 @@ def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase
             )
         )
     return cases
+
+
+def golden_set_fingerprint(cases: list[RetrievalCase]) -> str:
+    """Stable hash of the golden set's SCORING-relevant content
+    (`_FINGERPRINT_FIELDS`), sorted by `case_id` so case ORDER in the YAML
+    never perturbs the hash.
+
+    Changes whenever a case's `expect_docs` (or `query`/`expect_abstain`/
+    `scope`) changes — the fields that actually move a score — and is
+    stable under a `notes:`-only edit (the precedent `archive-01-rates`
+    established: factual corrections go in `notes:` without redefining the
+    case). Used to stamp `baseline.json` at promotion time with the golden
+    set as it existed at that moment.
+    """
+    payload = [
+        {field: getattr(case, field) for field in _FINGERPRINT_FIELDS}
+        for case in sorted(cases, key=lambda c: c.case_id)
+    ]
+    # `expect_docs` is a tuple; json.dumps needs a list, and sorting it
+    # makes the hash independent of `expect_docs`' authored order too.
+    for entry in payload:
+        entry["expect_docs"] = sorted(entry["expect_docs"])
+    blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
 
 
 def _aggregate(results: list[CaseResult]) -> dict[str, float]:
@@ -318,6 +366,176 @@ def load_report(path: str | Path) -> dict:
     """Load a previously-written run report JSON (e.g. a `--baseline` file)."""
     with Path(path).open(encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_baseline_pointer(path: str | Path | None = None) -> dict | None:
+    """Load the `baseline.json` pointer file (default `DEFAULT_BASELINE_
+    POINTER`, re-read from the module at call time — never bound as a
+    mutable default arg — so tests can monkeypatch the module constant), or
+    `None` when it doesn't exist yet (no run has ever been promoted) — never
+    raises for a missing pointer, since that is a legitimate "nothing
+    pinned" state, distinct from a pointer that exists but is malformed
+    (which still raises)."""
+    path = Path(path if path is not None else DEFAULT_BASELINE_POINTER)
+    if not path.exists():
+        return None
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def resolve_baseline(
+    explicit_path: str | Path | None,
+    *,
+    pointer_path: str | Path | None = None,
+    runs_dir: str | Path | None = None,
+) -> tuple[dict, str] | None:
+    """Resolve which run `syn eval` should compare against.
+
+    An explicit `--baseline <path>` always wins. Otherwise falls back to the
+    promoted pin (`baseline.json`'s `run` field, resolved under
+    `runs_dir`, default `DEFAULT_RUNS_DIR`). Returns `(baseline_dict,
+    label)` — `label` is the path `syn eval` names in its output — or
+    `None` when there is nothing to compare against (no `--baseline` and no
+    pin has ever been promoted).
+    """
+    if explicit_path:
+        return load_report(explicit_path), str(explicit_path)
+
+    pointer = load_baseline_pointer(pointer_path)
+    if pointer is None:
+        return None
+    run_path = Path(runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR) / pointer["run"]
+    return load_report(run_path), pointer["run"]
+
+
+def corpus_divergence_warning(
+    current_corpus: dict | None, pinned_corpus: dict | None
+) -> str | None:
+    """A proactive nudge, never a gate: when the live corpus fingerprint
+    (`current_corpus`) diverges from the promoted pin's (`pinned_corpus`)
+    on any of `_CORPUS_FINGERPRINT_FIELDS`, name the fields that moved.
+    Returns `None` when either fingerprint is absent (nothing to compare)
+    or both agree — mirrors `_corpus_confounded`'s "missing is never a
+    match" rule by simply having nothing to say rather than warning falsely.
+    """
+    if not current_corpus or not pinned_corpus:
+        return None
+    diverged = [
+        field
+        for field in _CORPUS_FINGERPRINT_FIELDS
+        if current_corpus.get(field) != pinned_corpus.get(field)
+    ]
+    if not diverged:
+        return None
+    return (
+        "WARNING: live corpus diverges from the pinned baseline's corpus "
+        f"({', '.join(diverged)}) — see planning/retrieval-eval-runs/baseline.json"
+    )
+
+
+def promote_run(
+    run_path: str | Path,
+    *,
+    reason: str,
+    force: bool = False,
+    runs_dir: str | Path | None = None,
+    pointer_path: str | Path | None = None,
+    golden_set_path: str | Path | None = None,
+    promoted_by: str | None = None,
+) -> dict:
+    """Promote `run_path` to the baseline pin (`syn eval promote`), guarded.
+    Writes and returns the new pointer dict.
+
+    Guards, in order (each raises `PromotionError` naming what failed):
+
+    1. `--reason` must be non-empty.
+    2. `run_path` must exist and live under `runs_dir` (only tracked runs
+       are promotable) and must parse as JSON.
+    3. It must carry `corpus`, `ranking_constants`, AND `aggregate_stats` —
+       ALL THREE, named individually when missing. This mechanically makes
+       every one of the 15 pre-`plan-eval-statistical-honesty` run files
+       permanently ineligible, including the historical prose pin
+       `2026-08-02T10-15-24Z.json` (it predates all three stamps). That is
+       intended, not a bug to work around.
+    4. If a pin already exists and the new run is `regressed-significant`
+       on any metric relative to it (via `compare_to_baseline`'s paired
+       verdict), `--force` is required.
+
+    Deliberately NOT a guard: live-corpus compatibility between `run_path`
+    and the corpus at promotion time — you are promoting an *observation*,
+    and gating on live-corpus match would mean only ever promoting in the
+    same minute the corpus was indexed. `syn eval` warns about live-corpus
+    divergence on every run instead (`corpus_divergence_warning`).
+    """
+    if not reason or not reason.strip():
+        raise PromotionError("--reason is required and must be non-empty")
+
+    runs_dir = runs_dir if runs_dir is not None else DEFAULT_RUNS_DIR
+    pointer_path = pointer_path if pointer_path is not None else DEFAULT_BASELINE_POINTER
+    golden_set_path = golden_set_path if golden_set_path is not None else DEFAULT_GOLDEN_SET_PATH
+
+    run_path = Path(run_path).resolve()
+    runs_dir_resolved = Path(runs_dir).resolve()
+    if runs_dir_resolved not in run_path.parents:
+        raise PromotionError(
+            f"{run_path} is not under {runs_dir_resolved} — only tracked runs "
+            "under planning/retrieval-eval-runs/ may be promoted"
+        )
+    if not run_path.exists():
+        raise PromotionError(f"{run_path} does not exist")
+
+    try:
+        run = load_report(run_path)
+    except json.JSONDecodeError as exc:
+        raise PromotionError(f"{run_path} does not parse as JSON: {exc}") from exc
+
+    missing = [
+        field
+        for field in ("corpus", "ranking_constants", "aggregate_stats")
+        if not run.get(field)
+    ]
+    if missing:
+        raise PromotionError(
+            f"{run_path.name} is missing required stamp(s) {missing} — only runs "
+            "written by the statistical-honesty harness (aggregate_stats onward) "
+            "are promotable"
+        )
+
+    pointer = load_baseline_pointer(pointer_path)
+    if pointer is not None and not force:
+        current_pin_path = Path(runs_dir) / pointer["run"]
+        current_pin = load_report(current_pin_path)
+        _, _, verdict = compare_to_baseline(run, current_pin)
+        worse = sorted(
+            metric
+            for metric, entry in verdict.items()
+            if entry["classification"] == "regressed-significant"
+        )
+        if worse:
+            raise PromotionError(
+                f"{run_path.name} is significantly worse than the current pin "
+                f"({pointer['run']}) on {worse} — pass --force to promote anyway"
+            )
+
+    cases = load_cases(golden_set_path)
+    new_pointer = {
+        "run": run_path.name,
+        "promoted_at": RetrievalRunReport.now_iso(),
+        "promoted_by": promoted_by or os.environ.get("USER") or "unknown",
+        "reason": reason,
+        "corpus": run.get("corpus"),
+        "golden_set_fingerprint": golden_set_fingerprint(cases),
+        "case_count": run.get("case_count"),
+        "metric_definition_version": METRIC_DEFINITION_VERSION,
+    }
+
+    pointer_path = Path(pointer_path)
+    pointer_path.parent.mkdir(parents=True, exist_ok=True)
+    with pointer_path.open("w", encoding="utf-8") as handle:
+        json.dump(new_pointer, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+    return new_pointer
 
 
 def _case_values_for_metric(results: list[dict], metric: str) -> dict[str, float]:

@@ -20,7 +20,19 @@ import pytest
 from brain import retrieval_engine
 from brain.eval import scorer
 from brain.eval.models import CaseResult, RetrievalCase, RetrievalRunReport
-from brain.eval.runner import _aggregate, compare_to_baseline, load_report, run_eval, write_report
+from brain.eval.runner import (
+    PromotionError,
+    _aggregate,
+    compare_to_baseline,
+    corpus_divergence_warning,
+    golden_set_fingerprint,
+    load_baseline_pointer,
+    load_report,
+    promote_run,
+    resolve_baseline,
+    run_eval,
+    write_report,
+)
 from brain.eval.scorer import ABSTAIN_THRESHOLD, score_case
 from workflows.document_qa_workflow_nodes.verify_citations_node import (
     split_sentences as node_split_sentences,
@@ -306,7 +318,9 @@ def test_all_pre_existing_run_files_still_load_and_compare():
     if not runs_dir.exists():
         pytest.skip("retrieval-eval-runs fixture directory not present in this checkout")
 
-    run_files = sorted(runs_dir.glob("*.json"))
+    # Exclude `baseline.json` (plan-eval-statistical-honesty task 5) — a
+    # pointer file with a different schema (no `aggregate` key), not a run.
+    run_files = sorted(p for p in runs_dir.glob("*.json") if p.name != "baseline.json")
     if not run_files:
         pytest.skip("no run files present in this checkout")
 
@@ -949,6 +963,335 @@ def test_run_eval_passes_surface_eval():
 
 
 # ---------------------------------------------------------------------------
+# golden_set_fingerprint (plan-eval-statistical-honesty task 5)
+# ---------------------------------------------------------------------------
+
+
+def test_golden_set_fingerprint_changes_when_expect_docs_changes():
+    case_a = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/a.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+    )
+    case_b = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/b.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+    )
+
+    assert golden_set_fingerprint([case_a]) != golden_set_fingerprint([case_b])
+
+
+def test_golden_set_fingerprint_stable_under_notes_only_edit():
+    base = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/a.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+        notes="original note",
+    )
+    edited = RetrievalCase(
+        case_id="c1",
+        query="q",
+        expect_docs=("docs/a.md",),
+        expect_abstain=False,
+        source="authored",
+        category="identifier",
+        notes="corrected note — path fix per precedent",
+    )
+
+    assert golden_set_fingerprint([base]) == golden_set_fingerprint([edited])
+
+
+def test_golden_set_fingerprint_stable_under_source_and_category_edit():
+    """`source`/`category`/`source_query_id` are metadata never consumed by
+    scoring (`RetrievalCase`'s docstring) — the fingerprint must not move
+    when only they change."""
+    base = RetrievalCase(
+        case_id="c1", query="q", expect_docs=(), expect_abstain=True,
+        source="authored", category="negative",
+    )
+    edited = RetrievalCase(
+        case_id="c1", query="q", expect_docs=(), expect_abstain=True,
+        source="mined", category="mined", source_query_id=42,
+    )
+
+    assert golden_set_fingerprint([base]) == golden_set_fingerprint([edited])
+
+
+def test_golden_set_fingerprint_independent_of_case_order():
+    case_a = RetrievalCase(
+        case_id="a", query="qa", expect_docs=(), expect_abstain=True,
+        source="authored", category="negative",
+    )
+    case_b = RetrievalCase(
+        case_id="b", query="qb", expect_docs=(), expect_abstain=True,
+        source="authored", category="negative",
+    )
+
+    assert golden_set_fingerprint([case_a, case_b]) == golden_set_fingerprint([case_b, case_a])
+
+
+# ---------------------------------------------------------------------------
+# baseline pin — load_baseline_pointer / resolve_baseline /
+# corpus_divergence_warning (plan-eval-statistical-honesty task 5)
+# ---------------------------------------------------------------------------
+
+
+def test_load_baseline_pointer_returns_none_when_missing(tmp_path):
+    assert load_baseline_pointer(tmp_path / "no-such-baseline.json") is None
+
+
+def test_load_baseline_pointer_loads_existing_file(tmp_path):
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "x.json"}), encoding="utf-8")
+
+    assert load_baseline_pointer(pointer_path) == {"run": "x.json"}
+
+
+def test_resolve_baseline_returns_none_with_no_explicit_path_and_no_pin(tmp_path):
+    assert resolve_baseline(None, pointer_path=tmp_path / "missing.json") is None
+
+
+def test_resolve_baseline_explicit_path_wins_over_pin(tmp_path):
+    explicit_path = tmp_path / "explicit.json"
+    explicit_path.write_text(json.dumps({"aggregate": {"recall_at_5": 0.5}}), encoding="utf-8")
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "pinned.json"}), encoding="utf-8")
+
+    baseline, label = resolve_baseline(str(explicit_path), pointer_path=pointer_path)
+
+    assert label == str(explicit_path)
+    assert baseline == {"aggregate": {"recall_at_5": 0.5}}
+
+
+def test_resolve_baseline_falls_back_to_the_pin(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    pinned_run = runs_dir / "pinned.json"
+    pinned_run.write_text(json.dumps({"aggregate": {"recall_at_5": 0.9}}), encoding="utf-8")
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "pinned.json"}), encoding="utf-8")
+
+    baseline, label = resolve_baseline(None, pointer_path=pointer_path, runs_dir=runs_dir)
+
+    assert label == "pinned.json"
+    assert baseline == {"aggregate": {"recall_at_5": 0.9}}
+
+
+def test_corpus_divergence_warning_names_diverged_fields():
+    current = {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-07T00:00:00"}
+    pinned = {"chunk_count": 90, "file_count": 10, "max_indexed_at": "2026-08-01T00:00:00"}
+
+    warning = corpus_divergence_warning(current, pinned)
+
+    assert warning is not None
+    assert "chunk_count" in warning
+    assert "max_indexed_at" in warning
+    assert "file_count" not in warning
+
+
+def test_corpus_divergence_warning_none_when_matching():
+    same = {"chunk_count": 100, "file_count": 10, "max_indexed_at": "2026-08-07T00:00:00"}
+
+    assert corpus_divergence_warning(dict(same), dict(same)) is None
+
+
+def test_corpus_divergence_warning_none_when_either_side_missing():
+    assert corpus_divergence_warning(None, {"chunk_count": 1}) is None
+    assert corpus_divergence_warning({"chunk_count": 1}, None) is None
+
+
+# ---------------------------------------------------------------------------
+# promote_run — the guarded `syn eval promote` path (plan-eval-statistical-
+# honesty task 5)
+# ---------------------------------------------------------------------------
+
+
+def _write_run(path: Path, **overrides) -> None:
+    payload = {
+        "generated_at": "2026-08-07T00-00-00Z",
+        "case_count": 1,
+        "aggregate": {"recall_at_5": 0.9},
+        "results": [{"case_id": "c1", "recall_at_5": 1.0}],
+        "corpus": {"chunk_count": 10, "file_count": 5, "edge_count": 1, "max_indexed_at": None},
+        "ranking_constants": {"kw_weight": 0.5},
+        "aggregate_stats": {
+            "recall_at_5": {"point": 0.9, "lo": 0.6, "hi": 1.0, "n": 1, "method": "wilson"}
+        },
+    }
+    payload.update(overrides)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_golden_set(path: Path) -> None:
+    path.write_text(
+        "cases:\n"
+        "  - id: c1\n"
+        "    query: q\n"
+        "    source: authored\n"
+        "    category: identifier\n",
+        encoding="utf-8",
+    )
+
+
+def test_promote_run_requires_non_empty_reason(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path)
+
+    with pytest.raises(PromotionError, match="reason"):
+        promote_run(run_path, reason="", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json")
+
+    with pytest.raises(PromotionError, match="reason"):
+        promote_run(
+            run_path, reason="   ", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json"
+        )
+
+
+def test_promote_run_rejects_run_outside_runs_dir(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    outside_dir = tmp_path / "elsewhere"
+    outside_dir.mkdir()
+    run_path = outside_dir / "r1.json"
+    _write_run(run_path)
+
+    with pytest.raises(PromotionError, match="not under"):
+        promote_run(
+            run_path, reason="x", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json"
+        )
+
+
+def test_promote_run_rejects_missing_run_file(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+
+    with pytest.raises(PromotionError, match="does not exist"):
+        promote_run(
+            runs_dir / "no-such-run.json",
+            reason="x",
+            runs_dir=runs_dir,
+            pointer_path=tmp_path / "baseline.json",
+        )
+
+
+def test_promote_run_names_each_missing_stamp():
+    runs_dir = Path(__file__).resolve().parents[2] / "planning" / "retrieval-eval-runs"
+    if not runs_dir.exists():
+        pytest.skip("retrieval-eval-runs fixture directory not present in this checkout")
+    legacy_run = runs_dir / "2026-08-02T10-15-24Z.json"
+    if not legacy_run.exists():
+        pytest.skip("legacy pin run file not present in this checkout")
+
+    with pytest.raises(PromotionError) as excinfo:
+        promote_run(legacy_run, reason="x")
+
+    message = str(excinfo.value)
+    assert "corpus" in message
+    assert "ranking_constants" in message
+    assert "aggregate_stats" in message
+
+
+def test_promote_run_rejects_run_missing_only_aggregate_stats(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path, aggregate_stats=None)
+
+    with pytest.raises(PromotionError) as excinfo:
+        promote_run(run_path, reason="x", runs_dir=runs_dir, pointer_path=tmp_path / "baseline.json")
+
+    message = str(excinfo.value)
+    assert "['aggregate_stats']" in message
+    assert "'corpus'" not in message
+    assert "'ranking_constants'" not in message
+
+
+def test_promote_run_succeeds_and_writes_pointer(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path)
+    golden_set_path = tmp_path / "golden-set.yaml"
+    _write_golden_set(golden_set_path)
+    pointer_path = tmp_path / "baseline.json"
+
+    pointer = promote_run(
+        run_path,
+        reason="first promotion",
+        runs_dir=runs_dir,
+        pointer_path=pointer_path,
+        golden_set_path=golden_set_path,
+        promoted_by="tester",
+    )
+
+    assert pointer["run"] == "r1.json"
+    assert pointer["reason"] == "first promotion"
+    assert pointer["promoted_by"] == "tester"
+    assert pointer["case_count"] == 1
+    assert pointer["metric_definition_version"] == "1"
+    assert pointer["corpus"] == {
+        "chunk_count": 10, "file_count": 5, "edge_count": 1, "max_indexed_at": None
+    }
+    assert isinstance(pointer["golden_set_fingerprint"], str) and pointer["golden_set_fingerprint"]
+    assert pointer_path.exists()
+    on_disk = json.loads(pointer_path.read_text(encoding="utf-8"))
+    assert on_disk == pointer
+
+
+def test_promote_run_requires_force_when_significantly_worse_than_current_pin(tmp_path):
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    golden_set_path = tmp_path / "golden-set.yaml"
+    _write_golden_set(golden_set_path)
+    pointer_path = tmp_path / "baseline.json"
+
+    case_ids = [f"case-{i}" for i in range(6)]
+    good_run = runs_dir / "good.json"
+    _write_run(
+        good_run,
+        case_count=6,
+        aggregate={"recall_at_5": 1.0},
+        results=[{"case_id": cid, "recall_at_5": 1.0} for cid in case_ids],
+    )
+    promote_run(
+        good_run, reason="seed pin", runs_dir=runs_dir, pointer_path=pointer_path,
+        golden_set_path=golden_set_path,
+    )
+
+    worse_run = runs_dir / "worse.json"
+    _write_run(
+        worse_run,
+        case_count=6,
+        aggregate={"recall_at_5": 0.0},
+        results=[{"case_id": cid, "recall_at_5": 0.0} for cid in case_ids],
+    )
+
+    with pytest.raises(PromotionError, match="worse"):
+        promote_run(
+            worse_run, reason="regression attempt", runs_dir=runs_dir, pointer_path=pointer_path,
+            golden_set_path=golden_set_path,
+        )
+
+    # --force overrides the guard.
+    pointer = promote_run(
+        worse_run, reason="regression, forced", force=True, runs_dir=runs_dir,
+        pointer_path=pointer_path, golden_set_path=golden_set_path,
+    )
+    assert pointer["run"] == "worse.json"
+
+
+# ---------------------------------------------------------------------------
 # write_report / compare_to_baseline (the --baseline regression gate)
 # ---------------------------------------------------------------------------
 
@@ -1136,6 +1479,11 @@ def test_cli_eval_baseline_exits_zero_with_warning_when_regressed_within_noise()
 
 
 def test_cli_eval_without_baseline_exits_zero():
+    """`--no-baseline` (plan-eval-statistical-honesty task 5) skips
+    comparison entirely, including the default pin lookup — the bare
+    "no baseline compared at all" case this test's name describes. Bare
+    `syn eval` (no flag) now falls back to the promoted pin by default; see
+    the `syn eval` default-pin tests below for that behavior."""
     from brain.cli import main  # pylint: disable=import-outside-toplevel
 
     report_obj = type(
@@ -1154,9 +1502,96 @@ def test_cli_eval_without_baseline_exits_zero():
     with patch("brain.eval.load_cases", return_value=[]), patch(
         "brain.eval.run_eval", return_value=report_obj
     ), patch("brain.eval.write_report", return_value=Path("/dev/null")):
+        code = main(["eval", "--no-baseline", "--json"])
+
+    assert code == 0
+
+
+def test_cli_eval_bare_compares_to_the_pin_and_names_it(tmp_path, capsys):
+    """Bare `syn eval` (no `--baseline`, no `--no-baseline`) falls back to
+    the promoted pin and names which run it compared against."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    pinned_run = runs_dir / "pinned.json"
+    pinned_run.write_text(
+        json.dumps({"aggregate": {"recall_at_5": 0.9}, "results": []}), encoding="utf-8"
+    )
+    pointer_path = tmp_path / "baseline.json"
+    pointer_path.write_text(json.dumps({"run": "pinned.json"}), encoding="utf-8")
+
+    report_obj = type(
+        "FakeReport",
+        (),
+        {
+            "to_dict": lambda self: {
+                "generated_at": "2026-08-07T00-00-00Z",
+                "case_count": 0,
+                "aggregate": {"recall_at_5": 0.9},
+                "results": [],
+            }
+        },
+    )()
+
+    with (
+        patch("brain.eval.load_cases", return_value=[]),
+        patch("brain.eval.run_eval", return_value=report_obj),
+        patch("brain.eval.write_report", return_value=Path("/dev/null")),
+        patch("brain.eval.runner.DEFAULT_BASELINE_POINTER", pointer_path),
+        patch("brain.eval.runner.DEFAULT_RUNS_DIR", runs_dir),
+    ):
         code = main(["eval", "--json"])
 
     assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["baseline_label"] == "pinned.json"
+    assert payload["baseline_deltas"] == {"recall_at_5": pytest.approx(0.0)}
+
+
+def test_cli_eval_promote_requires_reason_and_names_missing_stamps(tmp_path):
+    """`syn eval promote` fails a run missing the required stamps, naming
+    them, and reports through the same typed-error path every other `syn`
+    command uses."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    incomplete_run = runs_dir / "incomplete.json"
+    incomplete_run.write_text(
+        json.dumps({"aggregate": {"recall_at_5": 0.9}, "results": [], "case_count": 0}),
+        encoding="utf-8",
+    )
+
+    with patch("brain.eval.runner.DEFAULT_RUNS_DIR", runs_dir):
+        code = main(["eval", "promote", str(incomplete_run), "--reason", "x", "--json"])
+
+    assert code != 0
+
+
+def test_cli_eval_promote_writes_the_pointer_on_success(tmp_path):
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run_path = runs_dir / "r1.json"
+    _write_run(run_path)
+    golden_set_path = tmp_path / "golden-set.yaml"
+    _write_golden_set(golden_set_path)
+    pointer_path = tmp_path / "baseline.json"
+
+    with (
+        patch("brain.eval.runner.DEFAULT_RUNS_DIR", runs_dir),
+        patch("brain.eval.runner.DEFAULT_BASELINE_POINTER", pointer_path),
+        patch("brain.eval.runner.DEFAULT_GOLDEN_SET_PATH", golden_set_path),
+    ):
+        code = main(["eval", "promote", str(run_path), "--reason", "landed", "--json"])
+
+    assert code == 0
+    assert pointer_path.exists()
+    on_disk = json.loads(pointer_path.read_text(encoding="utf-8"))
+    assert on_disk["run"] == "r1.json"
+    assert on_disk["reason"] == "landed"
 
 
 # ---------------------------------------------------------------------------
