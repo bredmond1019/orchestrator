@@ -263,7 +263,7 @@ def recall(
         embedding_service: An `EmbeddingService` instance (injected; built
             lazily when omitted and needed).
         surface: Optional calling-surface tag (`"cli"` / `"http"` /
-            `"workflow"` / `"mcp"`) for the OR.K1 query log
+            `"workflow"` / `"eval"` / `"mcp"`) for the OR.K1 query log
             (`app/brain/query_log.py`). `None` (the default) is logged as
             `"unknown"`; has no effect on retrieval behavior.
 

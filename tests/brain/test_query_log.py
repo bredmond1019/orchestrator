@@ -321,6 +321,45 @@ class TestSurfaceThreading:
         assert row.via_mix == {"semantic": 1}
         session.close()
 
+    def test_run_eval_logs_one_row_with_surface_eval(self, query_log_db, enable_query_log):
+        """`run_eval`'s `retrieve()` call stamps `surface="eval"` — the only
+        genuine plumbing gap this block closes (the other three surfaces
+        were already landed in `a660715`)."""
+        from brain.eval.models import RetrievalCase
+        from brain.eval.runner import run_eval
+
+        candidate = {
+            "id": uuid.uuid4(),
+            "content": "some content",
+            "section_title": None,
+            "is_section_title": False,
+            "distance": 0.1,
+            "file_path": None,
+            "doc_id": "D1",
+            "title": None,
+            "authored_at": None,
+            "via": "semantic",
+        }
+        case = RetrievalCase(
+            case_id="fixture-eval-surface",
+            query="what changed",
+            expect_docs=(),
+            expect_abstain=True,
+        )
+        fake_embedder = MagicMock()
+        fake_embedder.embed_text.return_value = [0.1, 0.2]
+
+        with (
+            patch("brain.retrieval_engine._semantic_search", return_value=[candidate]),
+            patch("brain.retrieval_engine._keyword_search", return_value=set()),
+        ):
+            run_eval([case], corpus="content", session=MagicMock(), embedder=fake_embedder)
+
+        session = query_log_db()
+        row = session.query(RetrievalQuery).one()
+        assert row.surface == "eval"
+        session.close()
+
     def test_workflow_node_passes_surface_workflow(self):
         from core.task import TaskContext
         from workflows.document_qa_workflow_nodes.retrieve_chunks_node import (

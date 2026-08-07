@@ -182,6 +182,7 @@ def run_eval(
             filters=filters,
             session=session,
             embedder=embedder,
+            surface="eval",
         )
         # retrieval_confidence mirrors production's k=5 dispatch
         # (RetrieveChunksNode always requests k=5) even though this runner

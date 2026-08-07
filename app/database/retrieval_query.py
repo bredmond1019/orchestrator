@@ -53,7 +53,7 @@ class RetrievalQuery(Base):
         String(16),
         nullable=False,
         default="unknown",
-        doc="Calling surface: 'cli', 'http', 'workflow', 'mcp', or 'unknown'",
+        doc="Calling surface: 'cli', 'http', 'workflow', 'eval', 'mcp', or 'unknown'",
     )
     workspace_id = Column(
         String(128),
