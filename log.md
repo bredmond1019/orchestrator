@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-07T18:20:00Z"
+timestamp: "2026-08-07T18:56:09Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,67 @@ timestamp: "2026-08-07T18:20:00Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ## [run: 2026-08-07]
+
+### Shipped `OR.2.B` — statistical honesty and trustworthy comparison (`plan-eval-statistical-honesty`)
+
+- **What:** `/sdlc-flow` PASSED all 8 tasks, reviewed PASS in 1 attempt. Task 1 added
+  `app/brain/eval/stats.py` — a pure-stdlib Wilson score interval and a seeded bootstrap percentile
+  interval, both returning a frozen `Interval` dataclass (point/lo/hi/n/method/seed), with
+  `n=0`/empty-values returning an all-`None` sentinel rather than raising. Task 2 stamps every
+  `syn eval` run with a sibling `aggregate_stats` dict (n, point estimate, 95% interval, method,
+  seed) for all six metrics — Wilson for the three proportion metrics (`recall_at_5`,
+  `recall_at_10`, `abstain_correctness`), seeded bootstrap for the three continuous ones (`mrr`,
+  `groundedness`, `groundedness_on_hits`, seeds 0/1/2) — rendered as `metric: point [lo, hi] n=N`
+  in human CLI output. Task 3 rebuilt `compare_to_baseline` around a paired per-case comparison:
+  an exact two-sided sign test (`math.comb`) for proportion metrics, a seeded paired bootstrap
+  (seeds 10/11/12) for continuous ones, producing a new `verdict` classification dict alongside the
+  existing `(deltas, regressed)` return; `syn eval`'s exit code now keys on
+  regressed-significant, with `--strict` restoring the old strict-sign tripwire. Task 3 also found
+  and fixed a sixth `compare_to_baseline` call site the spec's ground-truth list hadn't named
+  (`test_no_write_with_regressing_baseline_still_exits_nonzero`), logged in the spec's own
+  Amendment Log. Task 4 added three fingerprint guards ahead of any verdict: an overall
+  case-id-set guard (forces every metric `incomparable`, naming added/removed ids, on a golden-set
+  change), a corpus-confounding guard, and a ranking-constants-changed guard — all surfaced in JSON
+  and made visually obvious in human CLI output. Task 5 shipped the mechanical baseline pin:
+  `planning/retrieval-eval-runs/baseline.json` (hand-authored, pointing at the historical canonical
+  run since all 15 pre-existing runs are permanently ineligible for the guarded promotion path),
+  `syn eval`'s default fallback to that pin (`--no-baseline` to skip), a live corpus-divergence
+  warning, and a guarded `syn eval promote <run> --reason ...` subcommand requiring a reason and
+  `--force` to promote a significantly-worse run. Task 6 added an 8th gating harness check
+  (pytest skip-count regression, never failing on the existing 7 skips, naming the dominant skip
+  reason) plus a non-gating eval-scan warning check, bringing the gate to 8 checks. Task 7
+  repointed `planning/retrieval-eval-runs/index.md` at `baseline.json` as the canonical pin,
+  closing carryover `eval-baseline-pin-is-prose-only`. Task 8 validated the full gate: ruff clean,
+  pylint 10.00/10, 1540 tests collected (1533 passed / 7 skipped / 0 failed), all 15 legacy eval
+  run files still load via `load_report` and compare via `compare_to_baseline` without error, the
+  harness gating-check count is 8, and the live corpus fingerprint unchanged at 11533 chunks / 962
+  files / 2295 edges.
+- **Why:** the eval harness could report a metric delta without saying whether it was noise, and
+  could compare two runs measured against different corpora or golden sets without flagging the
+  confound — this block makes every number honest about its own uncertainty and makes a bad
+  comparison fail loudly instead of silently, closing the sequential Brain RAG quality program's
+  statistical-honesty gap ahead of `OR.2.D` (measurement definition change) and `OR.2.E`
+  (query-log mining).
+- **Notable decisions:** the case-set guard checks the *overall* case-id set (not any one metric's
+  narrower applicable subset) so a golden-set definition change can't let a metric's own agreeing
+  subset report a fictitious improvement; `aggregate_stats`/verdict guard fields are stamped as
+  extra keys on the existing return shapes rather than new tuple elements, so no existing call site
+  needed updating; `planning/harness.json`, `planning/retrieval-eval-runs/baseline.json`, and
+  `planning/retrieval-eval-runs/index.md` were committed separately in the HQ (`agentic-portfolio`)
+  repo through the `planning/` symlink, per HQ standing rule 10.
+- **Verdict:** PASS. `state.json`'s `OR.2.B` block flipped to `closed`.
+
+```
+4260d5c docs: update docs for plan-eval-statistical-honesty
+3beff0c feat: implement plan-eval-statistical-honesty-task5
+bbb882e feat: implement plan-eval-statistical-honesty-task4
+7d14fbb feat: implement plan-eval-statistical-honesty-task3
+36a3192 feat: implement plan-eval-statistical-honesty-task2
+65ccd0a feat: implement plan-eval-statistical-honesty-task1
+```
+
+Next: `OR.2.D` — the measurement definition change (two dead cases become abstains), next in the
+Brain RAG quality program's sequential chain.
 
 ### Shipped `OR.2.C` — corpus integrity at ingest (`plan-corpus-integrity-at-ingest`)
 
