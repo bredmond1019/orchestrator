@@ -145,6 +145,12 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
         help="Prior run JSON to diff against; exits non-zero on any metric regression.",
     )
     eval_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+    eval_parser.add_argument(
+        "--no-write",
+        action="store_true",
+        help="Score and print the report but do not persist it under "
+        "planning/retrieval-eval-runs/.",
+    )
 
     queries_parser = subparsers.add_parser(
         "queries",
@@ -462,10 +468,12 @@ def _print_eval_report(report_dict: dict) -> None:
 def _run_eval(args: argparse.Namespace) -> int:
     """Execute `syn eval` and print its result; return the exit code.
 
-    Runs the golden set, writes a dated JSON report, and prints per-case +
-    aggregate metrics. With `--baseline <path>`, also prints a signed
-    per-metric delta against that prior run and returns non-zero on any
-    regression (`brain.eval.compare_to_baseline`).
+    Runs the golden set, writes a dated JSON report (unless `--no-write` is
+    passed, in which case the report is scored and printed but not
+    persisted), and prints per-case + aggregate metrics. With `--baseline
+    <path>`, also prints a signed per-metric delta against that prior run
+    and returns non-zero on any regression (`brain.eval.compare_to_baseline`)
+    — `--no-write` gates persistence only and never affects the verdict.
     """
     from brain.eval import (  # pylint: disable=import-outside-toplevel
         compare_to_baseline,
@@ -483,7 +491,7 @@ def _run_eval(args: argparse.Namespace) -> int:
     try:
         cases = load_cases(golden_set_path)
         report = run_eval(cases)
-        write_report(report)
+        written_path = None if args.no_write else str(write_report(report))
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return _emit_error(exc, as_json=args.json)
 
@@ -501,6 +509,7 @@ def _run_eval(args: argparse.Namespace) -> int:
 
     if args.json:
         payload = dict(report_dict)
+        payload["written_path"] = written_path
         if deltas is not None:
             payload["baseline_deltas"] = deltas
         print(json.dumps(payload))
@@ -510,6 +519,8 @@ def _run_eval(args: argparse.Namespace) -> int:
             print("-- baseline deltas (signed; negative = regression) --")
             for metric, delta in sorted(deltas.items()):
                 print(f"  {metric}: {delta:+.4f}")
+        if args.no_write:
+            print("(--no-write: report not persisted)")
 
     return exit_code
 

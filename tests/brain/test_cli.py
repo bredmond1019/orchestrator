@@ -130,6 +130,132 @@ class TestPulseDispatch:
         assert payload["healthy"] is False
 
 
+class TestEvalDispatch:
+    """`syn eval --no-write` (task 1, `ticket-eval-plumbing-and-golden-set-v2`).
+
+    `--no-write` gates persistence only: `write_report` is never called and
+    the JSON payload's `written_path` is `null`, but scored metrics and the
+    `--baseline` regression verdict are identical to a plain run.
+    """
+
+    @staticmethod
+    def _fake_eval_report(**agg_overrides):
+        from brain.eval.models import CaseResult, RetrievalRunReport
+
+        aggregate = {
+            "recall_at_5": 0.5,
+            "recall_at_10": 0.6,
+            "mrr": 0.4,
+            "groundedness": 0.3,
+            "groundedness_on_hits": 0.5,
+            "abstain_correctness": 0.9,
+        }
+        aggregate.update(agg_overrides)
+        result = CaseResult(
+            case_id="archive-01-rates",
+            recall_at_5=1.0,
+            recall_at_10=1.0,
+            reciprocal_rank=1.0,
+            predicted_abstain=False,
+            expected_abstain=False,
+            abstain_correct=True,
+            groundedness=1.0,
+            retrieval_confidence=0.9,
+            matched_docs=("docs/x.md",),
+        )
+        return RetrievalRunReport(
+            generated_at="2026-08-07T00-00-00Z",
+            case_count=1,
+            results=(result,),
+            aggregate=aggregate,
+            corpus={
+                "chunk_count": 1,
+                "file_count": 1,
+                "edge_count": 0,
+                "max_indexed_at": None,
+            },
+            ranking_constants={"kw_weight": 0.3},
+        )
+
+    def test_no_write_creates_no_file_and_matches_plain_run_metrics(self, capsys):
+        report = self._fake_eval_report()
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report") as mock_write,
+        ):
+            code = main(["eval", "--no-write", "--json"])
+
+        assert code == 0
+        mock_write.assert_not_called()
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["written_path"] is None
+        assert payload["aggregate"] == report.aggregate
+
+    def test_plain_run_writes_report_and_emits_written_path(self, capsys, tmp_path):
+        report = self._fake_eval_report()
+        written = tmp_path / "2026-08-07T00-00-00Z.json"
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report", return_value=written) as mock_write,
+        ):
+            code = main(["eval", "--json"])
+
+        assert code == 0
+        mock_write.assert_called_once_with(report)
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["written_path"] == str(written)
+
+    def test_no_write_human_mode_prints_not_persisted_marker(self, capsys):
+        report = self._fake_eval_report()
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report") as mock_write,
+        ):
+            code = main(["eval", "--no-write"])
+
+        assert code == 0
+        mock_write.assert_not_called()
+        out = _read_stdout(capsys)
+        assert "(--no-write: report not persisted)" in out
+
+    def test_plain_run_human_mode_omits_not_persisted_marker(self, capsys):
+        report = self._fake_eval_report()
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report", return_value=Path("/tmp/fake.json")),
+        ):
+            code = main(["eval"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        assert "(--no-write: report not persisted)" not in out
+
+    def test_no_write_with_regressing_baseline_still_exits_nonzero(self, capsys, tmp_path):
+        report = self._fake_eval_report(recall_at_5=0.1)
+        baseline_path = tmp_path / "baseline.json"
+        baseline_report = self._fake_eval_report(recall_at_5=0.9)
+        baseline_path.write_text(json.dumps(baseline_report.to_dict()), encoding="utf-8")
+
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report") as mock_write,
+        ):
+            code = main(
+                ["eval", "--no-write", "--baseline", str(baseline_path), "--json"]
+            )
+
+        assert code == 1
+        mock_write.assert_not_called()
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["written_path"] is None
+        assert payload["baseline_deltas"]["recall_at_5"] < 0
+
+
 def _fake_report(**overrides):
     from brain.reconcile import ReconcileReport
 
