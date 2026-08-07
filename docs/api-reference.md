@@ -4819,7 +4819,7 @@ from another directory without `cd`-ing here, use `uv run --project <path-to-thi
 ## Retrieval Eval Harness (`app/brain/eval/`, `syn eval`)
 
 **Sources:** `app/brain/eval/__init__.py`, `app/brain/eval/models.py`, `app/brain/eval/scorer.py`,
-`app/brain/eval/runner.py`, `app/brain/cli.py`, `app/brain/ops.py`
+`app/brain/eval/stats.py`, `app/brain/eval/runner.py`, `app/brain/cli.py`, `app/brain/ops.py`
 
 Block **OR.K2 task 3**. Converts a retrieval change from an argument into a signed number: one
 command (`syn eval`) scores the hand-authored golden set
@@ -4868,12 +4868,25 @@ class RetrievalRunReport:
     case_count: int
     results: tuple[CaseResult, ...]
     aggregate: dict[str, float]
+    corpus: dict | None = None
+    ranking_constants: dict | None = None
+    aggregate_stats: dict | None = None
 
     @staticmethod
     def now_iso() -> str: ...  # ISO 8601 UTC, second precision — the run's filename stem
 
     def to_dict(self) -> dict: ...  # the git-tracked run-report JSON shape
 ```
+
+`aggregate_stats` (added by `plan-eval-statistical-honesty` task 2) is a SIBLING top-level key to
+`aggregate` — never nested inside it, since `compare_to_baseline` iterates `aggregate` as a flat
+`dict[str, float]` and subtracts. It carries, per metric in `aggregate`, an
+`n`/point-estimate/95%-interval/`method`/`seed` dict (`runner._aggregate_stats`, wrapping
+`app/brain/eval/stats.py::Interval.to_dict`) — Wilson score intervals for the three proportion
+metrics (`recall_at_5`, `recall_at_10`, `abstain_correctness`) and a seeded bootstrap percentile
+interval for the rest (`mrr`, `groundedness`, `groundedness_on_hits`). `None` when unavailable,
+same default-`None`/emitted-as-`null` pattern as `corpus` and `ranking_constants` — never populated
+pre-task-2, so all 15 pre-existing run files keep loading and comparing unchanged.
 
 Plain stdlib dataclasses, not Pydantic — this package stays dependency-free from
 `app/schemas/`/`app/evals/`. `RetrievalCase` mirrors the golden-set YAML schema
@@ -4920,15 +4933,52 @@ apart on Stage-1 candidate-set non-determinism). Case matching is set membership
 - **Recall@5 / Recall@10 / reciprocal rank:** `1.0`/`0.0` and `1/rank` respectively over the
   top-`k` slice of `results`; `None` for a case with empty `expect_docs`.
 
-### Runner — `load_cases` / `run_eval` / `write_report` / `compare_to_baseline`
+### Statistical estimators — `app/brain/eval/stats.py`
+
+**Source:** `app/brain/eval/stats.py`
+
+Added by `plan-eval-statistical-honesty` task 1. Pure stdlib (`math` and `random` only — grep-
+asserted, same "no numpy/scipy" contract as the rest of `app/brain/eval/`).
+
+```python
+@dataclass(frozen=True)
+class Interval:
+    point: float | None
+    lo: float | None
+    hi: float | None
+    n: int
+    method: str
+    seed: int | None = None
+
+    def to_dict(self) -> dict[str, float | int | str | None]: ...
+
+def wilson_interval(successes: int, n: int, *, z: float = DEFAULT_Z) -> Interval: ...
+def bootstrap_mean_interval(
+    values: list[float], *, seed: int, resamples: int = DEFAULT_RESAMPLES, alpha: float = DEFAULT_ALPHA
+) -> Interval: ...
+def exact_sign_test(worse: int, better: int) -> float: ...
+```
+
+| Function | Description |
+|---|---|
+| `wilson_interval(successes, n)` | 95% Wilson score interval for a 0/1 proportion metric (`recall_at_5`, `recall_at_10`, `abstain_correctness`). Chosen over the normal approximation because that approximation exceeds 1.0 near p̂=1.0 and collapses to zero width exactly at p̂=1.0 — the failure mode that would let a `recall@10 = 1.0000` reading pass as certainty. `n=0` returns the documented all-`None` sentinel `Interval` rather than raising. |
+| `bootstrap_mean_interval(values, *, seed, resamples=10000, alpha=0.05)` | Seeded percentile-method bootstrap interval for a bounded, lumpy/continuous metric (`mrr`'s discrete ladder with mass at 0; `groundedness`/`groundedness_on_hits`, continuous on [0, 1]). Uses a local `random.Random(seed)` instance — never the module-level `random` — so two calls with the same seed are byte-identical regardless of other callers' global random state. The point estimate is the plain sample mean (not the mean of resampled means), so it is seed-independent while `lo`/`hi` come from the seed-local resamples. |
+| `exact_sign_test(worse, better)` | EXACT two-sided binomial sign test p-value over discordant paired-flip counts (`worse` flipped worse, `better` flipped better) — `math.comb`, never the normal approximation, since `compare_to_baseline`'s regression gate turns on the exact 5-vs-6 boundary (p=0.0625 vs p=0.03125). Used by `runner.compare_to_baseline`'s paired per-case comparison. |
+
+### Runner — `load_cases` / `run_eval` / `write_report` / `compare_to_baseline` / baseline pin
 
 **Source:** `app/brain/eval/runner.py`
 
 ```python
-DEFAULT_GOLDEN_SET_PATH: Path  # planning/retrieval-golden-set.yaml
-DEFAULT_RUNS_DIR: Path         # planning/retrieval-eval-runs/
+DEFAULT_GOLDEN_SET_PATH: Path    # planning/retrieval-golden-set.yaml
+DEFAULT_RUNS_DIR: Path           # planning/retrieval-eval-runs/
+DEFAULT_BASELINE_POINTER: Path   # planning/retrieval-eval-runs/baseline.json
+METRIC_DEFINITION_VERSION: str   # "1" — bumped only when a metric's FORMULA changes
+
+class PromotionError(ValueError): ...  # raised by promote_run, names the failed guard
 
 def load_cases(path: str | Path = DEFAULT_GOLDEN_SET_PATH) -> list[RetrievalCase]: ...
+def golden_set_fingerprint(cases: list[RetrievalCase]) -> str: ...
 
 def run_eval(
     cases: list[RetrievalCase],
@@ -4941,16 +4991,41 @@ def run_eval(
 
 def write_report(report: RetrievalRunReport, out_dir: str | Path = DEFAULT_RUNS_DIR) -> Path: ...
 def load_report(path: str | Path) -> dict: ...
-def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float], bool]: ...
+
+def load_baseline_pointer(path: str | Path | None = None) -> dict | None: ...
+def resolve_baseline(
+    explicit_path: str | Path | None,
+    *,
+    pointer_path: str | Path | None = None,
+    runs_dir: str | Path | None = None,
+) -> tuple[dict, str] | None: ...
+def corpus_divergence_warning(current_corpus: dict | None, pinned_corpus: dict | None) -> str | None: ...
+def promote_run(
+    run_path: str | Path,
+    *,
+    reason: str,
+    force: bool = False,
+    runs_dir: str | Path | None = None,
+    pointer_path: str | Path | None = None,
+    golden_set_path: str | Path | None = None,
+    promoted_by: str | None = None,
+) -> dict: ...
+
+def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float], bool, dict]: ...
 ```
 
 | Function | Description |
 |---|---|
 | `load_cases(path)` | Parses the golden-set YAML into `RetrievalCase` objects. |
-| `run_eval(cases, *, corpus="brain", k=10, session=None, embedder=None)` | Runs every case's `query` through `retrieval_engine.retrieve(query, corpus=corpus, k=k, filters={"project": case.scope} if case.scope else None, session=session, embedder=embedder)`, computes `retrieval_confidence` via `retrieval_engine.compute_retrieval_confidence(chunks[:5])` (mirroring production's `k=5` dispatch even though the runner requests `k=10`), scores each case, and returns a `RetrievalRunReport` with per-case results plus aggregates. |
+| `golden_set_fingerprint(cases)` | Stable SHA-256 hash of the golden set's SCORING-relevant fields (`case_id`, `query`, `expect_docs`, `expect_abstain`, `scope` — `source`/`category`/`source_query_id`/`notes` are excluded, provenance-only) sorted by `case_id` and with `expect_docs` sorted, so case order and `notes:`-only edits never move the hash. Stamped into `baseline.json` at promotion time. |
+| `run_eval(cases, *, corpus="brain", k=10, session=None, embedder=None)` | Runs every case's `query` through `retrieval_engine.retrieve(...)`, scores each case, and returns a `RetrievalRunReport` with per-case results, `aggregate`, `aggregate_stats` (added task 2), `corpus`, and `ranking_constants`. |
 | `write_report(report, out_dir=DEFAULT_RUNS_DIR)` | Writes `<out_dir>/<report.generated_at>.json` (`mkdir(parents=True, exist_ok=True)`; sorted-keys, newline-terminated). Returns the written path. |
 | `load_report(path)` | Loads a previously-written run JSON (e.g. a `--baseline` file). |
-| `compare_to_baseline(current, baseline)` | Signed per-metric delta of `current["aggregate"]` vs. `baseline["aggregate"]`: `deltas[metric] = current - baseline` (positive = improvement, every metric here is higher-is-better); `regressed` is `True` iff any metric strictly decreased. A ~15-line comparison shaped like the deleted `app/evals/gate.py::gate_change`, never imported from it. |
+| `load_baseline_pointer(path=None)` | Loads `baseline.json` (default `DEFAULT_BASELINE_POINTER`); returns `None` (never raises) when no run has ever been promoted. |
+| `resolve_baseline(explicit_path, *, pointer_path=None, runs_dir=None)` | An explicit `--baseline <path>` always wins; otherwise falls back to the promoted pin. Returns `(baseline_dict, label)` or `None` when there is nothing to compare against. |
+| `corpus_divergence_warning(current_corpus, pinned_corpus)` | Proactive, never-gating nudge: names which `_CORPUS_FINGERPRINT_FIELDS` (`chunk_count`, `file_count`, `max_indexed_at`) diverge between the live corpus and the pinned baseline's; `None` when either fingerprint is absent or they agree. |
+| `promote_run(run_path, *, reason, force=False, ...)` | Promotes `run_path` to the baseline pin (`syn eval promote`). Guards, each raising `PromotionError` naming what failed: non-empty `--reason`; `run_path` exists, is under `runs_dir`, and parses as JSON; the run carries **all three** of `corpus`, `ranking_constants`, `aggregate_stats` (this mechanically makes all 15 pre-`plan-eval-statistical-honesty` run files permanently ineligible); and, if a pin already exists, the new run isn't `regressed-significant` on any metric relative to it unless `--force` is passed. Writes and returns the new pointer dict (`run`, `promoted_at`, `promoted_by`, `reason`, `corpus`, `golden_set_fingerprint`, `case_count`, `metric_definition_version`). |
+| `compare_to_baseline(current, baseline)` | Returns `(deltas, regressed, verdict)`. `deltas[metric] = current - baseline`, iterated over the **baseline's** keys (a new aggregate key on `current` reports no delta rather than raising). `regressed` is the ORIGINAL strict-sign tripwire, unchanged: `True` iff any metric strictly decreased. `verdict[metric]` is a paired, per-case comparison keyed on `case_id`: `pairable`, `n`, `flips_to_worse`/`flips_to_better` (proportion metrics — exact two-sided sign test via `sign_test_p`) or `paired_delta` (continuous metrics — seeded paired bootstrap interval), plus `confounded` (`bool` or `"unknown"` — corpus fingerprint mismatch) and `ranking_constants_changed` (list of levers that moved, or `None` if unknown). `classification` is one of `regressed-significant \| regressed-within-noise \| improved-within-noise \| improved-significant \| flat \| incomparable`. If the two runs' overall case-id sets disagree (a golden-set change), every metric is forced `incomparable` with `added_case_ids`/`removed_case_ids` naming the drift — never left to a per-metric subset that might coincidentally still match. |
 
 ### `syn eval` CLI
 
@@ -4958,11 +5033,12 @@ def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float]
 
 | Subcommand | Arguments | Behavior |
 |---|---|---|
-| `eval` | `--set PATH` (default: `planning/retrieval-golden-set.yaml`), `--baseline PATH`, `--json` | Loads the golden set, runs it through `run_eval`, writes a dated JSON report via `write_report`, and prints per-case + aggregate metrics. With `--baseline <path>`, additionally loads that prior run JSON, prints a signed per-metric delta via `compare_to_baseline`, and **exits non-zero on any metric regression**. Errors are caught by the same `_emit_error` typed-exception path the write/ops commands use. |
+| `eval` | `--set PATH` (default: `planning/retrieval-golden-set.yaml`), `--baseline PATH`, `--no-baseline`, `--strict`, `--no-write`, `--json` | Loads the golden set, runs it through `run_eval`, writes a dated JSON report via `write_report` (unless `--no-write`), and prints per-case + aggregate + `aggregate_stats` metrics. Compares against a baseline unless `--no-baseline` is passed: an explicit `--baseline <path>` wins, otherwise falls back to the promoted pin (`planning/retrieval-eval-runs/baseline.json`) when one exists — prints the signed per-metric delta and paired `verdict` via `compare_to_baseline`, naming which run was compared against, and warns (never gates) if the live corpus fingerprint diverges from the pin's. **Exit code:** 1 iff some metric's paired verdict is `regressed-significant`; a `regressed-within-noise` metric warns loudly but exits 0. `--strict` restores the old strict-sign tripwire (exit 1 on ANY metric decrease, ignoring significance). `--no-baseline` always exits 0. Errors are caught by the same `_emit_error` typed-exception path the write/ops commands use. |
+| `eval promote <run> --reason "..."` | `run` (path under `planning/retrieval-eval-runs/`), `--reason` (required), `--force`, `--json` | Delegates to `runner.promote_run` — promotes `run` to the baseline pin, subject to its guards (see `promote_run` above). `--force` is required to promote a run that is significantly worse than the current pin. Reports a `PromotionError` via the same typed-error path as every other `syn` command. |
 
 `ops.ROUTINES` also registers `"eval"` (`app/brain/ops.py::_eval_routine`) — report-only and
 cron-safe, so `syn routine eval` scores the default golden set and writes a dated run without a
-`--baseline` comparison (a routine, like `"reconcile"`, never gates or repairs anything
+baseline comparison (a routine, like `"reconcile"`, never gates or repairs anything
 automatically).
 
 ### Test coverage
