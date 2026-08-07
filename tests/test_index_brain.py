@@ -33,6 +33,7 @@ from index_brain import (  # noqa: E402
     _find_brain_root,
     _get_doc_type_for_path,
     _is_header_only_chunk,
+    _report_and_prune_failed_files,
     _sub_repo_docs_files,
     _sub_repo_files,
     _tier_container_slugs,
@@ -1092,6 +1093,283 @@ class TestParseFailureHandling:
             result = main(["--brain-path", str(tmp_path), "--dry-run"])
 
         assert result == 1
+        assert "broken.md" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# stale_rows_retained reporting + --prune-failed (OR.2.C task 2)
+# ---------------------------------------------------------------------------
+
+
+class TestReportAndPruneFailedFiles:
+    """Unit tests directly against `_report_and_prune_failed_files`.
+
+    A malformed file's parse failure means the per-file delete-then-insert
+    upsert never runs, so its pre-existing rows survive untouched. This is
+    the read side of that quarantine (and, opt-in via `prune=True`, the
+    delete side).
+    """
+
+    def _make_mock_session(self, count: int = 0, deleted: int = 0):
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.count.return_value = count
+        mock_query.delete.return_value = deleted
+        mock_session = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session, mock_query
+
+    def test_empty_list_is_a_no_op(self):
+        with patch("database.session.db_session") as mock_db_session:
+            result = _report_and_prune_failed_files([])
+
+        assert result == {}
+        mock_db_session.assert_not_called()
+
+    def test_retain_by_default_reports_count_and_does_not_delete(self, caplog):
+        import logging
+
+        mock_session, mock_query = self._make_mock_session(count=3)
+
+        def fake_db_session():
+            yield mock_session
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = _report_and_prune_failed_files(["docs/broken.md"])
+
+        assert result == {"docs/broken.md": 3}
+        mock_query.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+        assert "docs/broken.md" in caplog.text
+        assert "stale_rows_retained=3" in caplog.text
+
+    def test_never_indexed_reports_stale_rows_retained_zero(self):
+        mock_session, _ = self._make_mock_session(count=0)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(["docs/never-indexed.md"])
+
+        assert result == {"docs/never-indexed.md": 0}
+
+    def test_prune_failed_deletes_and_commits_when_not_dry_run(self):
+        mock_session, mock_query = self._make_mock_session(count=2, deleted=2)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(
+                ["docs/broken.md"], prune=True, dry_run=False
+            )
+
+        mock_query.delete.assert_called_once()
+        mock_session.commit.assert_called_once()
+        assert result == {"docs/broken.md": 0}
+
+    def test_prune_failed_dry_run_deletes_nothing(self):
+        mock_session, mock_query = self._make_mock_session(count=2)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(
+                ["docs/broken.md"], prune=True, dry_run=True
+            )
+
+        mock_query.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+        # Not actually pruned — the reported count is still the retained count.
+        assert result == {"docs/broken.md": 2}
+
+    def test_workspace_project_scoping_is_applied(self):
+        mock_session, mock_query = self._make_mock_session(count=1)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            _report_and_prune_failed_files(["docs/broken.md"], project="acme-co")
+
+        # filter() is called once for file_path and once for the project scope.
+        assert mock_query.filter.call_count == 2
+
+    def test_no_project_scoping_in_brain_mode(self):
+        mock_session, mock_query = self._make_mock_session(count=1)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            _report_and_prune_failed_files(["docs/broken.md"], project=None)
+
+        # Only the file_path filter — no project scoping applied.
+        assert mock_query.filter.call_count == 1
+
+    def test_multiple_failed_paths_all_reported(self):
+        mock_session, _ = self._make_mock_session(count=1)
+
+        def fake_db_session():
+            yield mock_session
+
+        with patch("database.session.db_session", fake_db_session):
+            result = _report_and_prune_failed_files(["docs/a.md", "docs/b.md"])
+
+        assert result == {"docs/a.md": 1, "docs/b.md": 1}
+
+
+class TestStaleRowsRetainedInFullRun:
+    """End-to-end `main()` runs asserting the summary reports
+    `stale_rows_retained` per failed path, and that `--prune-failed` (with
+    its `--dry-run` variant) is respected.
+    """
+
+    def _make_mock_session(self, count: int = 0, deleted: int = 0):
+        """A session mock supporting both the incremental-skip chain
+        (filter/filter_by/order_by/first) and the stale-rows chain
+        (filter/count/delete) used by `_report_and_prune_failed_files`."""
+        mock_query = MagicMock()
+        mock_query.filter.return_value = mock_query
+        mock_query.filter_by.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.first.return_value = None
+        mock_query.count.return_value = count
+        mock_query.delete.return_value = deleted
+        mock_session = MagicMock()
+        mock_session.query.return_value = mock_query
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        return mock_session, mock_query
+
+    def _build_corpus(self, tmp_path):
+        # Only the malformed file — a well-formed sibling would also route
+        # through the normal upsert's own delete-then-insert, muddying the
+        # delete-call assertions this class makes about the quarantine path
+        # specifically. Coverage that a well-formed sibling keeps indexing
+        # alongside a malformed one already lives in TestParseFailureHandling.
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+        return docs
+
+    def test_malformed_file_reports_stale_rows_retained_and_keeps_rows_default(
+        self, tmp_path, caplog
+    ):
+        """(a) A file that parsed before and now fails keeps its rows (default
+        retain) and is reported with the right stale_rows_retained count."""
+        import logging
+
+        self._build_corpus(tmp_path)
+        mock_session, mock_query = self._make_mock_session(count=3)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(["--brain-path", str(tmp_path)])
+
+        assert result == 1
+        assert "stale_rows_retained=3" in caplog.text
+        assert "broken.md" in caplog.text
+        # Default is retain — no delete issued for the stale-rows quarantine.
+        mock_query.delete.assert_not_called()
+
+    def test_never_indexed_file_reports_stale_rows_retained_zero(self, tmp_path, caplog):
+        """(d) A file that never indexed before reports stale_rows_retained: 0."""
+        import logging
+
+        self._build_corpus(tmp_path)
+        mock_session, _mock_query = self._make_mock_session(count=0)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(["--brain-path", str(tmp_path)])
+
+        assert result == 1
+        assert "stale_rows_retained=0" in caplog.text
+
+    def test_prune_failed_deletes_the_retained_rows(self, tmp_path):
+        """(b) The same run under --prune-failed deletes the quarantined rows."""
+        self._build_corpus(tmp_path)
+        mock_session, mock_query = self._make_mock_session(count=3, deleted=3)
+
+        def fake_db_session():
+            yield mock_session
+
+        mock_embed = MagicMock()
+        mock_embed.embed_batch.return_value = [[0.1] * 1024]
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("services.embedding_service.EmbeddingService", return_value=mock_embed),
+        ):
+            result = main(["--brain-path", str(tmp_path), "--prune-failed"])
+
+        assert result == 1
+        mock_query.delete.assert_called_once()
+        mock_session.commit.assert_called()
+
+    def test_prune_failed_dry_run_reports_without_deleting(self, tmp_path, caplog):
+        """(c) --prune-failed --dry-run reports what would be deleted and
+        deletes nothing. --dry-run never parses file bodies (it only lists
+        the already-collected corpus), so the failure exercised here is a
+        collection-time one — the sub-repo docs/ lane, same as the existing
+        dry-run collection-failure coverage in TestParseFailureHandling."""
+        import logging
+
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "docs" / "career.md").write_text("## S\nContent.", encoding="utf-8")
+
+        leaf_docs = tmp_path / "leaf" / "docs"
+        leaf_docs.mkdir(parents=True)
+        (leaf_docs / "broken.md").write_text(_MALFORMED_YAML, encoding="utf-8")
+
+        brain_toml = _TEST_BRAIN_TOML + (
+            '\n[[repos]]\nslug = "leaf"\ntier = "_root"\nrepo_path = "leaf"\n'
+        )
+        (tmp_path / "brain.toml").write_text(brain_toml, encoding="utf-8")
+
+        mock_session, mock_query = self._make_mock_session(count=2)
+
+        def fake_db_session():
+            yield mock_session
+
+        with (
+            patch("database.session.db_session", fake_db_session),
+            caplog.at_level(logging.WARNING, logger="index_brain"),
+        ):
+            result = main(
+                ["--brain-path", str(tmp_path), "--dry-run", "--prune-failed"]
+            )
+
+        assert result == 1
+        mock_query.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+        assert "stale_rows_retained=2" in caplog.text
         assert "broken.md" in caplog.text
 
 
