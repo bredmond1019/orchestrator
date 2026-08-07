@@ -417,4 +417,64 @@ class TestSurfaceThreading:
         assert row.surface == "cli"
         assert row.hybrid is False
         assert row.via_mix == {"exact-id": 1}
+
+
+# ---------------------------------------------------------------------------
+# OR.2.E task 1 — the five new mining-capture columns
+# ---------------------------------------------------------------------------
+
+
+class TestMiningCaptureColumns:
+    """`k`, `corpus`, `embedding_model`, `filters`, `top_scores` — all
+    nullable, all SQLite-compilable, added with no backfill (see the
+    migration under `app/alembic/versions/`)."""
+
+    NEW_COLUMNS = ("k", "corpus", "embedding_model", "filters", "top_scores")
+
+    def test_table_creates_under_sqlite_in_memory_without_docker(self):
+        """The five new columns must not break the in-memory SQLite suite —
+        the whole point of keeping them JSON/String/Integer rather than a
+        Postgres-only type."""
+        engine, _session_factory, _fake_db_session = _fake_sqlite_db_session_factory()
+        try:
+            columns = {c.name for c in RetrievalQuery.__table__.columns}
+            for name in self.NEW_COLUMNS:
+                assert name in columns
+        finally:
+            engine.dispose()
+
+    def test_new_columns_are_nullable_on_the_model(self):
+        for name in self.NEW_COLUMNS:
+            column = RetrievalQuery.__table__.columns[name]
+            assert column.nullable is True, f"{name} must be nullable"
+
+    def test_new_column_types_are_sqlite_compilable(self):
+        """Never Postgres ARRAY — mirrors b8c9d0e1f2a3's deliberate choice."""
+        from sqlalchemy import JSON, Integer, String
+
+        table = RetrievalQuery.__table__
+        assert isinstance(table.columns["k"].type, Integer)
+        assert isinstance(table.columns["corpus"].type, String)
+        assert isinstance(table.columns["embedding_model"].type, String)
+        assert isinstance(table.columns["filters"].type, JSON)
+        assert isinstance(table.columns["top_scores"].type, JSON)
+
+    def test_existing_row_reads_null_for_all_five_new_columns(self, query_log_db):
+        """A row written without the new fields (mirroring an existing,
+        pre-migration row) must read NULL for all five — no fabricated
+        backfill."""
+        session = query_log_db()
+        row = RetrievalQuery(
+            query="pre-existing query",
+            surface="cli",
+            hybrid=False,
+            result_count=0,
+            abstained=False,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        for name in self.NEW_COLUMNS:
+            assert getattr(row, name) is None
+        session.close()
         session.close()

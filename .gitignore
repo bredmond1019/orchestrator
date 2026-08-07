@@ -113,6 +113,7 @@ app/alembic/versions/*
 !app/alembic/versions/*_add_authored_at_to_brain_documents.py
 !app/alembic/versions/*_add_embedding_model_to_brain_documents_and_content_chunks.py
 !app/alembic/versions/*_create_retrieval_queries_table.py
+!app/alembic/versions/*_add_mining_capture_columns_to_retrieval_queries.py
 
 # Playground
 playground/*.png
