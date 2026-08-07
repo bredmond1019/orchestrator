@@ -1654,16 +1654,27 @@ class TestByteIdenticalRankingRegression:
     *what* it computes.
 
     Score formula (unchanged): ``(1 - distance) * title_weight + kw_boost``,
-    no decay (no ``authored_at`` on any fixture candidate), stable-sorted
-    descending. Hand-derived expectations:
+    where ``kw_boost = _KW_WEIGHT * ts_rank``, no decay (no ``authored_at``
+    on any fixture candidate), stable-sorted descending. Expected scores and
+    ordering are derived from the live ``_KW_WEIGHT`` below rather than
+    hard-coded (``OR.ticket.retrieval-ranking-and-abstain`` task 4 —
+    the same de-literalization ``OR.0.B`` applied to ``_MAX_PER_FILE``),
+    so this test tracks the constant instead of pinning its old value
+    (``5.0``, giving ``kw_boost = 0.25``).
 
-    - A (semantic, distance=0.1, no keyword hit):      (1-0.1)*1 + 0    = 0.90
-    - E (keyword,  distance=0.4, kw_rank=0.05):         (1-0.4)*1 + 0.25 = 0.85
-    - D (structural, distance=0.2, no keyword hit):     (1-0.2)*1 + 0    = 0.80
-    - B (semantic, distance=0.3, no keyword hit):       (1-0.3)*1 + 0    = 0.70
+    - A (semantic, distance=0.1, no keyword hit):        (1-0.1)*1 + 0
+    - E (keyword,  distance=0.4, kw_rank=0.05):           (1-0.4)*1 + kw_boost
+    - D (structural, distance=0.2, no keyword hit):       (1-0.2)*1 + 0
+    - B (semantic, distance=0.3, no keyword hit):         (1-0.3)*1 + 0
+
+    At the live ``_KW_WEIGHT`` (0.5), ``kw_boost = 0.025`` and E's score
+    (0.625) falls below D (0.80) and B (0.70) in the golden order — this
+    fixture is exactly what changes when the constant does; see
+    ``test_kw_weight_constant_is_the_knob`` below for the falsifiability
+    guard.
     """
 
-    def test_full_pipeline_unscoped_brain_query_matches_golden_order(self):
+    def _run_golden_pipeline(self) -> list[dict]:
         semantic_candidates = [
             _make_candidate(dist=0.1, candidate_id="A", file_path="a.md"),
             _make_candidate(dist=0.3, candidate_id="B", file_path="b.md"),
@@ -1695,10 +1706,21 @@ class TestByteIdenticalRankingRegression:
             retrieval_engine, "_keyword_search", return_value=keyword_matches
         ):
             MockEmb.return_value.embed_text.return_value = [0.1] * 1024
-            result = retrieval_engine.retrieve("q", corpus="brain", k=4)
+            return retrieval_engine.retrieve("q", corpus="brain", k=4)
 
-        assert [r["id"] for r in result] == ["A", "E", "D", "B"]
-        golden_scores = {"A": 0.90, "E": 0.85, "D": 0.80, "B": 0.70}
+    def test_full_pipeline_unscoped_brain_query_matches_golden_order(self):
+        kw_boost = retrieval_engine._KW_WEIGHT * 0.05
+        golden_scores = {
+            "A": (1 - 0.1) * 1 + 0.0,
+            "E": (1 - 0.4) * 1 + kw_boost,
+            "D": (1 - 0.2) * 1 + 0.0,
+            "B": (1 - 0.3) * 1 + 0.0,
+        }
+        expected_order = sorted(golden_scores, key=lambda k: golden_scores[k], reverse=True)
+
+        result = self._run_golden_pipeline()
+
+        assert [r["id"] for r in result] == expected_order
         for r in result:
             assert r["score"] == pytest.approx(golden_scores[r["id"]])
         assert {r["id"]: r["via"] for r in result} == {
@@ -1707,3 +1729,23 @@ class TestByteIdenticalRankingRegression:
             "D": "structural",
             "B": "semantic",
         }
+
+    def test_kw_weight_constant_is_the_knob(self, monkeypatch):
+        """Restoring ``_KW_WEIGHT`` to its old 5.0 value restores the old
+        ordering (E outranking D and B via its keyword boost).
+
+        Falsifiability guard: proves the constant is live config feeding the
+        fusion formula and not dead code — mirrors
+        ``test_max_per_file_constant_is_the_knob``. Also proves the guard
+        itself is meaningful: it fails if the fusion formula stops
+        multiplying ``ts_rank`` by ``_KW_WEIGHT`` (i.e. if ``kw_boost`` were
+        hard-coded instead of derived from the constant, this test would
+        not observe any ordering change and would fail).
+        """
+        monkeypatch.setattr(retrieval_engine, "_KW_WEIGHT", 5.0)
+        result = self._run_golden_pipeline()
+        assert [r["id"] for r in result] == ["A", "E", "D", "B"]
+
+        monkeypatch.setattr(retrieval_engine, "_KW_WEIGHT", 0.5)
+        result = self._run_golden_pipeline()
+        assert [r["id"] for r in result] == ["A", "D", "B", "E"]
