@@ -135,6 +135,14 @@ _DOC_DECAY_FACTOR: float = 0.99
 # neutral, so a future block can still use the signal.
 _SECTION_TITLE_WEIGHT: float = 1.0
 
+# Number of top-ranked chunk scores averaged by compute_retrieval_confidence.
+# The single top score alone can never fall below sigmoid(0) = 0.5 once any
+# match is found, and an out-of-domain query can still produce one spuriously
+# strong hit while the rest of the result set is weak (measured:
+# neg-02-jupiter-moons top-1 0.7684 vs mean-of-top-5 0.4800) -- the window
+# mean discriminates real corpus coverage where the single top score cannot.
+_CONFIDENCE_WINDOW: int = 5
+
 
 def _session_scope(session=None):
     """Return a context manager yielding a SQLAlchemy session.
@@ -203,24 +211,28 @@ def _row_to_candidate(row, distance: float, config: dict, via: str = "semantic")
 
 
 def compute_retrieval_confidence(chunks: list[dict]) -> float:
-    """Squash the top fused retrieval score into a [0, 1] confidence signal.
+    """Squash the top-window mean fused retrieval score into a [0, 1] signal.
 
-    Uses a logistic squash (``1 / (1 + e^-score)``) on the single
-    highest-scoring chunk's fused ``score`` — monotonic in that score by
-    construction, so a stronger top match always yields a higher (or
-    equal) confidence. Chosen over max-score normalization because it
-    needs no corpus-wide max to divide by (which would make the signal
-    depend on the rest of the result set, not just the top hit) and it
-    naturally saturates towards 1.0 for very strong matches without a
-    hardcoded cap.
+    Uses a logistic squash (``1 / (1 + e^-mean)``) on the mean of the
+    ``_CONFIDENCE_WINDOW`` highest-scoring chunks' fused ``score`` — monotonic
+    in that mean by construction, so a stronger window mean always yields a
+    higher (or equal) confidence. Chosen over a bare top-1 score because an
+    out-of-domain query can still produce one spuriously strong hit while the
+    rest of its retrieved set is weak; the single top score can never fall
+    below sigmoid(0) = 0.5 once any match exists, so it cannot discriminate
+    those cases (measured: neg-02-jupiter-moons top-1 0.7684 vs
+    mean-of-top-5 0.4800). Chunks are assumed pre-sorted by descending score
+    (the pipeline's normal output order); only the first ``_CONFIDENCE_WINDOW``
+    entries are used, so a low-scoring 6th-plus chunk never moves the result.
 
     Returns 0.0 when ``chunks`` is empty (no retrieval signal at all) —
     the design decision 2 "zero chunks" abstain trigger downstream.
     """
     if not chunks:
         return 0.0
-    top_score = max(c["score"] for c in chunks)
-    return 1.0 / (1.0 + math.exp(-top_score))
+    window = chunks[:_CONFIDENCE_WINDOW]
+    mean_score = sum(c["score"] for c in window) / len(window)
+    return 1.0 / (1.0 + math.exp(-mean_score))
 
 
 def retrieve(  # pylint: disable=too-many-arguments,too-many-locals

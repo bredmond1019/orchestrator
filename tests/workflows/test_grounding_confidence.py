@@ -46,10 +46,23 @@ class TestComputeRetrievalConfidence:
         # monotonic, not just non-decreasing).
         assert len(set(confidences)) == len(confidences)
 
-    def test_uses_max_score_across_multiple_chunks(self):
+    def test_uses_window_mean_across_multiple_chunks(self):
+        """Confidence is the mean of the top-_CONFIDENCE_WINDOW scores, not the max."""
         chunks = [{"score": 0.1}, {"score": 3.0}, {"score": -2.0}]
-        expected = RetrieveChunksNode._compute_retrieval_confidence([{"score": 3.0}])
+        mean_score = (0.1 + 3.0 + -2.0) / 3
+        expected = RetrieveChunksNode._compute_retrieval_confidence([{"score": mean_score}])
         assert RetrieveChunksNode._compute_retrieval_confidence(chunks) == expected
+        # And it must differ from the old max-based semantics.
+        max_only = RetrieveChunksNode._compute_retrieval_confidence([{"score": 3.0}])
+        assert RetrieveChunksNode._compute_retrieval_confidence(chunks) != max_only
+
+    def test_sixth_chunk_below_window_does_not_move_result(self):
+        """A 6th, very low-scoring chunk must not affect the window-mean confidence."""
+        five_chunks = [{"score": 1.0}] * 5
+        six_chunks = five_chunks + [{"score": -100.0}]
+        without_sixth = RetrieveChunksNode._compute_retrieval_confidence(five_chunks)
+        with_sixth = RetrieveChunksNode._compute_retrieval_confidence(six_chunks)
+        assert without_sixth == with_sixth
 
     def test_zero_score_yields_one_half(self):
         assert RetrieveChunksNode._compute_retrieval_confidence([{"score": 0.0}]) == 0.5
