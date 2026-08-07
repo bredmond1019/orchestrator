@@ -78,6 +78,19 @@ class RetrievalRunReport:
     Both are `None` when unavailable — i.e. never populated pre-task-1, so
     `load_report`/`compare_to_baseline` must keep working against the 14
     pre-existing run files that lack them.
+
+    `aggregate_stats` (added by `plan-eval-statistical-honesty` task 2) is a
+    SIBLING top-level key to `aggregate` — never nested inside it, since
+    `compare_to_baseline` (`runner.py`) iterates `aggregate` as a flat
+    `dict[str, float]` and subtracts. It carries, per metric in `aggregate`,
+    an `n`/point-estimate/95%-interval/`method`/`seed` dict (see
+    `runner._aggregate_stats` and `brain.eval.stats.Interval.to_dict`) —
+    Wilson for the three proportion metrics (`recall_at_5`, `recall_at_10`,
+    `abstain_correctness`) and a seeded bootstrap for the rest (`mrr`,
+    `groundedness`, `groundedness_on_hits`). `None` when unavailable, same
+    default-`None`/emitted-as-`null` pattern as `corpus` and
+    `ranking_constants` — never populated pre-task-2, so all 15 pre-existing
+    run files keep loading and comparing unchanged.
     """
 
     generated_at: str
@@ -86,6 +99,7 @@ class RetrievalRunReport:
     aggregate: dict[str, float]
     corpus: dict | None = None
     ranking_constants: dict | None = None
+    aggregate_stats: dict | None = None
 
     @staticmethod
     def now_iso() -> str:
@@ -98,6 +112,7 @@ class RetrievalRunReport:
             "generated_at": self.generated_at,
             "case_count": self.case_count,
             "aggregate": self.aggregate,
+            "aggregate_stats": self.aggregate_stats,
             "corpus": self.corpus,
             "ranking_constants": self.ranking_constants,
             "results": [

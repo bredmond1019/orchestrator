@@ -490,8 +490,16 @@ def _print_eval_report(report_dict: dict) -> None:
             f"groundedness={case['groundedness']}"
         )
     print("-- aggregate --")
+    aggregate_stats = report_dict.get("aggregate_stats") or {}
     for metric, value in sorted(report_dict["aggregate"].items()):
-        print(f"  {metric}: {value:.4f}")
+        interval = aggregate_stats.get(metric)
+        if interval and interval.get("lo") is not None and interval.get("hi") is not None:
+            print(
+                f"  {metric}: {value:.4f}  "
+                f"[{interval['lo']:.3f}, {interval['hi']:.3f}]  n={interval['n']}"
+            )
+        else:
+            print(f"  {metric}: {value:.4f}")
 
 
 def _run_eval(args: argparse.Namespace) -> int:
