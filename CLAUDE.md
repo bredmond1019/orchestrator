@@ -178,3 +178,35 @@ Developer reference docs in `docs/`:
 | [docs/api-reference.md](docs/api-reference.md) | Precise class-level reference for every public abstraction in app/core/, app/database/, app/services/, and app/workflows/ that a developer must understand and subclass when writing a new workflow. |
 | [docs/configuration.md](docs/configuration.md) | Complete reference for every environment variable, connection string assembly, and Docker service topology so a developer can configure the stack for local development or a Docker deployment without guessing. |
 | [docs/scripts.md](docs/scripts.md) | Reference for every script in `scripts/`: setup, dev server, inspection, and the brain corpus/graph pipeline (`index_brain.py`, `load_brain_edges.py`, `query_brain.py`, the `syn` CLI). |
+
+---
+
+## Brain RAG measurement — where the data lives
+
+**`planning/retrieval-eval-runs/` is the RAG observatory. Start at its
+[`index.md`](planning/retrieval-eval-runs/index.md) before comparing any two retrieval numbers.**
+
+| Path | What it holds |
+|---|---|
+| `planning/retrieval-eval-runs/*.json` | Dated golden-set eval runs — the metric time series. Written by `syn eval`. |
+| `planning/retrieval-eval-runs/snapshots/` | Corpus + ranking constants + `brain.toml` config + gate status at a point in time |
+| `planning/retrieval-eval-runs/query-log/` | Exported `retrieval_queries` rows — **real** traffic, and the only copy that survives a DB reset |
+| `planning/artifacts/rag-diagnosis-*.md` and the other `artifacts/*.md` | The written analyses, indexed from the observatory's `index.md` |
+| `<HQ>/planning/artifacts/review/runs/<date>/census.json` | System-review census; its `retrieval`/`corpus` blocks are extra time-series points |
+
+**Rules that exist because breaking them has cost real runs:**
+
+1. **Never compare two eval runs without checking the corpus they were measured against.** Run files
+   are *not* self-describing — they record metrics but not the corpus fingerprint or the ranking
+   constants. `OR.0.C` compared a pre-prune "before" to a post-prune "after" and attributed the whole
+   delta to the wrong variable; the same trap voided `OR.0.A`'s sweep, which was measured on a corpus
+   that no longer exists.
+2. **Re-fingerprint (`brain_documents` count, `brain_edges` count, `max(indexed_at)`) immediately
+   before and after every eval run.** If any moves between a control and its arm, that pair is void.
+3. **Never modify an existing run file**, and never re-scope a golden-set case to flatter a metric —
+   factual path corrections are allowed and go in the case's `notes:` (precedent: `archive-01-rates`).
+4. **`syn eval` always writes a tracked run file.** For throwaway experiments call `run_eval()`
+   without `write_report()`.
+5. **A `python -c` one-liner silently connects to the WRONG (empty) database.** `load_dotenv()`
+   resolves `core/.env` (`DATABASE_NAME=orchestration_dev`) only when running a *script file*; with
+   `-c` it falls back to `postgres`, which has 0 brain rows. Always put diagnostics in a `.py` file.
