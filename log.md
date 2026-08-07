@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-07T08:54:20Z"
+timestamp: "2026-08-07T09:05:00Z"
 ---
 
 # log — Orchestration Repo
@@ -88,6 +88,30 @@ d5919c2 chore(harness): sync /orchestrate — no subagent block work, commit sta
 ---
 
 ## [2026-08-07]
+
+### Cleaned the fleet slate: fixed 5 corpus-gate errors and pruned 151 zombie paths
+
+- **What:** Repaired the 5 `validate-brain` errors owned by sibling lanes — engine-rs cited a
+  `doc_id` that never existed (`engine-rs-orchestration-2026-08-03-notes`; the real one is
+  `orchestrate-2026-08-03-notes`), bastiel's two orchestration-run files over-prefixed their
+  `related:` targets (`bastiel-master-plan` -> `master-plan`; the resolver adds the project prefix
+  itself), and okf-core's `okf-core-hooks-readme-diverges-from-hq-until-next-sync` carryover set both
+  `repo` and `cross_repo` when the schema allows exactly one (`21a315de`). Then verified all 151
+  `deleted_but_embedded` paths were genuinely absent from disk and pruned them: **1783 rows deleted,
+  `brain_documents` 13032 -> 11249, `deleted_but_embedded` 151 -> 0**. `validate-brain` now reports
+  **0 errors on all five flags** (graph/state/links/structure/sync).
+- **Why:** The operator confirmed all lanes had stopped and asked for the red fleet gate and the
+  zombie backlog cleared so `OR.0.C` starts from a clean slate. With the fleet quiet, the
+  don't-touch-another-lane's-repo rule no longer applied — it exists to protect in-flight work.
+- **Refs:** `planning/handoff.md` - `planning/plan-review-artifact-exclusion/tasks.md` - carryover
+  `or-0-c-exclusion-scope-and-gate-rework`
+
+**`syn stale --deep` still reports `drift: True`, and that is expected.** 76 `section_orphans` live in
+*generated* docs whose headings embed live counts (`**30/44 closed**`), so they re-orphan on every
+`emit-state` — self-reinflicting, and re-embedding them buys nothing durable. Of the 26
+`dangling_edges`, 9 are the `review/runs` refs that `OR.0.C` task 1's re-ingest will clear and 17
+point at README/index `doc_id`s absent from the corpus (structural). Carryover
+`fleet-graph-gate-red-from-sibling-lanes` was cleared as resolved.
 
 ### Re-scoped OR.0.C for a second attempt and handed off
 
