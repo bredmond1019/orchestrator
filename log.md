@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-07T16:45:00Z"
+timestamp: "2026-08-07T18:20:00Z"
 ---
 
 # log — Orchestration Repo
@@ -10,6 +10,23 @@ timestamp: "2026-08-07T16:45:00Z"
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
 ## [2026-08-07]
+
+### Planned and registered the Brain RAG quality program (OR.2.A–E)
+
+- **What:** Audited four external leads against the retrieval stack, then authored
+  `planning/plan-brain-rag-quality/{plan.md,context.md}` — a five-block program that rebuilds the
+  measurement foundation before any ranking work. Registered `OR.2.A`–`OR.2.E` in `state.json` as a
+  strictly sequential chain (`A → C → B → D → E`), two of whose four edges are serialization-only so
+  one block holds the CPU at a time. Verified Block D's six-metric table against the live run file;
+  refuted the lead claiming `groundedness` biased the ranking sweep (`mrr` was the sole objective,
+  groundedness only a pass/fail guardrail). Found `model: opus` is outside the schema vocabulary and
+  is silently normalized to `sonnet`, and corrected my own "~5 concordant flips" claim to the true 6.
+- **Why:** The golden set has 17 positive cases, so one case moves any recall metric by 5.9
+  percentage points and no metric reports a sample size or interval. Three consecutive tuning efforts
+  produced confounded numbers for that reason alone. Ranking work cannot be judged until comparison
+  is trustworthy, so the program fixes measurement first and defers fusion changes to last.
+- **Refs:** `planning/plan-brain-rag-quality/plan.md`, `planning/artifacts/rag-diagnosis-2026-08-07.md`,
+  carryover `state-json-model-vocab-has-no-opus` / `archive-displacement-experiment-deferred`
 
 ### Diagnosed the retrieval regression, fixed it, and stood up the RAG observatory
 
