@@ -11,6 +11,44 @@ timestamp: "2026-08-07T18:56:09Z"
 
 ## [run: 2026-08-07]
 
+### Shipped `OR.2.E` — query-log mining: grow the golden set from real traffic (`plan-query-log-mining`)
+
+- **What:** `/sdlc-flow` PASSED all 6 tasks, reviewed PASS in 1 attempt. Task 1 added five nullable
+  mining-capture columns (`k`, `corpus`, `embedding_model`, `filters`, `top_scores`) to
+  `RetrievalQuery` via a reversible Alembic migration, verified live against the real Postgres dev DB
+  (2833 existing rows read NULL cleanly; downgrade drops all five). Task 2 threaded those fields
+  through `log_retrieval`'s existing broad try/except, computed from `retrieval_engine.retrieve()` and
+  `retrieval.recall()`'s exact-id/semantic paths, and rendered by `syn queries`. Task 3 added
+  `app/brain/query_mining.py` — a read-time SQL aggregation (`mine_candidates`, never `get_all()`)
+  that groups logged queries, excludes `surface="eval"` traffic and verbatim golden-set queries,
+  filters singletons, and classifies survivors into abstained / low-confidence-answered /
+  confidently-wrong-suspect (the last explicitly labelled a heuristic), honoring the OR.K1
+  no-stored-rollup design constraint. Task 4 shipped `syn queries mine` as a proper subcommand — a
+  stdout-only YAML-fragment generator (plus `--json` with rationale) that never writes the golden
+  set, with an empty-log path exiting 0. Task 5 documented the mine → edit → paste → schema-test →
+  eval → promote workflow and the three candidate classes in the RAG observatory index, and noted
+  the five new columns in `docs/data-contract.md` without bumping its version (per the spec's
+  explicit non-contract ground truth). Task 6 validated end to end: full harness green (ruff clean,
+  pylint 10/10, 1581 passed / 7 skipped of 1588 collected), migration applies and reverses cleanly
+  against the real Postgres DB, `syn queries mine` against the live ~2833-row log emits zero
+  golden-set queries, `docs/data-contract.md` stays pinned at 1.6.0, and the corpus fingerprint is
+  unchanged (11533 `brain_documents` / 962 distinct `file_path` / 2295 `brain_edges`). Notable
+  decisions: the migration required a new `.gitignore` negation pattern since `app/alembic/versions/`
+  is gitignored with a per-migration whitelist; task 5's docs commits landed in two separate repos
+  (orchestrator for `docs/data-contract.md`, HQ for the observatory index, since `planning/` resolves
+  through the D46 symlink); `state.json`'s `OR.2.E` block flipped to `closed`.
+  ```
+  8e9c69e docs: update docs for plan-query-log-mining
+  48ee96d feat: implement plan-query-log-mining-task5
+  9a0b74d feat: implement plan-query-log-mining-task4
+  f0b3f63 feat: implement plan-query-log-mining-task3
+  1746daf feat: implement plan-query-log-mining-task2
+  f7a0ee3 feat: implement plan-query-log-mining-task1
+  ```
+- **Next:** `OR.W` — External-knowledge memory layer (brain half; acquisition is engine-rs EN.5.C),
+  `OR.R` — Brain-as-MCP-server, `OR.ticket.publishable-eval-report` — Emit a publishable
+  retrieval-eval report, `OR.G` — Graph-aware RAG, `OR.P` — Semantic code search.
+
 ### Shipped `OR.2.B` — statistical honesty and trustworthy comparison (`plan-eval-statistical-honesty`)
 
 - **What:** `/sdlc-flow` PASSED all 8 tasks, reviewed PASS in 1 attempt. Task 1 added
