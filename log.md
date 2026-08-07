@@ -2,12 +2,39 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-07T18:56:09Z"
+timestamp: "2026-08-07T21:17:31Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+## [2026-08-07]
+
+### Drove the Brain RAG quality chain `OR.2.A–E` to completion in one `/orchestrate` session
+
+- **What:** Ran all five blocks (`OR.2.A → C → B → D → E`) end to end and integrated each one:
+  eval plumbing + golden-set schema v2; corpus integrity at ingest (parse failure is now a real gate,
+  stale rows quarantined, reconcile axis 7); statistical honesty (Wilson + seeded-bootstrap intervals,
+  paired per-case comparison with an exact sign test, case-set/corpus/ranking fingerprint guards, a
+  guarded `baseline.json` pin, gating checks 7 → 8); the golden-set definition change (two dead cases →
+  abstains, **all six metrics reproduced their predicted values to 4dp**, new baseline promoted through
+  the guarded path); and query-log mining (`syn queries mine`, deliberately unusable output so an unread
+  paste fails loudly). Authored all five task specs up front against real source, which caught three
+  plan/reality divergences before any engine ran. Tests **1412 → 1582**; corpus **11533 / 962 / 2295
+  unchanged at every checkpoint**; zero review findings. Wrote
+  `planning/orchestration-run/{notes.md,review.md}` and ran `/close-out`, which surfaced and filled one
+  more coverage gap (the `OR.2.E` migration's reversibility was an AC that nothing asserted).
+- **Why:** Retrieval had been tuned three times and each confident conclusion turned out to be an
+  artifact — `OR.0.A` measured on a corpus that no longer exists, `OR.0.C` straddled a prune, and the
+  2026-08-06 "regression" was two cases whose target documents had been deleted. The shared cause was a
+  17-positive-case golden set with no sample size and no intervals. Measurement had to become
+  trustworthy before any ranking change could be judged, so ranking was deliberately deferred to last —
+  and is now the natural next block.
+- **Refs:** `planning/orchestration-run/review.md` · `planning/orchestration-run/notes.md` ·
+  `planning/plan-brain-rag-quality/lane-log.jsonl` ·
+  `planning/artifacts/golden-set-definition-change-2026-08-07.md` · carryover
+  `ingest-gate-now-fails-on-malformed-frontmatter` / `golden-set-is-still-23-cases`
 
 ## [run: 2026-08-07]
 
