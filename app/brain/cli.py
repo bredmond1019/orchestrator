@@ -276,7 +276,13 @@ def _run_pulse(args: argparse.Namespace) -> int:
 
 
 def _run_embed(args: argparse.Namespace) -> int:
-    """Execute `syn embed` and print its result; return the exit code."""
+    """Execute `syn embed` and print its result; return the exit code.
+
+    Non-zero whenever `embed_paths`'s `success` is `False` — `index_brain`
+    reported a parse/embed/DB failure — not just on a raised exception
+    (OR.2.C task 3: previously `index_brain.main()`'s exit code never reached
+    `syn embed`'s own).
+    """
     from brain.ops import embed_paths  # pylint: disable=import-outside-toplevel
 
     try:
@@ -288,12 +294,20 @@ def _run_embed(args: argparse.Namespace) -> int:
         print(json.dumps(result))
     else:
         print(f"embedded: {args.file}")
+        if not result["success"]:
+            for err in result["errors"]:
+                print(f"  {err}")
 
-    return 0
+    return 0 if result["success"] else 1
 
 
 def _run_ingest(args: argparse.Namespace) -> int:
-    """Execute `syn ingest` and print its result; return the exit code."""
+    """Execute `syn ingest` and print its result; return the exit code.
+
+    Non-zero whenever `ingest_dir`'s `success` is `False` (see `_run_embed`
+    — `ingest_dir` has no `index_brain.main()` call site of its own; it
+    forwards `embed_paths`'s result).
+    """
     from brain.ops import ingest_dir  # pylint: disable=import-outside-toplevel
 
     try:
@@ -305,8 +319,11 @@ def _run_ingest(args: argparse.Namespace) -> int:
         print(json.dumps(result))
     else:
         print(f"ingested: {len(result['ingested'])} file(s)")
+        if not result["success"]:
+            for err in result["errors"]:
+                print(f"  {err}")
 
-    return 0
+    return 0 if result["success"] else 1
 
 
 def _run_prune(args: argparse.Namespace) -> int:
@@ -323,12 +340,21 @@ def _run_prune(args: argparse.Namespace) -> int:
     else:
         suffix = " (dry-run)" if result["dry_run"] else ""
         print(f"pruned: {len(result['pruned'])} path(s){suffix}")
+        if not result["success"]:
+            for err in result["errors"]:
+                print(f"  {err}")
 
-    return 0
+    return 0 if result["success"] else 1
 
 
 def _run_refresh(args: argparse.Namespace) -> int:
-    """Execute `syn refresh` and print its result; return the exit code."""
+    """Execute `syn refresh` and print its result; return the exit code.
+
+    Non-zero whenever the `documents` half's `success` is `False` — see
+    `_run_embed`. The `edges` half has no analogous failure mode reported
+    here (`refresh_edges` raises on a real failure, caught by the `except`
+    above like any other exception).
+    """
     from brain.ops import refresh  # pylint: disable=import-outside-toplevel
 
     try:
@@ -340,8 +366,11 @@ def _run_refresh(args: argparse.Namespace) -> int:
         print(json.dumps(result))
     else:
         print(f"refresh: {result}")
+        if not result["documents"]["success"]:
+            for err in result["documents"]["errors"]:
+                print(f"  {err}")
 
-    return 0
+    return 0 if result["documents"]["success"] else 1
 
 
 def _run_stale(args: argparse.Namespace) -> int:
