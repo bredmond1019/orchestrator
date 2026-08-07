@@ -314,9 +314,10 @@ def test_all_pre_existing_run_files_still_load_and_compare():
         baseline = load_report(run_file)
         assert "aggregate_stats" not in baseline
         current = {"aggregate": dict(baseline["aggregate"])}
-        deltas, regressed = compare_to_baseline(current, baseline)
+        deltas, regressed, verdict = compare_to_baseline(current, baseline)
         assert isinstance(deltas, dict)
         assert regressed is False
+        assert isinstance(verdict, dict)
 
 
 # ---------------------------------------------------------------------------
@@ -447,10 +448,13 @@ def test_load_report_and_compare_to_baseline_work_on_pre_existing_run_files():
     current = {"aggregate": dict(baseline["aggregate"])}
     current["aggregate"]["recall_at_5"] = 1.0
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is False
     assert deltas["recall_at_5"] == pytest.approx(1.0 - baseline["aggregate"]["recall_at_5"])
+    # `current` here has no per-case `results` at all — the paired verdict
+    # can't be computed and must say so rather than guessing.
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
 
 
 # ---------------------------------------------------------------------------
@@ -595,10 +599,145 @@ def test_new_aggregate_key_does_not_break_an_older_baseline_file():
         }
     }
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is False
     assert "groundedness_on_hits" not in deltas
+    assert "groundedness_on_hits" not in verdict
+
+
+# ---------------------------------------------------------------------------
+# compare_to_baseline's paired verdict (plan-eval-statistical-honesty task 3)
+# ---------------------------------------------------------------------------
+
+
+def _case_row(case_id: str, *, recall_at_5: float, groundedness: float) -> dict:
+    """A minimal per-case `results` row shaped like `RetrievalRunReport.to_dict()`."""
+    return {
+        "case_id": case_id,
+        "recall_at_5": recall_at_5,
+        "recall_at_10": recall_at_5,
+        "reciprocal_rank": recall_at_5,
+        "abstain_correct": True,
+        "groundedness": groundedness,
+        "matched_docs": ["doc"] if recall_at_5 else [],
+    }
+
+
+def test_compare_to_baseline_verdict_names_flips_and_is_significant_at_6_0():
+    """Six of six positive cases flip `recall_at_5` from 1 to 0 (b=6, c=0,
+    p=0.03125) — past the 5-vs-6 significance boundary."""
+    case_ids = [f"c{i}" for i in range(6)]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 0.0},
+        "results": [_case_row(c, recall_at_5=0.0, groundedness=0.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+    entry = verdict["recall_at_5"]
+
+    assert entry["pairable"] is True
+    assert sorted(entry["flips_to_worse"]) == case_ids
+    assert entry["flips_to_better"] == []
+    assert entry["sign_test_p"] == pytest.approx(0.03125)
+    assert entry["classification"] == "regressed-significant"
+
+
+def test_compare_to_baseline_verdict_is_within_noise_at_5_0():
+    """Five of five positive cases flip worse (b=5, c=0, p=0.0625) — just
+    short of significance."""
+    case_ids = [f"c{i}" for i in range(5)]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 0.0},
+        "results": [_case_row(c, recall_at_5=0.0, groundedness=0.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+    entry = verdict["recall_at_5"]
+
+    assert entry["sign_test_p"] == pytest.approx(0.0625)
+    assert entry["classification"] == "regressed-within-noise"
+
+
+def test_compare_to_baseline_verdict_flat_when_no_case_flips():
+    case_ids = [f"c{i}" for i in range(4)]
+    baseline = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=1.0) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["classification"] == "flat"
+    assert verdict["recall_at_5"]["flips_to_worse"] == []
+    assert verdict["recall_at_5"]["flips_to_better"] == []
+
+
+def test_compare_to_baseline_verdict_continuous_metric_uses_paired_bootstrap():
+    """`groundedness` is continuous — its verdict carries a `paired_delta`
+    bootstrap interval over per-case deltas, not a sign test."""
+    case_ids = [f"c{i}" for i in range(8)]
+    baseline = {
+        "aggregate": {"groundedness": 0.5},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=0.9) for c in case_ids],
+    }
+    current = {
+        "aggregate": {"groundedness": 0.1},
+        "results": [_case_row(c, recall_at_5=1.0, groundedness=0.1) for c in case_ids],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+    entry = verdict["groundedness"]
+
+    assert entry["pairable"] is True
+    assert entry["sign_test_p"] is None
+    assert entry["paired_delta"] is not None
+    assert entry["paired_delta"]["method"] == "bootstrap"
+    assert entry["paired_delta"]["point"] == pytest.approx(0.1 - 0.9)
+    assert entry["classification"] == "regressed-significant"
+
+
+def test_compare_to_baseline_verdict_never_reports_improvement_when_case_ids_differ():
+    baseline = {
+        "aggregate": {"recall_at_5": 0.5},
+        "results": [_case_row("a", recall_at_5=1.0, groundedness=1.0)],
+    }
+    current = {
+        "aggregate": {"recall_at_5": 1.0},
+        "results": [_case_row("b", recall_at_5=1.0, groundedness=1.0)],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert verdict["recall_at_5"]["pairable"] is False
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
+
+
+def test_compare_to_baseline_iterates_baseline_keys_for_verdict_too():
+    """A `verdict` entry is only ever computed for keys present in the
+    BASELINE's aggregate — mirrors `deltas`' existing contract, so a run
+    with a new metric key never produces a spurious verdict for it either."""
+    baseline = {"aggregate": {"recall_at_5": 0.5}, "results": []}
+    current = {
+        "aggregate": {"recall_at_5": 0.5, "groundedness_on_hits": 0.9},
+        "results": [],
+    }
+
+    _, _, verdict = compare_to_baseline(current, baseline)
+
+    assert set(verdict) == {"recall_at_5"}
 
 
 def test_run_eval_forwards_case_scope_as_project_filter():
@@ -654,11 +793,12 @@ def test_compare_to_baseline_no_regression_when_metrics_improve():
     baseline = {"aggregate": {"recall_at_5": 0.5, "mrr": 0.5}}
     current = {"aggregate": {"recall_at_5": 0.8, "mrr": 0.6}}
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is False
     assert deltas["recall_at_5"] == pytest.approx(0.3)
     assert deltas["mrr"] == pytest.approx(0.1)
+    assert isinstance(verdict, dict)
 
 
 def test_compare_to_baseline_flags_seeded_regression():
@@ -666,15 +806,30 @@ def test_compare_to_baseline_flags_seeded_regression():
     # Seeded regression: recall_at_5 drops.
     current = {"aggregate": {"recall_at_5": 0.4, "mrr": 0.6, "groundedness": 0.7}}
 
-    deltas, regressed = compare_to_baseline(current, baseline)
+    deltas, regressed, verdict = compare_to_baseline(current, baseline)
 
     assert regressed is True
     assert deltas["recall_at_5"] == pytest.approx(-0.4)
+    # No per-case `results` on either side — the strict-sign tripwire still
+    # fires, but the paired verdict can't be computed and says so.
+    assert verdict["recall_at_5"]["classification"] == "incomparable"
 
 
 def test_cli_eval_baseline_exits_non_zero_on_seeded_regression():
-    """End-to-end through `syn eval --baseline` (CLI dispatch, everything
-    else patched): a seeded regression must produce a non-zero exit code."""
+    """End-to-end through `syn eval --baseline --strict` (CLI dispatch,
+    everything else patched): a seeded regression must produce a non-zero
+    exit code.
+
+    Amendment (plan-eval-statistical-honesty task 3): both fixture reports
+    carry `results: []` — no per-case data — so the new paired verdict
+    cannot classify any metric as `regressed-significant` (an empty case
+    set is `incomparable`, never a false "significant"). This test now
+    exercises `--strict`, which restores the pre-task-3 strict-sign
+    tripwire: exit 1 on ANY metric decrease, exactly the semantics this
+    test originally pinned. See
+    `test_cli_eval_baseline_exits_one_when_regressed_significant` below for
+    the new paired, statistically-significant path.
+    """
     from brain.cli import main  # pylint: disable=import-outside-toplevel
 
     good_report = {
@@ -708,9 +863,101 @@ def test_cli_eval_baseline_exits_non_zero_on_seeded_regression():
     ), patch("brain.eval.write_report", return_value=Path("/dev/null")), patch(
         "brain.eval.runner.load_report", return_value=good_report
     ):
+        code = main(["eval", "--baseline", "/fake/baseline.json", "--strict", "--json"])
+
+    assert code == 1
+
+
+def _paired_case_results(case_ids: list[str], *, recall_at_5: float) -> list[dict]:
+    """Minimal per-case `results` rows for the paired-verdict CLI tests
+    below — only the fields `_case_values_for_metric` reads for
+    `recall_at_5` are populated with meaningful values."""
+    return [
+        {
+            "case_id": case_id,
+            "recall_at_5": recall_at_5,
+            "recall_at_10": recall_at_5,
+            "reciprocal_rank": recall_at_5,
+            "abstain_correct": True,
+            "groundedness": recall_at_5,
+            "matched_docs": ["doc"] if recall_at_5 else [],
+        }
+        for case_id in case_ids
+    ]
+
+
+def test_cli_eval_baseline_exits_one_when_regressed_significant():
+    """Six paired cases flip `recall_at_5` from 1 to 0 (b=6, c=0) — the
+    exact two-sided sign test gives p=0.03125, past the 5-vs-6 significance
+    boundary — so `syn eval --baseline` (no `--strict` needed) must exit 1."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    case_ids = [f"case-{i}" for i in range(6)]
+    good_report = {
+        "generated_at": "2026-08-01T00-00-00Z",
+        "case_count": 6,
+        "aggregate": {"recall_at_5": 1.0},
+        "results": _paired_case_results(case_ids, recall_at_5=1.0),
+    }
+    regressed_report_obj = type(
+        "FakeReport",
+        (),
+        {
+            "to_dict": lambda self: {
+                "generated_at": "2026-08-01T00-01-00Z",
+                "case_count": 6,
+                "aggregate": {"recall_at_5": 0.0},
+                "results": _paired_case_results(case_ids, recall_at_5=0.0),
+            }
+        },
+    )()
+
+    with patch("brain.eval.load_cases", return_value=[]), patch(
+        "brain.eval.run_eval", return_value=regressed_report_obj
+    ), patch("brain.eval.write_report", return_value=Path("/dev/null")), patch(
+        "brain.eval.runner.load_report", return_value=good_report
+    ):
         code = main(["eval", "--baseline", "/fake/baseline.json", "--json"])
 
     assert code == 1
+
+
+def test_cli_eval_baseline_exits_zero_with_warning_when_regressed_within_noise():
+    """Five paired cases flip `recall_at_5` from 1 to 0 (b=5, c=0) — the
+    exact sign test gives p=0.0625, just short of significance — so `syn
+    eval --baseline` must exit 0 (regressed-within-noise), not 1, and must
+    print a warning naming the metric."""
+    from brain.cli import main  # pylint: disable=import-outside-toplevel
+
+    case_ids = [f"case-{i}" for i in range(5)]
+    good_report = {
+        "generated_at": "2026-08-01T00-00-00Z",
+        "case_count": 5,
+        "aggregate": {"recall_at_5": 1.0},
+        "results": _paired_case_results(case_ids, recall_at_5=1.0),
+    }
+    regressed_report_obj = type(
+        "FakeReport",
+        (),
+        {
+            "to_dict": lambda self: {
+                "generated_at": "2026-08-01T00-01-00Z",
+                "case_count": 5,
+                "aggregate": {"recall_at_5": 0.0},
+                "results": _paired_case_results(case_ids, recall_at_5=0.0),
+            }
+        },
+    )()
+
+    with patch("brain.eval.load_cases", return_value=[]), patch(
+        "brain.eval.run_eval", return_value=regressed_report_obj
+    ), patch("brain.eval.write_report", return_value=Path("/dev/null")), patch(
+        "brain.eval.runner.load_report", return_value=good_report
+    ):
+        # Human mode (not --json) so the warning line is checked via stdout.
+        code = main(["eval", "--baseline", "/fake/baseline.json"])
+
+    assert code == 0
 
 
 def test_cli_eval_without_baseline_exits_zero():

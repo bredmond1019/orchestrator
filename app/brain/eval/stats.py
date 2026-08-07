@@ -19,6 +19,11 @@ Two estimators live here:
   local `random.Random(seed)` instance — never the module-level `random` —
   so two calls with the same seed are byte-identical regardless of what any
   other caller in the process has done to global random state.
+- `exact_sign_test` — the EXACT two-sided binomial sign test on discordant
+  paired counts (`b` flipped worse, `c` flipped better), used by
+  `runner.compare_to_baseline`'s paired per-case comparison. Not the normal
+  approximation: the 5-vs-6 boundary (p=0.0625 vs p=0.03125) is the whole
+  regression gate, and an approximation would blur exactly that boundary.
 """
 
 from __future__ import annotations
@@ -125,3 +130,33 @@ def bootstrap_mean_interval(
     hi = means[hi_idx]
 
     return Interval(point=point, lo=lo, hi=hi, n=n, method="bootstrap", seed=seed)
+
+
+def exact_sign_test(b: int, c: int) -> float:
+    """Exact two-sided binomial sign test on `b` (flipped worse) vs. `c`
+    (flipped better) discordant pairs; ties (concordant, unchanged pairs)
+    are excluded before calling this — same convention the classic sign
+    test uses.
+
+    `n = b + c` discordant pairs, `k = min(b, c)`; under the null (each
+    discordant pair is a fair coin flip) the two-sided p-value is
+    `min(1.0, 2 * sum_{i=0}^{k} C(n, i) * 0.5**n)`. `n == 0` (no discordant
+    pairs at all) returns `1.0` — nothing to test.
+
+    Reproduces exactly (pinned as fixtures in `tests/brain/test_eval_stats.py`
+    and the block's Acceptance Criteria table): (b=1,c=0)->1.00000,
+    (3,0)->0.25000, (5,0)->0.06250, (6,0)->0.03125, (7,0)->0.01562,
+    (5,1)->0.21875, (4,2)->0.68750, (0,0)->1.00000. The 5-vs-6 boundary
+    (0.0625 vs 0.03125) is deliberately NOT approximated with a normal
+    approximation — that boundary is the whole regression gate.
+    """
+    if b < 0 or c < 0:
+        raise ValueError(f"b={b}, c={c} must both be non-negative")
+
+    n = b + c
+    if n == 0:
+        return 1.0
+
+    k = min(b, c)
+    tail = sum(math.comb(n, i) for i in range(k + 1)) * (0.5**n)
+    return min(1.0, 2 * tail)

@@ -37,6 +37,24 @@ _BOOTSTRAP_SEEDS = {
     "groundedness_on_hits": 2,
 }
 
+# Separate, still-distinct seeds for `compare_to_baseline`'s PAIRED bootstrap
+# over per-case deltas (task 3) — deliberately not reused from
+# `_BOOTSTRAP_SEEDS` above so the two resample sequences (one over raw
+# per-case values, one over paired deltas between two runs) can never be
+# mistaken for each other; the exact values carry no other meaning.
+_PAIRED_BOOTSTRAP_SEEDS = {
+    "mrr": 10,
+    "groundedness": 11,
+    "groundedness_on_hits": 12,
+}
+
+# Metrics whose per-case reading is a 0/1 outcome — paired via the exact
+# sign test on discordant flips. Everything else in `aggregate` is treated
+# as continuous and paired via a bootstrap over per-case deltas.
+_PROPORTION_METRICS = frozenset({"recall_at_5", "recall_at_10", "abstain_correctness"})
+
+_SIGNIFICANCE_ALPHA = 0.05
+
 # app/brain/eval/runner.py -> app/brain/eval -> app/brain -> app -> repo root
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -302,14 +320,177 @@ def load_report(path: str | Path) -> dict:
         return json.load(handle)
 
 
-def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float], bool]:
-    """Signed per-metric delta of `current`'s aggregate vs. `baseline`'s.
+def _case_values_for_metric(results: list[dict], metric: str) -> dict[str, float]:
+    """Per-case readings for `metric`, keyed by `case_id`, restricted to the
+    cases where the metric is actually defined — the same denominator
+    `_aggregate`/`_aggregate_stats` use, read from each case's `results`
+    dict rather than assumed.
 
-    Returns `(deltas, regressed)` — `deltas[metric] = current - baseline`
-    (positive is improvement, every metric here is higher-is-better) and
-    `regressed` is True iff any metric strictly decreased. Shaped like the
-    deleted `app/evals/gate.py::gate_change` comparison; not imported from
-    it (OR.X2 removed that module).
+    `abstain_correctness` is defined on every case (its bool is never
+    `None`). `recall_at_5`/`recall_at_10`/`mrr` (`reciprocal_rank`) are
+    defined on positive cases only. `groundedness` is defined wherever the
+    scorer set it (positive cases); `groundedness_on_hits` further
+    restricts to cases whose `matched_docs` is non-empty.
+    """
+    field_by_metric = {
+        "recall_at_5": "recall_at_5",
+        "recall_at_10": "recall_at_10",
+        "mrr": "reciprocal_rank",
+        "groundedness": "groundedness",
+        "groundedness_on_hits": "groundedness",
+    }
+
+    values: dict[str, float] = {}
+    for result in results:
+        case_id = result.get("case_id")
+        if case_id is None:
+            continue
+
+        if metric == "abstain_correctness":
+            values[case_id] = 1.0 if result.get("abstain_correct") else 0.0
+            continue
+
+        field_name = field_by_metric.get(metric)
+        if field_name is None:
+            # An unrecognized metric key (e.g. a future addition) — fall
+            # back to reading it directly, same permissive contract
+            # `compare_to_baseline`'s flat-delta path already has.
+            raw = result.get(metric)
+        else:
+            raw = result.get(field_name)
+
+        if raw is None:
+            continue
+        if metric == "groundedness_on_hits" and not result.get("matched_docs"):
+            continue
+        values[case_id] = float(raw)
+
+    return values
+
+
+def _unpairable_verdict() -> dict:
+    """The `verdict` entry for a metric with no usable per-case data on one
+    or both sides, or whose paired case-id sets don't match."""
+    return {
+        "pairable": False,
+        "n": 0,
+        "flips_to_worse": None,
+        "flips_to_better": None,
+        "sign_test_p": None,
+        "paired_delta": None,
+        "classification": "incomparable",
+    }
+
+
+def _classify_sign(worse: int, better: int, p_value: float) -> str:
+    """Classification for a proportion metric's discordant-flip counts."""
+    if worse == better:
+        # Includes (0, 0) — genuinely nothing moved — and symmetric
+        # flip counts, which cancel by construction.
+        return "flat"
+    significant = p_value < _SIGNIFICANCE_ALPHA
+    if worse > better:
+        return "regressed-significant" if significant else "regressed-within-noise"
+    return "improved-significant" if significant else "improved-within-noise"
+
+
+def _classify_continuous(interval: dict) -> str:
+    """Classification for a continuous metric's paired-bootstrap delta
+    interval. Deliberately never keys on interval OVERLAP between the two
+    runs' own intervals — that is strictly less conservative than this
+    paired test on the SAME cases (see the block's Trap 1) — only on
+    whether this delta interval itself excludes zero."""
+    point, lo, hi = interval["point"], interval["lo"], interval["hi"]
+    if point is None:
+        return "incomparable"
+    if point == 0.0:
+        return "flat"
+    if point < 0.0:
+        excludes_zero = hi is not None and hi < 0.0
+        return "regressed-significant" if excludes_zero else "regressed-within-noise"
+    excludes_zero = lo is not None and lo > 0.0
+    return "improved-significant" if excludes_zero else "improved-within-noise"
+
+
+def _metric_verdict(metric: str, current: dict, baseline: dict) -> dict:
+    """Paired per-case verdict for one metric — see `compare_to_baseline`."""
+    current_results = current.get("results") or []
+    baseline_results = baseline.get("results") or []
+    if not current_results or not baseline_results:
+        return _unpairable_verdict()
+
+    current_values = _case_values_for_metric(current_results, metric)
+    baseline_values = _case_values_for_metric(baseline_results, metric)
+
+    if set(current_values) != set(baseline_values):
+        return _unpairable_verdict()
+
+    case_ids = sorted(current_values)
+    n = len(case_ids)
+
+    if metric in _PROPORTION_METRICS:
+        flips_to_worse = [
+            case_id for case_id in case_ids if current_values[case_id] < baseline_values[case_id]
+        ]
+        flips_to_better = [
+            case_id for case_id in case_ids if current_values[case_id] > baseline_values[case_id]
+        ]
+        p_value = stats.exact_sign_test(len(flips_to_worse), len(flips_to_better))
+        return {
+            "pairable": True,
+            "n": n,
+            "flips_to_worse": flips_to_worse,
+            "flips_to_better": flips_to_better,
+            "sign_test_p": p_value,
+            "paired_delta": None,
+            "classification": _classify_sign(len(flips_to_worse), len(flips_to_better), p_value),
+        }
+
+    per_case_deltas = [current_values[case_id] - baseline_values[case_id] for case_id in case_ids]
+    seed = _PAIRED_BOOTSTRAP_SEEDS.get(metric, 0)
+    interval = stats.bootstrap_mean_interval(per_case_deltas, seed=seed).to_dict()
+    return {
+        "pairable": True,
+        "n": n,
+        "flips_to_worse": None,
+        "flips_to_better": None,
+        "sign_test_p": None,
+        "paired_delta": interval,
+        "classification": _classify_continuous(interval),
+    }
+
+
+def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float], bool, dict]:
+    """Signed per-metric delta of `current`'s aggregate vs. `baseline`'s,
+    plus a paired per-case `verdict`.
+
+    Returns `(deltas, regressed, verdict)`:
+
+    - `deltas[metric] = current - baseline` (positive is improvement, every
+      metric here is higher-is-better), iterated over the **baseline's**
+      keys — never the current run's — so a run that has grown a new
+      aggregate key (e.g. `groundedness_on_hits`, added after some existing
+      baselines) simply reports no delta for it rather than raising or
+      being penalized (`test_new_aggregate_key_does_not_break_an_older_
+      baseline_file`).
+    - `regressed` is the ORIGINAL strict-sign tripwire, unchanged: True iff
+      any metric strictly decreased. It stays a tripwire on purpose — see
+      `verdict` for the statistically-honest read.
+    - `verdict[metric]` is a paired, per-case comparison on `case_id`:
+      `pairable` (did the metric's case-id sets from both runs match?),
+      `n`, `flips_to_worse`/`flips_to_better` (proportion metrics — the
+      case ids themselves) or `paired_delta` (continuous metrics — a
+      seeded bootstrap interval over per-case deltas), `sign_test_p`
+      (proportion metrics — the EXACT two-sided binomial sign test on
+      discordant flips, never a normal approximation), and
+      `classification` in `regressed-significant | regressed-within-noise |
+      improved-within-noise | improved-significant | flat | incomparable`.
+      A metric with no per-case data on either side, or whose paired
+      case-id sets don't match, is `incomparable` — deliberately never
+      reported as an improvement.
+
+    Shaped like the deleted `app/evals/gate.py::gate_change` comparison for
+    `deltas`/`regressed`; not imported from it (OR.X2 removed that module).
     """
     current_agg = current["aggregate"]
     baseline_agg = baseline["aggregate"]
@@ -318,4 +499,5 @@ def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float]
         for metric in baseline_agg
     }
     regressed = any(delta < 0 for delta in deltas.values())
-    return deltas, regressed
+    verdict = {metric: _metric_verdict(metric, current, baseline) for metric in baseline_agg}
+    return deltas, regressed, verdict
