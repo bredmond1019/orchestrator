@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 from brain.cli import main
 from brain.pulse import PulseReport
 from database.retrieval_query import RetrievalQuery
@@ -687,3 +688,252 @@ class TestQueriesPruneDispatch:
             main(argv)
 
         assert excinfo.value.code == 2
+
+
+class TestQueriesMineDispatch:
+    """`syn queries mine` (OR.2.E task 4) — a proper subcommand, not a third
+    `queries` mode. Proposes reviewable golden-set candidates as a stdout-only
+    YAML fragment; never writes `planning/retrieval-golden-set.yaml`."""
+
+    @pytest.fixture
+    def queries_db(self):
+        engine, session_factory, fake_db_session = _sqlite_db_session_factory()
+        with (
+            patch("database.session.db_session", fake_db_session),
+            patch("brain.query_mining._load_golden_set_queries", return_value=set()),
+        ):
+            yield session_factory
+        engine.dispose()
+
+    def test_mine_is_registered_as_a_subcommand_not_a_queries_flag(self):
+        """`queries mine` must be its own subparser, per the spec's explicit
+        instruction not to add a third mode on `queries` (`_validate_queries_args`
+        is already at its complexity ceiling)."""
+        with pytest.raises(SystemExit) as excinfo:
+            main(["queries", "--mine"])
+        assert excinfo.value.code == 2  # unrecognized flag, not a real mode
+
+    def test_empty_log_prints_friendly_message_and_exits_zero(self, queries_db, capsys):
+        code = main(["queries", "mine"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        assert "no" in out.lower()
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(out)
+
+    def test_empty_log_json_exits_zero_with_empty_candidates(self, queries_db, capsys):
+        code = main(["queries", "mine", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload == {"candidates": [], "count": 0}
+
+    def test_fragment_carries_fail_loud_id_and_empty_expect_docs(self, queries_db, capsys):
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+
+        code = main(["queries", "mine"])
+        assert code == 0
+
+        out = _read_stdout(capsys)
+        document = yaml.safe_load(out)
+        assert document["cases"], "fragment must contain at least one case"
+        for case in document["cases"]:
+            assert case["id"] == "RENAME ME"
+            assert case["expect_docs"] == []
+            assert case["source"] == "mined"
+            assert case["category"] == "mined"
+            assert "source_query_id" in case
+
+    def test_fragment_fails_the_golden_set_schema_test_as_emitted(self, queries_db, capsys):
+        """The lazy path must fail loudly: as emitted (unedited), every case
+        fails `test_expect_docs_or_abstain_present_for_every_case` (empty
+        expect_docs, expect_abstain=false) AND `test_id_prefix_agrees_with_category`
+        (`RENAME ME` has no recognized id prefix) — mirroring the golden-set
+        schema test's own rules without importing app/ into that pure-YAML
+        test module."""
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+
+        code = main(["queries", "mine"])
+        assert code == 0
+
+        document = yaml.safe_load(_read_stdout(capsys))
+        prefix_to_category = {
+            "archive": "archive",
+            "id": "identifier",
+            "neg": "negative",
+            "hijack": "hijack",
+            "mined": "mined",
+        }
+        for case in document["cases"]:
+            fails_expect_docs_or_abstain = not (case["expect_docs"] or case["expect_abstain"])
+            prefix = case["id"].split("-", 1)[0]
+            fails_id_prefix = prefix not in prefix_to_category
+            assert fails_expect_docs_or_abstain or fails_id_prefix, (
+                "an unedited mined case must fail at least one golden-set schema rule"
+            )
+
+    def test_fragment_parses_under_load_cases_once_filled(self, queries_db, capsys, tmp_path):
+        from brain.eval import load_cases
+
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+
+        code = main(["queries", "mine"])
+        assert code == 0
+
+        document = yaml.safe_load(_read_stdout(capsys))
+        for i, case in enumerate(document["cases"]):
+            case["id"] = f"mined-{i}"
+            case["expect_docs"] = ["some/doc.md"]
+
+        filled_path = tmp_path / "filled.yaml"
+        filled_path.write_text(yaml.safe_dump(document), encoding="utf-8")
+
+        cases = load_cases(filled_path)
+        assert len(cases) == len(document["cases"])
+        assert cases[0].source == "mined"
+        assert cases[0].category == "mined"
+
+    def test_candidates_carry_source_and_category_and_source_query_id(self, queries_db, capsys):
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+
+        code = main(["queries", "mine", "--json"])
+        assert code == 0
+
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["count"] == 1
+        candidate = payload["candidates"][0]
+        assert candidate["class"] == "abstained"
+        assert "rationale" in candidate and candidate["rationale"]
+        assert candidate["source_query_id"]
+
+    def test_json_emits_ranked_candidates_with_rationale(self, queries_db, capsys):
+        for i in range(4):
+            _make_row(
+                queries_db,
+                query=f"filler {i}",
+                retrieval_confidence=0.95,
+                abstained=False,
+                top_scores=[0.95, 0.4],
+            )
+            _make_row(
+                queries_db,
+                query=f"filler {i}",
+                retrieval_confidence=0.95,
+                abstained=False,
+                top_scores=[0.95, 0.4],
+            )
+        _make_row(
+            queries_db,
+            query="low conf outlier",
+            retrieval_confidence=0.2,
+            abstained=False,
+            top_scores=[0.5, 0.4],
+        )
+        _make_row(
+            queries_db,
+            query="low conf outlier",
+            retrieval_confidence=0.2,
+            abstained=False,
+            top_scores=[0.5, 0.4],
+        )
+
+        code = main(["queries", "mine", "--json"])
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        by_query = {c["query"]: c for c in payload["candidates"]}
+        assert by_query["low conf outlier"]["class"] == "low-confidence-answered"
+        assert by_query["low conf outlier"]["rationale"]
+
+    def test_golden_set_queries_are_excluded_from_mined_output(self, queries_db, capsys):
+        _make_row(queries_db, query="already in the golden set", abstained=True)
+        _make_row(queries_db, query="already in the golden set", abstained=True)
+        _make_row(queries_db, query="brand new mined query", abstained=True)
+        _make_row(queries_db, query="brand new mined query", abstained=True)
+
+        with patch(
+            "brain.query_mining._load_golden_set_queries",
+            return_value={"already in the golden set"},
+        ):
+            code = main(["queries", "mine", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        queries = {c["query"] for c in payload["candidates"]}
+        assert "already in the golden set" not in queries
+        assert "brand new mined query" in queries
+
+    def test_eval_surface_rows_excluded_from_mined_output(self, queries_db, capsys):
+        _make_row(queries_db, query="harness only", surface="eval", abstained=True)
+        _make_row(queries_db, query="harness only", surface="eval", abstained=True)
+
+        code = main(["queries", "mine", "--json"])
+
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["candidates"] == []
+
+    def test_min_count_and_include_singletons_flags_thread_through(self, queries_db, capsys):
+        _make_row(queries_db, query="seen once", abstained=True)
+
+        code = main(["queries", "mine", "--json"])
+        assert code == 0
+        assert json.loads(_read_stdout(capsys))["candidates"] == []
+
+        code = main(["queries", "mine", "--include-singletons", "--json"])
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert [c["query"] for c in payload["candidates"]] == ["seen once"]
+
+    def test_limit_flag_caps_candidate_count(self, queries_db, capsys):
+        for i in range(3):
+            _make_row(queries_db, query=f"unanswerable {i}", abstained=True)
+            _make_row(queries_db, query=f"unanswerable {i}", abstained=True)
+
+        code = main(["queries", "mine", "--limit", "1", "--json"])
+        assert code == 0
+        payload = json.loads(_read_stdout(capsys))
+        assert payload["count"] == 1
+
+    def test_golden_set_file_never_opened_for_writing_during_mine(self):
+        """Asserts the golden set is never opened for writing during a mine
+        run — uses the REAL default `_load_golden_set_queries` path (no
+        monkeypatch of it) against a fresh in-memory DB, guarding only the
+        file-open call itself so this exercises the actual golden-set
+        loader, not a stub."""
+        engine, session_factory, fake_db_session = _sqlite_db_session_factory()
+        _make_row(session_factory, query="genuinely unanswerable", abstained=True)
+        _make_row(session_factory, query="genuinely unanswerable", abstained=True)
+
+        real_open = open
+
+        def _guarded_open(file, mode="r", *args, **kwargs):  # noqa: A002
+            if "golden-set" in str(file) and ("w" in mode or "a" in mode or "+" in mode):
+                raise AssertionError(f"golden set opened for writing: mode={mode!r}")
+            return real_open(file, mode, *args, **kwargs)
+
+        try:
+            with (
+                patch("database.session.db_session", fake_db_session),
+                patch("builtins.open", _guarded_open),
+            ):
+                code = main(["queries", "mine"])
+        finally:
+            engine.dispose()
+
+        assert code == 0
+
+    def test_human_mode_does_not_emit_raw_json(self, queries_db, capsys):
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+        _make_row(queries_db, query="genuinely unanswerable", abstained=True)
+
+        code = main(["queries", "mine"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(out)
