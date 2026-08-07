@@ -119,6 +119,11 @@ orchestrator plan Phase 4 — not part of v1.0.0.)
 > exposed through this contract's `events`/`task_context`/HTTP surfaces is not itself a contract
 > change, so this note does not bump the contract version; it exists only so a reader scanning
 > this document for "every table" doesn't miss it.
+>
+> **`OR.2.E` (2026-08-07) added five nullable capture columns** — `k` (`Integer`), `corpus`
+> (`String(32)`), `embedding_model` (`String(64)`), `filters` (`JSON`), `top_scores` (`JSON`, 5
+> floats) — used by `syn queries mine` to propose golden-set candidates. Same reasoning as above:
+> not part of this contract, so this addition does not bump the contract version.
 
 ---
 
