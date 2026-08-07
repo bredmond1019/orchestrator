@@ -2,7 +2,7 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-06T22:40:39Z"
+timestamp: "2026-08-07T08:54:20Z"
 ---
 
 # log — Orchestration Repo
@@ -86,6 +86,28 @@ d5919c2 chore(harness): sync /orchestrate — no subagent block work, commit sta
 ```
 
 ---
+
+## [2026-08-07]
+
+### Re-scoped OR.0.C for a second attempt and handed off
+
+- **What:** Restructured `planning/plan-review-artifact-exclusion/` after attempt 1's rollback.
+  Inserted a new **mandatory task 1** that restores corpus/config consistency and re-establishes a
+  valid control — without it the block records the *already-excluded* corpus as its "before" and
+  produces a false null with every gate passing. Folded the **scope decision** (narrow
+  superseded-only, 2 orphaned edges, vs broad, 9 across 6 files) and the **mandatory `related:`-edge
+  repointing** into task 3, gated on `validate-brain --graph` reporting 0 errors. Replaced task 3's
+  fleet-wide `syn stale --deep` check — which caused attempt 1's false bail on 151 pre-existing
+  archive zombies — with a delta-scoped one that only fails on drift this change causes. Flipped
+  `OR.0.C`'s engine `sdlc-task` -> `sdlc-flow`, since the block outgrew the lean engine. Wrote
+  `planning/handoff.md`.
+- **Why:** The operator confirmed the fleet had gone quiet and asked whether to run `OR.0.C` here or
+  in a fresh session. Checking the live state first surfaced a trap that would have silently wasted
+  the run: `brain.toml` has no exclusion but the DB still has 0 rows for `review/runs`, so the
+  rollback left config and index disagreeing. Fixing the spec here — where that context was held —
+  and handing the run to a fresh session was the better split.
+- **Refs:** `planning/handoff.md` - `planning/plan-review-artifact-exclusion/tasks.md` (findings
+  section) - carryover `or-0-c-exclusion-scope-and-gate-rework`
 
 ## [2026-08-06]
 
