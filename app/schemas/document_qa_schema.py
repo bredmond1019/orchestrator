@@ -112,14 +112,19 @@ class DocumentQAEventSchema(BaseModel):
         ),
     )
     confidence_threshold: float = Field(
-        default=0.55,
+        default=0.6552,
         description=(
             "Minimum retrieval_confidence (RetrieveChunksNode, block OR.L) "
             "required to attempt an answer. Below this, or with zero "
             "retrieved chunks, GroundingRouterNode routes to the "
             "deterministic abstain path instead of calling the answer LLM. "
-            "Conservative default sits above weak/near-empty retrieval "
-            "confidence while passing through genuine on-topic matches."
+            "The old 0.55 default was unreachable: it corresponds to a fused "
+            "score of roughly 0.2, and across 2603 logged production "
+            "queries the minimum confidence ever observed was 0.5980, so "
+            "the gate never fired once. 0.6552 is the sigmoid-space "
+            "midpoint of the measured (0.6256, 0.6582) raw-score gap "
+            "between the highest correctly-caught abstain case and the "
+            "lowest should-answer case."
         ),
     )
     high_stakes: bool = Field(
