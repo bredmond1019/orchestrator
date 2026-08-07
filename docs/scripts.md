@@ -119,6 +119,49 @@ targeted files re-embed unconditionally — it is scoped to whichever files are 
 that run (all of them, or just `--only-paths`'s subset), unlike `--rebuild`, which deletes all
 non-diagnostic rows corpus-wide before re-indexing from scratch.
 
+**`OR.2.C` — a YAML frontmatter parse failure is a real gate, not a silent drop.** A file whose
+frontmatter fails to parse raises a typed `DocumentParseError` (carries the file path and the
+underlying cause), is logged by path, and is skipped — the run still indexes every other file,
+including in the sub-repo `docs/` lane (`_sub_repo_docs_files`), which previously aborted the
+whole run on the first malformed file. What changed is that the run no longer claims success:
+`main()` now returns `0` on a clean run and `1` whenever any file failed to parse or write, and
+`__main__` propagates it via `sys.exit(main())`. The summary names each failed path on its own
+line, not just a count. `--dry-run`, `--rebuild`, `--only-paths`, and `--prune-paths` semantics
+are unchanged.
+
+**Quarantine, not delete — `stale_rows_retained` and `--prune-failed`.** The per-file upsert is
+delete-then-insert keyed on `file_path` + `section` (`:1086-1094`); when parsing fails that delete
+never runs, so a file's previously-indexed rows survive untouched and keep being served by
+retrieval — the corpus quietly serves a stale copy of a now-broken file indefinitely. For every
+failed path, the run now reports `stale_rows_retained: N` (how many `brain_documents` rows still
+exist for that path) in the summary, per path, so an operator can tell a newly-broken file from
+one that's been quarantined for days. **Default is retain** — matching this repo's existing
+quarantine-then-repair split (`reconcile.py` reports, `ops.repair_deep_stale` repairs,
+separately); a transient YAML typo should never destroy retrievable content with no preview. Pass
+`--prune-failed` to delete those rows instead:
+
+```bash
+# Quarantine (default) — failed files' rows are retained and reported
+python scripts/index_brain.py
+
+# Delete stale rows for files that failed to parse this run
+python scripts/index_brain.py --prune-failed
+
+# Preview what --prune-failed would delete, without deleting anything
+python scripts/index_brain.py --prune-failed --dry-run
+```
+
+`--prune-failed` respects `--dry-run` (reports what would be deleted, deletes nothing) and the
+same workspace/project delete scoping `--rebuild`/`--prune-paths` already apply.
+
+**Exit code propagation.** `index_brain.main()` is called in-process from three `app/brain/ops.py`
+call sites (`embed_paths`, `prune_paths`/`ingest_dir`, `refresh`) — each now captures and surfaces
+`main()`'s return code as `exit_code`/`success` on its own return payload, so `syn ingest`, `syn
+refresh`, and `syn embed` all exit non-zero when a run recorded parse failures, not just a direct
+`python scripts/index_brain.py` invocation. The cron-facing `refresh`/`reconcile` routines report a
+non-zero result in their payload rather than raising — a scheduled run still completes and is
+inspectable, it just isn't silently green.
+
 ### Workspace mode — indexing an arbitrary OKF directory (OR.C)
 
 By default `index_brain.py` runs in **brain mode**: no flags needed, behavior is unchanged from
@@ -523,7 +566,7 @@ syn routine queries_prune                    # the cron-safe form (defaults, no 
 | `prune PATH [PATH ...] [--dry-run] [--brain-path PATH] [--json]` | Deletes `brain_documents` rows for the named (deleted/renamed-away) file paths via `brain.ops.prune_paths` (shells into `index_brain.py --prune-paths`) — no embedding, no API call. The brain repo's post-commit delete/rename freshness hook calls this. |
 | `refresh [--rebuild] [--dry-run] [--brain-path PATH] [--json]` | Runs the content-index step then the edge-reload step via `brain.ops.refresh`. `--dry-run` skips the edge-reload step entirely. |
 | `stale [--assert-clean] [--brain-path PATH] [--json]` | Read-only drift report via `brain.ops.stale`: content axis (file mtime newer than its indexed `brain_documents` row) and structure axis (`pulse()`'s `edges_empty_but_related_exists`). `--assert-clean` turns any drift into a non-zero exit — the flag `OR.J`'s cron uses to fail loudly; a plain `syn stale` always exits `0`. |
-| `stale --deep [--repair] [--brain-path PATH] [--json]` | Deep corpus/index drift report via `brain.reconcile.deep_stale` — the inverse of plain `stale`: it walks DB rows looking for the filesystem/edge/embedding state they claim to still be backed by, instead of walking the filesystem looking for DB rows. Five drift axes plus the informational `ingested/` lane; see below. Exits `1` whenever the final report's `drift` is `True`, `0` otherwise — unconditional, unlike plain `stale` (no `--assert-clean` gate: asking for `--deep` means you want the drift signal by definition). `--repair` dispatches `brain.ops.repair_deep_stale` (existing primitives only — see below) and reports the pre/post-repair delta instead of a single snapshot. |
+| `stale --deep [--repair] [--brain-path PATH] [--json]` | Deep corpus/index drift report via `brain.reconcile.deep_stale` — the inverse of plain `stale`: it walks DB rows looking for the filesystem/edge/embedding state they claim to still be backed by, instead of walking the filesystem looking for DB rows. Five drift axes plus the informational `ingested/` lane and the `OR.2.C` ingest-ceiling axis (`uncovered_files`/`unparseable_files`/`excluded_count`); see below. Exits `1` whenever the final report's `drift` is `True`, `0` otherwise — unconditional, unlike plain `stale` (no `--assert-clean` gate: asking for `--deep` means you want the drift signal by definition). `--repair` dispatches `brain.ops.repair_deep_stale` (existing primitives only — see below) and reports the pre/post-repair delta instead of a single snapshot. |
 | `routine NAME [--json]` | Runs a registered `ROUTINES` entry (`app.brain.ops.ROUTINES`; currently `refresh`, `stale`, `reconcile`, `eval`, and `queries_prune`) by name — the convention `OR.J`'s cron invokes. An unregistered name is a typed `UnknownRoutineError`, non-zero exit. `reconcile`/`eval` both run report-only — a routine must be cron-safe, so neither dispatches `--repair` or `--baseline`. `queries_prune` is the one **destructive** routine, and deliberately so: unlike a repair, a retention prune is a bounded, idempotent delete of rows past a fixed window, which is exactly what a cron routine is for. |
 | `eval [--set PATH] [--baseline PATH] [--json]` | **(OR.K2)** Scores the golden set (`planning/retrieval-golden-set.yaml` by default) against the promoted `retrieval_engine.retrieve` pipeline — recall@5, recall@10, MRR, abstain-correctness, groundedness, **`groundedness_on_hits`**, no LLM in the scoring path — and writes a dated JSON report to `planning/retrieval-eval-runs/`. `--baseline PATH` diffs the run's aggregate against a prior report and prints signed per-metric deltas; the command exits non-zero if any metric regressed. `groundedness_on_hits` (added by `ticket-groundedness-baseline`) is the same lexical-support mean restricted to cases that actually matched an `expect_docs` document — the headline `groundedness` scores a recall-miss as `0.0` and therefore partly re-measures recall. **Read the pair, and read `groundedness` as a band, not a target:** the metric's known structural biases and its expected healthy range are documented in [`docs/brain-rag.md` § Reading `groundedness`](brain-rag.md#reading-groundedness--it-is-a-band-not-a-target) and decomposed case-by-case in `planning/artifacts/groundedness-baseline-analysis.md`. The new key is **additive** — `compare_to_baseline` iterates the *baseline's* keys, so pre-2026-08-02 baseline files still compare cleanly and **no baseline reset is required**. See `docs/api-reference.md` § [Retrieval Eval Harness](api-reference.md#retrieval-eval-harness-appbraineval-syn-eval). |
 | `queries [--since 7d\|24h] [--abstained] [--json]` | **(OR.K1)** Reads raw `retrieval_queries` rows logged by `app/brain/query_log.py::log_retrieval` at the retrieval core's single choke point — no stored aggregation, ever. `--since` parses a `<N>d`/`<N>h` window (an invalid string is a typed, non-zero-exit error); `--abstained` filters to `abstained=true` rows. `--json` additionally includes `count` and a **read-time-computed** `abstain_rate` over the returned rows (`abstained rows / total rows`, `0.0` when empty) — never a stored rollup. See `docs/api-reference.md` § [Retrieval Query Log](api-reference.md#retrieval-query-log-appbrainquery_logpy-syn-queries-or-k1). |
@@ -570,10 +613,26 @@ keeping. Tightening it below 90 shrinks that sample — note the trade in the le
    follow-up as section-orphans.
 6. **`ingested/` lane** (informational, not drift) — count and `authored_at` age range of
    `ingested/%` rows, which never appear in plain `stale`'s filesystem-only axis.
+7. **ingest ceiling — `uncovered_files` / `unparseable_files` / `excluded_count`** (`OR.2.C`,
+   informational, not drift) — the inverse of axes 1-2: filesystem -> DB instead of DB ->
+   filesystem. All five axes above walk indexed rows asking what backs them on disk; nothing
+   walked the filesystem asking which files never made it into the DB at all — the ingest ceiling
+   no ranking or eval change can see past. `uncovered_files` lists files enumerated on disk with
+   zero `brain_documents` rows. `unparseable_files` lists files whose YAML frontmatter fails to
+   parse (`DocumentParseError`), caught during enumeration or while diffing a file's section state
+   — this is the same quarantine list `index_brain.py`'s summary reports, now visible from the read
+   side too, and a malformed file here no longer makes `deep_stale` raise. `excluded_count` is the
+   number of files the enumeration itself excluded, broken down by reason (`skip_dir`,
+   `leading_underscore`, `ephemeral_filename`) — the number that answers "should this exclusion
+   rule still apply?" without changing any rule. The enumeration is always
+   `index_brain._collect_files`, imported rather than reimplemented, so this axis can never drift
+   from what `index_brain.py` actually indexes.
 
-`drift` is `True` when axes 1-5 report anything; the `ingested/` lane and `unstamped_count` are
-informational only and never flip `drift`. `--repair` never touches `client_slug` diagnostic rows
-on any axis.
+`drift` is `True` when axes 1-5 report anything; the `ingested/` lane, `unstamped_count`, and axis
+7's three buckets (`uncovered_files`/`unparseable_files`/`excluded_count`) are informational only
+and never flip `drift` — a file being uncovered or excluded is often correct, and folding it into
+`drift` would make the flag permanently true and train the operator to ignore it. `--repair` never
+touches `client_slug` diagnostic rows on any axis.
 
 **Invoking from outside this repo:** `syn` is a real console script (`pyproject.toml` declares
 `[build-system]`/`[tool.setuptools.packages.find]` with `namespaces = true`, since `app/` has no
