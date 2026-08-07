@@ -109,3 +109,31 @@ class RetrievalQuery(Base):
         index=True,
         doc="Timestamp when this query was logged",
     )
+    k = Column(
+        Integer,
+        nullable=True,
+        doc="Requested result count for this call, making result_count interpretable",
+    )
+    corpus = Column(
+        String(32),
+        nullable=True,
+        doc="Corpus the query was scoped to (e.g. 'brain', 'content')",
+    )
+    embedding_model = Column(
+        String(64),
+        nullable=True,
+        doc=(
+            "Embedding model stamp live at call time — the only place a "
+            "same-dimension model swap currently leaves a trace"
+        ),
+    )
+    filters = Column(
+        JSON,
+        nullable=True,
+        doc="Filters applied to this retrieval call, if any",
+    )
+    top_scores = Column(
+        JSON,
+        nullable=True,
+        doc="Top 5 candidate scores, in rank order, aligned with top_doc_ids",
+    )

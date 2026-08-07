@@ -5079,7 +5079,15 @@ top 5, rank order), `latency_ms` (`Integer`, nullable). `via_mix`/`top_doc_ids` 
 than Postgres `ARRAY` — deliberately SQLite-compilable, mirroring `eval_record.py`'s choice, so the
 unit suite exercises the table without Docker.
 
-### `log_retrieval(query, results, *, surface, workspace_id, hybrid, retrieval_confidence, latency_ms) -> None`
+**OR.2.E mining-capture columns (all nullable, additive):** `k` (`Integer` — requested result
+count, making `result_count` interpretable), `corpus` (`String(32)` — the corpus the query was
+scoped to, e.g. `"brain"`), `embedding_model` (`String(64)` — the embedding model stamp live at
+call time, the only place a same-dimension model swap currently leaves a trace), `filters`
+(`JSON` — filters applied to the call, if any), `top_scores` (`JSON` — the top 5 candidate scores,
+rank order, aligned with `top_doc_ids`). Added by migration `c1d2e3f4a5b6`; ~2833 pre-existing rows
+read `NULL` for all five.
+
+### `log_retrieval(query, results, *, surface, workspace_id, hybrid, retrieval_confidence, latency_ms, k=None, corpus=None, embedding_model=None, filters=None, top_scores=None) -> None`
 
 **Source:** `app/brain/query_log.py`
 
@@ -5088,7 +5096,12 @@ Derives `via_mix` (a `Counter` over each result's `via`), `result_count` (`len(r
 `top_score` (the first result's `score`, if any), `top_doc_ids` (the first 5 results' `doc_id`s),
 and `abstained` (`retrieval_confidence < ABSTAIN_THRESHOLD`, imported live from
 `DocumentQAEventSchema.model_fields["confidence_threshold"].default` — the same source
-`app/brain/eval/scorer.py` uses, never re-hardcoded).
+`app/brain/eval/scorer.py` uses, never re-hardcoded). The five OR.2.E keyword-only capture
+arguments (`k`, `corpus`, `embedding_model`, `filters`, `top_scores`) are all optional and default
+to `None`; when `top_scores` is omitted, it is derived from `results[:5]` the same way
+`top_doc_ids` already is, so existing callers stay correctly aligned without passing it
+explicitly. `embedding_model` is read via `EmbeddingService`'s existing `.stamp` property
+(`"{provider}:{model}"`).
 
 **Fire-and-forget discipline:** opens its own independently created and committed session (open ->
 add -> commit -> close via `GenericRepository`, standing rule 7 — never a raw session write) inside
@@ -5122,6 +5135,7 @@ reserved but currently unused — there is no MCP server yet.
 |---|---|---|
 | `queries` | `--since WINDOW` (`<N>d` / `<N>h`, e.g. `7d`/`24h`; default: no lower bound), `--abstained`, `--json` | Reads every `retrieval_queries` row via `GenericRepository(session, RetrievalQuery).get_all()`, then filters/sorts in Python (newest first) — no SQL aggregation, no stored rollup. `--since` parses the window and keeps rows with `created_at >= now() - window`; an unparseable window is a typed `InvalidSinceWindowError`, routed through the same `_emit_error` non-zero-exit path every other `syn` command uses. `--abstained` keeps only `abstained=true` rows. |
 | `queries --prune` | `--keep-days N` (default: `$BRAIN_QUERY_LOG_KEEP_DAYS`, else `90`), `--dry-run`, `--json` | Retention, not reading: `_run_queries` short-circuits to `_run_queries_prune`, which delegates wholesale to `brain.ops.prune_queries(keep_days, dry_run=...)` — the same single implementation the `queries_prune` cron routine calls — and renders its `{"deleted", "kept", "cutoff", "keep_days", "dry_run"}` summary. Exits `0` on success **including a zero-deletion no-op**; a raised exception is routed through `_emit_error` (exit `1`), never a raw traceback. `--prune` is mutually exclusive with the read filters `--since`/`--abstained`, and `--keep-days`/`--dry-run` are only valid with `--prune`; both are enforced by `_validate_queries_args` via `parser.error` (argparse usage on stderr, exit `2`). The pair is checked manually rather than with `add_mutually_exclusive_group` because `--since` and `--abstained` remain combinable *with each other*, which one argparse group cannot express. |
+| `queries mine` | `--since WINDOW`, `--min-count N` (default: `2`), `--include-singletons` (forces `min_count=1`), `--limit N`, `--json` | OR.2.E: renders `brain.query_mining.mine_candidates` (below) as a stdout-only, fail-loud YAML fragment — `expect_docs: []`, `id: RENAME ME`, `source: mined`/`category: mined`/`source_query_id` per case, with a "top hits" comment block under each `expect_docs:` line so a human can eyeball what actually came back. `--json` instead emits each candidate's full rationale. **Never writes `planning/retrieval-golden-set.yaml`** — the human pastes, renames, and fills `expect_docs` by hand before it goes anywhere near the golden set. An empty query log exits `0` with a friendly message rather than an empty fragment. Its own nested `queries_subparsers = queries_parser.add_subparsers(dest="queries_subcommand")`, mirroring the existing `eval`/`promote` subcommand pattern rather than a `--mine` flag on `queries`. |
 
 In `--json` mode, the payload is `{"queries": [...], "count": N, "abstain_rate": R}` — `R` is
 `abstained_count / count` over the *returned* (already filtered/windowed) rows, `0.0` when
@@ -5129,6 +5143,35 @@ In `--json` mode, the payload is `{"queries": [...], "count": N, "abstain_rate":
 the database and there is no equivalent stored anywhere — the zero-aggregation rule stays visible
 directly in the code (see the comment at the computation site). Human (non-`--json`) mode prints
 one line per row: timestamp, surface, query, `via_mix`, confidence, `abstained`.
+
+### `mine_candidates(session, *, min_count=DEFAULT_MIN_COUNT, include_singletons=False, since=None, golden_set_path=None, golden_set_queries=None) -> list[MinedCandidate]`
+
+**Source:** `app/brain/query_mining.py`
+
+The read-time analysis core behind `syn queries mine` (mirrors the `reconcile.py`
+holds-logic / `cli.py`-only-renders split). Groups `retrieval_queries` by exact query text,
+excludes `surface == "eval"` rows and any query already present verbatim in the golden set
+(`golden_set_queries`, or loaded via `golden_set_path`/`DEFAULT_GOLDEN_SET_PATH` — resolved through
+`brain.eval.load_cases` when not given directly), and drops groups seen fewer than `min_count`
+times (default `DEFAULT_MIN_COUNT = 2`; `include_singletons` forces `1`). Every surviving group is
+classified into exactly one of three heuristic classes or dropped:
+
+- `CLASS_ABSTAINED` (`"abstained"`) — the representative row's `abstained` is true.
+- `CLASS_LOW_CONFIDENCE_ANSWERED` (`"low-confidence-answered"`) — `avg_confidence` falls in the
+  bottom quartile across non-abstained groups (`statistics.quantiles(n=4)`, falling back to `min()`
+  when fewer than 4 groups exist).
+- `CLASS_CONFIDENTLY_WRONG_SUSPECT` (`"confidently-wrong-suspect"`) — **a heuristic, not a
+  detector** (see the module docstring): a small `top_scores[0] - top_scores[1]` gap
+  (`<= 0.05`) and/or a keyword-dominated `via_mix` (`>= 0.5` share). High confidence with these
+  shapes is *suggestive*, never conclusive, that the top hit is wrong.
+
+A query matching none of the three classes is silently excluded rather than emitted as
+"uncategorized." The representative row per query group is the most-recently-created row
+(one scoped follow-up query, not a window function — no N+1, no `get_all()`), from which
+`top_doc_ids`, `top_scores`, `via_mix`, and `abstained` are read. `MinedCandidate` is a frozen
+dataclass: `query`, `count`, `avg_confidence`, `last_seen`, `class_`, `rationale`,
+`source_query_id`, `top_doc_ids`, `top_scores`, `via_mix`. **Never opens the golden set for
+writing** — read-only, to build the exclusion set only.
 
 ### Test coverage
 
@@ -5139,9 +5182,18 @@ one line per row: timestamp, surface, query, `via_mix`, confidence, `abstained`.
   `top_score`, `abstained` derivation); the inertness switch (default-off in the suite, opt-in via
   `enable_query_log`); the fire-and-forget discipline (a forced session failure is swallowed with a
   warning, and the retrieval call it describes still returns its results); surface threading from
-  all three thin adapters through to a single logged row.
+  all three thin adapters through to a single logged row; the OR.2.E mining-capture columns
+  (`k`, `corpus`, `embedding_model`, `filters`, `top_scores`) round-tripping through `log_retrieval`
+  and the migration applying/reversing cleanly.
+- `tests/brain/test_query_mining.py` — `mine_candidates`'s grouping, `min_count`/
+  `include_singletons` filtering, `surface == "eval"` exclusion, golden-set exclusion, the
+  bottom-quartile threshold (and its `min()` fallback), and each of the three classification
+  heuristics.
 - `tests/brain/test_cli.py::TestQueriesDispatch` — `--json` row/`count`/`abstain_rate` shape;
   `abstain_rate == 0.0` on an empty window; `--abstained` filtering; `--since` window filtering
   (excludes older rows); `via_mix`/`retrieval_confidence` round-trip through the CLI; an invalid
   `--since` window returns a non-zero exit with a typed JSON error payload; human mode never emits
   raw JSON and prints a "No logged queries." message when the window is empty.
+- `tests/brain/test_cli.py` — `syn queries mine`'s YAML fragment shape (`expect_docs: []`,
+  `id: RENAME ME`, `source`/`category`/`source_query_id`), `--json` rationale payload, and the
+  empty-log friendly-exit-0 path.
