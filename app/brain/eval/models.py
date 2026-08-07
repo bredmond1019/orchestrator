@@ -57,12 +57,25 @@ class RetrievalRunReport:
     `runner._aggregate`), and `abstain_correctness` (the mean over *every*
     case — the abstain signal is meaningful for negatives and positives
     alike).
+
+    `corpus` and `ranking_constants` (added by
+    `ticket-retrieval-ranking-and-abstain` task 1) stamp the provenance of
+    the run: the corpus fingerprint (chunk/file/edge counts and
+    `max(indexed_at)`) and the live ranking constants that produced these
+    numbers, so a later comparison can tell whether two runs are actually
+    comparable instead of silently diffing a corpus change against a
+    ranking change (the exact confusion that cost `OR.0.C` its result).
+    Both are `None` when unavailable — i.e. never populated pre-task-1, so
+    `load_report`/`compare_to_baseline` must keep working against the 14
+    pre-existing run files that lack them.
     """
 
     generated_at: str
     case_count: int
     results: tuple[CaseResult, ...]
     aggregate: dict[str, float]
+    corpus: dict | None = None
+    ranking_constants: dict | None = None
 
     @staticmethod
     def now_iso() -> str:
@@ -75,6 +88,8 @@ class RetrievalRunReport:
             "generated_at": self.generated_at,
             "case_count": self.case_count,
             "aggregate": self.aggregate,
+            "corpus": self.corpus,
+            "ranking_constants": self.ranking_constants,
             "results": [
                 {
                     "case_id": r.case_id,

@@ -12,12 +12,15 @@ OR.X2, so this guard also proves no accidental reintroduction).
 
 import ast
 import json
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from brain.eval.models import RetrievalCase
-from brain.eval.runner import compare_to_baseline, run_eval, write_report
+from brain import retrieval_engine
+from brain.eval import scorer
+from brain.eval.models import RetrievalCase, RetrievalRunReport
+from brain.eval.runner import compare_to_baseline, load_report, run_eval, write_report
 from brain.eval.scorer import ABSTAIN_THRESHOLD, score_case
 from workflows.document_qa_workflow_nodes.verify_citations_node import (
     split_sentences as node_split_sentences,
@@ -155,6 +158,30 @@ def _fixture_retrieve(query, **_kwargs):
     return [_chunk(doc_id="unrelated", file_path="docs/unrelated.md", score=0.4, content="noise")]
 
 
+class _FakeScalarResult:
+    """Stands in for a SQLAlchemy `Query` — only `.scalar()` is ever called
+    on the objects `_fingerprint_corpus` builds via `db.query(...)`."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def scalar(self):
+        return self._value
+
+
+class _FakeCorpusSession:
+    """A minimal fake session for `_fingerprint_corpus`: `.query(...)` is
+    called four times in a fixed order (chunk count, file count, edge
+    count, max indexed_at) and returns the next canned scalar each time —
+    hermetic, no real DB, no SQLite/Postgres type mismatch."""
+
+    def __init__(self, values):
+        self._values = iter(values)
+
+    def query(self, *_args, **_kwargs):
+        return _FakeScalarResult(next(self._values))
+
+
 def test_run_eval_is_deterministic_across_two_runs():
     cases = [_POSITIVE_CASE, _NEGATIVE_CASE]
     with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
@@ -166,6 +193,140 @@ def test_run_eval_is_deterministic_across_two_runs():
     assert [r.recall_at_5 for r in report_one.results] == [
         r.recall_at_5 for r in report_two.results
     ]
+
+
+# ---------------------------------------------------------------------------
+# corpus / ranking_constants provenance stamp (ticket-retrieval-ranking-and-
+# abstain task 1)
+# ---------------------------------------------------------------------------
+
+
+def test_run_eval_stamps_corpus_fingerprint_from_the_supplied_session():
+    fake_max_indexed_at = datetime(2026, 8, 6, 12, 0, 0)
+    fake_session = _FakeCorpusSession([11533, 962, 5000, fake_max_indexed_at])
+
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE], session=fake_session)
+
+    assert report.corpus == {
+        "chunk_count": 11533,
+        "file_count": 962,
+        "edge_count": 5000,
+        "max_indexed_at": fake_max_indexed_at.isoformat(),
+    }
+
+
+def test_run_eval_corpus_fingerprint_handles_no_max_indexed_at():
+    """An empty corpus (`max(indexed_at)` is NULL) must stamp `None`, not crash."""
+    fake_session = _FakeCorpusSession([0, 0, 0, None])
+
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE], session=fake_session)
+
+    assert report.corpus["max_indexed_at"] is None
+
+
+def test_run_eval_stamps_live_ranking_constants_not_literals(monkeypatch):
+    """Monkeypatching the live module constants must change the stamp —
+    proving the values are read at call time, not hardcoded."""
+    monkeypatch.setattr(retrieval_engine, "_KW_WEIGHT", 0.5)
+    monkeypatch.setattr(retrieval_engine, "_MAX_PER_FILE", 7)
+    monkeypatch.setattr(retrieval_engine, "_SECTION_TITLE_WEIGHT", 3.0)
+    monkeypatch.setattr(retrieval_engine, "_DOC_DECAY_FACTOR", 0.42)
+    monkeypatch.setattr(scorer, "ABSTAIN_THRESHOLD", 0.6552)
+    fake_session = _FakeCorpusSession([0, 0, 0, None])
+
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE], session=fake_session)
+
+    assert report.ranking_constants == {
+        "kw_weight": 0.5,
+        "max_per_file": 7,
+        "section_title_weight": 3.0,
+        "doc_decay_factor": 0.42,
+        "abstain_threshold": 0.6552,
+    }
+
+
+def test_write_report_round_trips_corpus_and_ranking_constants(tmp_path):
+    fake_session = _FakeCorpusSession([11533, 962, 5000, datetime(2026, 8, 6, 12, 0, 0)])
+
+    with patch("brain.eval.runner.retrieval_engine.retrieve", side_effect=_fixture_retrieve):
+        report = run_eval([_POSITIVE_CASE], session=fake_session)
+    out_path = write_report(report, out_dir=tmp_path)
+
+    on_disk = json.loads(out_path.read_text(encoding="utf-8"))
+    assert on_disk["corpus"] == report.corpus
+    assert on_disk["ranking_constants"] == report.ranking_constants
+    assert on_disk["corpus"]["chunk_count"] == 11533
+    assert set(on_disk["ranking_constants"]) == {
+        "kw_weight",
+        "max_per_file",
+        "section_title_weight",
+        "doc_decay_factor",
+        "abstain_threshold",
+    }
+
+
+def test_to_dict_carries_corpus_and_ranking_constants_when_present():
+    report = RetrievalRunReport(
+        generated_at="2026-08-07T00-00-00Z",
+        case_count=0,
+        results=(),
+        aggregate={},
+        corpus={"chunk_count": 1, "file_count": 1, "edge_count": 0, "max_indexed_at": None},
+        ranking_constants={"kw_weight": 0.5},
+    )
+
+    as_dict = report.to_dict()
+
+    assert as_dict["corpus"] == {
+        "chunk_count": 1,
+        "file_count": 1,
+        "edge_count": 0,
+        "max_indexed_at": None,
+    }
+    assert as_dict["ranking_constants"] == {"kw_weight": 0.5}
+
+
+def test_to_dict_defaults_corpus_and_ranking_constants_to_none():
+    """A report built without the new fields (mirroring pre-task-1 callers)
+    still serializes cleanly — both keys present but null."""
+    report = RetrievalRunReport(
+        generated_at="2026-08-07T00-00-00Z", case_count=0, results=(), aggregate={}
+    )
+
+    as_dict = report.to_dict()
+
+    assert as_dict["corpus"] is None
+    assert as_dict["ranking_constants"] is None
+
+
+def test_load_report_and_compare_to_baseline_work_on_pre_existing_run_files():
+    """The 14 pre-task-1 run files under planning/retrieval-eval-runs/ have
+    no `corpus`/`ranking_constants` keys at all. `load_report` must load
+    them unchanged and `compare_to_baseline` must keep comparing on
+    `aggregate` alone, ignoring the fields' absence entirely."""
+    pre_existing_path = (
+        Path(__file__).resolve().parents[2]
+        / "planning"
+        / "retrieval-eval-runs"
+        / "2026-08-02T10-15-24Z.json"
+    )
+    if not pre_existing_path.exists():
+        pytest.skip("pre-existing run file fixture not present in this checkout")
+
+    baseline = load_report(pre_existing_path)
+    assert "corpus" not in baseline
+    assert "ranking_constants" not in baseline
+
+    current = {"aggregate": dict(baseline["aggregate"])}
+    current["aggregate"]["recall_at_5"] = 1.0
+
+    deltas, regressed = compare_to_baseline(current, baseline)
+
+    assert regressed is False
+    assert deltas["recall_at_5"] == pytest.approx(1.0 - baseline["aggregate"]["recall_at_5"])
 
 
 # ---------------------------------------------------------------------------
