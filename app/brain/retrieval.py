@@ -212,14 +212,26 @@ def _normalize_doc_row(doc, score: float, *, via: str) -> dict:
     }
 
 
-def _log_recall(
-    query: str, results: list[dict], *, workspace: str | None, surface: str | None, start: float
+def _log_recall(  # pylint: disable=too-many-arguments
+    query: str,
+    results: list[dict],
+    *,
+    workspace: str | None,
+    surface: str | None,
+    start: float,
+    limit: int | None = None,
+    filters: dict | None = None,
+    embedding_model: str | None = None,
 ) -> None:
     """Shared OR.K1 logging call for `recall()`'s exact-id/semantic paths.
 
     The hybrid path is logged once, inside `retrieval_engine.retrieve()`
     (the single choke point) — this covers the other half: the two paths
     that never call `retrieve()`.
+
+    `corpus` is always `"brain"` here — both paths this function serves
+    (`exact_id_lookup` and `semantic_search`) query `BrainDocument`
+    exclusively (OR.2.E).
     """
     log_retrieval(
         query,
@@ -229,6 +241,11 @@ def _log_recall(
         hybrid=False,
         retrieval_confidence=retrieval_engine.compute_retrieval_confidence(results),
         latency_ms=int((time.monotonic() - start) * 1000),
+        k=limit,
+        corpus="brain",
+        embedding_model=embedding_model,
+        filters=filters,
+        top_scores=[r.get("score") for r in results[:5]],
     )
 
 
@@ -293,7 +310,15 @@ def recall(
     if exact_id is not None:
         id_results = exact_id_lookup(exact_id, session, limit=limit, filters=filters)
         results = [_normalize_doc_row(doc, 1.0, via="exact-id") for doc in id_results]
-        _log_recall(query, results, workspace=workspace, surface=surface, start=start)
+        _log_recall(
+            query,
+            results,
+            workspace=workspace,
+            surface=surface,
+            start=start,
+            limit=limit,
+            filters=filters,
+        )
         return results
 
     if embedding_service is None:
@@ -307,5 +332,14 @@ def recall(
     normalized = [
         _normalize_doc_row(doc, 1.0 - distance, via="semantic") for doc, distance in results
     ]
-    _log_recall(query, normalized, workspace=workspace, surface=surface, start=start)
+    _log_recall(
+        query,
+        normalized,
+        workspace=workspace,
+        surface=surface,
+        start=start,
+        limit=limit,
+        filters=filters,
+        embedding_model=getattr(embedding_service, "stamp", None),
+    )
     return normalized
