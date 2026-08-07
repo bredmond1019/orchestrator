@@ -19,14 +19,25 @@ function of retrieved chunks and the golden-set expectations.
 """
 
 from brain.eval.models import RetrievalCase, RetrievalRunReport
-from brain.eval.runner import compare_to_baseline, load_cases, run_eval, write_report
+from brain.eval.runner import (
+    compare_to_baseline,
+    golden_set_fingerprint,
+    load_cases,
+    promote_run,
+    resolve_baseline,
+    run_eval,
+    write_report,
+)
 from brain.eval.scorer import score_case
 
 __all__ = [
     "RetrievalCase",
     "RetrievalRunReport",
     "compare_to_baseline",
+    "golden_set_fingerprint",
     "load_cases",
+    "promote_run",
+    "resolve_baseline",
     "run_eval",
     "write_report",
     "score_case",

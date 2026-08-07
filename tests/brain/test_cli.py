@@ -235,6 +235,14 @@ class TestEvalDispatch:
         assert "(--no-write: report not persisted)" not in out
 
     def test_no_write_with_regressing_baseline_still_exits_nonzero(self, capsys, tmp_path):
+        """Amendment (plan-eval-statistical-honesty task 3): the fixture's
+        single `results` case is hardcoded to `recall_at_5=1.0` on both
+        sides regardless of the `aggregate` override, so the paired verdict
+        correctly reads it as unchanged (`flat`, not `regressed-significant`)
+        even though the synthetic `aggregate` numbers moved. `--strict`
+        restores the pre-task-3 strict-sign tripwire this test was written
+        against — same pattern as `test_cli_eval_baseline_exits_non_zero_
+        on_seeded_regression` in `test_eval.py`."""
         report = self._fake_eval_report(recall_at_5=0.1)
         baseline_path = tmp_path / "baseline.json"
         baseline_report = self._fake_eval_report(recall_at_5=0.9)
@@ -246,7 +254,7 @@ class TestEvalDispatch:
             patch("brain.eval.write_report") as mock_write,
         ):
             code = main(
-                ["eval", "--no-write", "--baseline", str(baseline_path), "--json"]
+                ["eval", "--no-write", "--baseline", str(baseline_path), "--strict", "--json"]
             )
 
         assert code == 1
