@@ -90,11 +90,17 @@ _STRUCTURAL_SEED_COUNT: int = 5
 _KEYWORD_CANDIDATE_LIMIT: int = 15
 
 # Keyword fusion weights (tune against the Block H smoke queries):
-# - _KW_WEIGHT scales the graded FTS ts_rank contribution (ts_rank values are
-#   small, typically < 0.1, so this is larger than the legacy flat boost).
+# - _KW_WEIGHT scales the graded FTS ts_rank contribution. Both ts_rank and
+#   the semantic similarity term it is fused against are bounded in [0, 1],
+#   but ts_rank is typically small (< 0.1) while a 5.0 multiplier let it
+#   swing the fused score by up to 0.5 — enough for a keyword match on a
+#   generic word to outrank every semantic hit on keyword-dense queries
+#   (measured in planning/artifacts/rag-diagnosis-2026-08-07.md). 0.5 keeps
+#   the two terms on comparable scale: a strong ts_rank can still nudge the
+#   ranking without being able to override semantic relevance outright.
 # - _KW_BOOST is the legacy flat boost for the ILIKE-set ("content") corpus,
 #   preserved unchanged at 1.0 so that path is regression-free.
-_KW_WEIGHT: float = 5.0
+_KW_WEIGHT: float = 0.5
 _KW_BOOST: float = 1.0
 
 # Diversity cap: max chunks from the same file_path allowed in the final
