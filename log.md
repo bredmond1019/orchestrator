@@ -2,12 +2,52 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-07T09:05:00Z"
+timestamp: "2026-08-07T16:45:00Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+## [2026-08-07]
+
+### Diagnosed the retrieval regression, fixed it, and stood up the RAG observatory
+
+- **What:** Established that the 2026-08-06 regression was **not digest crowding** but
+  `_KW_WEIGHT = 5.0` scaling an unbounded lexical term against a semantic term bounded in [0,1], so
+  keyword noise on generic words outranked every semantic match. Landed
+  `OR.ticket.retrieval-ranking-and-abstain` (6/6 tasks): eval runs now stamp `corpus` +
+  `ranking_constants`; `compute_retrieval_confidence` moved from `sigmoid(top-1)` to
+  `sigmoid(mean of top _CONFIDENCE_WINDOW=5)`; abstain threshold `0.55` -> `0.6552`; `_KW_WEIGHT`
+  `5.0` -> `0.5` with the ranking regression test de-literalized from the constant. **All five gated
+  metrics improved** at a fixed corpus (11533/962/2295): recall@5 0.7059 -> **0.8235**, recall@10
+  0.8235 -> **0.8824**, mrr 0.5207 -> **0.5975**, groundedness 0.4945 -> **0.5387**,
+  abstain_correctness 0.7391 -> **0.9565**. 1412 passed / 7 skipped, verified independently of the
+  engine. Also reverted `OR.0.C`'s corpus exclusion (`efda003f`) after measuring it exactly neutral,
+  and established the RAG observatory at `planning/retrieval-eval-runs/` (`index.md`, `snapshots/`,
+  `query-log/` with 2603 exported rows), recorded in `CLAUDE.md`.
+- **Why:** The operator asked for evidence-backed improvement rather than another round of tuning,
+  and for the dos and don'ts to generalize — this work is a rehearsal for building similar systems
+  for clients. Three prior blocks had produced plausible-but-wrong conclusions.
+- **Refs:** `planning/artifacts/rag-diagnosis-2026-08-07.md` ·
+  `planning/retrieval-eval-runs/index.md` · `planning/ticket-retrieval-ranking-and-abstain/` ·
+  carryover `archive-status-frontmatter-drift`
+
+**Two prior conclusions were overturned, both by measurement.** `OR.0.C`'s "the exclusion made
+retrieval worse" was **confounded**: its before and after straddled the 151-zombie-path prune, which
+deleted the rows two golden cases depended on (`id-or-k2-self`, `id-or-k1-query-log` went 1.0 -> 0.0
+between the measurements). Measured single-variable, the exclusion is exactly neutral. And `OR.0.A`'s
+null ranking verdict was measured at 13054 chunks, a corpus that no longer exists — re-swept at
+11533, `_KW_WEIGHT` shows a **genuine plateau across 0.25-2.0**, precisely the condition its own
+decision rule demanded and could not find.
+
+**The abstain gate had never fired once** — not in any of the 14 eval runs, and not in any of the
+2603 logged production queries, whose minimum observed confidence was 0.5980 against a 0.55
+threshold. `sigmoid(top_score)` on an always-positive score cannot fall below 0.5.
+
+**A `python -c` one-liner silently reads the WRONG, EMPTY database** (`postgres`, 0 brain rows)
+because `load_dotenv()` only resolves `core/.env` from a script file. This nearly invalidated the
+whole analysis and is now a standing rule in `CLAUDE.md`.
 
 ## [run: 2026-08-07] (wrap-up — OR.0.C closed)
 
