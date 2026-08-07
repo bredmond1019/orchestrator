@@ -16,8 +16,12 @@ import json
 from pathlib import Path
 
 import yaml
+from database.brain_document import BrainDocument
+from database.brain_edge import BrainEdge
+from sqlalchemy import func
 
 from brain import retrieval_engine
+from brain.eval import scorer
 from brain.eval.models import CaseResult, RetrievalCase, RetrievalRunReport
 from brain.eval.scorer import score_case
 
@@ -94,6 +98,55 @@ def _aggregate(results: list[CaseResult]) -> dict[str, float]:
     return aggregate
 
 
+def _fingerprint_corpus(session=None) -> dict:
+    """The brain corpus's shape at run time — chunk count, distinct file
+    count, edge count, and the newest `indexed_at` — read from the same
+    session the run uses.
+
+    This is the provenance stamp that makes a run's numbers attributable:
+    two runs whose fingerprints differ were measured against different
+    corpora and are not directly comparable (see `OR.0.C`'s post-mortem in
+    `planning/artifacts/rag-diagnosis-2026-08-07.md`).
+    """
+    with retrieval_engine._session_scope(session) as db:  # pylint: disable=protected-access
+        chunk_count = (
+            db.query(func.count(BrainDocument.id)).scalar() or 0  # pylint: disable=not-callable
+        )
+        file_count = (
+            db.query(func.count(func.distinct(BrainDocument.file_path)))  # pylint: disable=not-callable
+            .scalar()
+            or 0
+        )
+        edge_count = (
+            db.query(func.count(BrainEdge.id)).scalar() or 0  # pylint: disable=not-callable
+        )
+        max_indexed_at = db.query(
+            func.max(BrainDocument.indexed_at)  # pylint: disable=not-callable
+        ).scalar()
+
+    return {
+        "chunk_count": chunk_count,
+        "file_count": file_count,
+        "edge_count": edge_count,
+        "max_indexed_at": max_indexed_at.isoformat() if max_indexed_at else None,
+    }
+
+
+def _live_ranking_constants() -> dict:
+    """The ranking levers that actually ran, read from the live modules at
+    call time (never hardcoded) so the stamp cannot silently drift from
+    what produced the report it's attached to."""
+    return {
+        "kw_weight": retrieval_engine._KW_WEIGHT,  # pylint: disable=protected-access
+        "max_per_file": retrieval_engine._MAX_PER_FILE,  # pylint: disable=protected-access
+        "section_title_weight": (
+            retrieval_engine._SECTION_TITLE_WEIGHT  # pylint: disable=protected-access
+        ),
+        "doc_decay_factor": retrieval_engine._DOC_DECAY_FACTOR,  # pylint: disable=protected-access
+        "abstain_threshold": scorer.ABSTAIN_THRESHOLD,
+    }
+
+
 def run_eval(
     cases: list[RetrievalCase],
     *,
@@ -141,6 +194,8 @@ def run_eval(
         case_count=len(cases),
         results=tuple(results),
         aggregate=_aggregate(results),
+        corpus=_fingerprint_corpus(session),
+        ranking_constants=_live_ranking_constants(),
     )
 
 
