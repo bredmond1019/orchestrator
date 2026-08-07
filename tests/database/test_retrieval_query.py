@@ -259,3 +259,110 @@ class TestRetrievalQueriesMigration:
         assert "retrieval_queries" not in inspector.get_table_names()
 
         engine.dispose()
+
+
+@pytest.mark.integration
+class TestMiningCaptureColumnsMigration:
+    """`c1d2e3f4a5b6` — the five OR.2.E mining capture columns, up and down
+    against a Docker-gated pgvector container.
+
+    The block's acceptance criteria require the migration to apply **and
+    reverse** cleanly, with the pre-existing rows left NULL (no fabricated
+    backfill). Nothing else asserted that; this closes the gap. Mirrors
+    `TestRetrievalQueriesMigration` above — same container fixture shape,
+    same `logging.config.fileConfig` neutralization, same
+    upgrade-to-prior-head-first discipline so the target migration runs
+    against the real prior state rather than a vacuum.
+    """
+
+    _NEW_COLUMNS = {"k", "corpus", "embedding_model", "filters", "top_scores"}
+
+    @pytest.fixture()
+    def fresh_pg_container(self):
+        try:
+            from testcontainers.postgres import PostgresContainer
+        except ImportError as exc:
+            pytest.skip(f"testcontainers[postgres] is not installed: {exc}")
+
+        try:
+            container = PostgresContainer("pgvector/pgvector:pg16")
+            container.start()
+        except Exception as exc:  # noqa: BLE001 - any Docker-unavailable failure
+            pytest.skip(f"Docker is unavailable, skipping migration test: {exc}")
+            return
+
+        try:
+            from sqlalchemy import text
+
+            engine = create_engine(container.get_connection_url())
+            with engine.begin() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            engine.dispose()
+            yield container
+        finally:
+            container.stop()
+
+    def test_upgrade_adds_five_nullable_columns_downgrade_removes_them(
+        self, fresh_pg_container, monkeypatch
+    ):
+        from alembic import command
+        from sqlalchemy import inspect, text
+
+        monkeypatch.setattr("logging.config.fileConfig", lambda *a, **k: None)
+        cfg = _alembic_config(monkeypatch, fresh_pg_container.get_connection_url())
+
+        # Prior head: the table exists, the five columns do not.
+        command.upgrade(cfg, "b8c9d0e1f2a3")
+        engine = create_engine(fresh_pg_container.get_connection_url())
+        before = {c["name"] for c in inspect(engine).get_columns("retrieval_queries")}
+        assert not (self._NEW_COLUMNS & before), (
+            f"columns already present at the prior head: {self._NEW_COLUMNS & before}"
+        )
+
+        # Seed a row BEFORE the migration — it must survive with NULLs in the
+        # new columns (the "no fabricated backfill" acceptance criterion).
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO retrieval_queries (id, query, surface, hybrid, "
+                    "result_count, abstained) VALUES (:id, :q, :s, :h, :rc, :ab)"
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "q": "pre-migration row",
+                    "s": "cli",
+                    "h": False,
+                    "rc": 0,
+                    "ab": False,
+                },
+            )
+
+        # Upgrade adds all five, every one nullable.
+        command.upgrade(cfg, "c1d2e3f4a5b6")
+        cols = {c["name"]: c for c in inspect(engine).get_columns("retrieval_queries")}
+        missing = self._NEW_COLUMNS - cols.keys()
+        assert not missing, f"migration did not add: {missing}"
+        for name in self._NEW_COLUMNS:
+            assert cols[name]["nullable"], f"{name} must be nullable"
+
+        # The pre-existing row reads NULL across all five — not backfilled.
+        with engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT k, corpus, embedding_model, filters, top_scores "
+                    "FROM retrieval_queries WHERE query = 'pre-migration row'"
+                )
+            ).one()
+        assert all(value is None for value in row), (
+            f"pre-existing row was backfilled instead of left NULL: {row}"
+        )
+
+        # Downgrade removes all five and leaves the table itself intact.
+        command.downgrade(cfg, "b8c9d0e1f2a3")
+        after = {c["name"] for c in inspect(engine).get_columns("retrieval_queries")}
+        assert not (self._NEW_COLUMNS & after), (
+            f"downgrade left columns behind: {self._NEW_COLUMNS & after}"
+        )
+        assert "retrieval_queries" in inspect(engine).get_table_names()
+
+        engine.dispose()
