@@ -54,7 +54,10 @@ on it). Do not re-add anything shaped like these — fixes only.
 - **Architecture reference:** `docs/app-architecture-overview.md`
 - **SDLC pipeline config:** `planning/harness.json` — the validation suite the SDLC engines run
   (11 checks, 8 of them gating, externalized via base-template's richer check kinds). This is the
-  source of truth for `/test`; keep the lint/test commands below in sync with it.
+  source of truth for `/test`; keep the lint/test commands below in sync with it. **Caveat:**
+  `hooks/pre-push` stage 2 selects checks by their `command` field, so the one gating check that has
+  none — `standing-rules`, a `forbidden-pattern-scan` — is silently skipped at push time and runs
+  only in the engines' Test stage. A push reporting "7 gated check(s)" is that, not a regression.
 - **Decisions log:** `planning/decisions/` (start at `planning/decisions/index.md`) — check before relitigating any settled choice
 
 ---
