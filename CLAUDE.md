@@ -53,8 +53,8 @@ on it). Do not re-add anything shaped like these — fixes only.
   under "Bastion Program Blocks" and `planning/decisions/D36-bastion-engine-brain-role.md`.
 - **Architecture reference:** `docs/app-architecture-overview.md`
 - **SDLC pipeline config:** `planning/harness.json` — the validation suite the SDLC engines run
-  (the 8-check suite, now externalized via base-template's richer check kinds). This is the source of
-  truth for `/test`; keep the lint/test commands below in sync with it.
+  (11 checks, 8 of them gating, externalized via base-template's richer check kinds). This is the
+  source of truth for `/test`; keep the lint/test commands below in sync with it.
 - **Decisions log:** `planning/decisions/` (start at `planning/decisions/index.md`) — check before relitigating any settled choice
 
 ---
@@ -178,6 +178,7 @@ Developer reference docs in `docs/`:
 | [docs/api-reference.md](docs/api-reference.md) | Precise class-level reference for every public abstraction in app/core/, app/database/, app/services/, and app/workflows/ that a developer must understand and subclass when writing a new workflow. |
 | [docs/configuration.md](docs/configuration.md) | Complete reference for every environment variable, connection string assembly, and Docker service topology so a developer can configure the stack for local development or a Docker deployment without guessing. |
 | [docs/scripts.md](docs/scripts.md) | Reference for every script in `scripts/`: setup, dev server, inspection, and the brain corpus/graph pipeline (`index_brain.py`, `load_brain_edges.py`, `query_brain.py`, the `syn` CLI). |
+| [docs/brain-rag.md](docs/brain-rag.md) | The Brain RAG layer end to end: the `BrainDocument`/`BrainEdge` models, `index_brain.py`, the two-stage hybrid retrieval pipeline, age decay, memory expansion, and the answer-time grounding/abstain gate. |
 
 ---
 
