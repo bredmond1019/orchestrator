@@ -6,7 +6,7 @@ doc_id: memory
 layer: [brain, engine]
 project: orchestrator
 status: active
-keywords: [memory, Peer, AgentEpisode, SemanticMemory, decay, contradiction, Honcho, workspace_id, MemoryLoaderNode, D35]
+keywords: [memory, Peer, AgentEpisode, SemanticMemory, decay, contradiction, D35]
 related: [api-reference, brain-rag, workspace-contract, workflows, D25-honcho-reference, D35-top-tier-models]
 ---
 
