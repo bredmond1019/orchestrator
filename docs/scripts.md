@@ -6,7 +6,7 @@ doc_id: scripts
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, developer scripts, workspace mode, syn CLI, recall, walk, pulse, prune]
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, workspace mode, syn CLI, prune]
 related: [getting-started, brain-rag, configuration, workspace-contract]
 ---
 

@@ -6,7 +6,7 @@ doc_id: data-contract
 layer: [engine, console]
 project: orchestrator
 status: active
-keywords: [data contract, versioning, node_runs, task_context, external consumer, bastion, cancellation, abort, budget gate]
+keywords: [data contract, versioning, node_runs, task_context, bastion, cancellation, budget gate]
 related: [D28-node-level-execution-state, D30-data-contract-ownership, app-architecture-overview]
 ---
 
