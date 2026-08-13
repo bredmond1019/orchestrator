@@ -45,6 +45,7 @@ on it). Do not re-add anything shaped like these — fixes only.
 
 - **Strategic context:** `planning/context.md` (read first) → `planning/status.md` (current state)
 - **Symlink warning:** the `planning/` directory is actually a local symlink pointing to the company brain repo's `_planning/` vault (e.g. `core/_planning/orchestrator/`). The brain repo is responsible for tracking all planning files under Git. Do not track `planning/` in this project's public Git repository (it is gitignored).
+- **Symlink traps:** `rg`/`grep`/`find` are symlink-blind by default — a search that must include `planning/` content needs `-L`/`--follow`. `git mv` fails through the symlink face ("source directory is empty") — move planning files via the real vault path (`.../_planning/<slug>/...`), never via `planning/...`. Planning changes are committed in the brain repo (`agentic-portfolio`) with an explicit pathspec, never in this repo.
 - **Role in Bastion:** this repo is the **Brain** — the knowledge layer — of the brain's primary
   program, Bastion. (It was the Engine + Brain half; **D50/D51 divested the Engine role to
   `engine-rs`.**) Cross-repo order + seams are authoritative in the brain
