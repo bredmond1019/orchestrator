@@ -133,3 +133,60 @@ class TestDataContractSection4Agreement:
     def test_inactive_cases_do_not_derive_to_running(self):
         for task_context in self.INACTIVE_CASES:
             assert derive_status(task_context) != EventStatus.RUNNING, task_context
+
+
+# --------------------------------------------------------------------------
+# metadata.completion — the untaken-branch case
+# --------------------------------------------------------------------------
+#
+# `Workflow.run` seeds EVERY node in the DAG `pending` before the walk starts,
+# so a branch the router never took is still `pending` when the run finishes
+# and is indistinguishable by node status alone from work that has not started.
+# The live symptom: an answered DOCUMENT_QA run left `AbstainNode` pending and
+# reported `running` forever, so the cockpit's spinner never stopped on a query
+# that had in fact produced a complete answer.
+
+
+def test_succeeded_when_completion_marker_set_despite_pending_branch():
+    task_context = {
+        "metadata": {"completion": {"completed": True}},
+        "node_runs": _node_runs("success", "success", "pending"),
+    }
+    assert derive_status(task_context) == EventStatus.SUCCEEDED
+
+
+def test_running_when_pending_branch_but_no_completion_marker():
+    # Same node_runs, no marker — a genuinely in-flight run must stay running.
+    task_context = {
+        "metadata": {},
+        "node_runs": _node_runs("success", "success", "pending"),
+    }
+    assert derive_status(task_context) == EventStatus.RUNNING
+
+
+def test_precedence_failure_beats_completion_marker():
+    # A run can finish its walk and still have a failed node; failure wins.
+    task_context = {
+        "metadata": {"completion": {"completed": True}},
+        "node_runs": _node_runs("success", "failed"),
+    }
+    assert derive_status(task_context) == EventStatus.FAILED
+
+
+def test_precedence_cancelled_beats_completion_marker():
+    task_context = {
+        "metadata": {
+            "completion": {"completed": True},
+            "cancellation": {"cancelled": True, "at": "2026-08-13T00:00:00Z"},
+        },
+        "node_runs": _node_runs("success", "success"),
+    }
+    assert derive_status(task_context) == EventStatus.CANCELLED
+
+
+def test_falsy_completion_marker_does_not_force_succeeded():
+    task_context = {
+        "metadata": {"completion": {"completed": False}},
+        "node_runs": _node_runs("success", "pending"),
+    }
+    assert derive_status(task_context) == EventStatus.RUNNING

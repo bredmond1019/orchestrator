@@ -172,6 +172,26 @@ class Workflow(ABC):
                 current_node_class, task_context
             )
         task_context.metadata.pop("nodes")
+
+        # Stamp a run-level completion marker. Every node is seeded PENDING
+        # above so a freshly-dispatched run shows the full DAG — which means a
+        # branch the router never took (e.g. `AbstainNode` on an answered
+        # DOCUMENT_QA run) is still PENDING when the walk ends, and is
+        # indistinguishable by node status alone from a node that simply has
+        # not started yet. Without this marker `derive_status` reads that
+        # leftover PENDING as "still in flight" and every successful run stays
+        # `running` forever.
+        #
+        # This follows the existing run-level annotation precedent
+        # (`metadata.failure` / `cancellation` / `budget`, `docs/data-contract.md`
+        # §5) rather than widening `NodeRun.status` with a SKIPPED member, which
+        # would be a breaking change to the §6 per-node vocabulary that clients
+        # already switch on. Set only on the normal exit path: an exception
+        # propagates out of `run()` above and is annotated by the caller's
+        # `_write_failure_marker` instead.
+        completion = dict(task_context.metadata.get("completion") or {})
+        completion["completed"] = True
+        task_context.metadata["completion"] = completion
         return task_context
 
     def _get_next_node_class(

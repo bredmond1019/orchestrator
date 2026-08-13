@@ -147,13 +147,23 @@ class UpdateSessionMemoryNode(Node):
         new_topics = [t for t in cited_sections if t not in existing_topics]
         chat_session.topics_covered = existing_topics + new_topics
 
+        # Capture the turn count BEFORE persisting. ``db_session`` commits and
+        # then closes the session, and SQLAlchemy's default
+        # ``expire_on_commit=True`` marks every attribute expired — so reading
+        # ``chat_session.turns`` after ``_persist`` triggers a refresh on a now
+        # detached instance and raises ``DetachedInstanceError``, killing the
+        # terminal node and leaving the event stuck at ``queued`` with a null
+        # ``task_context``. ``current_turns`` is a plain list we own, so it is
+        # immune to expiry.
+        turn_count = len(current_turns)
+
         self._persist(chat_session)
 
         task_context.update_node(
             node_name=self.node_name,
             result={
                 "session_id": str(event.session_id),
-                "turns": len(chat_session.turns),
+                "turns": turn_count,
             },
         )
         return task_context

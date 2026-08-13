@@ -12,7 +12,7 @@ related: [D28-node-level-execution-state, D30-data-contract-ownership, app-archi
 
 # Data Contract — Orchestrator Execution State
 
-**Contract Version: 1.6.0**
+**Contract Version: 1.7.0**
 
 This is the **single source of truth** for the shape any external consumer reads to observe a
 workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
@@ -205,8 +205,30 @@ Instead both are recorded as structured keys under `metadata`, per
     individual `node_runs[*]` entry itself reached `status: "failed"` — see §7's derived-`status`
     precedence for how a consumer combines the two signals.
 
+- **`metadata.completion`** — written by `Workflow.run` on its normal exit path, after the node walk
+  ends and before the context is returned:
+    ```jsonc
+    { "metadata": { "completion": { "completed": true } } }
+    ```
+    **Why this marker is required, not cosmetic.** `Workflow.run` seeds *every* node in the DAG as
+    `pending` before the walk starts, so a freshly-dispatched run shows its full shape. A branch the
+    router never takes is therefore still `pending` when the run ends — and is indistinguishable, by
+    node status alone, from a node that simply has not started yet. §7's derived-`status` reads any
+    non-terminal `node_runs[*]` entry as `running`, so **without this marker every successful run of
+    a branching workflow reports `running` forever.** Observed live on `DOCUMENT_QA`, whose
+    `AbstainNode` never runs on an answered query: the answer was complete and correct, and the run
+    never left `running`.
+
+    As with `cancellation`, `budget`, and `failure`, this is spelled in `metadata`, not a new
+    `NodeRun.status` value — adding a `skipped` member to §6's `pending|running|success|failed`
+    vocabulary would be a MAJOR bump against consumers that already switch on it. Absent on a run
+    that raised (the exception propagates out of `run()`, and `metadata.failure` annotates it
+    instead) and absent on runs written before this marker existed, which is why §7 retains the
+    all-nodes-`success` rule as a fallback.
+
   Consumers must read these `metadata` keys — not `NodeRunStatus` — to distinguish "cancelled",
-  "budget-halted", or a marker-carrying "failed" from an otherwise-identical `running` run.
+  "budget-halted", "completed", or a marker-carrying "failed" from an otherwise-identical `running`
+  run.
 
 ---
 
@@ -416,3 +438,4 @@ checklist step prompting this.
 | 1.4.0 | 2026-07-27 | Minor: new `GET /recall`, `GET /walk`, `GET /pulse` endpoints (§7) — the read half of the D51 HTTP adapter whose write half (`POST /ingest/*`) landed in v1.3.0. All three reuse the `X-API-Key` gate, reject missing/malformed query params with a typed `422` (never a `500`), and delegate unchanged to the one `app/brain/` read core (`retrieval.recall` / `graph.walk` / `pulse.pulse`) that the `syn recall`/`walk`/`pulse` CLI already calls — no retrieval, traversal, or health-probe behavior changes. `recall()`'s `workspace` argument is not wired to a query param (out of scope). Does not change any `events`/`task_context` shape — these routes read only `brain_documents`/`brain_edges`, outside this contract's `events` scope, and are documented here because they share the same HTTP surface and auth gate (the same framing v1.3.0 used for `/ingest/*`). §3's read-path narrative reconciled: a consumer no longer needs direct `brain_documents` coupling to query the corpus. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.5.0 | 2026-08-01 | Minor: `POST /ingest/proposal` and `POST /ingest/artifact` (§7) gain an optional `authored_at: datetime \| null` field (additive, backward-compatible — omitted or `null` preserves the pre-existing `datetime.now()` fallback exactly). Threaded through `app/brain/ingest.py::ingest_artifact`'s new optional `authored_at` parameter to the written `brain_documents` rows. Part of `OR.ticket.corpus-reconcile` task 1 (the `embedding_model` stamp migration); does not touch `events`/`task_context`/`node_runs` shape. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.6.0 | 2026-08-01 | `GET /recall` (§7) response shape reconciled with `OR.K2`'s retrieval-core promotion (`app/brain/retrieval_engine.py`) and `app/brain/retrieval.py::recall()`'s return-shape normalization: `score` is now a similarity where **higher is always better** on every path (`1.0` for an exact-id match, `1.0 - cosine distance` for semantic, unchanged fused-similarity for hybrid) — previously the exact-id/semantic paths returned a raw cosine *distance* (`0.0` for an exact-id match, lower-is-better), so a consumer sorting or thresholding on `score` must re-verify its comparison direction. `via`'s vocabulary widens from `exact-id \| semantic \| hybrid` to also include `structural \| keyword \| memory` (the hybrid path's per-candidate provenance, previously collapsed to a bare `"hybrid"` tag). Field names and types are unchanged (still `doc_id \| null, file_path, title \| null, section \| null, content, score: float, via: str`), and `GET /recall`'s query params (`q`/`limit`/`hybrid`) are unchanged — no new param, `workspace` remains unwired to the HTTP surface. Flagged Minor rather than Major because no field was renamed, removed, or changed type — but a consumer relying on old `score` polarity WILL misbehave, so re-pin promptly. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
+| 1.7.0 | 2026-08-13 | Minor: new run-level `metadata.completion` annotation (§5), written by `Workflow.run` on its normal exit path, and consumed by §7's derived-`status` as a `succeeded` signal that outranks the leftover-`pending` check. Fixes a live defect rather than adding a feature: `Workflow.run` seeds every node in the DAG `pending` before the walk, so a branch the router never takes is still `pending` when the run ends and is indistinguishable by node status alone from unstarted work — every successful run of a **branching** workflow therefore derived to `running` forever (observed on `DOCUMENT_QA`, whose `AbstainNode` never runs on an answered query: complete answer, permanently `running` status). Additive and backward-compatible: the marker is absent on runs that raised (annotated by `metadata.failure` instead) and on rows written before it existed, so §7 retains the all-nodes-`success` rule as a fallback. `NodeRun`'s `pending|running|success|failed` vocabulary (§6) is **unchanged** — a `skipped` member would have been a MAJOR bump. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
