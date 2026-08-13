@@ -44,9 +44,17 @@ def derive_status(task_context: dict[str, Any] | None) -> EventStatus:
     3. `halted` — `metadata.budget.halted` is truthy.
     4. `failed` — `metadata.failure.failed` is truthy, or any `node_runs[*]`
        entry has `status == "failed"`.
-    5. `running` — any `node_runs[*]` entry is non-terminal (`pending` or
+    5. `succeeded` — `metadata.completion.completed` is truthy. The workflow
+       walk finished normally, so any node still `pending` is a branch the
+       router never took, not pending work. `Workflow.run` seeds every node in
+       the DAG `pending` up front, which makes an untaken branch and an
+       unstarted node identical by node status alone — without this marker a
+       branching workflow (e.g. DOCUMENT_QA, whose `AbstainNode` never runs on
+       an answered query) would report `running` forever.
+    6. `running` — any `node_runs[*]` entry is non-terminal (`pending` or
        `running`).
-    6. `succeeded` — every `node_runs[*]` entry is `success`.
+    7. `succeeded` — every `node_runs[*]` entry is `success`. Retained for runs
+       written before the completion marker existed, and for linear workflows.
 
     A `task_context` that is present but whose `node_runs` map is empty or
     absent derives to `running`: the row was written by a `persist_progress`
@@ -73,6 +81,10 @@ def derive_status(task_context: dict[str, Any] | None) -> EventStatus:
 
     if failure.get("failed") or "failed" in node_statuses:
         return EventStatus.FAILED
+
+    completion = metadata.get("completion") or {}
+    if completion.get("completed"):
+        return EventStatus.SUCCEEDED
 
     if not node_runs:
         return EventStatus.RUNNING

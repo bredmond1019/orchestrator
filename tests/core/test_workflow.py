@@ -307,10 +307,17 @@ class TestMetadataCleanup:
         ctx = LinearWorkflow().run({"action": "test"})
         assert "nodes" not in ctx.metadata
 
-    def test_metadata_is_empty_after_stub_workflow(self):
-        """Stub nodes add nothing to metadata; it is empty after run() cleans up."""
+    def test_metadata_holds_only_completion_after_stub_workflow(self):
+        """Stub nodes add nothing to metadata of their own.
+
+        Was `ctx.metadata == {}`. `run()` now also stamps the run-level
+        `completion` marker on its normal exit path (see `TestCompletionMarker`),
+        so the assertion is narrowed to "nothing beyond that" rather than
+        dropped — the point of the test is that a stub workflow contributes no
+        metadata itself, and an equality check still catches that.
+        """
         ctx = LinearWorkflow().run({"action": "test"})
-        assert ctx.metadata == {}
+        assert ctx.metadata == {"completion": {"completed": True}}
 
 
 # ---------------------------------------------------------------------------
@@ -448,3 +455,38 @@ class TestOnProgressCallback:
         assert all(isinstance(ctx, TaskContext) for ctx in seen)
         # All invocations and the return value reference the same live context.
         assert all(ctx is result for ctx in seen)
+
+
+class TestCompletionMarker:
+    """`Workflow.run` stamps `metadata.completion` on the normal exit path.
+
+    Every node is seeded PENDING before the walk, so on a branching workflow
+    the untaken branch is still PENDING at the end. `derive_status` cannot tell
+    that apart from unstarted work by node status alone, so without this marker
+    a successful branching run reports `running` forever.
+    """
+
+    def test_linear_run_stamps_completion(self):
+        ctx = LinearWorkflow().run({"action": "test"})
+        assert ctx.metadata["completion"]["completed"] is True
+
+    def test_branching_run_stamps_completion_with_untaken_branch_pending(self):
+        ctx = RouterWorkflow().run({"action": "test"})
+
+        assert ctx.metadata["completion"]["completed"] is True
+
+        # Precondition for the bug: exactly one branch ran, the other is still
+        # seeded PENDING. If this stops holding, the marker is no longer what
+        # separates "finished" from "in flight" and this test is vacuous.
+        branch_statuses = {
+            name: ctx.node_runs[name].status
+            for name in ("BranchNodeB", "BranchNodeC")
+        }
+        assert NodeStatus.PENDING in branch_statuses.values()
+        assert NodeStatus.SUCCESS in branch_statuses.values()
+
+    def test_failed_run_does_not_stamp_completion(self):
+        # The exception propagates out of run(), so the marker is never set and
+        # the caller's failure marker is what annotates the run.
+        with pytest.raises(RuntimeError):
+            FailingWorkflow().run({"action": "test"})

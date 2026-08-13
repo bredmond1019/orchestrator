@@ -461,6 +461,47 @@ class TestUpdateSessionMemoryNode:
         assert result["session_id"] == str(s_id)
         assert result["turns"] == 2
 
+    def test_turn_count_read_before_persist_expires_attributes(self, monkeypatch):
+        """The turn count must not be read off the ORM instance after persisting.
+
+        ``db_session`` commits and closes, and SQLAlchemy's default
+        ``expire_on_commit=True`` then makes any attribute access on the now
+        detached instance raise ``DetachedInstanceError``. This reproduces that
+        by having ``_persist`` swap ``turns`` for a raising descriptor — the
+        exact live failure that left DOCUMENT_QA events stuck at ``queued``
+        with a null ``task_context``.
+        """
+        ctx, s_id, _ = self._ctx_with_answer()
+        node = UpdateSessionMemoryNode()
+
+        class _Detached:
+            """A *data* descriptor — it must define ``__set__`` as well as
+            ``__get__``, otherwise the value SQLAlchemy already stashed in the
+            instance ``__dict__`` shadows it and the test passes vacuously."""
+
+            def __get__(self, obj, objtype=None):
+                raise RuntimeError(
+                    "Instance <ChatSession> is not bound to a Session; "
+                    "attribute refresh operation cannot proceed"
+                )
+
+            def __set__(self, obj, value):
+                raise AssertionError("turns must not be written after persist")
+
+        def _expire_on_persist(chat_session):
+            # `monkeypatch.setattr` restores the real mapped attribute at
+            # teardown, so the rest of the suite is unaffected.
+            monkeypatch.setattr(ChatSession, "turns", _Detached(), raising=False)
+
+        monkeypatch.setattr(node, "_load_session", lambda sid: None)
+        monkeypatch.setattr(node, "_persist", _expire_on_persist)
+
+        node.process(ctx)
+
+        result = ctx.nodes["UpdateSessionMemoryNode"]["result"]
+        assert result["session_id"] == str(s_id)
+        assert result["turns"] == 2
+
     def test_topics_covered_extended_from_cited_sections(self, monkeypatch):
         """cited_sections from the answer are added to topics_covered."""
         ctx, s_id, _ = self._ctx_with_answer(cited_sections=["Introduction", "Methods"])
