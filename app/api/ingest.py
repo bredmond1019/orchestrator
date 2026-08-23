@@ -70,6 +70,15 @@ def ingest_artifact_route(
 ) -> IngestResponse:
     """Ingest a generic artifact into ``brain_documents``.
 
+    Also accepts engine-rs's literal content-pipeline ``LearningArtifact``
+    shape: when the generic ``content``/``doc_type`` fields are omitted,
+    ``content`` falls back to ``digest_markdown`` and ``doc_type`` falls back
+    to the literal ``"learning_artifact"``; ``title``/``description`` fall
+    back to ``summary``. The LearningArtifact-only fields (``channel_type``,
+    ``source_ref``, ``entities``, ``language``, ``summary``) are folded into
+    the outbound ``metadata`` dict alongside any caller-supplied
+    ``metadata`` (caller-supplied keys win on conflict).
+
     Args:
         payload: The generic artifact envelope (content-pipeline / external-
             intel producers).
@@ -81,16 +90,36 @@ def ingest_artifact_route(
     Raises:
         HTTPException: 500 if the underlying ingest slice raises.
     """
+    content = payload.content or payload.digest_markdown
+    doc_type = payload.doc_type or "learning_artifact"
+    title = payload.title or payload.summary
+    description = payload.description or payload.summary
+
+    derived_metadata: dict = {
+        key: value
+        for key, value in (
+            ("channel_type", payload.channel_type),
+            ("source_ref", payload.source_ref),
+            ("entities", payload.entities),
+            ("language", payload.language),
+            ("summary", payload.summary),
+        )
+        if value is not None
+    }
+    # Caller-supplied metadata keys win over the derived LearningArtifact ones.
+    merged_metadata = {**derived_metadata, **(payload.metadata or {})}
+
     try:
         chunks_written = ingest_artifact(
             session,
             artifact_id=payload.artifact_id,
-            doc_type=payload.doc_type,
-            content=payload.content,
+            doc_type=doc_type,
+            content=content,
             section=payload.section,
             project=payload.project,
-            title=payload.title,
-            description=payload.description,
+            title=title,
+            description=description,
+            metadata=merged_metadata or None,
             authored_at=payload.authored_at,
         )
     except Exception as exc:

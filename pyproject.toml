@@ -90,18 +90,23 @@ max-returns = 10
 # accommodate, continuing the precedent the frontmatter-retrieval-filters spec set.
 # app.brain.ingest.ingest_artifact's public signature is pinned by the OR.Q /
 # ticket-corpus-reconcile task specs (session + artifact_id, doc_type,
-# content, section, project, title, description, authored_at) — 9 real,
-# independent parameters, each keyword-only after session so
-# positional-arguments stays at 6. Raised 7 -> 8 -> 9, continuing the
-# precedent the frontmatter-retrieval-filters spec set; _upsert_chunk mirrors
-# the same growth (adds embedding_model + authored_at alongside the existing
-# per-chunk write fields). max-locals follows suit: the function's own
-# bookkeeping (file_path, attribution, context_prefix, embedding_svc,
-# final_chunks, embed_texts, embeddings, chunks_written, plus the per-chunk
-# loop vars) pushes past the default 15 without indicating real complexity.
-max-args = 9
+# content, section, project, title, description, metadata, authored_at) — 10
+# real, independent parameters, each keyword-only after session so
+# positional-arguments stays at 6. Raised 7 -> 8 -> 9 continuing the
+# precedent the frontmatter-retrieval-filters spec set; OR.3.A task 1 raised
+# 9 -> 10 to add `metadata`, the merged LearningArtifact/caller-supplied
+# context dict engine-rs's content-pipeline payload carries (accepted for
+# forward compatibility; not yet persisted to a dedicated column — see the
+# parameter's docstring). _upsert_chunk mirrors the earlier growth (adds
+# embedding_model + authored_at alongside the existing per-chunk write
+# fields). max-locals follows suit: the function's own bookkeeping
+# (file_path, attribution, context_prefix, embedding_svc, final_chunks,
+# embed_texts, embeddings, chunks_written, plus the per-chunk loop vars, plus
+# the now-unused `metadata` parameter binding) pushes past the default 15
+# without indicating real complexity.
+max-args = 10
 max-positional-arguments = 6
-max-locals = 20
+max-locals = 21
 
 [tool.pylint.format]
 # app/brain/cli.py is the single `syn` argparse dispatcher (D52) — every

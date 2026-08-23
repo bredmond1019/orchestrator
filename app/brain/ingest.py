@@ -120,6 +120,7 @@ def ingest_artifact(
     project: str | None = None,
     title: str | None = None,
     description: str | None = None,
+    metadata: dict | None = None,
     authored_at: datetime | None = None,
 ) -> int:
     """Chunk, embed, and upsert one artifact's content into ``brain_documents``.
@@ -148,12 +149,20 @@ def ingest_artifact(
         title: Optional OKF title, stored for FTS/citation display.
         description: Optional OKF description, stored for FTS/citation
             display and folded into the embed-text context prefix.
+        metadata: Optional free-form caller context (e.g. engine-rs
+            content-pipeline's ``channel_type``/``source_ref``/``entities``/
+            ``language``/``summary``). Accepted for forward compatibility
+            with callers that build a merged metadata dict (OR.3.A); not yet
+            persisted to a dedicated column, so it does not affect chunking,
+            embedding, or storage — ``brain_documents`` has no matching
+            columns today.
         authored_at: Optional caller-supplied authoring timestamp; falls
             back to ``datetime.now()`` when omitted (unchanged default).
 
     Returns:
         The number of ``BrainDocument`` chunk rows written.
     """
+    del metadata  # not yet persisted; see docstring above (OR.3.A)
     attribution = {"project": project, "title": title, "description": description}
     file_path = _derive_file_path(doc_type, artifact_id)
     context_prefix = build_context_prefix({"type": doc_type, **attribution})
