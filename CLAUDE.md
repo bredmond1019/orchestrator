@@ -76,6 +76,13 @@ on it). Do not re-add anything shaped like these — fixes only.
 9. **Seed TaskContext with the real storage structure in tests.** `AgentNode` stores output via `update_node(node_name=..., result=output)`, which produces `{"result": output}` in `task_context.nodes`. Tests that seed an upstream node as `ctx.nodes["X"] = raw_dict` instead of `ctx.nodes["X"] = {"result": raw_dict}` will pass silently (agent is mocked) but prove the wrong key contract. Always mirror what the actual node writes. When in doubt, check the `update_node` call in the source node.
 10. **Extract on the second consumer, never on the first.** The shared `app/brain/` service layer is not designed up front — it *accretes*. Each block factors out only the slice its own feature needs (`OR.N1` → `recall`/`walk`/`health`; `OR.Q` → `ingest`; `OR.N2` → `embed`/`stale`), so **no block is a pure refactor and none gates a phase**. Every block must ship something a user or agent can do that they could not do before; if you cannot name that, the block is wrong. Note this is deliberately *not* engine-rs's `EN.4.0` shape — that block generalizes machinery whose consumers are all known and imminent, whereas Synapse's surfaces arrive months apart. (Brain D51.)
 11. **Every new `.md` under `docs/` or `planning/` must open with OKF YAML frontmatter.** The governing standard is D27 in the company brain; the canonical authoring guide is `agentic-portfolio/docs/okf-frontmatter.md`. Required fields: `type`, `title`, `description`. Optional but strongly encouraged: `doc_id` (kebab-case, defaults to filename stem), `layer` (closed set: `brain` · `engine` · `factory` · `console` · `surface` · `infra` · `business` · `content` · `meta`), `project` (use `orchestrator` for this repo; omit for cross-cutting docs), `status` (`active` · `draft` · `deprecated` · `superseded` · `archived`), `keywords` (3–7 free-form topic terms), `related` (list of `doc_id`s). Adding a file to a directory requires updating that directory's `index.md`; propagate up the tree if the parent scope changes.
+12. **Never `git push` this repo directly from inside it.** Route every push through the
+    company-brain's `agentic-portfolio/scripts/git_push.sh --all`, which pushes the whole fleet
+    (in Cargo dependency order where that applies) and reports fleet-wide push state in one
+    place, rather than each repo pushing independently and drifting out of that picture.
+    Branching, committing, and opening/reviewing/merging PRs to `main` locally are all fine from
+    inside this repo — only the final `git push` of `main` to `origin` must go through that
+    script.
 
 ---
 
@@ -240,28 +247,22 @@ Full rationale, the complete cut-list, and worked before/after examples: the
 <!-- BEGIN:session-continuity -->
 ## Stopping, continuing, and handing off
 
-Decide in this order. Only the third question is about tokens, and most of the time you never reach
-it. Raise this proactively when it applies — do not wait to be asked.
+**Run to completion. Never stop, clear, or hand off because context is getting large.** There is no
+token band, no percentage, and no "the next block would be cleaner in a fresh session." A chain runs
+every block it was given; a lane that stops after one block and waits to be relaunched by hand
+defeats the entire point of the run and puts the operator back in the loop after every block. If
+context genuinely runs out, the harness summarizes and you keep going — that is its job, not yours.
 
-1. **Is there a correctness reason to restart?** This overrides everything and holds at any context
-   size. An engine, command file, installed binary (`mev`, `bastion`), hook or `settings.json`
-   changed this session; or the operator edited a `CLAUDE.md` you already read. The running session
-   is a launch-time snapshot (standing rule 10), so it keeps producing pre-change results that read
-   as an unreliable agent rather than a stale snapshot. **Name the trigger; do not present it as a
-   cost decision.**
-2. **Does the next chunk of work have a written entry point?** The gate is the artifact, not the
-   number. If the next agent can start from `status.md`, `handoff.md`, a spec's `tasks.json`, or an
-   orchestration-run `notes.md`, clearing is nearly free. If not, **suggest writing that artifact
-   first, then clearing** — and never clear mid-debug, mid-block, or mid-decision, where the
-   valuable context is the part that cannot be written down. If clearing feels expensive, that is a
-   signal the handoff is thin, not a reason to stay.
-3. **Only then, the context size.** The real signal is what fraction is finished tool output rather
-   than active understanding. Rough bands: under ~100k don't raise it · 100–200k keep going ·
-   200–300k finish the unit in flight then suggest clearing, and don't start a new one · over ~300k
-   suggest clearing at the next boundary. These prompt you to *raise* it, never to abandon work in
-   flight. **In an orchestration lane the rule is structural: clear at block boundaries, never
-   mid-block** — budget ~20–40k of context per block.
+There is exactly **one** reason to end a session early, and it is about correctness, not cost:
+**something the running session depends on changed underneath it** — an engine, command file,
+installed binary (`mev`, `bastion`), hook or `settings.json` edited this session, or a `CLAUDE.md`
+you already read. The running session is a launch-time snapshot (base-template standing rule 10), so
+it keeps producing pre-change results, which read as an unreliable agent rather than a stale
+snapshot. **Name the trigger, finish the unit of work in flight, and say plainly that a fresh
+session is needed.** Do not present it as a context-budget decision, and do not go looking for the
+trigger as an excuse to stop.
 
-Full rationale, the correctness-trigger table, and what to actually say: the **`stop-or-continue`**
-skill.
+Whenever you do hand off, write the entry point first — `status.md`, `handoff.md`, a spec's
+`tasks.json`, or an orchestration-run `notes.md` — so the next agent starts from an artifact instead
+of from your memory.
 <!-- END:session-continuity -->
