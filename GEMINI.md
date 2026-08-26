@@ -10,7 +10,7 @@ Still built on the event-driven pipeline framework: FastAPI → Celery → Workf
 ## THE BOUNDARY TEST — read this before scoping any new work
 
 Brain (Synapse) or Engine (engine-rs)? Ask in order. Governed by brain **D51**; this block is
-byte-identical in `core/engine-rs/CLAUDE.md`.
+byte-identical in `core/engine-rs/GEMINI.md`.
 
 ```
 THE BOUNDARY TEST — Brain (Synapse) or Engine (engine-rs)?  Ask in order.
