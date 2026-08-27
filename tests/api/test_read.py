@@ -15,6 +15,7 @@ from database.session import Base, db_session
 from fastapi.testclient import TestClient
 from main import app
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -237,15 +238,65 @@ class TestReadDispatch:
         with patch("api.read.retrieval.recall", side_effect=RuntimeError("boom")):
             response = client.get("/recall", params={"q": "hello"})
         assert response.status_code == 500
+        assert response.json()["detail"]["error"] == "recall_failed"
 
     def test_walk_core_failure_returns_500_not_unhandled(self, read_context):
         client, _ = read_context
         with patch("api.read.graph.walk", side_effect=RuntimeError("boom")):
             response = client.get("/walk", params={"doc_id": "D20"})
         assert response.status_code == 500
+        assert response.json()["detail"]["error"] == "walk_failed"
 
     def test_pulse_core_failure_returns_500_not_unhandled(self, read_context):
         client, _ = read_context
         with patch("api.read.pulse_core.pulse", side_effect=RuntimeError("boom")):
             response = client.get("/pulse")
         assert response.status_code == 500
+        assert response.json()["detail"]["error"] == "pulse_failed"
+
+
+class TestReadDependencyFailureClassification:
+    """OR.3.B task 1: dependency outages get a typed 502, distinct from a
+    genuine internal bug's 500 and from `require_api_key`'s unconfigured-key
+    503 — three different retry semantics must not share a status code."""
+
+    def test_recall_operational_error_returns_502(self, read_context):
+        client, _ = read_context
+        exc = OperationalError("SELECT 1", {}, Exception("connection refused"))
+        with patch("api.read.retrieval.recall", side_effect=exc):
+            response = client.get("/recall", params={"q": "hello"})
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+    def test_walk_operational_error_returns_502(self, read_context):
+        client, _ = read_context
+        exc = OperationalError("SELECT 1", {}, Exception("connection refused"))
+        with patch("api.read.graph.walk", side_effect=exc):
+            response = client.get("/walk", params={"doc_id": "D20"})
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+    def test_pulse_operational_error_returns_502(self, read_context):
+        client, _ = read_context
+        exc = OperationalError("SELECT 1", {}, Exception("connection refused"))
+        with patch("api.read.pulse_core.pulse", side_effect=exc):
+            response = client.get("/pulse")
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+    def test_recall_wrapped_connection_error_returns_502(self, read_context):
+        """A connection error wrapped by a generic exception (`raise ...
+        from ConnectionError(...)`) is still classified via the
+        `__cause__` chain walk."""
+        client, _ = read_context
+
+        def _raise_wrapped(*_args, **_kwargs):
+            try:
+                raise ConnectionError("embedding backend unreachable")
+            except ConnectionError as cause:
+                raise RuntimeError("embedding call failed") from cause
+
+        with patch("api.read.retrieval.recall", side_effect=_raise_wrapped):
+            response = client.get("/recall", params={"q": "hello"})
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
