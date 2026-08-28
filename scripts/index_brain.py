@@ -29,8 +29,10 @@ Args:
 """
 
 import argparse
+import json
 import logging
 import os
+import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -246,6 +248,134 @@ def parse_document(text: str, file_path: "Path | str | None" = None) -> tuple[di
             file_path if file_path is not None else "<unknown>", exc
         ) from exc
     return dict(post.metadata), post.content
+
+
+# Common words dropped when deriving keywords from a block record's title —
+# keeps the derived set on substantive terms rather than function words.
+_KEYWORD_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "a", "an", "and", "as", "at", "be", "by", "every", "for", "from",
+        "in", "into", "is", "it", "of", "on", "or", "so", "that", "the",
+        "this", "to", "with", "its", "each",
+    }
+)
+
+# Prose fields rendered into a block record's body, in emission order, paired
+# with the markdown heading chunk_by_section splits on. Anything not listed
+# here (sdlc_workflow, model, workflow_rationale, spec_dir, created, updated,
+# forward_looking, depends_on, files, ...) is machine bookkeeping and is
+# deliberately never emitted — see this ticket's acceptance criteria.
+_BLOCK_RECORD_PROSE_FIELDS: tuple[tuple[str, str], ...] = (
+    ("what", "## What"),
+    ("why", "## Why"),
+    ("out_of_scope", "## Out of scope"),
+    ("acceptance_criteria", "## Acceptance criteria"),
+    ("testing_strategy", "## Testing strategy"),
+    ("notes", "## Notes"),
+)
+
+
+def _keywords_from_block_record(record: dict) -> list[str]:
+    """Derive 3-7 corpus keywords: the record's ``kind``/``initiative``, then title terms."""
+    keywords: list[str] = []
+    kind = record.get("kind")
+    if kind:
+        keywords.append(str(kind))
+    initiative = record.get("initiative")
+    if initiative:
+        keywords.append(str(initiative))
+    title = str(record.get("title") or "")
+    for word in re.findall(r"[A-Za-z0-9']+", title.lower()):
+        if len(word) < 3 or word in _KEYWORD_STOPWORDS or word in keywords:
+            continue
+        keywords.append(word)
+        if len(keywords) >= 7:
+            break
+    return keywords[:7] or ["block"]
+
+
+def _render_acceptance_criterion(entry: "str | dict") -> str:
+    """Render one acceptance-criteria list entry as a single bullet line.
+
+    Handles both the plain-string form and the D64 un-gateable object form
+    (``criterion``/``gateable``/``evidence``) — only the criterion text and,
+    when present, the evidence are emitted; ``gateable`` is a machine flag.
+    """
+    if isinstance(entry, dict):
+        text = str(entry.get("criterion", "")).strip()
+        evidence = entry.get("evidence")
+        if evidence:
+            return f"- {text} (evidence: {evidence})"
+        return f"- {text}"
+    return f"- {entry}"
+
+
+def parse_block_record(text: str, file_path: "Path | str | None" = None) -> tuple[dict, str]:
+    """Parse a ``planning/blocks/*.json`` block record into a ``(meta, body)`` pair.
+
+    Returns the SAME tuple shape :func:`parse_document` returns, so no
+    downstream caller (``normalize_metadata``, ``chunk_by_section``, the
+    embed/upsert loop) needs a branch once this returns.
+
+    ``meta`` synthesizes the OKF fields the pipeline expects — ``doc_id`` is
+    built from the record's own ``repo``/``id`` fields (never the filename
+    stem, which is not repo-qualified and can collide across repos). ``body``
+    renders only the record's authored prose fields
+    (:data:`_BLOCK_RECORD_PROSE_FIELDS`) as markdown ``##`` sections, in a
+    fixed order, skipping any absent or empty field — machine bookkeeping
+    fields (``sdlc_workflow``, ``model``, ``workflow_rationale``, ``spec_dir``,
+    ``created``, ``updated``, ``forward_looking``, ``depends_on``, ``files``)
+    are never emitted.
+
+    Args:
+        text: Raw file contents of a ``planning/blocks/<ID>.json`` record.
+        file_path: Optional source path, used only to enrich the
+            :class:`DocumentParseError` raised on malformed JSON.
+
+    Returns:
+        A ``(meta, body)`` tuple matching :func:`parse_document`'s shape.
+
+    Raises:
+        DocumentParseError: if the JSON fails to parse.
+    """
+    try:
+        record = json.loads(text)
+    except Exception as exc:  # pylint: disable=broad-except
+        raise DocumentParseError(
+            file_path if file_path is not None else "<unknown>", exc
+        ) from exc
+
+    repo = record.get("repo", "")
+    block_id = record.get("id", "")
+    doc_id = f"block:{repo}:{block_id}"
+
+    meta: dict = {
+        "type": "Block",
+        "title": record.get("title"),
+        "description": record.get("description"),
+        "doc_id": doc_id,
+        "project": repo,
+        "layer": ["brain"],
+        "keywords": _keywords_from_block_record(record),
+    }
+
+    sections: list[str] = []
+    for field, heading in _BLOCK_RECORD_PROSE_FIELDS:
+        value = record.get(field)
+        if not value:
+            continue
+        if field == "out_of_scope":
+            rendered = "\n".join(f"- {item}" for item in value)
+        elif field == "acceptance_criteria":
+            rendered = "\n".join(_render_acceptance_criterion(item) for item in value)
+        else:
+            rendered = str(value)
+        if not rendered.strip():
+            continue
+        sections.append(f"{heading}\n\n{rendered}")
+
+    body = "\n\n".join(sections)
+    return meta, body
 
 
 def normalize_metadata(
