@@ -15,6 +15,7 @@ from database.session import Base, db_session
 from fastapi.testclient import TestClient
 from main import app
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -237,15 +238,148 @@ class TestReadDispatch:
         with patch("api.read.retrieval.recall", side_effect=RuntimeError("boom")):
             response = client.get("/recall", params={"q": "hello"})
         assert response.status_code == 500
+        assert response.json()["detail"]["error"] == "recall_failed"
 
     def test_walk_core_failure_returns_500_not_unhandled(self, read_context):
         client, _ = read_context
         with patch("api.read.graph.walk", side_effect=RuntimeError("boom")):
             response = client.get("/walk", params={"doc_id": "D20"})
         assert response.status_code == 500
+        assert response.json()["detail"]["error"] == "walk_failed"
 
     def test_pulse_core_failure_returns_500_not_unhandled(self, read_context):
         client, _ = read_context
         with patch("api.read.pulse_core.pulse", side_effect=RuntimeError("boom")):
             response = client.get("/pulse")
         assert response.status_code == 500
+        assert response.json()["detail"]["error"] == "pulse_failed"
+
+
+class TestReadDependencyFailureClassification:
+    """OR.3.B task 1: dependency outages get a typed 502, distinct from a
+    genuine internal bug's 500 and from `require_api_key`'s unconfigured-key
+    503 — three different retry semantics must not share a status code."""
+
+    def test_recall_operational_error_returns_502(self, read_context):
+        client, _ = read_context
+        exc = OperationalError("SELECT 1", {}, Exception("connection refused"))
+        with patch("api.read.retrieval.recall", side_effect=exc):
+            response = client.get("/recall", params={"q": "hello"})
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+    def test_walk_operational_error_returns_502(self, read_context):
+        client, _ = read_context
+        exc = OperationalError("SELECT 1", {}, Exception("connection refused"))
+        with patch("api.read.graph.walk", side_effect=exc):
+            response = client.get("/walk", params={"doc_id": "D20"})
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+    def test_pulse_operational_error_returns_502(self, read_context):
+        client, _ = read_context
+        exc = OperationalError("SELECT 1", {}, Exception("connection refused"))
+        with patch("api.read.pulse_core.pulse", side_effect=exc):
+            response = client.get("/pulse")
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+    def test_recall_wrapped_connection_error_returns_502(self, read_context):
+        """A connection error wrapped by a generic exception (`raise ...
+        from ConnectionError(...)`) is still classified via the
+        `__cause__` chain walk."""
+        client, _ = read_context
+
+        def _raise_wrapped(*_args, **_kwargs):
+            try:
+                raise ConnectionError("embedding backend unreachable")
+            except ConnectionError as cause:
+                raise RuntimeError("embedding call failed") from cause
+
+        with patch("api.read.retrieval.recall", side_effect=_raise_wrapped):
+            response = client.get("/recall", params={"q": "hello"})
+        assert response.status_code == 502
+        assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+
+class TestRecallUnattendedConsumer:
+    """OR.3.B task 3: behaviours an unattended engine-rs consumer hits at
+    3am and that no test covered before this — empty results, both declared
+    `limit` bounds (accepted and rejected), `hybrid` parity, and a 401
+    regression pin cross-referencing `TestReadAuth`."""
+
+    def test_recall_empty_results_returns_200_with_zero_count(self, read_context):
+        client, _ = read_context
+        with patch("api.read.retrieval.recall", return_value=[]):
+            response = client.get("/recall", params={"q": "no matches for this"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["count"] == 0
+        assert body["results"] == []
+
+    def test_recall_limit_lower_bound_accepted_and_passed_through(self, read_context):
+        client, _ = read_context
+        with patch(
+            "api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS
+        ) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "limit": 1})
+
+        assert response.status_code == 200
+        mock_recall.assert_called_once()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["limit"] == 1
+
+    def test_recall_limit_upper_bound_accepted_and_passed_through(self, read_context):
+        client, _ = read_context
+        with patch(
+            "api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS
+        ) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "limit": 50})
+
+        assert response.status_code == 200
+        mock_recall.assert_called_once()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["limit"] == 50
+
+    def test_recall_limit_below_lower_bound_returns_422(self, read_context):
+        client, _ = read_context
+        response = client.get("/recall", params={"q": "hello", "limit": 0})
+        assert response.status_code == 422
+
+    def test_recall_limit_above_upper_bound_returns_422(self, read_context):
+        client, _ = read_context
+        response = client.get("/recall", params={"q": "hello", "limit": 51})
+        assert response.status_code == 422
+
+    def test_recall_hybrid_true_passed_through_and_shape_unchanged(self, read_context):
+        client, _ = read_context
+        with patch(
+            "api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS
+        ) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "hybrid": True})
+
+        assert response.status_code == 200
+        hybrid_true_body = response.json()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["hybrid"] is True
+
+        with patch("api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "hybrid": False})
+
+        assert response.status_code == 200
+        hybrid_false_body = response.json()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["hybrid"] is False
+
+        assert set(hybrid_true_body.keys()) == set(hybrid_false_body.keys())
+        assert hybrid_true_body["results"] == hybrid_false_body["results"]
+
+    def test_recall_without_api_key_returns_401(self, read_context):
+        """Regression pin cross-referencing `TestReadAuth.test_recall_without_api_key_returns_401` —
+        the unattended-consumer surface must not have loosened auth."""
+        client, _ = read_context
+        del app.dependency_overrides[require_api_key]
+        with patch.dict("os.environ", {"ORCHESTRATION_API_KEY": "secret"}):
+            response = client.get("/recall", params={"q": "hello"})
+        assert response.status_code == 401

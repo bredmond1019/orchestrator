@@ -9,6 +9,36 @@ timestamp: "2026-08-07T21:17:31Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-27]
+
+Shipped `OR.3.B` (Brain read client) via `/sdlc-flow`, all 6 tasks passed, reviewed PASS in 1
+attempt. Task 1 gave `GET /recall`, `/walk`, `/pulse` a shared `_classify_dependency_failure` +
+`_raise_classified` dispatcher so a dependency-layer failure (pgvector/SQLAlchemy
+`OperationalError`/`InterfaceError`, or `ConnectionError`/`TimeoutError`/`OSError` reachable via
+`__cause__`/`__context__`) surfaces as a typed 502 `brain_backend_unavailable`, distinct from the
+route-specific 500 and `require_api_key`'s 503. Task 2 silenced pylint's W0718 on the three
+intentional broad `except` blocks with justified inline disables (pylint 10.00/10) after a first
+pass flagged them, and added `tests/api/test_read_contract.py` pinning `RecallResponse`/
+`RecallResult` field-for-field plus the score-polarity/`via` vocabulary. Task 3 added unattended-
+consumer test coverage for `GET /recall`: empty results, both `limit` bounds (1/50 accepted, 0/51
+rejected), hybrid true/false parity, and a 401-without-key regression pin. Task 4 bumped
+`docs/data-contract.md` to **1.9.0**, naming engine-rs as a `GET /recall` consumer and adding a
+status-code table distinguishing 502/500/503. Task 5 recorded a read-only bastion/engine-rs
+contract-version sweep as ungateable evidence (D64) rather than claiming cross-repo proof no pytest
+gate here can produce. Task 6 validated the full gate: ruff clean, pylint 10.00/10, 1624 collected /
+1617 passed / 7 skipped (baseline unchanged). `state.json` block `OR.3.B` flipped to `closed`.
+Next: `OR.R` (Brain-as-MCP-server) or `OR.W` (external-knowledge memory layer) — both open and
+unblocked in the sequential Brain program chain.
+
+```
+aee5701 docs: update docs for OR.3.B
+0d2b2e6 feat: implement OR.3.B-task4
+8e31cfc feat: implement OR.3.B-task3
+41b3882 fix: fix pass 1 for OR.3.B-task2
+80fadca feat: implement OR.3.B-task2
+7aed127 feat: implement OR.3.B-task1
+```
+
 ## [2026-08-07]
 
 ### Drove the Brain RAG quality chain `OR.2.A–E` to completion in one `/orchestrate` session

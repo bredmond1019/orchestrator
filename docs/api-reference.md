@@ -3093,6 +3093,9 @@ GET /recall?q=<str>&limit=<int>&hybrid=<bool>  X-API-Key: <key>
   → 200 RecallResponse(query="...", count=2, results=[...])
   → 401 if X-API-Key is absent or wrong
   → 422 if q is missing/empty, or limit/hybrid fail their type/range constraints
+  → 502 {"error": "brain_backend_unavailable", "message": "..."} if the failure classifies as a
+    dependency outage (see below)
+  → 500 {"error": "recall_failed", "message": "..."} for any other unclassified exception
 ```
 
 `q` is required (`Query(..., min_length=1)`); `limit` defaults to `5` (`ge=1, le=50`); `hybrid`
@@ -3110,6 +3113,9 @@ GET /walk?doc_id=<str>&depth=<int>  X-API-Key: <key>
   → 200 WalkResponse(root="D20", depth=1, levels=[], nodes={})
   → 401 if X-API-Key is absent or wrong
   → 422 if doc_id is missing/empty, or depth fails its type/range constraint
+  → 502 {"error": "brain_backend_unavailable", "message": "..."} if the failure classifies as a
+    dependency outage (see below)
+  → 500 {"error": "walk_failed", "message": "..."} for any other unclassified exception
 ```
 
 `doc_id` is required (`Query(..., min_length=1)`); `depth` defaults to `1` (`ge=1, le=5`). Calls
@@ -3124,16 +3130,28 @@ with `levels: []`, never a `404`.
 GET /pulse  X-API-Key: <key>
   → 200 PulseResponse(pgvector_reachable=True, ..., healthy=True, errors=[])
   → 401 if X-API-Key is absent or wrong
+  → 502 {"error": "brain_backend_unavailable", "message": "..."} if the failure classifies as a
+    dependency outage (see below)
+  → 500 {"error": "pulse_failed", "message": "..."} for any other unclassified exception
 ```
 
 No query params. Calls `pulse_core.pulse(session=session)` and returns `PulseResponse(**report.to_dict())`
 — `200` even when `healthy` is `False`; the flag is the signal, callers branch on it rather than on
 status code.
 
-All three routes wrap their core call so an underlying exception surfaces as
-`HTTPException(status_code=500, detail=...)` via `raise ... from e`, mirroring
-`app/api/ingest.py`; `503` is returned instead of `401`/`200` when `ORCHESTRATION_API_KEY` is
-unset (see [`require_api_key`](#require_api_key), reused unchanged).
+**Dependency-failure classification (OR.3.B).** All three routes wrap their core call in
+`_raise_classified(exc, generic_error=...)`, which first runs `exc` (and its `__cause__`/
+`__context__` chain) through `_classify_dependency_failure`: a SQLAlchemy `OperationalError` or
+`InterfaceError`, or a `ConnectionError`/`TimeoutError`/`OSError` found anywhere in that chain,
+raises `HTTPException(status_code=502, detail={"error": "brain_backend_unavailable", "message":
+str(exc)})` — a typed signal that the Brain's own dependency (Postgres/pgvector, the embedding
+service) is unreachable, distinct from a bug in this repo's own code. Anything else raises the
+prior-shape `HTTPException(status_code=500, detail={"error": <route>_failed, "message": str(exc)})`
+(`recall_failed` / `walk_failed` / `pulse_failed`), still via `raise ... from e`, mirroring
+`app/api/ingest.py`. `503` is returned instead of `401`/`200` when `ORCHESTRATION_API_KEY` is unset
+(see [`require_api_key`](#require_api_key), reused unchanged) — distinct from both the 502 and 500
+above. See `docs/data-contract.md` §7 (v1.9.0) for the full status-code table and the engine-rs
+consumer note.
 
 ---
 
