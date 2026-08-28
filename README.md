@@ -10,7 +10,8 @@ to add one.
 The same service also runs "Synapse" proper: a retrieval-augmented corpus. Markdown documents are
 chunked, embedded, and stored in Postgres with [pgvector](https://github.com/pgvector/pgvector) so
 they can be searched semantically and traversed as a linked graph (a document's `related:` links
-become edges you can walk). This half of the service is internally called "the Brain" — it is the
+become edges you can walk). Source files can be indexed the same way, as a separate `code` corpus
+chunked at function and class boundaries. This half of the service is internally called "the Brain" — it is the
 part a consumer queries for answers, not the part that runs workflows.
 
 ## What this is for
@@ -173,7 +174,9 @@ tell "retry me" apart from a real bug (`500`).
   the validator are documented in [`docs/api-reference.md`](docs/api-reference.md).
 - **TaskContext** — the shared state object threaded through a workflow's nodes.
 - **Corpus** — the collection of ingested, chunked, embedded documents that `/recall`/`/walk`
-  search and traverse. Architecture: [`docs/brain-rag.md`](docs/brain-rag.md).
+  search and traverse. There is more than one: `brain` (markdown, the default), `code` (source
+  files), and `content`. `syn recall --corpus <name>` picks one; the HTTP routes always search
+  `brain`. Architecture: [`docs/brain-rag.md`](docs/brain-rag.md).
 - **`syn`** — a command-line tool installed alongside the API (`uv sync` installs it as a console
   script) for managing the corpus directly, without going through HTTP: `syn recall "<query>"`,
   `syn ingest <dir>`, `syn embed <file>`, `syn refresh`, `syn pulse`, `syn mcp` (serves the same
