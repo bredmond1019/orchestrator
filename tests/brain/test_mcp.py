@@ -12,13 +12,22 @@ Reuses the mock-the-core-at-its-import-site pattern from
 
 import asyncio
 import json
+import pathlib
 from unittest.mock import patch
 
+import anyio
 import pytest
 from brain import mcp
 from brain.cli import _build_parser
 from mcp import types as mcp_types
+from mcp.client.session import ClientSession
+from mcp.shared.memory import (
+    create_client_server_memory_streams,
+    create_connected_server_and_client_session,
+)
 from sqlalchemy.exc import OperationalError
+
+FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
 # ---------------------------------------------------------------------------
 # Schema pin
@@ -330,3 +339,128 @@ def test_build_server_registers_list_tools_handler_matching_tool_definitions():
     assert [tool.inputSchema for tool in returned_tools] == [
         tool.inputSchema for tool in expected_tools
     ]
+
+
+# ---------------------------------------------------------------------------
+# Protocol handshake replay (task 5)
+#
+# This block's headline acceptance criterion — "bastion's vendored MCP
+# client connects to this server and invokes a Brain query tool end-to-end"
+# — is declared `gateable: false` in the OR.R block record: its evidence
+# lives in bastion, a sibling repo whose code this repo's checks cannot
+# compile or run. `TestProtocolHandshakeReplay` does NOT prove that
+# criterion. It proves protocol conformance on THIS side of the seam only,
+# standing in for the missing cross-repo gate; the live run against
+# bastion's Rust client remains an operator verification (see
+# docs/mcp-contract.md).
+# ---------------------------------------------------------------------------
+
+
+def _load_handshake_fixture() -> dict:
+    """Load the recorded initialize/tools-list/tools-call exchange fixture.
+
+    Stored as an explicit JSON file (`tests/brain/fixtures/mcp_handshake.json`)
+    rather than constructed ad hoc inside each assertion, so a reviewer can
+    diff it against `docs/mcp-contract.md` by eye and a future
+    protocol-version bump shows up as a fixture change rather than a silent
+    behaviour change.
+    """
+    return json.loads((FIXTURES_DIR / "mcp_handshake.json").read_text(encoding="utf-8"))
+
+
+class TestProtocolHandshakeReplay:
+    """Drives the server's REGISTERED HANDLERS through a real MCP client session.
+
+    Uses `mcp.shared.memory.create_connected_server_and_client_session`, which
+    wires a real `mcp.client.session.ClientSession` to the real
+    `mcp.server.lowlevel.server.Server` built by `mcp.build_server()` over
+    in-memory `anyio` streams — no subprocess, no real stdin/stdout, no live
+    Postgres. The read core is mocked (this task tests the protocol surface,
+    not retrieval), and every assertion is on the SERVER'S RESPONSES as a
+    protocol-conformant client would observe them, replaying the fixture in
+    `tests/brain/fixtures/mcp_handshake.json`: `initialize`, then
+    `tools/list`, then `tools/call` for `brain_recall`, then `tools/call` for
+    a tool name that does not exist.
+
+    See the module-level note above: this stands in for a cross-repo gate
+    this repo structurally cannot run, and does not itself prove that
+    bastion's vendored client interoperates — that remains an operator
+    verification.
+    """
+
+    @pytest.fixture(name="handshake")
+    def fixture_handshake(self):
+        """The recorded exchange this replay drives and asserts against."""
+        return _load_handshake_fixture()
+
+    async def test_initialize_negotiates_the_declared_server_name(self, handshake):
+        """`initialize` — the client session's real InitializeRequest/Result
+        round trip over in-memory streams — reports this server's name.
+
+        Captured by hand (rather than via `create_connected_server_and_client_
+        session`, which discards the `InitializeResult`) so the assertion is
+        against the actual negotiated `serverInfo`, not `Server.name`.
+        """
+        server = mcp.build_server()
+        async with create_client_server_memory_streams() as (client_streams, server_streams):
+            client_read, client_write = client_streams
+            server_read, server_write = server_streams
+            async with anyio.create_task_group() as task_group:
+                task_group.start_soon(
+                    lambda: server.run(
+                        server_read, server_write, server.create_initialization_options()
+                    )
+                )
+                async with ClientSession(read_stream=client_read, write_stream=client_write) as client_session:
+                    init_result = await client_session.initialize()
+                task_group.cancel_scope.cancel()
+
+        assert init_result.serverInfo.name == handshake["server_name"]
+
+    async def test_tools_list_matches_the_recorded_tool_names(self, handshake):
+        """`tools/list` returns exactly the fixture's recorded tool names, in order."""
+        server = mcp.build_server()
+        async with create_connected_server_and_client_session(server) as client_session:
+            result = await client_session.list_tools()
+
+        step = next(s for s in handshake["steps"] if s["step"] == "tools/list")
+        assert [tool.name for tool in result.tools] == step["expected_tool_names"]
+        # Schemas must match the same contract pinned above, not merely names.
+        by_name = {tool.name: tool for tool in result.tools}
+        for tool_name, expected_schema in EXPECTED_SCHEMAS.items():
+            assert by_name[tool_name].inputSchema == expected_schema
+
+    async def test_tools_call_brain_recall_returns_parseable_content(self, handshake):
+        """A successful `tools/call` returns content a client can parse as JSON
+        without further unwrapping, matching the fixture's recorded result."""
+        step = next(
+            s
+            for s in handshake["steps"]
+            if s["step"] == "tools/call" and s["tool"] == "brain_recall"
+        )
+        server = mcp.build_server()
+        with patch("brain.mcp.retrieval") as mock_retrieval:
+            mock_retrieval.recall.return_value = step["expected_result_json"]
+            async with create_connected_server_and_client_session(server) as client_session:
+                result = await client_session.call_tool("brain_recall", step["arguments"])
+
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert json.loads(result.content[0].text) == step["expected_result_json"]
+
+    async def test_tools_call_unknown_tool_returns_error_envelope_not_raise(self, handshake):
+        """An unknown tool name comes back as the `unknown_tool` error envelope,
+        not a raised exception — an exception escaping the handler is how a
+        client sees a hang rather than a clean error response."""
+        step = next(
+            s
+            for s in handshake["steps"]
+            if s["step"] == "tools/call" and s["tool"] == "brain_does_not_exist"
+        )
+        server = mcp.build_server()
+        async with create_connected_server_and_client_session(server) as client_session:
+            result = await client_session.call_tool(step["tool"], step["arguments"])
+
+        assert len(result.content) == 1
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == step["expected_error_key"]
