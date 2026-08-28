@@ -31,6 +31,10 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from brain import graph, retrieval
 from brain import pulse as pulse_core
 
+# pylint: disable=duplicate-code
+# Identical to app/api/read.py's dependency-error tuple + _classify_dependency_failure
+# below, by design (see the function's docstring): each adapter classifies failures
+# on its own so the MCP adapter has no import dependency on the HTTP adapter module.
 _DEPENDENCY_ERROR_TYPES = (
     OperationalError,
     InterfaceError,
@@ -38,6 +42,7 @@ _DEPENDENCY_ERROR_TYPES = (
     TimeoutError,
     OSError,
 )
+
 
 def _classify_dependency_failure(exc: BaseException) -> bool:
     """Return True if `exc` (or a chained cause/context) is a dependency
@@ -48,7 +53,9 @@ def _classify_dependency_failure(exc: BaseException) -> bool:
     generic exception (`raise RuntimeError(...) from ConnectionError(...)`)
     is still recognised. Identical logic to `app/api/read.py`'s
     `_classify_dependency_failure`, duplicated rather than imported so this
-    adapter has no dependency on the HTTP adapter module.
+    adapter has no dependency on the HTTP adapter module. The duplication is
+    intentional (adapter independence); the `duplicate-code` disable above
+    documents that this block is knowingly identical to its HTTP-adapter twin.
     """
     seen: set[int] = set()
     current: BaseException | None = exc
@@ -58,6 +65,7 @@ def _classify_dependency_failure(exc: BaseException) -> bool:
             return True
         current = current.__cause__ or current.__context__
     return False
+# pylint: enable=duplicate-code
 
 
 def _error_content(key: str, message: str) -> list[types.TextContent]:
