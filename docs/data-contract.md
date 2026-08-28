@@ -12,7 +12,7 @@ related: [D28-node-level-execution-state, D30-data-contract-ownership, app-archi
 
 # Data Contract — Orchestrator Execution State
 
-**Contract Version: 1.8.0**
+**Contract Version: 1.9.0**
 
 This is the **single source of truth** for the shape any external consumer reads to observe a
 workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
@@ -419,6 +419,36 @@ These are **reader** endpoints, consistent with §3's "observers, never writers"
 write transaction, add no column, and add no second retrieval/traversal implementation — the
 routes stay thin adapters over the one `app/brain/` read core.
 
+**`GET /recall` response-shape pin (v1.9.0, brain D23).** `engine-rs` is a recorded consumer of this
+endpoint as of this version. Its response shape is pinned field-for-field by
+[`tests/api/test_read_contract.py`](../tests/api/test_read_contract.py) — any field added, removed,
+or renamed to `RecallResponse` or `RecallResult` fails that test; a reader editing either the schema
+or this doc should find the other.
+
+- `RecallResponse` — `{ "count": int, "results": list[RecallResult] }`. `count` always equals
+  `len(results)`; a consumer must trust `count` over deriving it independently.
+- `RecallResult` — `{ "doc_id": str | None, "file_path": str, "title": str | None,
+  "section": str | None, "content": str, "score": float, "via": str }`.
+- **Score polarity is higher-is-better on every path** (v1.6.0): `1.0` for an exact-id match,
+  `1.0 - cosine distance` for semantic, unchanged fused similarity for hybrid. A consumer sorting or
+  thresholding on `score` must sort/threshold descending.
+- `via` is drawn from the closed vocabulary `exact-id | semantic | structural | keyword | memory`
+  (v1.6.0). No other value is emitted.
+- An empty-result query returns `200` with `count: 0` and `results: []` — a normal answer, not an
+  error condition; a consumer must not treat it as a failure.
+
+**`GET /recall` status-code table (v1.9.0).** `502` and `503` mean different things and must not be
+collapsed by a consumer:
+
+| Status | Meaning | Retryable? |
+|---|---|---|
+| `200` | Success, including the empty-result case (`count: 0`, `results: []`) | — |
+| `401` | Missing or mismatched `X-API-Key` | No — fix the credential |
+| `422` | Parameter validation failure (missing `q`, non-integer `limit`, or `limit` out of `1`–`50`) | No — fix the request |
+| `502` | `detail.error == "brain_backend_unavailable"` — pgvector/Postgres or the embedding backend is unreachable | **Yes**, with backoff — transient dependency outage |
+| `500` | `detail.error == "recall_failed"` — an unexpected internal error | No — a genuine server bug, not a dependency outage |
+| `503` | `require_api_key` — the server has no `ORCHESTRATION_API_KEY` configured (fail-closed) | No — an operator misconfiguration, not a transient outage |
+
 **Reserved (not implemented in v1.x):** `GET /events?status=running`. A promoted indexed `status`
 column, streaming/SSE, and any change to the `NodeRun` status vocabulary remain out of scope.
 
@@ -450,3 +480,4 @@ checklist step prompting this.
 | 1.6.0 | 2026-08-01 | `GET /recall` (§7) response shape reconciled with `OR.K2`'s retrieval-core promotion (`app/brain/retrieval_engine.py`) and `app/brain/retrieval.py::recall()`'s return-shape normalization: `score` is now a similarity where **higher is always better** on every path (`1.0` for an exact-id match, `1.0 - cosine distance` for semantic, unchanged fused-similarity for hybrid) — previously the exact-id/semantic paths returned a raw cosine *distance* (`0.0` for an exact-id match, lower-is-better), so a consumer sorting or thresholding on `score` must re-verify its comparison direction. `via`'s vocabulary widens from `exact-id \| semantic \| hybrid` to also include `structural \| keyword \| memory` (the hybrid path's per-candidate provenance, previously collapsed to a bare `"hybrid"` tag). Field names and types are unchanged (still `doc_id \| null, file_path, title \| null, section \| null, content, score: float, via: str`), and `GET /recall`'s query params (`q`/`limit`/`hybrid`) are unchanged — no new param, `workspace` remains unwired to the HTTP surface. Flagged Minor rather than Major because no field was renamed, removed, or changed type — but a consumer relying on old `score` polarity WILL misbehave, so re-pin promptly. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.7.0 | 2026-08-13 | Minor: new run-level `metadata.completion` annotation (§5), written by `Workflow.run` on its normal exit path, and consumed by §7's derived-`status` as a `succeeded` signal that outranks the leftover-`pending` check. Fixes a live defect rather than adding a feature: `Workflow.run` seeds every node in the DAG `pending` before the walk, so a branch the router never takes is still `pending` when the run ends and is indistinguishable by node status alone from unstarted work — every successful run of a **branching** workflow therefore derived to `running` forever (observed on `DOCUMENT_QA`, whose `AbstainNode` never runs on an answered query: complete answer, permanently `running` status). Additive and backward-compatible: the marker is absent on runs that raised (annotated by `metadata.failure` instead) and on rows written before it existed, so §7 retains the all-nodes-`success` rule as a fallback. `NodeRun`'s `pending|running|success|failed` vocabulary (§6) is **unchanged** — a `skipped` member would have been a MAJOR bump. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.8.0 | 2026-08-22 | Minor: `POST /ingest/artifact` (§7) gains six optional `LearningArtifact` fields — `channel_type`, `source_ref`, `summary`, `digest_markdown`, `entities`, `language` (all `str | None`, `entities` a `list[str] | None`) — and relaxes `doc_type`/`content` from required to `str | None`, with fallbacks resolved at the route: `content` <- `digest_markdown`, `doc_type` <- `"learning_artifact"`. A pydantic `model_validator` still requires at least one of `content`/`digest_markdown` and one of `doc_type`/`digest_markdown`, so a body with neither still 422s. Closes the third of three ingest defects found in `OR.3.A` (route mismatch, missing `X-API-Key`, payload-shape mismatch): engine-rs's content-pipeline `PersistToBrainNode` sends this literal seven-field shape, which previously matched neither ingest payload. Additive and backward-compatible — no field renamed or removed, `ProposalIngestPayload` untouched, existing `ArtifactIngestPayload` callers unaffected. `/ingest/learning` has never existed and is not being added; the mapping lives entirely on `/ingest/artifact`. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
+| 1.9.0 | 2026-08-27 | `GET /recall` pinned as a consumer-facing read surface; **engine-rs** recorded as a consumer (brain D23 read-seam ruling). Adds a typed dependency-failure response: 502 with `detail.error = "brain_backend_unavailable"`, distinct from 500 `recall_failed` and from `require_api_key`'s 503. Response body shape unchanged. |
