@@ -2,7 +2,7 @@
 scripts/index_brain.py.
 
 Tests run against REAL committed block records under `planning/blocks/`
-(`OR.R.json` and `OR.ticket.publishable-eval-report.json`), never hand-built
+(`SY.R.json` and `SY.ticket.publishable-eval-report.json`), never hand-built
 fixtures — a fixture drifts from the authored record shape and stops testing
 anything (see this ticket's testing_strategy).
 
@@ -48,8 +48,8 @@ from index_brain import (  # noqa: E402
 )
 
 BLOCKS_DIR = Path(__file__).resolve().parent.parent / "planning" / "blocks"
-OR_R_PATH = BLOCKS_DIR / "OR.R.json"
-EVAL_REPORT_PATH = BLOCKS_DIR / "OR.ticket.publishable-eval-report.json"
+SY_R_PATH = BLOCKS_DIR / "SY.R.json"
+EVAL_REPORT_PATH = BLOCKS_DIR / "SY.ticket.publishable-eval-report.json"
 
 # Minimal brain.toml written into tmp_path for the main()-driven test below —
 # mirrors tests/test_index_brain.py's _TEST_BRAIN_TOML.
@@ -94,9 +94,9 @@ def _load_record(path: Path) -> dict:
 
 
 def test_doc_id_is_repo_qualified_block_id():
-    text = _load_text(OR_R_PATH)
-    meta, _body = parse_block_record(text, file_path=OR_R_PATH)
-    assert meta["doc_id"] == "block:orchestrator:OR.R"
+    text = _load_text(SY_R_PATH)
+    meta, _body = parse_block_record(text, file_path=SY_R_PATH)
+    assert meta["doc_id"] == "block:synapse:SY.R"
 
 
 # ---------------------------------------------------------------------------
@@ -105,14 +105,14 @@ def test_doc_id_is_repo_qualified_block_id():
 
 
 def test_meta_carries_expected_okf_fields():
-    record = _load_record(OR_R_PATH)
-    text = _load_text(OR_R_PATH)
-    meta, _body = parse_block_record(text, file_path=OR_R_PATH)
+    record = _load_record(SY_R_PATH)
+    text = _load_text(SY_R_PATH)
+    meta, _body = parse_block_record(text, file_path=SY_R_PATH)
 
     assert meta["type"] == "Block"
     assert meta["title"] == record["title"]
     assert meta["description"] == record["description"]
-    assert meta["project"] == "orchestrator"
+    assert meta["project"] == "synapse"
     assert isinstance(meta["keywords"], list)
     assert 3 <= len(meta["keywords"]) <= 7
 
@@ -120,8 +120,8 @@ def test_meta_carries_expected_okf_fields():
 def test_meta_has_no_related_key():
     # mev emit-graph does not crawl JSON, so a `related` value here would be
     # a dangling edge the corpus cannot resolve and would red-gate the run.
-    text = _load_text(OR_R_PATH)
-    meta, _body = parse_block_record(text, file_path=OR_R_PATH)
+    text = _load_text(SY_R_PATH)
+    meta, _body = parse_block_record(text, file_path=SY_R_PATH)
     assert "related" not in meta
 
 
@@ -131,9 +131,9 @@ def test_meta_has_no_related_key():
 
 
 def test_body_has_a_heading_per_populated_field_and_chunks_multiple():
-    record = _load_record(OR_R_PATH)
-    text = _load_text(OR_R_PATH)
-    _meta, body = parse_block_record(text, file_path=OR_R_PATH)
+    record = _load_record(SY_R_PATH)
+    text = _load_text(SY_R_PATH)
+    _meta, body = parse_block_record(text, file_path=SY_R_PATH)
 
     field_to_heading = {
         "what": "## What",
@@ -152,7 +152,7 @@ def test_body_has_a_heading_per_populated_field_and_chunks_multiple():
 
 
 def test_object_form_acceptance_criterion_renders_criterion_text():
-    for path in (OR_R_PATH, EVAL_REPORT_PATH):
+    for path in (SY_R_PATH, EVAL_REPORT_PATH):
         record = _load_record(path)
         object_entries = [
             entry for entry in record.get("acceptance_criteria", []) if isinstance(entry, dict)
@@ -171,9 +171,9 @@ def test_object_form_acceptance_criterion_renders_criterion_text():
 
 
 def test_machine_only_fields_do_not_leak_into_body():
-    record = _load_record(OR_R_PATH)
-    text = _load_text(OR_R_PATH)
-    _meta, body = parse_block_record(text, file_path=OR_R_PATH)
+    record = _load_record(SY_R_PATH)
+    text = _load_text(SY_R_PATH)
+    _meta, body = parse_block_record(text, file_path=SY_R_PATH)
 
     distinctive_rationale_phrase = "pushes only through HQ's git_push.sh"
     assert distinctive_rationale_phrase in record["workflow_rationale"]
@@ -188,12 +188,12 @@ def test_machine_only_fields_do_not_leak_into_body():
 
 
 def test_absent_optional_field_renders_without_that_heading_and_does_not_raise():
-    record = copy.deepcopy(_load_record(OR_R_PATH))
+    record = copy.deepcopy(_load_record(SY_R_PATH))
     assert "notes" in record
     del record["notes"]
 
     text = json.dumps(record)
-    _meta, body = parse_block_record(text, file_path=OR_R_PATH)
+    _meta, body = parse_block_record(text, file_path=SY_R_PATH)
 
     assert "## Notes" not in body
 
@@ -232,12 +232,12 @@ class TestBlockRecordsCollection:
         # per the "test against real records" rule this ticket's tests follow.
         repo_root = Path(__file__).resolve().parent.parent
         config = _config_for(
-            repo_root, {"slug": "orchestrator", "repo_path": ".", "tier": "_root"}
+            repo_root, {"slug": "synapse", "repo_path": ".", "tier": "_root"}
         )
         rels = {
             p.relative_to(repo_root).as_posix() for p, _, _ in _collect_files(repo_root, config)
         }
-        assert "planning/blocks/OR.R.json" in rels
+        assert "planning/blocks/SY.R.json" in rels
 
     def test_block_records_files_includes_root_and_sub_repo(self, tmp_path):
         root_blocks = tmp_path / "planning" / "blocks"
