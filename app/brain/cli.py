@@ -49,6 +49,12 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
     recall_parser.add_argument(
         "--workspace", default=None, help="Optional workspace name to scope results."
     )
+    recall_parser.add_argument(
+        "--corpus",
+        default="brain",
+        choices=["brain", "code", "content"],
+        help="Corpus to search (default: brain).",
+    )
     recall_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
     walk_parser = subparsers.add_parser("walk", help="BFS-traverse brain_edges from a doc.")
@@ -295,6 +301,7 @@ def _run_recall(args: argparse.Namespace) -> int:
         hybrid=args.hybrid,
         workspace=args.workspace,
         surface="cli",
+        corpus=args.corpus,
     )
 
     if args.json:

@@ -37,6 +37,7 @@ from datetime import datetime
 
 from database.brain_document import BrainDocument
 from database.brain_edge import BrainEdge
+from database.code_chunk import CodeChunk
 from database.content_chunk import ContentChunk
 from database.session import db_session
 from memory.decay import effective_confidence, weeks_between
@@ -78,6 +79,24 @@ _CORPUS_CONFIG: dict[str, dict] = {
         # brain_edges traversal from the top semantic hits. No-op for
         # corpora that don't declare this (e.g. "content").
         "supports_structural": True,
+    },
+    "code": {
+        "model": CodeChunk,
+        "content_field": "content",
+        # The RENDERED citation (e.g. "parse_config (function, L120-158)"),
+        # populated at index time by app.brain.code_chunking — see
+        # database.code_chunk.CodeChunk.section.
+        "section_title_field": "section",
+        "is_section_title_field": None,
+        "tsv_field": "content_tsv",
+        "filter_fields": {
+            "repo": "scalar",
+            "language": "scalar",
+        },
+        # No supports_structural: there are no related:-edges over source,
+        # so declaring it would send _structural_expand hunting brain_edges
+        # rows that can never exist for this corpus.
+        # No default_status_exclude: code chunks have no status column.
     },
 }
 
