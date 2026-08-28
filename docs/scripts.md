@@ -6,7 +6,7 @@ doc_id: scripts
 layer: [engine]
 project: orchestrator
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, workspace mode, syn CLI, prune]
+keywords: [dev-setup, dev.sh, inspect_run, index_brain, index_code, workspace mode, syn CLI, prune]
 related: [getting-started, brain-rag, configuration, workspace-contract]
 ---
 
@@ -309,6 +309,44 @@ See `docs/brain-rag.md` for the full brain RAG architecture.
 
 ---
 
+## `scripts/index_code.py` — Index the fleet's source into the code corpus (OR.P)
+
+Crawls each `brain.toml` manifest repo's source tree and populates `code_chunks`
+(`CodeChunk` model) — the semantic-search half of "how does X work"/"where is the code
+that does Y" queries. Chunking (function/class/method boundaries via tree-sitter,
+whole-file fallback for unsupported/unparseable files) is `app/brain/code_chunking.py`;
+this script is the crawler + upsert loop around it, mirroring `index_brain.py`'s
+incremental `indexed_at`-vs-`mtime` skip and `--rebuild` semantics.
+
+```bash
+# See what would be indexed without calling the embedding backend or writing to the DB
+uv run python scripts/index_code.py --dry-run
+
+# Index one repo only (brain.toml slug)
+uv run python scripts/index_code.py --repo orchestrator
+
+# Incremental (default): skips a file whose indexed_at is newer than its mtime
+uv run python scripts/index_code.py
+
+# Full re-embed of every eligible file
+uv run python scripts/index_code.py --rebuild
+```
+
+File discovery prefers `git ls-files --cached --others --exclude-standard` per repo (so
+`.gitignore` is respected for free), falling back to a pruned `os.walk` for a repo with no
+`.git`. Eligibility is an explicit source-extension allowlist, not "everything git tracks" —
+lockfiles/binaries/config never get chunked. Rows for files that no longer exist are pruned
+on every run, incremental or not. Upsert key is `(repo, file_path)`: every chunk for a
+changed file is deleted-then-reinserted together, since a chunk's own
+`(repo, file_path, start_line)` key shifts whenever symbol boundaries move.
+
+There is no auto-refresh/cron for the code index yet (`OR.J`, deferred) — re-run by hand
+after a source change you want reflected in search. See `docs/brain-rag.md` § "The `code`
+corpus (OR.P)" for the full architecture, citation shape, and scoping/filter reference, and
+`docs/scripts.md` § `syn` above for querying it (`syn recall QUERY --corpus code`).
+
+---
+
 ## `scripts/load_brain_edges.py` — Load structural graph edges (OR.G)
 
 Reads a `mev emit-graph` v2 JSON payload (`nodes[]` + `edges[]`, one edge per authored
@@ -522,6 +560,7 @@ no-op past the CLI's registry-validation step. `walk --workspace` remains reserv
 syn recall "What is decision D20 about?"
 syn recall "How does structural graph retrieval work?" --limit 10 --hybrid --json
 syn recall "onboarding checklist" --workspace my-notes    # scopes to that workspace's project (OR.K2)
+syn recall "how does chunk_source split a Rust file" --corpus code   # OR.P: search the code corpus
 
 syn walk D20 --depth 2
 
@@ -564,7 +603,7 @@ syn routine queries_prune                    # the cron-safe form (defaults, no 
 
 | Command | Description |
 |---|---|
-| `recall QUERY [--limit N] [--hybrid] [--workspace NAME] [--json]` | Exact-id / semantic / hybrid search over `brain_documents`, dispatched the same way `query_brain.py`'s `main()` does. `--workspace` (OR.K2) scopes every path. |
+| `recall QUERY [--limit N] [--hybrid] [--workspace NAME] [--corpus brain\|code\|content] [--json]` | Exact-id / semantic / hybrid search, dispatched the same way `query_brain.py`'s `main()` does. `--workspace` (OR.K2) scopes every path. `--corpus` (default `brain`, OR.P) selects the table searched — `brain` (`brain_documents`), `code` (`code_chunks`, see `scripts/index_code.py` below), or `content` (`content_chunks`); see `docs/brain-rag.md` § "Choosing the corpus". |
 | `walk DOC_ID [--depth N] [--workspace NAME] [--json]` | BFS-traverses `brain_edges` from `DOC_ID` out to `N` hops. `--workspace` is accepted but currently unused (reserved). |
 | `pulse [--json]` | Reports corpus/substrate health (pgvector + embedding reachability, row counts, staleness, `edges_empty_but_related_exists`). Exits non-zero when unhealthy. |
 | `mcp` | **(OR.R)** Serves the Brain read path (`recall`/`walk`/`pulse`) as an MCP server over stdio — the third thin adapter over the same `app/brain` read core, alongside `syn` itself and the HTTP router (`app/api/read.py`). Exposes exactly three tools, `brain_recall`/`brain_walk`/`brain_pulse`, dispatched via `app/brain/mcp.py`'s transport-free `tool_definitions()`/`call_tool()`. Blocks on stdin until the client closes it. See `docs/mcp-contract.md` for the full tool/argument/error-envelope contract bastion's vendored Rust MCP client is written against. |
