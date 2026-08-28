@@ -111,7 +111,10 @@ def recall_route(
         results = retrieval.recall(
             q, limit=limit, hybrid=hybrid, session=session, surface="http"
         )
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # Intentionally broad: any failure from the read core (dependency
+        # outage or an unexpected bug) must be classified and re-raised as a
+        # typed HTTPException below, never left to surface as a raw 500.
         _raise_classified(exc, generic_error="recall_failed")
 
     return RecallResponse(query=q, count=len(results), results=results)
@@ -142,7 +145,8 @@ def walk_route(
     """
     try:
         result = graph.walk(doc_id, depth=depth, session=session)
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # Intentionally broad: see recall_route's identical justification.
         _raise_classified(exc, generic_error="walk_failed")
 
     return WalkResponse(**result)
@@ -170,7 +174,8 @@ def pulse_route(
     """
     try:
         report = pulse_core.pulse(session=session)
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # Intentionally broad: see recall_route's identical justification.
         _raise_classified(exc, generic_error="pulse_failed")
 
     return PulseResponse(**report.to_dict())
