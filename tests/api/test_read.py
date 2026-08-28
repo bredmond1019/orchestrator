@@ -300,3 +300,86 @@ class TestReadDependencyFailureClassification:
             response = client.get("/recall", params={"q": "hello"})
         assert response.status_code == 502
         assert response.json()["detail"]["error"] == "brain_backend_unavailable"
+
+
+class TestRecallUnattendedConsumer:
+    """OR.3.B task 3: behaviours an unattended engine-rs consumer hits at
+    3am and that no test covered before this — empty results, both declared
+    `limit` bounds (accepted and rejected), `hybrid` parity, and a 401
+    regression pin cross-referencing `TestReadAuth`."""
+
+    def test_recall_empty_results_returns_200_with_zero_count(self, read_context):
+        client, _ = read_context
+        with patch("api.read.retrieval.recall", return_value=[]):
+            response = client.get("/recall", params={"q": "no matches for this"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["count"] == 0
+        assert body["results"] == []
+
+    def test_recall_limit_lower_bound_accepted_and_passed_through(self, read_context):
+        client, _ = read_context
+        with patch(
+            "api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS
+        ) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "limit": 1})
+
+        assert response.status_code == 200
+        mock_recall.assert_called_once()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["limit"] == 1
+
+    def test_recall_limit_upper_bound_accepted_and_passed_through(self, read_context):
+        client, _ = read_context
+        with patch(
+            "api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS
+        ) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "limit": 50})
+
+        assert response.status_code == 200
+        mock_recall.assert_called_once()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["limit"] == 50
+
+    def test_recall_limit_below_lower_bound_returns_422(self, read_context):
+        client, _ = read_context
+        response = client.get("/recall", params={"q": "hello", "limit": 0})
+        assert response.status_code == 422
+
+    def test_recall_limit_above_upper_bound_returns_422(self, read_context):
+        client, _ = read_context
+        response = client.get("/recall", params={"q": "hello", "limit": 51})
+        assert response.status_code == 422
+
+    def test_recall_hybrid_true_passed_through_and_shape_unchanged(self, read_context):
+        client, _ = read_context
+        with patch(
+            "api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS
+        ) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "hybrid": True})
+
+        assert response.status_code == 200
+        hybrid_true_body = response.json()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["hybrid"] is True
+
+        with patch("api.read.retrieval.recall", return_value=MOCK_RECALL_RESULTS) as mock_recall:
+            response = client.get("/recall", params={"q": "hello", "hybrid": False})
+
+        assert response.status_code == 200
+        hybrid_false_body = response.json()
+        _args, kwargs = mock_recall.call_args
+        assert kwargs["hybrid"] is False
+
+        assert set(hybrid_true_body.keys()) == set(hybrid_false_body.keys())
+        assert hybrid_true_body["results"] == hybrid_false_body["results"]
+
+    def test_recall_without_api_key_returns_401(self, read_context):
+        """Regression pin cross-referencing `TestReadAuth.test_recall_without_api_key_returns_401` —
+        the unattended-consumer surface must not have loosened auth."""
+        client, _ = read_context
+        del app.dependency_overrides[require_api_key]
+        with patch.dict("os.environ", {"ORCHESTRATION_API_KEY": "secret"}):
+            response = client.get("/recall", params={"q": "hello"})
+        assert response.status_code == 401
