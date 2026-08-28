@@ -7,7 +7,7 @@ layer: [engine]
 project: orchestrator
 status: active
 keywords: [docs index, developer reference, orchestration framework, getting-started, API reference]
-related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, memory]
+related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, memory, mcp-contract]
 ---
 
 # Documentation Index
@@ -20,7 +20,7 @@ Developer reference for the orchestration framework. Start here, then open the d
 |---|---|
 | [getting-started.md](getting-started.md) | Set up and run the stack — local dev (Homebrew scripts) and Docker/OrbStack path. Start here if you're new. |
 | [workflows.md](workflows.md) | What each workflow does, its node DAG, event payload shape, and ready-to-paste curl examples. |
-| [scripts.md](scripts.md) | All developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py` (brain mode + multi-workspace `--workspace`/`--root` mode + `--backfill-dates` + `--only-paths`/`--force`, block OR.N2), `load_brain_edges.py`, `query_brain.py` (now a thin caller over `app/brain/retrieval.py`), the `syn` console script (`recall`/`walk`/`pulse` read commands, block OR.N1 — `recall --workspace` now actually scopes, OR.K2; `embed`/`ingest`/`prune`/`refresh`/`stale`/`routine` write/ops commands, block OR.N2 — `refresh_brain.py` retired in favor of `syn refresh`; `eval` retrieval-quality scoring, block OR.K2), `emit_task_context_fixture.py` (real `task_context` conformance fixture for `engine-rs`), `ingest_repo_log.py` (block OR.M dogfood ingest of `log.md` into the memory tier). |
+| [scripts.md](scripts.md) | All developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py` (brain mode + multi-workspace `--workspace`/`--root` mode + `--backfill-dates` + `--only-paths`/`--force`, block OR.N2), `load_brain_edges.py`, `query_brain.py` (now a thin caller over `app/brain/retrieval.py`), the `syn` console script (`recall`/`walk`/`pulse` read commands, block OR.N1 — `recall --workspace` now actually scopes, OR.K2; `mcp` MCP-server-over-stdio command, block OR.R, see [mcp-contract.md](mcp-contract.md); `embed`/`ingest`/`prune`/`refresh`/`stale`/`routine` write/ops commands, block OR.N2 — `refresh_brain.py` retired in favor of `syn refresh`; `eval` retrieval-quality scoring, block OR.K2), `emit_task_context_fixture.py` (real `task_context` conformance fixture for `engine-rs`), `ingest_repo_log.py` (block OR.M dogfood ingest of `log.md` into the memory tier). |
 | [brain-rag.md](brain-rag.md) | Brain corpus indexing and semantic retrieval — `BrainDocument` model, `index_brain.py`, querying via `DOCUMENT_QA`, the promoted `app/brain/retrieval_engine.py` two-stage hybrid pipeline (block OR.K2), structural graph expansion via `BrainEdge`, manual retrieval testing via `query_brain.py` and scored via `syn eval`, block OR.M memory expansion (Stage 1d) and `authored_at` age-decay ranking, block OR.L answer-time grounding (confidence/abstain gate, deterministic citation verification, corroboration). |
 | [memory.md](memory.md) | Block OR.S memory layer — `Peer`/`AgentEpisode`/`SemanticMemory` entities, the two-stage ingest/consolidation pipeline, confidence decay, the never-overwrite contradiction rule, and `MemoryLoaderNode`'s cosine/NL query modes. |
 
@@ -31,6 +31,7 @@ Developer reference for the orchestration framework. Start here, then open the d
 | [api-reference.md](api-reference.md) | Class-level reference for every public abstraction in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/` that you subclass when writing a new workflow. |
 | [data-contract.md](data-contract.md) | **Versioned** canonical contract for how external consumers (e.g. the `bastion` CLI) read execution state — the `events` table, `task_context`/`node_runs` JSON, and HTTP surface. Bump the version when any shape changes. |
 | [workspace-contract.md](workspace-contract.md) | **Versioned** canonical contract for the shared "knowledge workspace" convention (`OR.C` ⇄ bastion `BA.6.B`) — workspace names (= `brain.toml` slugs), resolution precedence, and OKF corpus rules. Bump the version when any rule changes. |
+| [mcp-contract.md](mcp-contract.md) | The client-server contract for the Brain MCP server (`syn mcp`, OR.R) — `brain_recall`/`brain_walk`/`brain_pulse` tool schemas, result shape, and the error envelope that bastion's vendored Rust MCP client is written against. |
 | [configuration.md](configuration.md) | Every environment variable, connection-string assembly, and Docker service topology — configure the stack for local or Docker deployment without guessing. |
 | [app-architecture-overview.md](app-architecture-overview.md) | Codebase analysis of the FastAPI → Celery → Workflow DAG → TaskContext architecture. |
 
