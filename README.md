@@ -206,7 +206,7 @@ than a real assertion.
 ## Directory map
 
 ```
-orchestrator/
+synapse/
 ├── app/
 │   ├── api/                  FastAPI routers: events, ingest, recall/walk/pulse, health, graph
 │   ├── brain/                The corpus: ingest, retrieval, graph traversal, the `syn` CLI, MCP server
