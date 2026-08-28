@@ -9,6 +9,41 @@ timestamp: "2026-08-07T21:17:31Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-28] (2)
+
+Resumed `/sdlc-flow OR.ticket.publishable-eval-report` from task 2 after the prior run's bail
+(skip-count-regression baseline was unseeded, not a real regression — confirmed pre-existing).
+Ran tasks 2–6 to completion, all PASS, end review PASS in 1 attempt. Task 2 added a chronological
+run-history table to `report.py` with per-metric deltas, a hardcoded annotation on the 2026-08-06
+regression (corrected cause: keyword weight, `aa47bf81`, not digest-crowding) and a baseline-pin
+section read independently from disk. Task 3 added `tests/brain/test_eval_report.py` covering the
+scrub test, allow-list fail-closed behavior, golden-file summary/history tables, definition-drift,
+and heterogeneous-run tolerance. Task 4 wired `syn eval --report [PATH]` through `app/brain/cli.py`,
+composing with `--json`/`--no-write`/`--baseline`. Task 5 generated the first real publishable
+report from a live `syn eval` run against the reachable Postgres/pgvector corpus and staged it for
+operator read-through at `planning/retrieval-eval-runs/_report-2026-08-28T01-16-43Z.md` (leading
+underscore opts it out of the OKF-frontmatter gate, since the artifact is meant to be self-contained
+for an external reader), plus an independent leak-sweep at
+`planning/retrieval-eval-runs/report-2026-08-28T01-16-43Z.sweep-notes.md` — two non-leaking false
+positives found (`brain`/`side` as substrings of ordinary words), the two load-bearing checks (query
+text, doc-fragment paths) clean. Task 6 validated the full harness: ruff clean, pylint 10.00/10,
+1643 tests collected, 1636 passed / 7 skipped (pre-existing SQLite ARRAY-type skips, unrelated).
+Final verdict: PASS.
+
+Next: operator read-through of the generated report (AC8, un-gateable) before any external
+publication decision.
+
+```
+4564e27 docs: update docs for OR.ticket.publishable-eval-report
+693e5e1 feat: implement OR.ticket.publishable-eval-report-task4
+6c132ef feat: implement OR.ticket.publishable-eval-report-task3
+90370c7 feat: implement OR.ticket.publishable-eval-report-task2
+8c5ec65 chore: wrap up OR.ticket.publishable-eval-report
+d4176f1 feat: implement OR.ticket.publishable-eval-report-task1
+0907136 merge: OR.3.B — brain read client (6 tasks, review PASS)
+445081f chore: wrap up OR.3.B
+```
+
 ## [run: 2026-08-28]
 
 Ran `/sdlc-flow OR.ticket.publishable-eval-report` (tasks 1–6 targeted). Task 1 landed
