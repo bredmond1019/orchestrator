@@ -10,11 +10,14 @@ Reuses the mock-the-core-at-its-import-site pattern from
 (``brain.mcp`` at runtime, since only ``app/`` is on ``sys.path``).
 """
 
+import asyncio
 import json
 from unittest.mock import patch
 
 import pytest
 from brain import mcp
+from brain.cli import _build_parser
+from mcp import types as mcp_types
 from sqlalchemy.exc import OperationalError
 
 # ---------------------------------------------------------------------------
@@ -296,3 +299,34 @@ def test_unknown_tool_name_returns_unknown_tool_key():
     result = mcp.call_tool("brain_does_not_exist", {}, session=object())
     payload = json.loads(result[0].text)
     assert payload["error"] == "unknown_tool"
+
+
+# ---------------------------------------------------------------------------
+# Server shell + `syn mcp` subcommand (task 3)
+# ---------------------------------------------------------------------------
+
+
+def test_syn_mcp_is_a_registered_subcommand_with_no_arguments():
+    """`syn mcp` parses with no arguments and sets `command == "mcp"`."""
+    parser = _build_parser()
+    args = parser.parse_args(["mcp"])
+    assert args.command == "mcp"
+
+
+def test_build_server_registers_list_tools_handler_matching_tool_definitions():
+    """The registered `list_tools` handler returns exactly `tool_definitions()`.
+
+    Drives the handler registered on the real `mcp.server.Server` directly —
+    no subprocess and no live stdio transport.
+    """
+    server = mcp.build_server()
+    handler = server.request_handlers[mcp_types.ListToolsRequest]
+
+    result = asyncio.run(handler(mcp_types.ListToolsRequest(method="tools/list")))
+
+    returned_tools = result.root.tools
+    expected_tools = mcp.tool_definitions()
+    assert [tool.name for tool in returned_tools] == [tool.name for tool in expected_tools]
+    assert [tool.inputSchema for tool in returned_tools] == [
+        tool.inputSchema for tool in expected_tools
+    ]

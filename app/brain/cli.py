@@ -35,7 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
     """Construct the `syn` argparse dispatcher (recall, walk, pulse, ..., queries)."""
     parser = argparse.ArgumentParser(
         prog="syn",
-        description="Synapse Brain commands: recall, walk, pulse, embed, ingest, prune, "
+        description="Synapse Brain commands: recall, walk, pulse, mcp, embed, ingest, prune, "
         "refresh, stale, routine, eval, queries.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -61,6 +61,10 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
 
     pulse_parser = subparsers.add_parser("pulse", help="Report brain corpus/substrate health.")
     pulse_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
+
+    subparsers.add_parser(
+        "mcp", help="Serve the Brain read path as an MCP server over stdio."
+    )
 
     embed_parser = subparsers.add_parser(
         "embed", help="Re-embed a single file into brain_documents."
@@ -344,6 +348,19 @@ def _run_pulse(args: argparse.Namespace) -> int:
             print(f"error: {error}")
 
     return 0 if report.healthy else 1
+
+
+def _run_mcp(_args: argparse.Namespace) -> int:
+    """Execute `syn mcp`: serve the Brain read path as an MCP server over stdio.
+
+    Blocks until stdin closes, then returns 0.
+    """
+    import asyncio  # pylint: disable=import-outside-toplevel
+
+    from brain.mcp import serve  # pylint: disable=import-outside-toplevel
+
+    asyncio.run(serve())
+    return 0
 
 
 def _run_embed(args: argparse.Namespace) -> int:
@@ -1136,6 +1153,7 @@ def main(argv: list[str] | None = None) -> int:
         "recall": _run_recall,
         "walk": _run_walk,
         "pulse": _run_pulse,
+        "mcp": _run_mcp,
         "embed": _run_embed,
         "ingest": _run_ingest,
         "prune": _run_prune,
