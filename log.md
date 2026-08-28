@@ -9,6 +9,45 @@ timestamp: "2026-08-07T21:17:31Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-28]
+
+Ran `/sdlc-flow OR.ticket.publishable-eval-report` (tasks 1–6 targeted). Task 1 landed
+`app/brain/eval/report.py`: `render_run()` turns a single `RetrievalRunReport` into a
+self-contained Markdown report — summary metrics table with confidence intervals, the two
+mandatory honesty statements (groundedness is lexical content-word overlap, not an LLM-judged
+faithfulness score; retrieval-only, no faithfulness/answer-relevancy/answer-correctness),
+the corpus fingerprint as provenance, and case counts by category — all governed by an explicit
+allow-list constant rather than a generic field walk. Category counts are derived from
+`CaseResult.case_id`'s `-`-delimited prefix (mirroring `test_golden_set_schema.py`'s
+`_PREFIX_TO_CATEGORY`), since neither `RetrievalRunReport` nor `CaseResult` carries a category
+field. Metric definition rows are sorted alphabetically for deterministic rendering that survives
+a renamed/added metric. Committed as `d4176f1`.
+
+**BAILED** after task 1: the run-state's `skip-count-regression` check fails because
+`planning/OR.ticket.publishable-eval-report/sdlc/reports/skip-count-regression-skip-baseline.txt`
+was never seeded and defaults to 0. Verified against base state (commit `0907136`, the commit task
+1 branched from): the identical 7 skips exist there too, all in `tests/database/test_brain_document.py`,
+caused by SQLite not supporting the `BrainDocument` `ARRAY` column type — pre-existing and
+unrelated to task 1, whose only change is adding `app/brain/eval/report.py`
+(`git diff --stat 0907136 d4176f1` shows zero test-file changes). Seeding/updating the skip
+baseline sits outside task 1's declared scope (`report.py` only), so the run stopped rather than
+absorb an out-of-scope fix. Tasks 2–6 (run-history section, tests, CLI wiring, the operator
+read-through artifact, and full validation) did not run.
+
+Next: seed the skip-count-regression baseline (or confirm it should default from the base-commit
+count rather than 0), then resume `/sdlc-flow OR.ticket.publishable-eval-report` from task 2.
+
+```
+d4176f1 feat: implement OR.ticket.publishable-eval-report-task1
+0907136 merge: OR.3.B — brain read client (6 tasks, review PASS)
+445081f chore: wrap up OR.3.B
+aee5701 docs: update docs for OR.3.B
+0d2b2e6 feat: implement OR.3.B-task4
+8e31cfc feat: implement OR.3.B-task3
+41b3882 fix: fix pass 1 for OR.3.B-task2
+80fadca feat: implement OR.3.B-task2
+```
+
 ## [run: 2026-08-27]
 
 Shipped `OR.3.B` (Brain read client) via `/sdlc-flow`, all 6 tasks passed, reviewed PASS in 1
