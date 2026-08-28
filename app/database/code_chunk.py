@@ -126,6 +126,8 @@ class CodeChunk(Base):
     )
     # Read-only: Postgres maintains this generated column automatically from
     # symbol_name/file_path/content. The indexer must NEVER write it (no INSERT/UPDATE).
+    # Intentionally mirrors BrainDocument.content_tsv pattern.
+    # pylint: disable=duplicate-code
     content_tsv = Column(
         TSVECTOR,
         nullable=True,

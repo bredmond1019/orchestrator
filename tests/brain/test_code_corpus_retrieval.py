@@ -9,11 +9,30 @@ addition, not this one — this file is pure/mock-only, no DB, no embedding
 backend.
 """
 
+from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 from brain import retrieval_engine
+from brain.code_chunking import chunk_source
 from brain.retrieval import hybrid_search, recall
+from database.brain_document import EMBEDDING_DIM
 from database.code_chunk import CodeChunk
+
+_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "code"
+
+
+def _vec(index: int, dim: int = EMBEDDING_DIM) -> list[float]:
+    """A deterministic unit basis vector: 1.0 at `index`, 0.0 everywhere else.
+
+    Two basis vectors for different indices are maximally cosine-distant
+    (orthogonal), and a vector compared against itself is maximally close
+    (distance 0) — exactly what a deterministic ranking test needs, with no
+    live embedding backend involved.
+    """
+    vector = [0.0] * dim
+    vector[index] = 1.0
+    return vector
 
 # ---------------------------------------------------------------------------
 # _CORPUS_CONFIG["code"] registration
@@ -260,3 +279,170 @@ class TestCliCorpusFlag:
             _run_recall(args)
 
         assert mock_recall.call_args.kwargs["corpus"] == "code"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end fixture-repo retrieval (OR.P task 6)
+# ---------------------------------------------------------------------------
+
+
+def _index_fixture_file(session, *, repo: str, filename: str, embeddings: dict):
+    """Chunk one `tests/brain/fixtures/code/` file with the REAL chunker
+    (`brain.code_chunking.chunk_source`) and insert one `CodeChunk` row per
+    spec named in `embeddings`.
+
+    `embeddings` maps a spec's `symbol_name` (or `None` for the whole-file
+    fallback chunk) to the vector to store as that row's `embedding` — the
+    test controls ranking deterministically this way, with no live
+    embedding backend involved. A spec whose `symbol_name` is not a key in
+    `embeddings` is skipped (not every chunk in a fixture file needs a row
+    for every test).
+
+    Returns the list of `(CodeChunkSpec, CodeChunk row)` pairs actually
+    inserted, so a test can assert against the real, chunker-derived
+    symbol/line-range values rather than a hand-copied literal.
+    """
+    text = (_FIXTURES_DIR / filename).read_text(encoding="utf-8")
+    specs = chunk_source(text, file_path=filename)
+    inserted = []
+    for spec in specs:
+        if spec.symbol_name not in embeddings:
+            continue
+        row = CodeChunk(
+            repo=repo,
+            file_path=filename,
+            language=spec.language,
+            symbol_name=spec.symbol_name,
+            symbol_kind=spec.symbol_kind,
+            start_line=spec.start_line,
+            end_line=spec.end_line,
+            content=spec.content,
+            embedding=embeddings[spec.symbol_name],
+            embedding_model="test-stub:v1",
+            section=spec.section,
+            indexed_at=datetime.now(),
+        )
+        session.add(row)
+        inserted.append((spec, row))
+    session.flush()
+    return inserted
+
+
+class TestEndToEndFixtureRepoRetrieval:
+    """OR.P task 6: end-to-end retrieval over a fixture repo tree, backed by
+    a REAL Postgres+pgvector database (the Docker-gated `pgvector_session`
+    fixture) and a deterministic stub embedding backend.
+
+    This stands in for the block's `gateable: false` acceptance criterion —
+    "the code corpus is populated against the real fleet and answers a real
+    'how does X work' question with a correct citation" — which needs a
+    live Postgres with pgvector AND a live embedding backend, neither of
+    which this repo's checks run (the same reason `eval-scan` is registered
+    non-gating in `planning/harness.json`). This fixture proves the
+    retrieval mechanics (chunking -> row -> corpus-scoped hybrid retrieval
+    -> citation) are wired correctly end to end; it does NOT prove the live
+    criterion. Indexing the real fleet and confirming a real answer remains
+    an operator verification.
+    """
+
+    def test_top_hit_resolves_to_correct_symbol_and_line_range(self, pgvector_session):
+        target_vector = _vec(0)
+        other_vector = _vec(1)
+
+        inserted = _index_fixture_file(
+            pgvector_session,
+            repo="fixture-repo-a",
+            filename="sample.py",
+            embeddings={"helper": target_vector, "Widget.render": other_vector},
+        )
+        helper_spec = next(spec for spec, _ in inserted if spec.symbol_name == "helper")
+
+        with patch(
+            "services.embedding_service.EmbeddingService.embed_text",
+            return_value=target_vector,
+        ):
+            results = hybrid_search(
+                "how does helper work",
+                limit=5,
+                corpus="code",
+                filters={"repo": "fixture-repo-a"},
+                session=pgvector_session,
+            )
+
+        assert results
+        top = results[0]
+        assert top["file_path"] == "sample.py"
+        assert top["section"] == helper_spec.section
+        assert f"L{helper_spec.start_line}-{helper_spec.end_line}" in top["section"]
+
+    def test_cross_repo_scoping_is_asserted_on_returned_rows(self, pgvector_session):
+        """Two repos each carry an equally close 'helper' chunk (same
+        embedding vector, so ranking alone could not tell them apart);
+        scoping is proven by inspecting the actual `file_path` on every
+        returned row, not merely by a count.
+        """
+        shared_vector = _vec(2)
+
+        _index_fixture_file(
+            pgvector_session,
+            repo="fixture-repo-a",
+            filename="sample.py",
+            embeddings={"helper": shared_vector},
+        )
+        _index_fixture_file(
+            pgvector_session,
+            repo="fixture-repo-b",
+            filename="sample.rs",
+            embeddings={"helper": shared_vector},
+        )
+
+        with patch(
+            "services.embedding_service.EmbeddingService.embed_text",
+            return_value=shared_vector,
+        ):
+            results = hybrid_search(
+                "how does helper work",
+                limit=10,
+                corpus="code",
+                filters={"repo": "fixture-repo-a"},
+                session=pgvector_session,
+            )
+
+        assert results
+        assert all(r["file_path"] == "sample.py" for r in results)
+        assert not any(r["file_path"] == "sample.rs" for r in results)
+
+    def test_whole_file_fallback_chunk_is_retrievable_end_to_end(self, pgvector_session):
+        """A fallback chunk that indexes but never ranks is the same as a
+        dropped file from the user's side — this proves it actually surfaces
+        from a real scored retrieval, not merely that the chunker produces it
+        (that half is task 3's `test_code_chunking.py`).
+        """
+        fallback_vector = _vec(3)
+
+        inserted = _index_fixture_file(
+            pgvector_session,
+            repo="fixture-repo-fallback",
+            filename="sample.txt",
+            embeddings={None: fallback_vector},
+        )
+        fallback_spec, _ = inserted[0]
+        assert fallback_spec.symbol_kind == "file"
+
+        with patch(
+            "services.embedding_service.EmbeddingService.embed_text",
+            return_value=fallback_vector,
+        ):
+            results = hybrid_search(
+                "what is in this plain text fixture",
+                limit=5,
+                corpus="code",
+                filters={"repo": "fixture-repo-fallback"},
+                session=pgvector_session,
+            )
+
+        assert results
+        top = results[0]
+        assert top["file_path"] == "sample.txt"
+        assert top["section"] == fallback_spec.section
+        assert "file" in top["section"]

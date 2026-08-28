@@ -126,14 +126,40 @@ python scripts/index_brain.py --brain-path /absolute/path/to/agentic-portfolio
 
 ### Choosing the corpus
 
-`DOCUMENT_QA` answers questions over **one of two corpora**, selected by the `corpus` field on the event payload. The same workflow and the same two-stage hybrid retrieval serve both — only the table queried changes:
+`DOCUMENT_QA` and `app/brain/retrieval.py`'s `recall()`/`hybrid_search()` answer questions over **one of three corpora**, selected by the `corpus` field/parameter. The same two-stage hybrid retrieval serves all three — only the table queried (and its filterable metadata) changes:
 
 | `corpus` value | Table queried | Model | Populated by | What it holds |
 |---|---|---|---|---|
 | `"content"` *(default)* | `content_chunks` | `ContentChunk` | the `DOCUMENT_INGEST` workflow | documents you ingest at runtime via the API |
 | `"brain"` | `brain_documents` | `BrainDocument` | `scripts/index_brain.py` (this page) | the company-brain markdown corpus |
+| `"code"` (OR.P) | `code_chunks` | `CodeChunk` | `scripts/index_code.py` (see below) | source-code chunks, per repo/file, split at function/class/method boundaries |
 
-`corpus` is **optional and defaults to `"content"`** — so a `DOCUMENT_QA` event with no `corpus` field queries ingested documents, *not* the brain. **To query the brain you must explicitly set `"corpus": "brain"`.** The `filters` field (below) applies to the `"brain"` corpus only and is ignored for `"content"`. (Adding a third corpus is a single entry in `RetrieveChunksNode`'s module-level `_CORPUS_CONFIG` dict.)
+`corpus` is **optional and defaults to `"content"`** on the `DOCUMENT_QA` event payload (and to `"brain"` on `recall()`/`hybrid_search()`/`syn recall`) — so an unqualified call never silently switches corpus. **To query the code corpus you must explicitly pass `corpus="code"`** (`syn recall --corpus code` on the CLI). The `filters` field applies per corpus: `"brain"` accepts `layer`/`project`/`status`; `"code"` accepts `repo`/`language` (below); `"content"` ignores it. (Adding a corpus is a single entry in `app/brain/retrieval_engine.py`'s module-level `_CORPUS_CONFIG` dict.)
+
+### The `code` corpus (OR.P)
+
+Semantic search over the fleet's own source, so the brain can answer "how does X work" or "where is the code that does Y" with a file/line citation — the deterministic twin (exact symbol/definition/references lookup, code-as-graph) is bastion's Block Q and stays Console-side; this is the semantic half only.
+
+- **Chunking** (`app/brain/code_chunking.py`) splits a source file at function/class/method boundaries using tree-sitter. Python and Rust have installed grammars; any other extension — and any file that fails to parse even with a grammar installed — takes a **whole-file fallback**: exactly one chunk spanning the file (`symbol_kind="file"`), so an unsupported or broken file is indexed coarsely rather than dropped silently.
+- **Citation shape**: the recall envelope (`{doc_id, file_path, title, section, content, score, via}`) gains **no new field** for this corpus — `OR.3.B` pins that shape field-for-field as the `engine-rs` consumer contract in the same run. A code chunk's citation rides the existing `file_path` (the source path) and `section` (a pre-rendered string, `<symbol_name> (<symbol_kind>, L<start>-<end>)`, populated at index time by the chunker so no caller has to re-derive it); `title` is the symbol name (or the file basename for a fallback chunk); `doc_id` is a stable synthetic `code:<row id>`.
+- **Scoping**: `filters={"repo": "<brain.toml slug>"}` (and optionally `"language"`) restricts results to one repo/language — the code corpora are addressable per repo (D47/OR.C), and a query scoped to one repo never returns another repo's chunk.
+- **Indexing** — `scripts/index_code.py` crawls each `brain.toml` manifest repo's SOURCE tree (never `docs/`/`planning/` — those are the markdown corpus's), skipping vendored/build directories and any file over 512 KiB:
+
+```bash
+# See what would be indexed without calling the embedding backend or writing to the DB
+uv run python scripts/index_code.py --dry-run
+
+# Index one repo only
+uv run python scripts/index_code.py --repo orchestrator
+
+# Incremental (default): skips a file whose indexed_at is newer than its mtime
+uv run python scripts/index_code.py
+
+# Full re-embed of every eligible file
+uv run python scripts/index_code.py --rebuild
+```
+
+  Rows for files that no longer exist are pruned on every run, incremental or not. There is **no auto-refresh/cron** for the code index yet (that is `OR.J`, deferred on the Mac Mini migration) — re-run it by hand after a source change you want reflected in search.
 
 ### Brain query example
 
