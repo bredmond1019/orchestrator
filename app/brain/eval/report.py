@@ -29,7 +29,9 @@ case_id itself is never printed) and the metric fields already covered by
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from brain.eval import runner
 from brain.eval.models import RetrievalRunReport
 
 # --- The allow-list ---------------------------------------------------
@@ -275,7 +277,189 @@ def _render_case_counts(report: RetrievalRunReport) -> str:
     return "\n".join(lines)
 
 
-def render_run(report: RetrievalRunReport) -> str:
+# --- Run history (task 2) ----------------------------------------------
+
+# `case_id`/annotation prose is free text, deliberately not derived from
+# any field on the run model — same discipline as `_HONESTY_STATEMENTS`.
+# Keyed off the run's own filename (its `generated_at` stamp, since
+# `write_report` names the file after it) so adding a future annotation is
+# a data edit here, never a string hunt through the renderer.
+#
+# The 2026-08-06 entry annotates the FIRST run whose `recall_at_10` shows
+# the drop (`2026-08-06T13-56-48Z.json`, 0.9412 -> 0.8824 against the
+# immediately preceding run) with the CORRECTED cause: a keyword-weight
+# change, per commit `aa47bf81` — not the digest-crowding hypothesis the
+# `brain-retrieval-digest-crowding` carryover was originally opened under.
+_RUN_ANNOTATIONS: dict[str, str] = {
+    "2026-08-06T13-56-48Z.json": (
+        "Regression: recall@10 dropped from the prior run (0.9412 -> "
+        "0.8824). Corrected cause: a keyword-weight change, per commit "
+        "`aa47bf81` — NOT the digest-crowding hypothesis originally "
+        "suspected under carryover `brain-retrieval-digest-crowding`."
+    ),
+}
+
+
+def _list_run_files(runs_dir: Path) -> list[Path]:
+    """Every run JSON in `runs_dir`, excluding the baseline pointer file.
+
+    `baseline.json` (`runner.DEFAULT_BASELINE_POINTER`) is a promotion
+    pointer, not a run — including it would double-count a run and corrupt
+    every delta. Non-JSON entries (`index.md`, `.gitkeep`, and the
+    `snapshots/`/`query-log/` subdirectories) are excluded for free by the
+    `*.json` glob, which is non-recursive and directory-blind.
+    """
+    baseline_name = runner.DEFAULT_BASELINE_POINTER.name
+    return sorted(path for path in runs_dir.glob("*.json") if path.name != baseline_name)
+
+
+def _load_runs(runs_dir: Path) -> list[dict]:
+    """Load every run file in `runs_dir`, sorted chronologically by each
+    run's own `generated_at` field (never filesystem order — glob order is
+    not guaranteed, and mtimes can be rewritten by a checkout).
+
+    A file that fails to load (unreadable, or does not parse as JSON) is
+    skipped rather than raised — the loader must not raise on any file
+    currently in the directory, since the corpus is a heterogeneous mix of
+    14 pre-existing files that predate several fields.
+    """
+    runs: list[dict] = []
+    for path in _list_run_files(runs_dir):
+        try:
+            run = runner.load_report(path)
+        except (OSError, ValueError):
+            continue
+        run = dict(run)
+        run["_filename"] = path.name
+        runs.append(run)
+    runs.sort(key=lambda r: r.get("generated_at") or r.get("_filename", ""))
+    return runs
+
+
+def _history_metric_keys(runs: list[dict]) -> tuple[str, ...]:
+    """The union of `aggregate` keys across every loaded run, sorted
+    alphabetically (never insertion or filesystem order) so an added or
+    renamed metric widens the table instead of silently vanishing.
+    """
+    keys: set[str] = set()
+    for run in runs:
+        keys.update((run.get("aggregate") or {}).keys())
+    return tuple(sorted(keys))
+
+
+@dataclass(frozen=True)
+class _HistoryCell:
+    """One (metric, run) cell: the value and its delta from the prior run.
+
+    Both are `None` when the metric is absent from this run, or (for
+    `delta`) absent from the immediately preceding run, or this is the
+    first run in the table — every `None` case renders "n/a", never 0.0
+    (0.0 is a real, meaningful delta value and must not be confused with
+    "no data").
+    """
+
+    value: float | None
+    delta: float | None
+
+
+@dataclass(frozen=True)
+class _HistoryRow:
+    """One run's row in the history table."""
+
+    generated_at: str
+    cells: dict[str, _HistoryCell]
+    annotation: str | None
+
+
+def _history_rows(runs: list[dict], metric_keys: tuple[str, ...]) -> list[_HistoryRow]:
+    """Build one `_HistoryRow` per run, in the given (already-sorted)
+    order, with a delta computed against the immediately preceding run for
+    each metric independently.
+    """
+    rows: list[_HistoryRow] = []
+    previous_aggregate: dict[str, float] | None = None
+    for run in runs:
+        aggregate = run.get("aggregate") or {}
+        cells: dict[str, _HistoryCell] = {}
+        for key in metric_keys:
+            value = aggregate.get(key)
+            prev_value = previous_aggregate.get(key) if previous_aggregate else None
+            delta = value - prev_value if value is not None and prev_value is not None else None
+            cells[key] = _HistoryCell(value=value, delta=delta)
+        filename = run.get("_filename", "")
+        rows.append(
+            _HistoryRow(
+                generated_at=run.get("generated_at") or filename,
+                cells=cells,
+                annotation=_RUN_ANNOTATIONS.get(filename),
+            )
+        )
+        previous_aggregate = aggregate
+    return rows
+
+
+def _format_delta(delta: float | None) -> str:
+    """Signed, deterministic 4-decimal delta formatting; "n/a" when absent."""
+    if delta is None:
+        return "n/a"
+    sign = "+" if delta >= 0 else ""
+    return f"{sign}{_format_float(delta)}"
+
+
+def _render_history_table(rows: list[_HistoryRow], metric_keys: tuple[str, ...]) -> str:
+    """The chronological run-history table: one row per run, a value column
+    and a delta column per metric, plus a free-text annotation column.
+    Empty when there is no run history to show.
+    """
+    if not rows:
+        return "No run history available."
+    header = ["Run"]
+    for key in metric_keys:
+        label = _metric_label(key)
+        header.append(label)
+        header.append(f"{label} Δ")
+    header.append("Notes")
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * len(header)) + " |",
+    ]
+    for row in rows:
+        cells = [f"`{row.generated_at}`"]
+        for key in metric_keys:
+            cell = row.cells[key]
+            cells.append(_format_float(cell.value) if cell.value is not None else "n/a")
+            cells.append(_format_delta(cell.delta))
+        cells.append(row.annotation or "")
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
+def _render_baseline_section(runs_dir: Path) -> str:
+    """The promoted-baseline pin, read from `baseline.json` under
+    `runs_dir` — never asserted. States plainly when no run has ever been
+    promoted, rather than implying a pin that does not exist (the ticket
+    was authored when the baseline lived only in prose; `runner.promote_run`
+    / `DEFAULT_BASELINE_POINTER` have since made it a real, readable
+    artifact).
+
+    Deliberately reads only `run` and `promoted_at` off the pointer — the
+    pointer's free-text `reason` field is operator-authored prose and is
+    outside this renderer's allow-list, same discipline as everywhere else
+    in this module.
+    """
+    pointer_path = runs_dir / runner.DEFAULT_BASELINE_POINTER.name
+    try:
+        pointer = runner.load_baseline_pointer(pointer_path)
+    except (OSError, ValueError):
+        pointer = None
+    if pointer is None:
+        return "No run has been promoted to the baseline pin."
+    run_name = pointer.get("run", "unknown")
+    promoted_at = pointer.get("promoted_at", "unknown")
+    return f"Run `{run_name}` is pinned as the baseline (promoted {promoted_at})."
+
+
+def render_run(report: RetrievalRunReport, runs_dir: str | Path | None = None) -> str:
     """Render one `RetrievalRunReport` to a self-contained Markdown report.
 
     Only ever reads the allow-listed fields documented at module level —
@@ -284,8 +468,18 @@ def render_run(report: RetrievalRunReport) -> str:
     `result.case_id` on each `report.results` entry (for category bucketing
     only, never printed itself). No other field of `RetrievalRunReport`,
     `CaseResult`, or `RetrievalCase` is read.
+
+    The run-history and baseline sections are sourced separately, from the
+    run JSON files already written under `runs_dir` (default
+    `runner.DEFAULT_RUNS_DIR`) — never from `report` itself, so a report
+    rendered with `--no-write` (before the current run has been persisted)
+    still gets a history section covering every PRIOR run on disk.
     """
     rows = _metric_rows(report)
+    runs_dir_path = Path(runs_dir) if runs_dir is not None else runner.DEFAULT_RUNS_DIR
+    history_runs = _load_runs(runs_dir_path)
+    metric_keys = _history_metric_keys(history_runs)
+    history_rows = _history_rows(history_runs, metric_keys)
     sections = [
         "# Retrieval Evaluation Report",
         "",
@@ -310,6 +504,14 @@ def render_run(report: RetrievalRunReport) -> str:
         "## Case counts by category",
         "",
         _render_case_counts(report),
+        "",
+        "## Run history",
+        "",
+        _render_history_table(history_rows, metric_keys),
+        "",
+        "## Baseline",
+        "",
+        _render_baseline_section(runs_dir_path),
         "",
     ]
     return "\n".join(sections)
