@@ -161,6 +161,45 @@ uv run python scripts/index_code.py --rebuild
 
   Rows for files that no longer exist are pruned on every run, incremental or not. There is **no auto-refresh/cron** for the code index yet (that is `OR.J`, deferred on the Mac Mini migration) — re-run it by hand after a source change you want reflected in search.
 
+### Block records (`OR.ticket.index-block-records`)
+
+Each manifest repo's `planning/blocks/*.json` — the block records D65 made the authored home of a
+block's `what`/`why`/`out_of_scope`/`acceptance_criteria`/`testing_strategy`/`notes` — is indexed
+into the `brain` corpus, one document per record, the same as any markdown file. `_collect_files`
+picks these up non-recursively (block records live flat in `planning/blocks/`, not in
+subdirectories) alongside the markdown lanes it already walks; `parse_block_record()` reads the
+JSON and returns the same `(meta, body)` shape `parse_document()` returns for markdown, so nothing
+downstream — chunking, embedding, the mtime-based incremental skip, `--prune-paths` — needs a
+branch.
+
+- **`doc_id` scheme**: `block:<repo>:<block-id>`, built from the record's own `repo`/`id` fields
+  (never the filename stem, which isn't repo-qualified and can collide across repos). This makes a
+  block record **exact-id addressable** the same way a bare decision id already is —
+  `syn recall "block:orchestrator:OR.R"` short-circuits straight to that record instead of
+  embedding the query.
+- **Indexed fields**: `what`, `why`, `out_of_scope`, `acceptance_criteria`, `testing_strategy`,
+  `notes` — each rendered under its own `##` markdown heading (`## What`, `## Why`, …) so
+  `chunk_by_section` splits a record into multiple retrievable chunks the same way it splits a
+  long markdown doc, rather than indexing it as one blob. A field that's absent or empty is
+  skipped; its heading never appears.
+- **NOT indexed** — machine bookkeeping fields never enter the body or the corpus at all:
+  `sdlc_workflow`, `model`, `workflow_rationale`, `spec_dir`, `created`, `updated`,
+  `forward_looking`, `depends_on`, `files`. These are process metadata, not prose about the block's
+  subject, and embedding them would fill the corpus with noise that matches every planning query
+  weakly and nothing strongly.
+
+**Searchable, not walkable.** `mev emit-graph` builds `brain_edges` from markdown OKF frontmatter
+and does not crawl JSON, so a block record's own `related`/`depends_on` do **not** become graph
+edges from this — `syn walk` will not traverse them. A block record can be found by `syn recall`
+(semantic or exact-id) but not reached via structural graph expansion. Making them walkable is a
+separate, not-yet-built mev-side change.
+
+**`state.json` is deliberately NOT indexed.** Its `carryover[]`/`reference[]`/`backlog[]` entries
+are near-identical, high-churn, short entries that would crowd out real documents in the result
+slots on planning-flavoured queries — the corpus already paid for that crowding once (see the
+recall@10 regression noted in this ticket's block record). Current-state lookups over those
+containers belong to `mev carryover`, not the brain corpus.
+
 ### Brain query example
 
 Use `DOCUMENT_QA` with `corpus="brain"`. The `doc_id` field is required by the schema but not used for brain corpus queries — pass any valid UUID:
