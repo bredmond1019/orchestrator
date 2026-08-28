@@ -4,7 +4,7 @@ title: AgentNode — How It Works
 description: How AgentNode works — the LLM-calling node abstraction.
 doc_id: agent-node
 layer: [engine]
-project: orchestrator
+project: synapse
 status: active
 keywords: [AgentNode, pydantic-ai, structured output, LLM, workflow node]
 related: [app-architecture-overview, api-reference]

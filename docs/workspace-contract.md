@@ -4,7 +4,7 @@ title: Orchestrator ↔ bastion Knowledge Workspace Contract
 description: The versioned, canonical contract for the shared "knowledge workspace" convention — workspace names, resolution precedence, and the OKF corpus rules — consumed identically by the Python Brain readers (OR.C) and bastion's graph reader (BA.6.B).
 doc_id: workspace-contract
 layer: [brain, console]
-project: orchestrator
+project: synapse
 status: active
 keywords: [workspace, knowledge directory, data contract, brain.toml, OKF, multi-workspace, bastion]
 related: [data-contract, brain-rag, scripts]

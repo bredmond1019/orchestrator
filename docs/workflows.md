@@ -4,7 +4,7 @@ title: Workflow Catalog
 description: What each workflow does, its node DAG, how to trigger it, and example payloads.
 doc_id: workflows
 layer: [engine]
-project: orchestrator
+project: synapse
 status: active
 keywords: [workflow catalog, DOCUMENT_INGEST, DOCUMENT_QA, MEMORY_INGEST, MEMORY_CONSOLIDATION, event payload, curl]
 related: [api-reference, app-architecture-overview, data-contract, memory]

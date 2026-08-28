@@ -4,7 +4,7 @@ title: Brain MCP Contract
 description: The client-server contract for the Brain MCP server (syn mcp) — tool names, argument schemas, result shapes, and the error envelope that bastion's vendored Rust MCP client is written against.
 doc_id: mcp-contract
 layer: [brain]
-project: orchestrator
+project: synapse
 status: active
 keywords: [mcp, brain_recall, brain_walk, brain_pulse, stdio, contract, bastion]
 related: [scripts, api-reference, workspace-contract]

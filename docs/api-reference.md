@@ -4,7 +4,7 @@ title: Core Engine API Reference
 description: Class-level reference for the public abstractions in app/core, app/database, app/services, and app/workflows that a developer subclasses when writing a new workflow.
 doc_id: api-reference
 layer: [engine]
-project: orchestrator
+project: synapse
 status: active
 keywords: [API reference, Workflow, TaskContext, AgentNode, WorkflowSchema, NodeConfig]
 related: [app-architecture-overview, workflows, getting-started]

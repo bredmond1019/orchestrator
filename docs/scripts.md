@@ -4,7 +4,7 @@ title: Developer Scripts
 description: Reference for all scripts in the scripts/ directory — setup, dev server, inspection, and brain indexing.
 doc_id: scripts
 layer: [engine]
-project: orchestrator
+project: synapse
 status: active
 keywords: [dev-setup, dev.sh, inspect_run, index_brain, index_code, workspace mode, syn CLI, prune]
 related: [getting-started, brain-rag, configuration, workspace-contract]

@@ -4,7 +4,7 @@ title: Node Model Comparison
 description: Assessment of best Cloud and Local LLMs for each orchestrator node, including storage requirements and hardware capabilities.
 doc_id: node-model-comparison
 layer: [engine]
-project: orchestrator
+project: synapse
 status: active
 related: [app-architecture-overview]
 ---

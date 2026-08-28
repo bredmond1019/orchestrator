@@ -4,7 +4,7 @@ title: Brain RAG
 description: How the company brain corpus is indexed and queried — BrainDocument model, index_brain.py, and retrieval via DOCUMENT_QA.
 doc_id: brain-rag
 layer: [engine, brain]
-project: orchestrator
+project: synapse
 status: active
 keywords: [brain RAG, BrainDocument, index_brain, semantic retrieval, DOCUMENT_QA, embeddings, multi-workspace]
 related: [app-architecture-overview, D36-bastion-engine-brain-role, D37-local-embeddings-mxbai, workspace-contract]

@@ -4,7 +4,7 @@ title: Memory Layer — Entities, Episodes, and Durable Facts
 description: The block OR.S memory capability — Peer/AgentEpisode/SemanticMemory models, the two-stage ingest/consolidation pipeline, decay, contradiction handling, and the loader's cosine/NL query modes.
 doc_id: memory
 layer: [brain, engine]
-project: orchestrator
+project: synapse
 status: active
 keywords: [memory, Peer, AgentEpisode, SemanticMemory, decay, contradiction, D35]
 related: [api-reference, brain-rag, workspace-contract, workflows, D25-honcho-reference, D35-top-tier-models]

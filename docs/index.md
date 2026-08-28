@@ -4,7 +4,7 @@ title: Developer Documentation Index
 description: Index of the developer reference documentation for the orchestrator.
 doc_id: docs-index
 layer: [engine]
-project: orchestrator
+project: synapse
 status: active
 keywords: [docs index, developer reference, orchestration framework, getting-started, API reference]
 related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, memory, mcp-contract]
