@@ -166,6 +166,16 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
         help="Score and print the report but do not persist it under "
         "planning/retrieval-eval-runs/.",
     )
+    eval_parser.add_argument(
+        "--report",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PATH",
+        help="Render a publishable Markdown report (scrubbed, allow-listed) for this "
+        "run. With no PATH, writes to stdout; with a PATH, writes the file. Composes "
+        "with every other eval flag, including --no-write.",
+    )
 
     eval_subparsers = eval_parser.add_subparsers(dest="eval_subcommand")
     promote_parser = eval_subparsers.add_parser(
@@ -712,13 +722,17 @@ def _run_eval(args: argparse.Namespace) -> int:
     metric warns loudly but exits 0. `--strict` restores the old
     strict-sign tripwire (exit 1 on ANY metric decrease). `--no-baseline`
     always exits 0 regardless of metrics. `--no-write` gates persistence
-    only and never affects the verdict or the exit code.
+    only and never affects the verdict or the exit code. `--report [PATH]`
+    additionally renders a scrubbed, publishable Markdown report (task 4,
+    `OR.ticket.publishable-eval-report`) — to stdout with no PATH, to the
+    named file with one — independent of `--no-write` and of `--json`.
     """
     from brain.eval import (  # pylint: disable=import-outside-toplevel
         load_cases,
         run_eval,
         write_report,
     )
+    from brain.eval.report import render_run  # pylint: disable=import-outside-toplevel
     from brain.eval.runner import DEFAULT_GOLDEN_SET_PATH  # pylint: disable=import-outside-toplevel
 
     golden_set_path = args.golden_set or DEFAULT_GOLDEN_SET_PATH
@@ -742,6 +756,18 @@ def _run_eval(args: argparse.Namespace) -> int:
     _render_eval_result(
         args, report_dict, written_path, baseline_result, warnings, baseline_label=baseline_label
     )
+
+    report_path = getattr(args, "report", None)
+    if report_path is not None:
+        try:
+            markdown = render_run(report)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return _emit_error(exc, as_json=args.json)
+        if report_path == "":
+            print(markdown)
+        else:
+            Path(report_path).write_text(markdown, encoding="utf-8")
+
     return exit_code
 
 

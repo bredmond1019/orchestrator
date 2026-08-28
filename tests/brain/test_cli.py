@@ -265,6 +265,79 @@ class TestEvalDispatch:
         assert payload["baseline_deltas"]["recall_at_5"] < 0
 
 
+class TestEvalReportDispatch:
+    """`syn eval --report [PATH]` (task 4, `OR.ticket.publishable-eval-report`).
+
+    `--report` composes with every other eval flag; the renderer itself is
+    patched here since its scrub/allow-list behavior is covered by
+    `tests/brain/test_eval_report.py` — this class only asserts CLI wiring:
+    argument parsing (with and without a value) and that the handler writes
+    to stdout or to the named path.
+    """
+
+    def test_report_without_value_writes_to_stdout(self, capsys):
+        report = TestEvalDispatch._fake_eval_report()
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report"),
+            patch("brain.eval.report.render_run", return_value="# rendered report") as mock_render,
+        ):
+            code = main(["eval", "--no-write", "--report"])
+
+        assert code == 0
+        mock_render.assert_called_once_with(report)
+        out = _read_stdout(capsys)
+        assert "# rendered report" in out
+
+    def test_report_with_path_writes_the_file_not_stdout(self, capsys, tmp_path):
+        report = TestEvalDispatch._fake_eval_report()
+        out_path = tmp_path / "report.md"
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report"),
+            patch("brain.eval.report.render_run", return_value="# rendered report") as mock_render,
+        ):
+            code = main(["eval", "--no-write", "--report", str(out_path)])
+
+        assert code == 0
+        mock_render.assert_called_once_with(report)
+        assert out_path.read_text(encoding="utf-8") == "# rendered report"
+        out = _read_stdout(capsys)
+        assert "# rendered report" not in out
+
+    def test_report_omitted_renders_nothing(self, capsys):
+        report = TestEvalDispatch._fake_eval_report()
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report"),
+            patch("brain.eval.report.render_run") as mock_render,
+        ):
+            code = main(["eval", "--no-write"])
+
+        assert code == 0
+        mock_render.assert_not_called()
+
+    def test_report_composes_with_json_output(self, capsys):
+        report = TestEvalDispatch._fake_eval_report()
+        with (
+            patch("brain.eval.load_cases", return_value=[]),
+            patch("brain.eval.run_eval", return_value=report),
+            patch("brain.eval.write_report"),
+            patch("brain.eval.report.render_run", return_value="# rendered report"),
+        ):
+            code = main(["eval", "--no-write", "--json", "--report"])
+
+        assert code == 0
+        out = _read_stdout(capsys)
+        first_line = out.splitlines()[0]
+        payload = json.loads(first_line)
+        assert payload["written_path"] is None
+        assert "# rendered report" in out
+
+
 def _fake_report(**overrides):
     from brain.reconcile import ReconcileReport
 
