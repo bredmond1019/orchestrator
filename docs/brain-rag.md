@@ -320,6 +320,9 @@ syn eval                                                          # score, write
                                                                    # compares against the promoted pin by default
 syn eval --baseline planning/retrieval-eval-runs/<prior-run>.json # explicit baseline override
 syn eval --strict                                                 # old strict-sign tripwire (any decrease)
+syn eval --report                                                 # also print a scrubbed, publishable
+                                                                   # Markdown report to stdout
+syn eval --report path/to/report.md                               # ...or write it to a file
 ```
 
 Every run also stamps `aggregate_stats` — a 95% interval (Wilson for proportion metrics, seeded

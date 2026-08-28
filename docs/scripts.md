@@ -545,6 +545,8 @@ syn eval --baseline planning/retrieval-eval-runs/2026-08-01T22-43-33Z.json   # e
 syn eval --no-baseline                      # skip comparison entirely; always exits 0
 syn eval --strict                           # old strict-sign tripwire: exit 1 on ANY metric decrease
 syn eval --set path/to/other-golden-set.yaml --json
+syn eval --report                           # also render a scrubbed, publishable Markdown report to stdout
+syn eval --report path/to/report.md         # ...or write it to a file (composes with any flag above)
 syn eval promote planning/retrieval-eval-runs/<run>.json --reason "..."   # promote a run to the pin
 syn routine eval                            # report-only cron-safe run (no baseline comparison)
 

@@ -4837,7 +4837,8 @@ from another directory without `cd`-ing here, use `uv run --project <path-to-thi
 ## Retrieval Eval Harness (`app/brain/eval/`, `syn eval`)
 
 **Sources:** `app/brain/eval/__init__.py`, `app/brain/eval/models.py`, `app/brain/eval/scorer.py`,
-`app/brain/eval/stats.py`, `app/brain/eval/runner.py`, `app/brain/cli.py`, `app/brain/ops.py`
+`app/brain/eval/stats.py`, `app/brain/eval/runner.py`, `app/brain/eval/report.py`,
+`app/brain/cli.py`, `app/brain/ops.py`
 
 Block **OR.K2 task 3**. Converts a retrieval change from an argument into a signed number: one
 command (`syn eval`) scores the hand-authored golden set
@@ -5051,8 +5052,36 @@ def compare_to_baseline(current: dict, baseline: dict) -> tuple[dict[str, float]
 
 | Subcommand | Arguments | Behavior |
 |---|---|---|
-| `eval` | `--set PATH` (default: `planning/retrieval-golden-set.yaml`), `--baseline PATH`, `--no-baseline`, `--strict`, `--no-write`, `--json` | Loads the golden set, runs it through `run_eval`, writes a dated JSON report via `write_report` (unless `--no-write`), and prints per-case + aggregate + `aggregate_stats` metrics. Compares against a baseline unless `--no-baseline` is passed: an explicit `--baseline <path>` wins, otherwise falls back to the promoted pin (`planning/retrieval-eval-runs/baseline.json`) when one exists — prints the signed per-metric delta and paired `verdict` via `compare_to_baseline`, naming which run was compared against, and warns (never gates) if the live corpus fingerprint diverges from the pin's. **Exit code:** 1 iff some metric's paired verdict is `regressed-significant`; a `regressed-within-noise` metric warns loudly but exits 0. `--strict` restores the old strict-sign tripwire (exit 1 on ANY metric decrease, ignoring significance). `--no-baseline` always exits 0. Errors are caught by the same `_emit_error` typed-exception path the write/ops commands use. |
+| `eval` | `--set PATH` (default: `planning/retrieval-golden-set.yaml`), `--baseline PATH`, `--no-baseline`, `--strict`, `--no-write`, `--report [PATH]`, `--json` | Loads the golden set, runs it through `run_eval`, writes a dated JSON report via `write_report` (unless `--no-write`), and prints per-case + aggregate + `aggregate_stats` metrics. Compares against a baseline unless `--no-baseline` is passed: an explicit `--baseline <path>` wins, otherwise falls back to the promoted pin (`planning/retrieval-eval-runs/baseline.json`) when one exists — prints the signed per-metric delta and paired `verdict` via `compare_to_baseline`, naming which run was compared against, and warns (never gates) if the live corpus fingerprint diverges from the pin's. **Exit code:** 1 iff some metric's paired verdict is `regressed-significant`; a `regressed-within-noise` metric warns loudly but exits 0. `--strict` restores the old strict-sign tripwire (exit 1 on ANY metric decrease, ignoring significance). `--no-baseline` always exits 0. `--report [PATH]` additionally renders a scrubbed, publishable Markdown report via `report.render_run` — to stdout with no `PATH`, to the named file with one — independent of `--no-write`/`--json` and of the exit-code/baseline logic above. Errors are caught by the same `_emit_error` typed-exception path the write/ops commands use. |
 | `eval promote <run> --reason "..."` | `run` (path under `planning/retrieval-eval-runs/`), `--reason` (required), `--force`, `--json` | Delegates to `runner.promote_run` — promotes `run` to the baseline pin, subject to its guards (see `promote_run` above). `--force` is required to promote a run that is significantly worse than the current pin. Reports a `PromotionError` via the same typed-error path as every other `syn` command. |
+
+### `report.render_run` — publishable Markdown report
+
+**Source:** `app/brain/eval/report.py`
+
+`render_run(report: RetrievalRunReport, runs_dir: str | Path | None = None) -> str` renders one
+`RetrievalRunReport` to a self-contained Markdown document safe to hand to a stranger or a
+prospect — the disclosure boundary between the eval harness's private run data (which ultimately
+derives from `planning/retrieval-golden-set.yaml`, an operator's private cross-repo planning
+corpus) and anything external. The boundary is an **allow-list**, not a denylist: `_ALLOWED_METRIC_KEYS`
+and the field-by-field rendering name exactly what may reach the output, so a field added upstream
+to `RetrievalRunReport` renders nothing until someone deliberately adds it here (fails closed,
+never open). Fields that are never read at all: `RetrievalCase.query`, `RetrievalCase.expect_docs`,
+`RetrievalCase.notes`, `CaseResult.matched_docs`, and any document title, `doc_id`, file path, or
+repo name — `report.results` is consulted only for `case_id`, to bucket a category **count**
+(`_category_of`), never printed itself.
+
+The rendered document has six sections: summary metrics, a plain-English "what these numbers mean"
+statement, metric definitions, corpus fingerprint, case counts by category, a chronological run
+history (per-metric deltas across every run JSON under `runs_dir`, default `runner.DEFAULT_RUNS_DIR`
+— sourced from disk independently of `report`, so a `--no-write` render still shows every prior
+run), and the current baseline pin (`run` + `promoted_at` only, never the free-text `reason`).
+History and baseline sections swallow a per-file `OSError`/`ValueError` rather than raising, so one
+bad or missing run file never breaks the render.
+
+`syn eval --report [PATH]` (`app/brain/cli.py::_run_eval`) is the only caller: with no `PATH` it
+prints the Markdown to stdout, with a `PATH` it writes the file, and either way it composes with
+every other `eval` flag.
 
 `ops.ROUTINES` also registers `"eval"` (`app/brain/ops.py::_eval_routine`) — report-only and
 cron-safe, so `syn routine eval` scores the default golden set and writes a dated run without a
@@ -5069,6 +5098,12 @@ automatically).
   imports `app/workflows/` nowhere; `app/brain/eval/` imports `app/evals/` nowhere).
 - `tests/brain/test_golden_set_schema.py` — loads `planning/retrieval-golden-set.yaml` and asserts
   required fields, the 40-case hard cap, and at least 3 negative (`expect_abstain: true`) cases.
+- `tests/brain/test_eval_report.py` — the disclosure allow-list scrub test (none of the
+  never-render fields survive into the output), allow-list completeness against every key
+  `runner._aggregate` can actually produce, golden-file assertions on the summary/history table
+  Markdown, a metric-definition-drift check (every rendered key has a definition), and tolerance
+  for a heterogeneous run history (older run JSON missing newer metric keys). `tests/brain/test_cli.py`
+  covers `--report [PATH]` composing with `--json`/`--no-write`/`--baseline`.
 
 ---
 
