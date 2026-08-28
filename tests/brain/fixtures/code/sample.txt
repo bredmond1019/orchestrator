@@ -1,0 +1,4 @@
+This is a plain text fixture file with no tree-sitter grammar installed for
+its extension. It exists to prove the whole-file fallback path: a file in an
+unsupported language is indexed as a single chunk spanning the whole file,
+rather than being skipped or dropped silently.

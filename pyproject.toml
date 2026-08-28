@@ -59,6 +59,7 @@ exclude = [
     "app/workflows/customer_care_workflow.py",
     "app/workflows/customer_care_workflow_nodes",
     "app/schemas/customer_care_schema.py",
+    "tests/brain/fixtures/code",
 ]
 line-length = 100
 
