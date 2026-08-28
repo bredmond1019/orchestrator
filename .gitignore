@@ -126,6 +126,7 @@ trees/
 # regenerated on demand by tooling, never committed — except committed CLI tools)
 /scripts/*
 !/scripts/index_brain.py
+!/scripts/index_code.py
 !/scripts/load_brain_edges.py
 !/scripts/query_brain.py
 !/scripts/run_eval.py
