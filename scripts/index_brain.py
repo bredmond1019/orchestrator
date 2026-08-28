@@ -726,6 +726,46 @@ def _sub_repo_docs_files(
     return result
 
 
+def _block_records_files(
+    brain_path: Path, config: BrainConfig, seen: set[Path]
+) -> list[tuple[Path, str, None]]:
+    """Return (absolute_path, doc_type, None) triples for each repo's block records.
+
+    `OR.ticket.index-block-records`. Every manifest ``[[repos]]`` entry —
+    including the brain root itself (``repo_path == "."``), unlike
+    :func:`_sub_repo_files` — contributes its own ``planning/blocks/*.json``
+    directly (non-recursive: block records live flat in ``planning/blocks/``,
+    never in subdirectories).
+
+    No project override (``None``): :func:`parse_block_record` always sets
+    ``meta["project"]`` from the record's own ``repo`` field, so unlike the
+    sub-repo lanes there is no missing-frontmatter case to fall back for.
+
+    A leading ``_`` excludes a record the same way it excludes a markdown file
+    in every other lane. ``planning/`` is a symlink into the vault for every
+    sub-repo; this follows the exact resolution style :func:`_sub_repo_files`
+    already uses successfully rather than adding a fresh ``resolve()``.
+    """
+    result: list[tuple[Path, str, None]] = []
+    for repo in config.repos:
+        repo_path = repo.get("repo_path")
+        if not repo_path:
+            continue
+        repo_root = (brain_path / repo_path).resolve()
+        blocks_dir = repo_root / "planning" / "blocks"
+        if not blocks_dir.is_dir():
+            continue
+        for json_file in sorted(blocks_dir.glob("*.json")):
+            if json_file.name.startswith("_"):
+                continue
+            if json_file in seen:
+                continue
+            seen.add(json_file)
+            rel_to_repo = json_file.relative_to(repo_root).as_posix()
+            result.append((json_file, _classify_doc_type(rel_to_repo), None))
+    return result
+
+
 def _collect_files(
     brain_path: Path,
     config: BrainConfig,
@@ -734,7 +774,7 @@ def _collect_files(
 ) -> list[tuple[Path, str, str | None]]:
     """Return (absolute_path, doc_type, project_override) triples for the corpus.
 
-    Four lanes, in order, sharing one ``seen`` set so no file is ever collected
+    Five lanes, in order, sharing one ``seen`` set so no file is ever collected
     twice:
 
     1. **Brain-root subtrees** (:func:`_corpus_roots`) — ``docs/`` + ``planning/``
@@ -751,15 +791,22 @@ def _collect_files(
     4. **Sub-repo ``docs/``** (:func:`_sub_repo_docs_files`,
        `OR.ticket.corpus-sub-repo-docs`) — every non-tier-container manifest
        repo's ``docs/**/*.md``, frontmatter-wins/slug-fallback attribution.
+    5. **Block records** (:func:`_block_records_files`,
+       `OR.ticket.index-block-records`) — every manifest repo's
+       ``planning/blocks/*.json``, including the brain root's own. No project
+       override; :func:`parse_block_record` always supplies its own.
 
-    All four honour ``[crawl].skip_dirs`` and skip underscore-prefixed and
-    ephemeral files.
+    All five honour ``[crawl].skip_dirs`` (lanes 1-4; block records are a flat,
+    non-recursive directory so there is no subtree to match a skip prefix
+    against) and skip underscore-prefixed files.
 
-    A file with malformed YAML frontmatter (lane 4 only — the other three
-    lanes do not parse frontmatter during collection) is recorded into
-    ``errors`` if supplied and skipped rather than aborting the whole walk.
-    Its relative path is additionally recorded into ``parse_failed_paths`` if
-    supplied (see :func:`_sub_repo_docs_files`).
+    A file with malformed YAML frontmatter (lane 4 only — the other lanes do
+    not parse frontmatter during collection) is recorded into ``errors`` if
+    supplied and skipped rather than aborting the whole walk. Its relative
+    path is additionally recorded into ``parse_failed_paths`` if supplied (see
+    :func:`_sub_repo_docs_files`). A malformed block record (lane 5) is not
+    parsed at collection time either — it surfaces later, in the main read
+    loop, through the same ``DocumentParseError`` path lane 4's failures use.
     """
     result: list[tuple[Path, str, str | None]] = []
     seen: set[Path] = set()
@@ -789,6 +836,7 @@ def _collect_files(
     result.extend(
         _sub_repo_docs_files(brain_path, config, seen, errors, parse_failed_paths)
     )
+    result.extend(_block_records_files(brain_path, config, seen))
     return result
 
 
@@ -1357,9 +1405,16 @@ def main(argv: list[str] | None = None) -> int:
                             skipped_files += 1
                             continue
 
-            # Read, parse frontmatter, and chunk the body only (no YAML)
+            # Read, parse, and chunk the body only. A `planning/blocks/*.json`
+            # block record (OR.ticket.index-block-records) branches to
+            # parse_block_record; every other file is markdown frontmatter.
+            # Both return the same (meta, body) shape and both raise
+            # DocumentParseError on malformed input, caught below unchanged.
             raw_content = file_path.read_text(encoding="utf-8")
-            meta, body = parse_document(raw_content, file_path=rel_str)
+            if file_path.suffix == ".json":
+                meta, body = parse_block_record(raw_content, file_path=rel_str)
+            else:
+                meta, body = parse_document(raw_content, file_path=rel_str)
             norm = normalize_metadata(meta, file_path, brain_path, config)
             if project_override:
                 # Sub-repo files (Block OR.O): the manifest slug is the
