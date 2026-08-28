@@ -43,7 +43,7 @@ class TestRecallDispatch:
 
         assert code == 0
         mock_recall.assert_called_once_with(
-            "what is D20", limit=3, hybrid=True, workspace=None, surface="cli"
+            "what is D20", limit=3, hybrid=True, workspace=None, surface="cli", corpus="brain"
         )
         out = _read_stdout(capsys)
         assert json.loads(out) == fake_results

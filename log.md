@@ -9,6 +9,38 @@ timestamp: "2026-08-07T21:17:31Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-28] (4)
+
+`/sdlc-flow OR.P` (Semantic code search — source as a corpus) PASSED all 7 tasks, reviewed PASS in 1
+attempt. Task 1 added the `CodeChunk` model (`app/database/code_chunk.py`) and its migration
+(`code_chunks` table with pgvector embedding, a weighted generated `content_tsv`, GIN + HNSW
+indexes, unique `(repo, file_path, start_line)`), mirroring `BrainDocument`'s column shape so it
+drops into `_CORPUS_CONFIG` unchanged. Task 2 added a tree-sitter-backed chunker
+(`app/brain/code_chunking.py`) that splits Python/Rust source at function/class/method boundaries,
+falling back to one whole-file chunk when a grammar is missing or the source fails to parse. Task 3
+pinned chunk boundaries and the fallback with fixture tests. Task 4 registered `"code"` in
+`_CORPUS_CONFIG` and threaded a keyword-only `corpus` parameter through `recall()`/`hybrid_search()`
+(default `"brain"`, every existing caller unchanged), exposed as `syn recall --corpus code`. Task 5
+added `scripts/index_code.py`, a per-repo crawler mirroring `index_brain.py`'s incremental
+`indexed_at`-vs-mtime skip and `--rebuild` flag. Task 6 added a real Postgres+pgvector end-to-end
+test proving the code corpus's chunk-to-citation path (correct symbol/line-range top hit, cross-repo
+scoping, whole-file fallback retrievability) and documented the code corpus in `docs/brain-rag.md`.
+Task 7 validated the full gate: ruff clean, pylint 10.00/10, 1724 collected / 1717 passed / 7 skipped
+(pre-existing SQLite-ARRAY baseline, unchanged). `docs/scripts.md` also patched. `state.json` block
+`OR.P` flipped to `closed`; `mev emit-state --write` regenerated derived surfaces fleet-wide — no
+other block is currently open and unblocked (`OR.J` remains blocked on the Mac Mini migration).
+Next: `OR.W` (external-knowledge memory layer) or a fresh block-authoring pass over the master-plan.
+
+```
+80ed313 docs: update docs for OR.P
+1de712b feat: implement OR.P-task6
+f6a0341 feat: implement OR.P-task5
+bd50e82 feat: implement OR.P-task4
+efc22dc feat: implement OR.P-task3
+b7ebe39 feat: implement OR.P-task2
+f883b7e feat: implement OR.P-task1
+```
+
 ## [run: 2026-08-28] (3)
 
 `/sdlc-flow OR.R` (Brain-as-MCP-server) PASSED all 6 tasks, reviewed PASS in 1 attempt. New

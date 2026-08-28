@@ -114,6 +114,7 @@ app/alembic/versions/*
 !app/alembic/versions/*_add_embedding_model_to_brain_documents_and_content_chunks.py
 !app/alembic/versions/*_create_retrieval_queries_table.py
 !app/alembic/versions/*_add_mining_capture_columns_to_retrieval_queries.py
+!app/alembic/versions/*_create_code_chunks_table.py
 
 # Playground
 playground/*.png
@@ -125,6 +126,7 @@ trees/
 # regenerated on demand by tooling, never committed — except committed CLI tools)
 /scripts/*
 !/scripts/index_brain.py
+!/scripts/index_code.py
 !/scripts/load_brain_edges.py
 !/scripts/query_brain.py
 !/scripts/run_eval.py

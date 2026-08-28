@@ -80,7 +80,7 @@ def read_context():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    _POSTGRES_ONLY_TABLES = {"brain_documents"}
+    _POSTGRES_ONLY_TABLES = {"brain_documents", "code_chunks"}
     sqlite_tables = [
         t for t in Base.metadata.sorted_tables if t.name not in _POSTGRES_ONLY_TABLES
     ]

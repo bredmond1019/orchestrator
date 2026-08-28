@@ -33,9 +33,10 @@ def endpoint_context():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    # Exclude tables that use PostgreSQL-specific types (ARRAY, pgvector) which
-    # SQLite cannot compile. brain_documents is covered by its own PG-backed tests.
-    _POSTGRES_ONLY_TABLES = {"brain_documents"}
+    # Exclude tables that use PostgreSQL-specific types (ARRAY, pgvector, TSVECTOR)
+    # which SQLite cannot compile. brain_documents and code_chunks are covered by
+    # their own PG-backed tests.
+    _POSTGRES_ONLY_TABLES = {"brain_documents", "code_chunks"}
     sqlite_tables = [
         t for t in Base.metadata.sorted_tables if t.name not in _POSTGRES_ONLY_TABLES
     ]

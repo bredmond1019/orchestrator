@@ -21,10 +21,11 @@ def _disable_query_log(monkeypatch):
 @pytest.fixture(scope="session")
 def db_engine():
     engine = create_engine("sqlite:///:memory:")
-    # Some tables use PostgreSQL-specific types (e.g. ARRAY in brain_documents)
-    # that SQLite cannot compile. Exclude them from the in-memory SQLite setup;
-    # those models are tested separately against a real PostgreSQL connection.
-    _POSTGRES_ONLY_TABLES = {"brain_documents"}
+    # Some tables use PostgreSQL-specific types (e.g. ARRAY in brain_documents,
+    # TSVECTOR in brain_documents and code_chunks) that SQLite cannot compile.
+    # Exclude them from the in-memory SQLite setup; those models are tested
+    # separately against a real PostgreSQL connection.
+    _POSTGRES_ONLY_TABLES = {"brain_documents", "code_chunks"}
     sqlite_tables = [
         t
         for t in Base.metadata.sorted_tables

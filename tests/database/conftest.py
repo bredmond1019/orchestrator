@@ -2,9 +2,9 @@
 
 Provides a session-scoped, real ``postgresql://`` engine backed by a pinned
 ``pgvector/pgvector:pg16`` Testcontainers container. The ``vector`` extension is
-enabled and the ``brain_documents`` + ``content_chunks`` schema (the two models
-the in-memory SQLite suite in ``tests/conftest.py`` cannot fully exercise) is
-created against the real database.
+enabled and the ``brain_documents`` + ``content_chunks`` + ``code_chunks``
+schema (the models the in-memory SQLite suite in ``tests/conftest.py`` cannot
+fully exercise) is created against the real database.
 
 The ``brain_edges`` table (``BrainEdge``) is also created, so structural
 neighborhood-expansion / graph-traversal tests can seed real edge rows.
@@ -21,6 +21,7 @@ from collections.abc import Generator
 import pytest
 from database.brain_document import BrainDocument
 from database.brain_edge import BrainEdge
+from database.code_chunk import CodeChunk
 from database.content_chunk import ContentChunk
 from database.session import Base
 from sqlalchemy import create_engine, text
@@ -57,7 +58,12 @@ def pgvector_engine() -> Generator:
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
-        tables = [BrainDocument.__table__, ContentChunk.__table__, BrainEdge.__table__]
+        tables = [
+            BrainDocument.__table__,
+            ContentChunk.__table__,
+            BrainEdge.__table__,
+            CodeChunk.__table__,
+        ]
         Base.metadata.create_all(engine, tables=tables)
 
         yield engine

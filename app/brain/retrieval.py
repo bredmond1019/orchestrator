@@ -133,12 +133,29 @@ def semantic_search(
     return q.order_by(distance).limit(limit).all()
 
 
-def _normalize_engine_chunk(chunk: dict) -> dict:
-    """Normalize a `retrieval_engine.retrieve()` chunk dict into `recall()`'s shape."""
+def _normalize_engine_chunk(chunk: dict, *, corpus: str = "brain") -> dict:
+    """Normalize a `retrieval_engine.retrieve()` chunk dict into `recall()`'s shape.
+
+    The "code" corpus has no `doc_id`/`title` columns on `CodeChunk` (those
+    are `BrainDocument`-only), so both are derived here rather than added as
+    new fields — the normalized dict's key set must stay identical across
+    every corpus (OR.3.B's contract pin on `RecallResponse`/`RecallResult`).
+    `title` is recovered from the pre-rendered `section` citation string
+    (`"<symbol_name> (<symbol_kind>, L<start>-<end>)"` or
+    `"<file basename> (file, L1-N)"` for the whole-file fallback — see
+    `app.brain.code_chunking`), and `doc_id` is a stable synthetic id built
+    from the chunk's own row id.
+    """
+    doc_id = chunk.get("doc_id")
+    title = chunk.get("title")
+    if corpus == "code" and doc_id is None:
+        doc_id = f"code:{chunk.get('id')}"
+        section_title = chunk.get("section_title") or ""
+        title = section_title.split(" (", 1)[0] or None
     return {
-        "doc_id": chunk.get("doc_id"),
+        "doc_id": doc_id,
         "file_path": chunk.get("file_path"),
-        "title": chunk.get("title"),
+        "title": title,
         "section": chunk.get("section_title"),
         "content": chunk.get("content"),
         "score": chunk.get("score"),
@@ -154,6 +171,7 @@ def hybrid_search(
     workspace: str | None = None,
     session=None,
     surface: str | None = None,
+    corpus: str = "brain",
 ) -> list[dict]:
     """Run the promoted `retrieval_engine.retrieve` fusion pipeline over the brain corpus.
 
@@ -177,6 +195,8 @@ def hybrid_search(
             `retrieval_engine.retrieve` for the OR.K1 query log; `retrieve()`
             is the single logging choke point for this path, so no separate
             log write happens here.
+        corpus: Corpus to query — `"brain"` (default), `"content"`, or
+            `"code"` (OR.P). Threaded straight into `retrieval_engine.retrieve`.
 
     Returns:
         A list of up to `limit` normalized result dicts (the same
@@ -189,14 +209,14 @@ def hybrid_search(
     } or None
     chunks = retrieval_engine.retrieve(
         query,
-        corpus="brain",
+        corpus=corpus,
         k=limit,
         filters=resolved_filters,
         workspace_id=workspace,
         session=session,
         surface=surface,
     )
-    return [_normalize_engine_chunk(c) for c in chunks]
+    return [_normalize_engine_chunk(c, corpus=corpus) for c in chunks]
 
 
 def _normalize_doc_row(doc, score: float, *, via: str) -> dict:
@@ -222,6 +242,7 @@ def _log_recall(  # pylint: disable=too-many-arguments
     limit: int | None = None,
     filters: dict | None = None,
     embedding_model: str | None = None,
+    corpus: str = "brain",
 ) -> None:
     """Shared OR.K1 logging call for `recall()`'s exact-id/semantic paths.
 
@@ -229,9 +250,11 @@ def _log_recall(  # pylint: disable=too-many-arguments
     (the single choke point) — this covers the other half: the two paths
     that never call `retrieve()`.
 
-    `corpus` is always `"brain"` here — both paths this function serves
-    (`exact_id_lookup` and `semantic_search`) query `BrainDocument`
-    exclusively (OR.2.E).
+    Both paths this function serves (`exact_id_lookup` and `semantic_search`)
+    query `BrainDocument` exclusively (OR.2.E) regardless of the caller's
+    requested `corpus` — the log tag is threaded through as-is so a caller
+    passing `corpus="code"` down the non-hybrid path is still visible in the
+    query log, even though the dispatch itself is unaffected.
     """
     log_retrieval(
         query,
@@ -242,7 +265,7 @@ def _log_recall(  # pylint: disable=too-many-arguments
         retrieval_confidence=retrieval_engine.compute_retrieval_confidence(results),
         latency_ms=int((time.monotonic() - start) * 1000),
         k=limit,
-        corpus="brain",
+        corpus=corpus,
         embedding_model=embedding_model,
         filters=filters,
         top_scores=[r.get("score") for r in results[:5]],
@@ -258,6 +281,7 @@ def recall(
     session=None,
     embedding_service=None,
     surface: str | None = None,
+    corpus: str = "brain",
 ) -> list[dict]:
     """Dispatch exact-id -> semantic/hybrid exactly as `query_brain.main()` does.
 
@@ -283,6 +307,12 @@ def recall(
             `"workflow"` / `"eval"` / `"mcp"`) for the OR.K1 query log
             (`app/brain/query_log.py`). `None` (the default) is logged as
             `"unknown"`; has no effect on retrieval behavior.
+        corpus: Corpus to query — `"brain"` (default), `"content"`, or
+            `"code"` (OR.P). Keyword-only with default `"brain"` so every
+            existing caller is unchanged. The exact-id/semantic dispatch
+            below queries `BrainDocument` directly regardless of this value
+            (that path predates multi-corpus support); only the `hybrid`
+            path and the OR.K1 log tag actually vary by corpus today.
 
     Returns:
         A list of normalized result dicts, one shape on every path:
@@ -291,7 +321,12 @@ def recall(
     """
     if hybrid:
         return hybrid_search(
-            query, limit=limit, workspace=workspace, session=session, surface=surface
+            query,
+            limit=limit,
+            workspace=workspace,
+            session=session,
+            surface=surface,
+            corpus=corpus,
         )
 
     start = time.monotonic()
@@ -318,6 +353,7 @@ def recall(
             start=start,
             limit=limit,
             filters=filters,
+            corpus=corpus,
         )
         return results
 
@@ -341,5 +377,6 @@ def recall(
         limit=limit,
         filters=filters,
         embedding_model=getattr(embedding_service, "stamp", None),
+        corpus=corpus,
     )
     return normalized
