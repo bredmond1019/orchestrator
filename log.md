@@ -9,6 +9,39 @@ timestamp: "2026-08-07T21:17:31Z"
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
 
+## [run: 2026-08-28] (3)
+
+`/sdlc-flow OR.R` (Brain-as-MCP-server) PASSED all 6 tasks, reviewed PASS in 1 attempt. New
+`app/brain/mcp.py` exposes `brain_recall`/`brain_walk`/`brain_pulse` as thin MCP tools dispatching
+onto the existing `app/brain` read core — the third thin adapter over the same core `syn` (OR.N1)
+and the HTTP router (OR.Q2/OR.3.B) already adapt, matching `app/api/read.py`'s adapter discipline
+(no SQL, no second retrieval/traversal implementation) and tagging every call `surface="mcp"` for
+the OR.K1 query log. Task 1 needed one lint-fix pass (pylint R0801 duplicate-code, resolved with a
+disable/enable bracket rather than importing across the HTTP-adapter boundary). Task 2 added the
+schema/dispatch/error-mapping test suite. Task 3 wired the stdio server shell and a new `syn mcp`
+subcommand in `app/brain/cli.py`. Task 4 deleted the stale `scripts/mcp_server.py` stub (never
+actually removed by the earlier OR.X cut the master-plan had claimed) and wrote
+`docs/mcp-contract.md` as the client-server contract bastion's vendored Rust MCP client is written
+against, wiring it into `docs/index.md`/`docs/scripts.md`. Task 5 added a recorded
+initialize/tools-list/tools-call handshake replay (`tests/brain/fixtures/mcp_handshake.json`)
+driving the real `mcp.server.Server` in-process, standing in for the un-gateable cross-repo
+bastion-client acceptance criterion. Task 6 validated the full gate: ruff clean, pylint 10.00/10,
+1671 collected / 1664 passed / 7 skipped (unchanged baseline). `docs/api-reference.md` patched.
+`state.json` block `OR.R` flipped to `closed`; `mev emit-state --write` regenerated derived
+surfaces fleet-wide. No genuine spec deviations — no amendment log entries added.
+Next: `OR.P` (semantic code search) or `OR.W` (external-intelligence loop), both open and unblocked.
+
+```
+9c25275 docs: update docs for OR.R
+9e05bdc feat: implement OR.R-task5
+670abdd feat: implement OR.R-task4
+992236e feat: implement OR.R-task3
+5ccec03 feat: implement OR.R-task2
+5a2c1af fix: fix pass 1 for OR.R-task1
+17ca9d3 feat: implement OR.R-task1
+543c44f merge: OR.ticket.publishable-eval-report — publishable retrieval-eval report (6 tasks, review PASS)
+```
+
 ## [run: 2026-08-28] (2)
 
 Resumed `/sdlc-flow OR.ticket.publishable-eval-report` from task 2 after the prior run's bail

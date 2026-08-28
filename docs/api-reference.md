@@ -4751,8 +4751,9 @@ def main(argv: list[str] | None = None) -> int: ...
 
 Registered in `pyproject.toml` (`[project.scripts]`, `syn = "app.brain.cli:main"`, mirroring
 [`createworkflow`](#createworkflow-cli)). An `argparse` dispatcher wiring `recall` / `walk` /
-`pulse` (OR.N1 read core), `embed` / `ingest` / `prune` / `refresh` / `stale` / `routine`
-(OR.N2 write/ops core), and `stale`'s `--deep [--repair]` mode (`reconcile.deep_stale` /
+`pulse` (OR.N1 read core), `mcp` (OR.R — serves the same read core as an MCP server over stdio;
+see [docs/mcp-contract.md](mcp-contract.md)), `embed` / `ingest` / `prune` / `refresh` / `stale` /
+`routine` (OR.N2 write/ops core), and `stale`'s `--deep [--repair]` mode (`reconcile.deep_stale` /
 `ops.repair_deep_stale`) behind short, deterministic, agent-callable verbs: every command accepts
 `--json` (emits one machine-parseable payload and nothing else on stdout), exit codes are
 deterministic (`0` on success; non-zero on a typed `--workspace` resolution error, an unhealthy
@@ -4766,6 +4767,7 @@ regardless of invocation form.
 | `recall QUERY` | `--limit N` (default 5), `--hybrid`, `--workspace NAME`, `--json` | Validates `--workspace` (when given) via `services.workspace_resolver.resolve_workspace_root`, then calls `brain.retrieval.recall`. |
 | `walk DOC_ID` | `--depth N` (default 1), `--workspace NAME` (reserved; unused by `walk`), `--json` | Same `--workspace` validation, then calls `brain.graph.walk`. |
 | `pulse` | `--json` | Calls `brain.pulse.pulse`; exit code is `0` if `report.healthy` else `1`. |
+| `mcp` | (none) | Calls `brain.mcp.serve()` — blocks serving `recall`/`walk`/`pulse` as MCP tools over stdio until stdin closes. Full tool schemas and error envelope: [docs/mcp-contract.md](mcp-contract.md). |
 | `embed FILE` | `--force`, `--brain-path PATH`, `--json` | Calls `brain.ops.embed_paths([FILE], ...)`. Typed errors are caught and rendered via `_emit_error` (exit `1`), never a raw traceback. |
 | `ingest` | `--dir DIRECTORY` (required, dest `directory`), `--force`, `--brain-path PATH`, `--json` | Calls `brain.ops.ingest_dir(DIRECTORY, ...)`. |
 | `prune PATH [PATH ...]` | `--dry-run`, `--brain-path PATH`, `--json` | Calls `brain.ops.prune_paths(PATHS, ...)`. The brain repo's post-commit delete/rename freshness hook calls this. |
@@ -4831,6 +4833,11 @@ from another directory without `cd`-ing here, use `uv run --project <path-to-thi
   `deep_stale` exception, and `routine reconcile` running via `ops.run_routine`.
 - `tests/test_index_brain.py` — `--only-paths` filtering (matched/unmatched/mixed paths, warning
   on unmatched), `--force`'s incremental-skip bypass, and `--prune-paths` (`TestPrunePaths`).
+- `tests/brain/test_mcp.py` — the `syn mcp` server (`app/brain/mcp.py`, OR.R): tool-schema
+  contract, dispatch call-kwargs, result ordering, dependency/generic/unknown-tool error-key
+  mapping, `syn mcp` subcommand registration, and `TestProtocolHandshakeReplay`'s in-process
+  `initialize`/`tools/list`/`tools/call` handshake replay against a diffable fixture. Full contract:
+  [docs/mcp-contract.md](mcp-contract.md).
 
 ---
 

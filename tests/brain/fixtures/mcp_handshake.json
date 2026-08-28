@@ -1,0 +1,26 @@
+{
+  "_comment": "Recorded protocol-conformant client exchange for OR.R task 5's handshake replay. Diff this against docs/mcp-contract.md by eye when either changes; a future protocol-version bump should show up here as a fixture change, not a silent behaviour change.",
+  "server_name": "synapse-brain",
+  "steps": [
+    {
+      "step": "initialize",
+      "note": "Performed by mcp.shared.memory.create_connected_server_and_client_session's ClientSession.initialize() on context-manager entry; asserted via the session's negotiated server_info.name."
+    },
+    {
+      "step": "tools/list",
+      "expected_tool_names": ["brain_recall", "brain_walk", "brain_pulse"]
+    },
+    {
+      "step": "tools/call",
+      "tool": "brain_recall",
+      "arguments": {"query": "what is D20"},
+      "expected_result_json": [{"doc_id": "D20", "score": 0.9}]
+    },
+    {
+      "step": "tools/call",
+      "tool": "brain_does_not_exist",
+      "arguments": {},
+      "expected_error_key": "unknown_tool"
+    }
+  ]
+}
