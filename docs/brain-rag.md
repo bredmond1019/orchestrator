@@ -18,6 +18,67 @@ In the Bastion program, this is the **Python half of the Brain layer** — seman
 
 ---
 
+## What this page is for
+
+You want to search the company brain in natural language, or you want to understand why a search
+returned what it did. This page covers the whole path: how a markdown file becomes searchable rows,
+and how a question becomes a ranked, cited answer.
+
+A **corpus** is one searchable body of text. There are three: `brain` (markdown docs), `code`
+(source files), `content` (published writing). Unless you say otherwise you are searching `brain`.
+
+## Quickstart
+
+Typed in a terminal, from the repo root.
+
+```bash
+uv run syn refresh                                  # build the corpus + the graph
+uv run syn pulse                                    # confirm it has rows and is fresh
+uv run syn recall "what did we decide about rates"  # ask it something
+uv run syn walk <doc_id> --depth 2                   # follow the structural graph out from a doc
+```
+
+| Must exist first | If it does not |
+|---|---|
+| Postgres running with the `pgvector` extension | Run `scripts/dev-setup.sh`, or see [getting-started.md](getting-started.md). |
+| `VOYAGE_API_KEY` set | See [configuration.md](configuration.md); embedding fails without it. |
+| A `brain.toml` manifest at the brain root | `index_brain.py` discovers repos from it; without it nothing is crawled. |
+
+Full flag reference for every command above: [scripts.md](scripts.md). One-line summaries of
+everything else the repo can do: [capabilities.md](capabilities.md).
+
+## The shape
+
+```mermaid
+flowchart TD
+    A["Markdown files across the fleet"] --> B["index_brain.py — crawl + chunk"]
+    B --> C["Voyage embeddings"]
+    C --> D["brain_documents"]
+    A --> E["load_brain_edges.py — read OKF related:"]
+    E --> F["brain_edges"]
+    G["Your question"] --> H["Semantic search + keyword re-rank"]
+    D --> H
+    H --> I["Graph + memory expansion"]
+    F --> I
+    I --> J["Age decay, then rank"]
+    J --> K["Grounding / abstain gate"]
+    K --> L["Cited answer"]
+```
+
+1. Every markdown file in every `brain.toml` repo is crawled, split into chunks, and embedded into
+   `brain_documents`.
+2. The OKF `related:` frontmatter of those same files becomes `brain_edges` — the structural graph.
+3. A question is answered by searching semantically **and** by keyword, then fusing the two.
+4. The results are expanded along the graph and against the memory tier, then re-ranked with a
+   penalty for age.
+5. Before answering, a gate checks the answer is actually grounded in the retrieved text — if it is
+   not, the system abstains rather than guessing.
+
+**You personally do step 1 and 2** by running `syn refresh`. Steps 3–5 happen inside every
+`syn recall` and every `DOCUMENT_QA` run.
+
+---
+
 ## Architecture
 
 ```
@@ -409,7 +470,7 @@ spot-checking one query at a time. See `docs/api-reference.md` §
 chunk of the expected document (`VerifyCitationsNode.support_score`, mirrored). It does not
 mean "the answer was correct", and **a healthy corpus does not read ~1.0.** The 2026-08-02
 baseline of **0.3608** was decomposed end-to-end by `ticket-groundedness-baseline`
-([`planning/artifacts/groundedness-baseline-analysis.md`](../planning/artifacts/groundedness-baseline-analysis.md)):
+(`planning/artifacts/groundedness-baseline-analysis.md`):
 
 | Term | Share of the deficit from 1.0 | What it is |
 |---|---|---|

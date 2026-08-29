@@ -17,6 +17,31 @@ topology. Covers both local development and full Docker deployment.
 
 ---
 
+## Quickstart
+
+The minimum to get a working stack. Typed in a terminal, from the repo root.
+
+```bash
+cp app/.env.example app/.env
+```
+
+Then set at least these four:
+
+| Variable | Why you need it |
+|---|---|
+| `DATABASE_URL` (or the `DATABASE_*` parts) | Nothing works without Postgres. |
+| `ORCHESTRATION_API_KEY` | The value you send as `X-API-Key`; every protected route rejects you without it. |
+| `VOYAGE_API_KEY` | Embedding. Indexing and search fail without it. |
+| `ANTHROPIC_API_KEY` | Any workflow node that calls an LLM. |
+
+Everything else below has a working default. The full variable-by-variable table starts at §2.
+
+**The trap that costs the most time:** the API and the worker each call `load_dotenv()`
+independently at import. Editing `app/.env` does not affect a process that is already running —
+restart both.
+
+---
+
 ## 1. Two env file contexts
 
 There are two distinct `.env` files in this project, each serving a different consumer.

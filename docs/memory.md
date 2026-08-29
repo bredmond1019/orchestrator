@@ -21,6 +21,68 @@ This is Brain data with an Engine pipeline around it: the three models are plain
 and `app/memory/` is a standalone, importable module with no coupling to any one workflow — any
 workflow that needs "what do we know about peer X" attaches `MemoryLoaderNode` to its own DAG.
 
+## What this page is for
+
+You want the Brain to remember things across sessions — who a client is, what was last discussed,
+what rate was quoted — rather than re-reading documents every time. This page is that layer.
+
+Three words carry the design:
+
+- An **entity** (`Peer`) is a thing the system keeps knowledge about: a client, a company, a
+  product, an SOP.
+- An **episode** (`AgentEpisode`) is one thing that happened involving that entity — a call, a
+  message, a piece of work.
+- A **semantic memory** (`SemanticMemory`) is a durable fact distilled from many episodes: not
+  "we spoke on Tuesday" but "their budget ceiling is 8k".
+
+Episodes accumulate. Consolidation turns them into facts. Facts decay in confidence unless
+re-confirmed.
+
+## Quickstart
+
+Memory is driven by two workflows, so the API and worker must be running
+([getting-started.md](getting-started.md)). Both calls go in a terminal.
+
+```bash
+# Record something that happened
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' -H 'X-API-Key: dev-secret' \
+  -d '{"workflow_type": "MEMORY_INGEST", "data": {"peer_name": "Acme", "content": "Quoted 8k for the pilot."}}'
+
+# Distil accumulated episodes into durable facts
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' -H 'X-API-Key: dev-secret' \
+  -d '{"workflow_type": "MEMORY_CONSOLIDATION", "data": {"peer_name": "Acme"}}'
+```
+
+Exact payload fields are in [workflows.md](workflows.md) §3 and §4 — the shapes above are
+illustrative, not authoritative.
+
+To read memory from inside a workflow you are building, attach `MemoryLoaderNode` to your DAG; see
+[api-reference.md](api-reference.md).
+
+## The shape
+
+```mermaid
+flowchart TD
+    A["Something happens"] --> B["MEMORY_INGEST"]
+    B --> C["AgentEpisode rows"]
+    C --> D["MEMORY_CONSOLIDATION"]
+    D --> E["SemanticMemory — durable facts"]
+    E --> F["Confidence decays over time"]
+    F -->|re-confirmed| E
+    E --> G["MemoryLoaderNode reads it back<br/>into any workflow"]
+```
+
+1. `MEMORY_INGEST` writes one episode per thing that happened.
+2. `MEMORY_CONSOLIDATION` reads accumulated episodes and writes durable facts.
+3. A fact's confidence decays with age; re-confirmation restores it.
+4. **A contradicting fact never overwrites the old one** — both are kept, and the newer one wins on
+   confidence. That rule is load-bearing; see the contradiction section below.
+5. Any workflow reads facts back by attaching `MemoryLoaderNode`.
+
+---
+
 ## Reference architecture (D25)
 
 The design follows [Honcho](https://github.com/plastic-labs/honcho)'s reference architecture

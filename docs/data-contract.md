@@ -16,7 +16,7 @@ related: [D28-node-level-execution-state, D30-data-contract-ownership, app-archi
 
 This is the **single source of truth** for the shape any external consumer reads to observe a
 workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
-The orchestrator **owns** this document. Consumers (e.g. [`bastion`](../../bastion)) reference and
+The orchestrator **owns** this document. Consumers (e.g. `core/bastion`) reference and
 *pin* it; they never fork it. When any shape here changes, bump the version and add a changelog row
 (see [Versioning](#versioning)).
 

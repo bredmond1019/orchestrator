@@ -186,6 +186,7 @@ Developer reference docs in `docs/`:
 
 | File | Contents |
 |---|---|
+| [docs/capabilities.md](docs/capabilities.md) | **Start here.** Everything Synapse can do and how to run it — the four workflows, every `syn` subcommand, the HTTP surface, and the cron routines. Derived from the registries in source, not from doc titles. |
 | [docs/api-reference.md](docs/api-reference.md) | Precise class-level reference for every public abstraction in app/core/, app/database/, app/services/, and app/workflows/ that a developer must understand and subclass when writing a new workflow. |
 | [docs/configuration.md](docs/configuration.md) | Complete reference for every environment variable, connection string assembly, and Docker service topology so a developer can configure the stack for local development or a Docker deployment without guessing. |
 | [docs/scripts.md](docs/scripts.md) | Reference for every script in `scripts/`: setup, dev server, inspection, and the brain corpus/graph pipeline (`index_brain.py`, `load_brain_edges.py`, `query_brain.py`, the `syn` CLI). |

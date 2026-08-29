@@ -6,13 +6,42 @@ doc_id: scripts
 layer: [engine]
 project: synapse
 status: active
-keywords: [dev-setup, dev.sh, inspect_run, index_brain, index_code, workspace mode, syn CLI, prune]
+keywords: [dev-setup, dev.sh, index_brain, index_code, syn CLI, prune]
 related: [getting-started, brain-rag, configuration, workspace-contract]
 ---
 
 # Developer Scripts
 
 All scripts live in `scripts/`. They are machine-local helpers (excluded from `.gitignore` tracking for env-specific paths) so they don't belong in `app/`.
+
+---
+
+## What this page is for
+
+The full flag-by-flag reference for every script and every `syn` subcommand. Reach for it when you
+know what you want to run and need the exact invocation.
+
+If you do not yet know what to run, start at [capabilities.md](capabilities.md) — one line per
+capability, with a pointer back here.
+
+## Quickstart
+
+The four commands that cover most days, typed in a terminal from the repo root.
+
+```bash
+scripts/dev-setup.sh                       # once per machine: Postgres, Redis, pgvector, app/.env
+scripts/dev.sh                             # start the API + Celery worker in a tmux session
+uv run syn refresh                         # rebuild the corpus and the structural graph
+uv run syn recall "your question here"     # search it
+```
+
+**`syn` supersedes the older scripts for everyday use.** `syn refresh` wraps `index_brain.py` and
+`load_brain_edges.py`; `syn recall` wraps `query_brain.py`. Call the scripts directly only for a
+flag `syn` does not expose — the sections below say which those are.
+
+**Destructive commands, called out here rather than further down:** `syn prune` deletes corpus
+rows, `syn routine queries_prune` deletes logged query rows, and `index_brain.py --rebuild` drops
+and re-indexes everything. `syn prune` and `syn refresh` both take `--dry-run`; use it first.
 
 ---
 

@@ -18,6 +18,34 @@ in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/`.
 
 ---
 
+## What this page is for
+
+This is the reference you read while *writing* a node or a workflow — the classes you subclass and
+the methods you must implement. It is long and deliberately exhaustive; you are meant to jump to
+one entry, not read it through.
+
+If you instead want to know what the system can already do and how to run it, go to
+[capabilities.md](capabilities.md). If you want the conceptual picture first, go to
+[app-architecture-overview.md](app-architecture-overview.md).
+
+## Quickstart — scaffolding a new workflow
+
+```bash
+uv run createworkflow      # in a terminal; prompts for a snake_case name
+```
+
+That writes the workflow, its nodes package, and its event schema. Then, in order: fill in the
+schema fields, add real nodes, wire `WorkflowSchema` (`start`, `nodes`, `connections`), register in
+**both** [`app/workflows/workflow_registry.py`](../app/workflows/workflow_registry.py) and
+[`app/api/schema_registry.py`](../app/api/schema_registry.py), add a `.j2` prompt per system
+prompt, and write the tests.
+
+**Read the boundary test in `CLAUDE.md` before you start.** Most new workflows belong in
+`engine-rs`, not here — only work that needs embeddings, pgvector or the memory tables in-process
+is Brain-side.
+
+---
+
 ## Table of Contents
 
 1. [Workflow](#workflow)

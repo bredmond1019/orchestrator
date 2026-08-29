@@ -17,6 +17,53 @@ related: [api-reference, brain-rag, D36-bastion-engine-brain-role]
 
 ---
 
+## What this page is for
+
+The conceptual picture: what the four core abstractions are and how a request becomes work done.
+Read this before [api-reference.md](api-reference.md), which is the class-by-class detail.
+
+Four words to know:
+
+- A **workflow** is a named graph of steps — the unit you trigger.
+- A **node** is one step in that graph. Some call an LLM (`AgentNode`), some branch
+  (`RouterNode`), some fan out (`ParallelNode`).
+- **`TaskContext`** is the shared object every node writes its output into. It is what you read
+  back when you poll a run.
+- An **event** is one request to run a workflow — a row in the database plus a queued job.
+
+## Quickstart
+
+There is nothing to run on this page. To see the architecture actually execute, follow
+[workflows.md](workflows.md) § Quickstart. To get the stack up first, see
+[getting-started.md](getting-started.md).
+
+## The shape
+
+```mermaid
+flowchart TD
+    A["POST /events/"] --> B["FastAPI validates + writes the event row"]
+    B --> C["Redis queue"]
+    C --> D["Celery worker"]
+    D --> E["Workflow resolves its DAG"]
+    E --> F["Node runs"]
+    F --> G["Writes into TaskContext"]
+    G -->|more nodes| F
+    G --> H["Persisted back to the event row"]
+    H --> I["GET /events/{id}"]
+```
+
+1. FastAPI validates the payload and writes an event row, then returns `202` — it never runs the
+   work itself.
+2. Redis carries the job to a Celery worker.
+3. The worker resolves the workflow's DAG and walks it node by node.
+4. Each node reads what earlier nodes wrote and appends its own output to `TaskContext`.
+5. The finished `TaskContext` is persisted onto the event row, which is what a poll returns.
+
+**The API and the worker are separate processes.** If the worker is not running, events are
+accepted and never processed — the most common "nothing happens" report.
+
+---
+
 ## High-Level Summary
 
 This codebase is a **production-ready event-driven AI pipeline framework**. It is not a demo — it is infrastructure. The core abstractions (Workflow, Node, TaskContext, AgentNode) are clean, composable, and directly applicable to every project in the learning plan. The domain-specific example workflows this document originally analyzed (Customer Care, Content Pipeline, Research Agent, Proposal Generator) have since been divested to `engine-rs` under `OR.X` (D51), and the Python `SDLC_FLOW` workflow + `app/evals/` were retired under `OR.X2` — the surviving workflows are `DOCUMENT_INGEST`, `DOCUMENT_QA`, `MEMORY_INGEST`, `MEMORY_CONSOLIDATION`.

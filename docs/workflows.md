@@ -22,6 +22,49 @@ Four production workflows ship with the framework. All are triggered by posting 
 
 ---
 
+## Quickstart
+
+Start the API and the worker first ([getting-started.md](getting-started.md)) — the API only
+*queues* work, so with no worker running your event is accepted and never processed.
+
+```bash
+# 1. List what is registered
+curl http://localhost:8080/workflows
+
+# 2. Start a run — returns 202 and an event id immediately
+curl -X POST http://localhost:8080/events/ \
+  -H 'Content-Type: application/json' -H 'X-API-Key: dev-secret' \
+  -d '{"workflow_type": "DOCUMENT_QA", "data": {"question": "what is OKF frontmatter"}}'
+
+# 3. Poll for the result
+curl -H 'X-API-Key: dev-secret' http://localhost:8080/events/<event_id>
+```
+
+## How a run works
+
+```mermaid
+flowchart TD
+    A["POST /events/"] --> B["Validated against schema_registry"]
+    B --> C["Row written, 202 returned"]
+    C --> D["Queued on Redis"]
+    D --> E["Celery worker picks it up"]
+    E --> F["Workflow DAG runs node by node"]
+    F --> G["Each node appends to task_context"]
+    G --> H["GET /events/{id} returns it"]
+```
+
+1. Your payload is validated against the event schema registered for that `workflow_type`. An
+   unregistered workflow 422s here — that is the symptom of forgetting
+   [`app/api/schema_registry.py`](../app/api/schema_registry.py).
+2. The event row is written and a `202` returned straight away. Nothing has run yet.
+3. A Celery worker picks the job up and walks the workflow's node graph.
+4. Every node writes its output into a shared `TaskContext`, which is what you read back.
+
+A one-line summary of each workflow, alongside everything else the repo can do:
+[capabilities.md](capabilities.md).
+
+---
+
 ## 1. Document Ingest (`DOCUMENT_INGEST`)
 
 **What it does:** Parses a document (plain text or PDF), splits it into section-aware overlapping token chunks, embeds all chunks in a single batched Voyage call, and persists them as `ContentChunk` rows with vectors. Creates the searchable corpus that `DOCUMENT_QA` queries against.

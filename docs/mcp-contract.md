@@ -23,6 +23,19 @@ against this contract. `tests/brain/test_mcp.py` is the pin on this side of the 
 and dispatch tests fail loudly on any drift. **A change to any tool name or argument schema here is
 a cross-repo contract change and requires a matching update in bastion.**
 
+## Quickstart
+
+Typed in a terminal. The server speaks MCP over stdio, so it is normally launched *by* a client
+rather than run by hand — run it directly only to check it starts.
+
+```bash
+uv run syn mcp        # serves brain_recall / brain_walk / brain_pulse over stdio
+```
+
+It needs the same Postgres connection every other `syn` command needs; see
+[configuration.md](configuration.md). Three tools are exposed, and they are the same read core as
+`syn recall` / `syn walk` / `syn pulse` — see [capabilities.md](capabilities.md).
+
 ## Starting the server
 
 ```bash

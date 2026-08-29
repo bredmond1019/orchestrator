@@ -17,7 +17,7 @@ related: [data-contract, brain-rag, scripts]
 This is the **single source of truth** for the shared "knowledge workspace" convention — what a
 workspace *is*, how it is *named*, how a name *resolves* to a corpus root, and what a conforming
 root must *contain*. The orchestrator **owns** this document. Consumers (e.g.
-[`bastion`](../../bastion)) reference and *pin* it; they never fork it. When any shape here
+`core/bastion`) reference and *pin* it; they never fork it. When any shape here
 changes, bump the version and add a changelog row (see [Versioning](#6-versioning)).
 
 > This contract predates the orchestrator's own multi-workspace implementation (`OR.C`, not yet

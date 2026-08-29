@@ -1,68 +1,75 @@
 ---
 type: Index
 title: Developer Documentation Index
-description: Index of the developer reference documentation for the orchestrator.
+description: Index of the developer reference documentation for Synapse, the Brain layer.
 doc_id: docs-index
-layer: [engine]
+layer: [brain]
 project: synapse
 status: active
-keywords: [docs index, developer reference, orchestration framework, getting-started, API reference]
-related: [api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, memory, mcp-contract]
+keywords: [docs index, developer reference, brain, capabilities, getting-started, API reference]
+related: [capabilities, api-reference, app-architecture-overview, brain-rag, workflows, getting-started, data-contract, workspace-contract, memory, mcp-contract, node-model-comparison]
 ---
 
 # Documentation Index
 
-Developer reference for the orchestration framework. Start here, then open the doc that matches your task.
+Synapse is the **Brain** layer of Bastion — the corpus, embeddings, structural graph, memory and
+retrieval. This is the file listing. **If you want to know what the system can do and what to type,
+start at [capabilities.md](capabilities.md), not here.**
 
 ## Start here
 
-| Doc | Contents |
+| Doc | One line |
 |---|---|
-| [getting-started.md](getting-started.md) | Set up and run the stack — local dev (Homebrew scripts) and Docker/OrbStack path. Start here if you're new. |
-| [workflows.md](workflows.md) | What each workflow does, its node DAG, event payload shape, and ready-to-paste curl examples. |
-| [scripts.md](scripts.md) | All developer scripts: `dev-setup.sh`, `dev.sh`, `inspect_run.py`, `index_brain.py` (brain mode + multi-workspace `--workspace`/`--root` mode + `--backfill-dates` + `--only-paths`/`--force`, block OR.N2), `load_brain_edges.py`, `query_brain.py` (now a thin caller over `app/brain/retrieval.py`), the `syn` console script (`recall`/`walk`/`pulse` read commands, block OR.N1 — `recall --workspace` now actually scopes, OR.K2; `mcp` MCP-server-over-stdio command, block OR.R, see [mcp-contract.md](mcp-contract.md); `embed`/`ingest`/`prune`/`refresh`/`stale`/`routine` write/ops commands, block OR.N2 — `refresh_brain.py` retired in favor of `syn refresh`; `eval` retrieval-quality scoring, block OR.K2), `emit_task_context_fixture.py` (real `task_context` conformance fixture for `engine-rs`), `ingest_repo_log.py` (block OR.M dogfood ingest of `log.md` into the memory tier). |
-| [brain-rag.md](brain-rag.md) | Brain corpus indexing and semantic retrieval — `BrainDocument` model, `index_brain.py`, querying via `DOCUMENT_QA`, the promoted `app/brain/retrieval_engine.py` two-stage hybrid pipeline (block OR.K2), structural graph expansion via `BrainEdge`, manual retrieval testing via `query_brain.py` and scored via `syn eval`, block OR.M memory expansion (Stage 1d) and `authored_at` age-decay ranking, block OR.L answer-time grounding (confidence/abstain gate, deterministic citation verification, corroboration). |
-| [memory.md](memory.md) | Block OR.S memory layer — `Peer`/`AgentEpisode`/`SemanticMemory` entities, the two-stage ingest/consolidation pipeline, confidence decay, the never-overwrite contradiction rule, and `MemoryLoaderNode`'s cosine/NL query modes. |
+| [capabilities.md](capabilities.md) | **Everything Synapse can do, and how to run it** — workflows, the `syn` CLI, the HTTP API, ops routines. |
+| [getting-started.md](getting-started.md) | Get the stack running — local Homebrew path or Docker/OrbStack path. |
+| [app-architecture-overview.md](app-architecture-overview.md) | How FastAPI → Celery → Workflow DAG → TaskContext fits together. |
 
-## Core reference
+## Using the brain
 
-| Doc | Contents |
+| Doc | One line |
 |---|---|
-| [api-reference.md](api-reference.md) | Class-level reference for every public abstraction in `app/core/`, `app/database/`, `app/services/`, and `app/workflows/` that you subclass when writing a new workflow. |
-| [data-contract.md](data-contract.md) | **Versioned** canonical contract for how external consumers (e.g. the `bastion` CLI) read execution state — the `events` table, `task_context`/`node_runs` JSON, and HTTP surface. Bump the version when any shape changes. |
-| [workspace-contract.md](workspace-contract.md) | **Versioned** canonical contract for the shared "knowledge workspace" convention (`OR.C` ⇄ bastion `BA.6.B`) — workspace names (= `brain.toml` slugs), resolution precedence, and OKF corpus rules. Bump the version when any rule changes. |
-| [mcp-contract.md](mcp-contract.md) | The client-server contract for the Brain MCP server (`syn mcp`, OR.R) — `brain_recall`/`brain_walk`/`brain_pulse` tool schemas, result shape, and the error envelope that bastion's vendored Rust MCP client is written against. |
-| [configuration.md](configuration.md) | Every environment variable, connection-string assembly, and Docker service topology — configure the stack for local or Docker deployment without guessing. |
-| [app-architecture-overview.md](app-architecture-overview.md) | Codebase analysis of the FastAPI → Celery → Workflow DAG → TaskContext architecture. |
+| [brain-rag.md](brain-rag.md) | How the corpus is indexed and searched — chunking, hybrid retrieval, age decay, the abstain gate. |
+| [memory.md](memory.md) | The memory layer — episodes, semantic memory, consolidation, confidence decay. |
+| [workflows.md](workflows.md) | The four workflows in detail — node DAGs, event payloads, curl examples. |
+| [scripts.md](scripts.md) | Every script and every `syn` subcommand, with full flags. |
+
+## Contracts (versioned — bump before you change a shape)
+
+| Doc | One line |
+|---|---|
+| [data-contract.md](data-contract.md) | How external consumers read execution state: the `events` table, `task_context`, the HTTP surface. |
+| [workspace-contract.md](workspace-contract.md) | The shared knowledge-workspace convention — names, resolution precedence, OKF corpus rules. |
+| [mcp-contract.md](mcp-contract.md) | The Brain MCP server's tool schemas, result shape, and error envelope. |
+
+## Building on the framework
+
+| Doc | One line |
+|---|---|
+| [api-reference.md](api-reference.md) | Class-level reference for every abstraction you subclass when writing a node or workflow. |
+| [configuration.md](configuration.md) | Every environment variable, connection string, and Docker service. |
+| [node-model-comparison.md](./node-model-comparison.md) | Which model to run on which node, and what local hardware allows. |
+
+## How each core abstraction works
+
+Deeper walkthroughs of the pieces `api-reference.md` summarizes.
+
+| Doc | One line |
+|---|---|
+| [architecture_review/workflow.md](architecture_review/workflow.md) | The `Workflow` base class and its execution loop. |
+| [architecture_review/task_context.md](architecture_review/task_context.md) | `TaskContext` — how node outputs accumulate and are read back. |
+| [architecture_review/workflow_schema.md](architecture_review/workflow_schema.md) | `WorkflowSchema` & `NodeConfig` — declaring start, nodes, connections. |
+| [architecture_review/workflow_validator.md](architecture_review/workflow_validator.md) | `WorkflowValidator` — checking a graph before it runs. |
+| [architecture_review/agent_node.md](architecture_review/agent_node.md) | `AgentNode` — the LLM-calling node. |
+| [architecture_review/parallel_node.md](architecture_review/parallel_node.md) | `ParallelNode` — fan-out execution. |
+| [architecture_review/router_node.md](architecture_review/router_node.md) | `RouterNode` & `BaseRouter` — conditional branching. |
+| [architecture_review/prompt_manager.md](architecture_review/prompt_manager.md) | `PromptManager` — loading `.j2` prompts from `app/prompts/`. |
 
 ## External SDK references
 
-| Doc | Contents |
+Vendored third-party API docs, kept here so agents can read them offline.
+
+| Doc | One line |
 |---|---|
-| [claude-agent-sdk.md](claude-agent-sdk.md) | Complete Python API reference for the Claude Agent SDK — `query()`, `ClaudeSDKClient`, tool definitions, MCP servers, permissions, hooks, and all message/config types. |
-| [voyage_ai.md](voyage_ai.md) | Voyage AI Python client reference — API key setup, embedding models (`voyage-4-large`), rerankers, tokenization, async requests, and a quickstart RAG tutorial. |
-| [logfire.md](logfire.md) | Logfire observability — instrumentation setup (FastAPI + Celery + pydantic-ai extras), structured logging in nodes, and SQL query patterns for Project H eval work. |
-
-## Architecture review — how each core abstraction works
-
-| Doc | Contents |
-|---|---|
-| [architecture_review/workflow.md](architecture_review/workflow.md) | The `Workflow` base class and its execution loop. |
-| [architecture_review/task_context.md](architecture_review/task_context.md) | `task.py` / `TaskContext` — node output accumulation and retrieval. |
-| [architecture_review/workflow_schema.md](architecture_review/workflow_schema.md) | `WorkflowSchema` & `NodeConfig` — declaring start, nodes, and connections. |
-| [architecture_review/workflow_validator.md](architecture_review/workflow_validator.md) | `WorkflowValidator` — validating a workflow graph before execution. |
-| [architecture_review/agent_node.md](architecture_review/agent_node.md) | `AgentNode` — the LLM-calling node abstraction. |
-| [architecture_review/parallel_node.md](architecture_review/parallel_node.md) | `ParallelNode` — fan-out execution of child nodes. |
-| [architecture_review/router_node.md](architecture_review/router_node.md) | `RouterNode` & `BaseRouter` — conditional branching. |
-| [architecture_review/prompt_manager.md](architecture_review/prompt_manager.md) | `PromptManager` — loading `.j2` system prompts from `app/prompts/`. |
-
-<!--
-Validator links:
-[node-model-comparison.md](./node-model-comparison.md)
--->
-
-<div style="display:none;">
-
-[node-model-comparison.md](./node-model-comparison.md)
-
-</div>
+| [claude-agent-sdk.md](claude-agent-sdk.md) | Claude Agent SDK Python API — `query()`, `ClaudeSDKClient`, tools, MCP, hooks. |
+| [voyage_ai.md](voyage_ai.md) | Voyage AI client — embedding models, rerankers, tokenization. |
+| [logfire.md](logfire.md) | Logfire observability — instrumenting FastAPI + Celery, and querying traces. |
