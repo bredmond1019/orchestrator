@@ -2,12 +2,40 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-07T21:17:31Z"
+timestamp: "2026-08-30T01:28:02Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+## [2026-08-29]
+
+### Docs cleanup pass — capability catalogue, quickstart-first rewrite, public-link fixes
+
+- **What:** Applied the `write-repo-doc` standard to `docs/` in one pass, using the five-defect-class
+  structure `engine-rs` used for its own cleanup. Added `docs/capabilities.md` — the catalogue that
+  answers "what can this thing do and how do I run it", with the list derived from source
+  (`app/workflows/workflow_registry.py`, `app/brain/cli.py`'s dispatcher, `app/api/router.py`,
+  `ROUTINES` in `app/brain/ops.py`): 4 workflows, 12 `syn` commands + 2 subcommands, 10 HTTP routes,
+  5 cron routines, 10 scripts. Rewrote `docs/index.md` — cells cut from up to 10 lines to one
+  scannable line, rows regrouped into 5 task-oriented sections, and `node-model-comparison.md` given
+  a real row in place of the `display:none` div that had been smuggling it past the orphan gate.
+  Added a plain-English opener, a Quickstart and (where the shape is non-obvious) a mermaid diagram
+  paired with the same steps in sentences to `brain-rag`, `memory`, `workflows`, `scripts`,
+  `configuration`, `mcp-contract`, `api-reference` and `app-architecture-overview` — the last of
+  which had no prose opener at all. Quickstart coverage went 0 → 9 of 17 top-level docs, mermaid
+  0 → 5. Fixed three links that resolve locally but 404 on GitHub (one into the gitignored
+  `planning/` vault symlink, two into `../../bastion`) and marked the four gitignored `scripts/`
+  entries as bare backticked paths for the same reason.
+- **Why:** The docs were reference-first throughout — a reader arriving cold had no runnable entry
+  point and no single answer to "what can it do". Verifying every named path against source rather
+  than against the docs (the pass's one non-negotiable) is what caught two defects a link gate
+  cannot see: `docs/index.md` advertised `scripts/emit_task_context_fixture.py` as live when the
+  script exists nowhere in the fleet and `docs/scripts.md:705` already recorded its removal, and
+  four `scripts/` entries are gitignored so links to them would 404 for any public reader.
+- **Refs:** commit `58d9731`; `docs/capabilities.md`; `.claude/skills/write-repo-doc/SKILL.md`;
+  carryover `docs-pass-left-contracts-and-architecture-review-unconverted`.
 
 ## [run: 2026-08-28] (4)
 
