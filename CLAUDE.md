@@ -199,6 +199,11 @@ Developer reference docs in `docs/`:
 **`planning/retrieval-eval-runs/` is the RAG observatory. Start at its
 [`index.md`](planning/retrieval-eval-runs/index.md) before comparing any two retrieval numbers.**
 
+**Before running `syn eval` or quoting any recall/MRR/groundedness number, load the
+`measure-brain-retrieval` skill** — it carries the five rules below as a procedure, plus how to read
+the `groundedness` / `groundedness_on_hits` pair, why the current baseline pin is grandfathered and
+not a valid same-day control, and the `syn queries mine` loop for growing the golden set.
+
 | Path | What it holds |
 |---|---|
 | `planning/retrieval-eval-runs/*.json` | Dated golden-set eval runs — the metric time series. Written by `syn eval`. |
