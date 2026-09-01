@@ -30,6 +30,47 @@ The orchestrator **owns** this document. Consumers (e.g. `core/bastion`) referen
 > matching route in `app/api/`. Treat §7's abort entry as orchestrator's *target* shape, not a
 > currently-callable orchestrator endpoint, until it's built here.
 
+## What this page is for
+
+You are writing (or debugging) something that watches a workflow run from **outside** this repo —
+`bastion`, `engine-rs`, a dashboard, a script. This page is the promise about what you will see:
+the columns, the JSON shape, and the HTTP routes, with a version number so a change cannot happen
+under you silently. You do not need to read the orchestrator's Python to use it.
+
+Two terms used throughout: a **run** is one execution of a workflow, one row in the `events` table,
+identified by an `event_id` (a UUID). A **node** is one step inside that run, identified by its
+Python class name (§1) — that name is the join key across every source here.
+
+## Quickstart
+
+Typed in a terminal, against a running orchestrator (start one with
+`cd app && uv run uvicorn main:app --host 0.0.0.0 --port 8080 --reload` — see
+[getting-started.md](getting-started.md)). Replace `<event_id>` with a run's UUID.
+
+```bash
+# 1. Read one run over HTTP — status plus per-node state (§7, GET /events/{event_id})
+curl -s localhost:8080/events/<event_id> | jq '{status, updated_at, nodes: .task_context.node_runs}'
+
+# 2. Same state, read straight from Postgres — the supported high-frequency poll (§3, §4)
+psql "$DATABASE_URL" -c \
+  "select workflow_type, updated_at, task_context -> 'node_runs' from events where id = '<event_id>';"
+
+# 3. Get the DAG edges — node_runs carries nodes but NO edges, so you need this too (§2)
+curl -s localhost:8080/workflows/<workflow_type>/graph | jq
+```
+
+Steps 1 and 2 return the same shape; pick HTTP for a one-off lookup and Postgres for a polling
+loop. Step 3 is static per workflow type, so fetch it once and cache it.
+
+| Must exist first | If it does not |
+|---|---|
+| `DATABASE_URL` pointing at the `orchestration_dev` Postgres | Run `scripts/dev-setup.sh` — see [getting-started.md](getting-started.md) |
+| The orchestrator process, for the HTTP steps | Only step 2 works; it is a plain read-only DB query |
+| A run to look at | Trigger one with `POST /events/` (§7) — that route needs an `X-API-Key` header |
+
+**You are an observer, never a writer.** No consumer writes `events` or edits `task_context` by
+hand; the one exception, and its reasoning, is in §3.
+
 ---
 
 ## 1. Identity rule (load-bearing)
