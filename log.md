@@ -2,12 +2,45 @@
 type: Log
 title: Development Log
 description: Chronological log of work completed for the orchestrator.
-timestamp: "2026-08-30T01:28:02Z"
+timestamp: "2026-09-01T00:29:25Z"
 ---
 
 # log — Orchestration Repo
 
 *Append-only working log. One dated entry per session. Newest entries at the top.*
+
+## [2026-09-01]
+
+### Orientation-doc audit — `planning/context.md` re-grounded, and D52's rename flip confirmed landed
+
+- **What:** Audited `planning/context.md` against the repo as it actually is and applied surgical
+  fixes rather than a full `/update-docs` sweep. Its Document Map named a `plans/` directory that does
+  not exist and omitted most of what does — replaced with the real `planning/` inventory (`index.md`,
+  `state.json`, `blocks/`, `knowledge.md`, `memory.md`, `harness.json`, `retrieval-eval-runs/`,
+  `artifacts/`, `archive/`) plus a `docs/` section that was missing entirely (17 docs, three
+  contracts, `architecture_review/`). Its Standing Rules carried 7 against `CLAUDE.md`'s 12, with
+  rule 4 (`customer_care` is reference-only) stale since D51 divested it — rewritten as 12 condensed
+  one-liners in `CLAUDE.md` order plus 13–14 for the two local-only rules, under an explicit
+  "`CLAUDE.md` is canonical" pointer. Volatile content routed to `status.md`: the "Still open"
+  block list (`SY.R` has been closed since 2026-08-28) and the `Last updated: June 2026` footer,
+  replaced with an evergreen-contract line. Dead paths fixed in both files
+  (`docs/career.md`/`brand.md` → `business/docs/`, `planning/bastion-product/` →
+  `core/planning/master-plan.md`, vault `core/_planning/orchestrator/` → `synapse/`), plus
+  `layer: [engine]` → `[brain]` and the `claude-sdk-rs`/`workflow-engine-rs` repo renames.
+- **Why:** Both orientation docs asserted that brain D52's mechanical rename was still pending —
+  "block IDs stay `OR.*` and the `brain.toml` slug stays `orchestrator`". Checking it rather than
+  inheriting it showed the flip has fully landed: `brain.toml` is slug `synapse` / prefix `SY`, the
+  vault is `core/_planning/synapse/`, the cache doc is `core/docs/projects/synapse.md`, and **no**
+  `state.json` anywhere in the fleet still contains an `OR.*` key or an `"orchestrator"` repo ref.
+  A first-read orientation file teaching a new agent the wrong block prefix is the most expensive
+  kind of doc staleness, so `CLAUDE.md`'s `OR.*` references (rules 3/5/10, the divestment paragraph,
+  the measurement rules, standing rule 11's `project:` slug) were flipped to `SY.*` in the same pass.
+  The `synapse-rename-mechanical-flip-pending` carryover — the graph entry that was the *source* of
+  the false claim — was corrected in place rather than retired: D38's paired mev→Cortex flip is
+  genuinely still pending (`brain.toml` still has prefix `MV`), and that is now its whole remaining
+  scope.
+- **Refs:** brain D52 (synapse rename), brain D38 (cortex naming), brain D51 (workflow divestment);
+  `planning/state.json` `carryover[] synapse-rename-mechanical-flip-pending`
 
 ## [2026-08-29]
 

@@ -1,9 +1,10 @@
 # CLAUDE.md — Synapse (the Brain repo; formerly `orchestrator`)
 
 **Synapse** is the knowledge layer of Bastion — the corpus, embeddings, structural graph, memory, and
-retrieval. It is *not* the orchestrator: `engine-rs` is. Per brain **D52** the name is adopted in
-narrative now while block IDs stay `OR.*` and the `brain.toml` slug stays `orchestrator` until one
-atomic cross-repo flip (see the `synapse-rename-mechanical-flip-pending` carryover).
+retrieval. It is *not* the orchestrator: `engine-rs` is. Brain **D52**'s two-stage rename is
+**complete on this side** — the `brain.toml` slug is `synapse`, the block prefix is `SY`, the vault
+is `core/_planning/synapse/`, and `planning/state.json` carries no `OR.*` key. Historical documents,
+archived plans and older decisions still say `OR.*`; read those as the same blocks.
 
 Still built on the event-driven pipeline framework: FastAPI → Celery → Workflow DAG → TaskContext.
 
@@ -41,11 +42,11 @@ TIEBREAKER — if 1 and 2 are both YES, the work is a hybrid.
 ```
 
 **What this repo keeps:** `DOCUMENT_INGEST`, `DOCUMENT_QA`, `MEMORY_INGEST`, `MEMORY_CONSOLIDATION`,
-and the corpus/graph/memory capability itself. **What has left** (per D51, tracked as `OR.X`/
-`OR.X2`): all four cuts of `OR.X` have landed (`CUSTOMER_CARE`, the Engine-shaped reference
+and the corpus/graph/memory capability itself. **What has left** (per D51, tracked as `SY.X`/
+`SY.X2`): all four cuts of `SY.X` have landed (`CUSTOMER_CARE`, the Engine-shaped reference
 workflow with no engine-rs counterpart; `RESEARCH_AGENT`; `PROPOSAL_GENERATOR`, whose
 `POST /ingest/proposal` contract survives untouched; and `CONTENT_PIPELINE`, including its
-telegram integration orphan), and `OR.X2` has landed (the Python `SDLC_FLOW` workflow and
+telegram integration orphan), and `SY.X2` has landed (the Python `SDLC_FLOW` workflow and
 `app/evals/`, with `app/database/eval_record.py` kept — engine-rs owns the `eval_runs`/
 `eval_results` tables now — and `app/services/claude_code/` kept, since `AgentNode` still depends
 on it). Do not re-add anything shaped like these — fixes only.
@@ -53,12 +54,12 @@ on it). Do not re-add anything shaped like these — fixes only.
 ## Before you start
 
 - **Strategic context:** `planning/context.md` (read first) → `planning/status.md` (current state)
-- **Symlink warning:** the `planning/` directory is actually a local symlink pointing to the company brain repo's `_planning/` vault (e.g. `core/_planning/orchestrator/`). The brain repo is responsible for tracking all planning files under Git. Do not track `planning/` in this project's public Git repository (it is gitignored).
+- **Symlink warning:** the `planning/` directory is actually a local symlink pointing to the company brain repo's `_planning/` vault (`core/_planning/synapse/`). The brain repo is responsible for tracking all planning files under Git. Do not track `planning/` in this project's public Git repository (it is gitignored).
 - **Symlink traps:** `rg`/`grep`/`find` are symlink-blind by default — a search that must include `planning/` content needs `-L`/`--follow`. `git mv` fails through the symlink face ("source directory is empty") — move planning files via the real vault path (`.../_planning/<slug>/...`), never via `planning/...`. Planning changes are committed in the brain repo (`agentic-portfolio`) with an explicit pathspec, never in this repo.
 - **Role in Bastion:** this repo is the **Brain** — the knowledge layer — of the brain's primary
   program, Bastion. (It was the Engine + Brain half; **D50/D51 divested the Engine role to
   `engine-rs`.**) Cross-repo order + seams are authoritative in the brain
-  (`agentic-portfolio/planning/bastion-product/master-plan.md`); current work is
+  (`agentic-portfolio/core/planning/master-plan.md`); current work is
   `planning/master-plan.md` → **Phase S — Synapse consolidation**, with the older Brain-side blocks
   under "Bastion Program Blocks" and `planning/decisions/D36-bastion-engine-brain-role.md`.
 - **Architecture reference:** `docs/app-architecture-overview.md`
@@ -76,15 +77,15 @@ on it). Do not re-add anything shaped like these — fixes only.
 
 1. **Every new function, module, or behaviour change ships with tests.** No exceptions — this applies to ad-hoc fixes and one-off changes just as much as formal blocks/tasks. If you add or change code, add or update the tests that cover it. Per-project test requirements are in `planning/master-plan.md` Project Library.
 2. **Never hardcode a system prompt in Python.** All prompts are `.j2` files in `app/prompts/`, loaded via `PromptManager`.
-3. **The first `OR.X` cut removed the Engine-shaped reference workflow.** Per D51 it had no engine-rs counterpart to wait for, so it was the first divestment. Do not re-add anything shaped like it, and do not treat it as a pattern to copy for new workflows.
+3. **The first `SY.X` cut removed the Engine-shaped reference workflow.** Per D51 it had no engine-rs counterpart to wait for, so it was the first divestment. Do not re-add anything shaped like it, and do not treat it as a pattern to copy for new workflows.
 4. **New workflows go to `engine-rs`, not here.** Run the boundary test above first. A genuinely Brain-side workflow (one that needs embeddings/pgvector/memory in-process) still uses `app/workflows/<name>_workflow.py` + `app/workflows/<name>_workflow_nodes/` + `app/schemas/<name>_schema.py` via `createworkflow` — but that should be rare. **A hybrid is never built whole here:** engine-rs runs it and hands the artifact over `POST /ingest/*`.
-5. **This repo is the Brain; `engine-rs` is the Engine.** Per brain **D42** engine-rs is the graduation target for the Engine layer, and **D50/D51** completed the split: execution workflows, business artifacts, and the SDLC harness are engine-rs's; knowledge, embeddings, the structural graph, memory, and retrieval are this repo's. The **data contract** (`docs/data-contract.md`, D20/D30) is the seam both write — preserve it byte-for-byte, and note that `OR.Q` bumps it with the ingest endpoint. `engine-rs` embeds in `bastion serve` (which reads this repo's contract). This repo also owns the **workspace contract** (`docs/workspace-contract.md`, brain D47) — the shared "knowledge workspace" convention (`OR.C` ⇄ bastion `BA.6.B`: names = `brain.toml` slugs, resolution precedence, OKF corpus rules); bump its version + re-pin `bastion/docs/workspace-contract.md` when any rule changes. (Brain D24/D41; local D6/D36 are narrowed, not deleted.)
+5. **This repo is the Brain; `engine-rs` is the Engine.** Per brain **D42** engine-rs is the graduation target for the Engine layer, and **D50/D51** completed the split: execution workflows, business artifacts, and the SDLC harness are engine-rs's; knowledge, embeddings, the structural graph, memory, and retrieval are this repo's. The **data contract** (`docs/data-contract.md`, D20/D30) is the seam both write — preserve it byte-for-byte, and note that `SY.Q` bumps it with the ingest endpoint. `engine-rs` embeds in `bastion serve` (which reads this repo's contract). This repo also owns the **workspace contract** (`docs/workspace-contract.md`, brain D47) — the shared "knowledge workspace" convention (`SY.C` ⇄ bastion `BA.6.B`: names = `brain.toml` slugs, resolution precedence, OKF corpus rules); bump its version + re-pin `bastion/docs/workspace-contract.md` when any rule changes. (Brain D24/D41; local D6/D36 are narrowed, not deleted.)
 6. **Register every new workflow in both registries.** Add the enum member to `app/workflows/workflow_registry.py` AND add the corresponding event schema entry to `app/api/schema_registry.py`. Missing the second step causes the API dispatcher to 422 every request for that workflow. `tests/api/test_endpoint.py::TestSchemaRegistryCompleteness` enforces this automatically.
 7. **No deployment logic inside nodes.** This framework is the deployment-agnostic *brain* — it must not know where it runs. The two things that vary by deployment are **injected, never hardcoded**: model choice (per-node `model_provider` config) and persistence (always via `GenericRepository`). The first `if running_locally:` inside a node means two products have started being built. Keep deployment decisions in config and in the shell, never here. (See `planning/decisions/` D16, D18.)
 8. **The eval rubric, the validator, the test-runner, and any consolidation prompt are human-owned gates.** If self-improving / agent-contribution features are ever built, agents may *propose* changes to these by PR but never self-approve them, and never author-and-deploy new node code without human review. (See `planning/decisions/` D20. Not in scope until a node library exists to compose over — Phase 3+.)
 9. **Seed TaskContext with the real storage structure in tests.** `AgentNode` stores output via `update_node(node_name=..., result=output)`, which produces `{"result": output}` in `task_context.nodes`. Tests that seed an upstream node as `ctx.nodes["X"] = raw_dict` instead of `ctx.nodes["X"] = {"result": raw_dict}` will pass silently (agent is mocked) but prove the wrong key contract. Always mirror what the actual node writes. When in doubt, check the `update_node` call in the source node.
-10. **Extract on the second consumer, never on the first.** The shared `app/brain/` service layer is not designed up front — it *accretes*. Each block factors out only the slice its own feature needs (`OR.N1` → `recall`/`walk`/`health`; `OR.Q` → `ingest`; `OR.N2` → `embed`/`stale`), so **no block is a pure refactor and none gates a phase**. Every block must ship something a user or agent can do that they could not do before; if you cannot name that, the block is wrong. Note this is deliberately *not* engine-rs's `EN.4.0` shape — that block generalizes machinery whose consumers are all known and imminent, whereas Synapse's surfaces arrive months apart. (Brain D51.)
-11. **Every new `.md` under `docs/` or `planning/` must open with OKF YAML frontmatter.** The governing standard is D27 in the company brain; the canonical authoring guide is `agentic-portfolio/docs/okf-frontmatter.md`. Required fields: `type`, `title`, `description`. Optional but strongly encouraged: `doc_id` (kebab-case, defaults to filename stem), `layer` (closed set: `brain` · `engine` · `factory` · `console` · `surface` · `infra` · `business` · `content` · `meta`), `project` (use `orchestrator` for this repo; omit for cross-cutting docs), `status` (`active` · `draft` · `deprecated` · `superseded` · `archived`), `keywords` (3–7 free-form topic terms), `related` (list of `doc_id`s). Adding a file to a directory requires updating that directory's `index.md`; propagate up the tree if the parent scope changes.
+10. **Extract on the second consumer, never on the first.** The shared `app/brain/` service layer is not designed up front — it *accretes*. Each block factors out only the slice its own feature needs (`SY.N1` → `recall`/`walk`/`health`; `SY.Q` → `ingest`; `SY.N2` → `embed`/`stale`), so **no block is a pure refactor and none gates a phase**. Every block must ship something a user or agent can do that they could not do before; if you cannot name that, the block is wrong. Note this is deliberately *not* engine-rs's `EN.4.0` shape — that block generalizes machinery whose consumers are all known and imminent, whereas Synapse's surfaces arrive months apart. (Brain D51.)
+11. **Every new `.md` under `docs/` or `planning/` must open with OKF YAML frontmatter.** The governing standard is D27 in the company brain; the canonical authoring guide is `agentic-portfolio/docs/okf-frontmatter.md`. Required fields: `type`, `title`, `description`. Optional but strongly encouraged: `doc_id` (kebab-case, defaults to filename stem), `layer` (closed set: `brain` · `engine` · `factory` · `console` · `surface` · `infra` · `business` · `content` · `meta`), `project` (use `synapse` for this repo; omit for cross-cutting docs), `status` (`active` · `draft` · `deprecated` · `superseded` · `archived`), `keywords` (3–7 free-form topic terms), `related` (list of `doc_id`s). Adding a file to a directory requires updating that directory's `index.md`; propagate up the tree if the parent scope changes.
 12. **Never `git push` this repo directly from inside it.** Route every push through the
     company-brain's `agentic-portfolio/scripts/git_push.sh --all`, which pushes the whole fleet
     (in Cargo dependency order where that applies) and reports fleet-wide push state in one
@@ -225,8 +226,8 @@ not a valid same-day control, and the `syn queries mine` loop for growing the go
 
 1. **Never compare two eval runs without checking the corpus they were measured against.** Run files
    are *not* self-describing — they record metrics but not the corpus fingerprint or the ranking
-   constants. `OR.0.C` compared a pre-prune "before" to a post-prune "after" and attributed the whole
-   delta to the wrong variable; the same trap voided `OR.0.A`'s sweep, which was measured on a corpus
+   constants. `SY.0.C` compared a pre-prune "before" to a post-prune "after" and attributed the whole
+   delta to the wrong variable; the same trap voided `SY.0.A`'s sweep, which was measured on a corpus
    that no longer exists.
 2. **Re-fingerprint (`brain_documents` count, `brain_edges` count, `max(indexed_at)`) immediately
    before and after every eval run.** If any moves between a control and its arm, that pair is void.
