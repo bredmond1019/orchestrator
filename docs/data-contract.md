@@ -12,13 +12,16 @@ related: [D28-node-level-execution-state, D30-data-contract-ownership, app-archi
 
 # Data Contract — Orchestrator Execution State
 
-**Contract Version: 1.9.0**
+**Contract Version: 1.10.0**
 
-This is the **single source of truth** for the shape any external consumer reads to observe a
-workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface.
-The orchestrator **owns** this document. Consumers (e.g. `core/bastion`) reference and
-*pin* it; they never fork it. When any shape here changes, bump the version and add a changelog row
-(see [Versioning](#versioning)).
+Per [D78](file:///Users/brandon/Dev/agentic-portfolio/docs/decisions/D78-engine-rs-owns-the-data-contract.md)
+(2026-08-21), the canonical, authoritative contract is `engine-rs/docs/data-contract.md`. **This
+file is a pinned consumer view**, describing the shape any external consumer reads to observe a
+workflow run — the `events` table, the `task_context` / `node_runs` JSON, and the HTTP surface —
+as this repo (synapse) currently implements it. Consumers (e.g. `core/bastion`) reference and
+*pin* the canonical document, not this one. When any shape here changes, bump this file's own
+version and add a changelog row (see [Versioning](#versioning)), then re-pin against the canonical
+document's version per the root CLAUDE.md Update Protocol.
 
 > This contract exists on the orchestrator's own merits (crash visibility, debuggability,
 > resume foundation — see `planning/decisions/D28-node-level-execution-state.md`). It documents
@@ -522,3 +525,4 @@ checklist step prompting this.
 | 1.7.0 | 2026-08-13 | Minor: new run-level `metadata.completion` annotation (§5), written by `Workflow.run` on its normal exit path, and consumed by §7's derived-`status` as a `succeeded` signal that outranks the leftover-`pending` check. Fixes a live defect rather than adding a feature: `Workflow.run` seeds every node in the DAG `pending` before the walk, so a branch the router never takes is still `pending` when the run ends and is indistinguishable by node status alone from unstarted work — every successful run of a **branching** workflow therefore derived to `running` forever (observed on `DOCUMENT_QA`, whose `AbstainNode` never runs on an answered query: complete answer, permanently `running` status). Additive and backward-compatible: the marker is absent on runs that raised (annotated by `metadata.failure` instead) and on rows written before it existed, so §7 retains the all-nodes-`success` rule as a fallback. `NodeRun`'s `pending|running|success|failed` vocabulary (§6) is **unchanged** — a `skipped` member would have been a MAJOR bump. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.8.0 | 2026-08-22 | Minor: `POST /ingest/artifact` (§7) gains six optional `LearningArtifact` fields — `channel_type`, `source_ref`, `summary`, `digest_markdown`, `entities`, `language` (all `str | None`, `entities` a `list[str] | None`) — and relaxes `doc_type`/`content` from required to `str | None`, with fallbacks resolved at the route: `content` <- `digest_markdown`, `doc_type` <- `"learning_artifact"`. A pydantic `model_validator` still requires at least one of `content`/`digest_markdown` and one of `doc_type`/`digest_markdown`, so a body with neither still 422s. Closes the third of three ingest defects found in `OR.3.A` (route mismatch, missing `X-API-Key`, payload-shape mismatch): engine-rs's content-pipeline `PersistToBrainNode` sends this literal seven-field shape, which previously matched neither ingest payload. Additive and backward-compatible — no field renamed or removed, `ProposalIngestPayload` untouched, existing `ArtifactIngestPayload` callers unaffected. `/ingest/learning` has never existed and is not being added; the mapping lives entirely on `/ingest/artifact`. `bastion` and `engine-rs` must re-pin — see their respective `docs/data-contract.md`. |
 | 1.9.0 | 2026-08-27 | `GET /recall` pinned as a consumer-facing read surface; **engine-rs** recorded as a consumer (brain D23 read-seam ruling). Adds a typed dependency-failure response: 502 with `detail.error = "brain_backend_unavailable"`, distinct from 500 `recall_failed` and from `require_api_key`'s 503. Response body shape unchanged. |
+| 1.10.0 | 2026-09-02 | `EN.14.D` (engine-rs-side; this file re-pinned as the SAME change per the root CLAUDE.md Update Protocol). Re-pins this file's own version to 1.10.0 and corrects its ownership prose above: per D78 (2026-08-21) the canonical, authoritative document is `engine-rs/docs/data-contract.md`, not this one — the two false claims this file previously made about its own status were already contradicted by D78 and are corrected here, not merely bumped past. **This file's own 1.8.0/1.9.0 rows above belong to a different content lineage than engine-rs's 1.8.0**: this document's 1.8.0 is `/ingest/artifact`'s optional `LearningArtifact` fields (2026-08-22) and its 1.9.0 is `GET /recall`'s typed dependency-failure response (2026-08-27), while engine-rs's own 1.8.0 is unrelated `EN.11.E` campaign identity (2026-08-21) — so skipping straight to 1.10.0 rather than reusing 1.9.0 for engine-rs's change was deliberate on the engine-rs side, to avoid minting a third meaning for an already-live number. The two lineages' content (this file's `/ingest/*`/`GET /recall` rows vs. engine-rs's campaign identity) are NOT merged by this re-pin; that reconciliation is filed separately. The version-number change itself carries no shape change to anything this file documents. |
