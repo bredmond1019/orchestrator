@@ -220,7 +220,7 @@ def _index_repo(
             logger.warning("index_code: cannot stat %s: %s", rel_str, exc)
             continue
 
-        if not rebuild:
+        if not rebuild and not dry_run:
             with next(db_session()) as session:  # type: ignore[arg-type]
                 existing = (
                     session.query(CodeChunk)
