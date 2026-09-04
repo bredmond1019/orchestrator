@@ -72,6 +72,57 @@ def _seed_fact(session_factory, **overrides) -> SemanticMemory:
         return row
 
 
+@pytest.fixture
+def node_real_session_lifecycle(session_factory):
+    """A node whose ``_session_scope`` mirrors ``db_session()``'s *real*
+    generator shape: yield, then an unconditional second ``commit()`` on
+    resumption, then ``close()`` in ``finally`` -- not a bare mock that just
+    closes. This is what actually re-expires (via SQLAlchemy's default
+    ``expire_on_commit=True``) and then detaches the rows ``upsert_facts()``
+    already committed and refreshed inside its own ``with`` block, matching
+    ``app/database/session.py``'s ``db_session()`` byte-for-byte."""
+    n = UpsertMemoryNode()
+
+    def _session_scope():
+        def _gen():
+            session = session_factory()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+
+        return contextmanager(_gen)()
+
+    n._session_scope = _session_scope  # noqa: SLF001 -- test seam injection
+    n._embed = lambda text: _STUB_EMBEDDING  # noqa: SLF001 -- avoid live provider
+    return n
+
+
+class TestDetachedInstanceReproduction:
+    """Reproduces the finding #12 bug: db_session()'s redundant post-yield
+    commit() re-expires upsert_facts()'s already-refreshed rows, and its
+    close() then detaches them, so a caller reading .id afterward hits
+    SQLAlchemy's 'not bound to a Session' error. Must fail before the fix
+    (D68) and pass after it."""
+
+    def test_reading_id_after_upsert_facts_returns_does_not_raise_detached_instance(
+        self, node_real_session_lifecycle
+    ):
+        upserted = node_real_session_lifecycle.upsert_facts(
+            peer_id="client-acme",
+            facts=[{"fact": "Some fact.", "confidence": 0.9}],
+        )
+
+        # This attribute read is the exact operation ConsolidationWriteNode
+        # performs at consolidation_write_node.py:109
+        # ([str(row.id) for row in upserted]) after the session has closed.
+        assert upserted[0].id is not None
+
+
 class TestNonContradictingInsert:
     def test_inserts_new_row_with_supplied_confidence(self, node, session_factory):
         upserted = node.upsert_facts(
