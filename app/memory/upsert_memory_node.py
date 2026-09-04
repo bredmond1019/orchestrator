@@ -85,6 +85,23 @@ class UpsertMemoryNode(Node, DbSeamMixin):
 
         Returns the list of newly inserted ``SemanticMemory`` rows (refreshed,
         with generated ids and embeddings populated).
+
+        Return-shape decision (task 2 of SY.ticket.consolidation-write-detached-instance):
+        the return type stays ``list[SemanticMemory]`` rather than switching to
+        plain dicts/dataclasses, so ``process()``'s existing dict-building code
+        (and every existing test that reads attributes like ``.confidence``,
+        ``.fact``, ``.embedding`` off the returned rows) keeps working unchanged.
+        What changes is that each row is ``session.expunge()``-d right after its
+        own ``commit()`` + ``refresh()``, *inside* this method's own
+        ``_session_scope()`` block. Expunging detaches the row from the session's
+        identity map while its freshly-refreshed attributes are still loaded in
+        ``__dict__`` -- so the row is "expire-safe": ``db_session()``'s own
+        trailing, unconditional ``session.commit()`` (which runs on generator
+        resumption after this ``with`` block exits, per D-finding #12) can no
+        longer re-expire these rows, because expunged objects are no longer
+        tracked by the session and are skipped by that commit's expiry pass.
+        Callers may then safely read attributes (e.g. ``.id``) after the
+        session -- and the process -- have closed.
         """
         default_evidence = list(evidence_episode_ids or [])
         created: list[SemanticMemory] = []
@@ -96,6 +113,7 @@ class UpsertMemoryNode(Node, DbSeamMixin):
             session.commit()
             for row in created:
                 session.refresh(row)
+                session.expunge(row)
         return created
 
     def _upsert_one_fact(
