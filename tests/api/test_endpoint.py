@@ -88,6 +88,29 @@ class TestEventDispatch:
         )
         assert response.status_code == 422
 
+    def test_custom_validator_failure_content_b64_returns_422(self, endpoint_context):
+        """A custom @model_validator failure (ctx.error is a raw ValueError) must
+        still produce a 422 with the validator's readable message, not a masked
+        500 from a JSON-serialization TypeError.
+
+        Regression test for SY.ticket.pydantic-ctx-error-masks-422 -- DocumentIngestEventSchema's
+        `_require_content_or_b64` model_validator raises ValueError("Either 'content' or
+        'content_b64' must be provided"), which pydantic packs into errors()[i]["ctx"]["error"]
+        as the raw exception instance. FastAPI's default JSON encoder cannot serialize that,
+        so before the fix this call raises inside the exception handler and surfaces as a 500
+        with no body.
+        """
+        client, _ = endpoint_context
+        response = client.post(
+            "/events/",
+            json={
+                "workflow_type": "DOCUMENT_INGEST",
+                "data": {"title": "Missing content"},
+            },
+        )
+        assert response.status_code == 422
+        assert "Either 'content' or 'content_b64' must be provided" in response.text
+
     def test_failed_enqueue_does_not_commit_event(self, endpoint_context):
         client, session = endpoint_context
         with patch.object(
