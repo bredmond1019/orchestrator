@@ -16,7 +16,7 @@ from unittest.mock import patch
 from brain import retrieval_engine
 from brain.code_chunking import chunk_source
 from brain.retrieval import hybrid_search, recall
-from database.brain_document import EMBEDDING_DIM
+from database.brain_document import EMBEDDING_DIM, BrainDocument
 from database.code_chunk import CodeChunk
 
 _FIXTURES_DIR = Path(__file__).parent / "fixtures" / "code"
@@ -446,3 +446,82 @@ class TestEndToEndFixtureRepoRetrieval:
         assert top["file_path"] == "sample.txt"
         assert top["section"] == fallback_spec.section
         assert "file" in top["section"]
+
+
+# ---------------------------------------------------------------------------
+# SY.ticket.recall-corpus-exclusivity task 3: hybrid-path exclusivity guard
+#
+# Task 1/2 fixed the non-hybrid dispatch path's corpus leak. This test
+# closes the OTHER half of finding #13's second reproduction: does the
+# `--hybrid` path (`retrieval_engine.retrieve()` via `hybrid_search()`)
+# ever let a non-code row into a `corpus="code"` result set, anywhere in the
+# list (not just absent from rank 1)? A real-DB regression test (Docker-gated
+# `pgvector_session`): seeds a `brain_documents` row and a `code_chunks` row
+# that both rank highly for the same query (identical embedding vector, and
+# overlapping content text so the keyword-expansion stage also candidates
+# both rows), then runs the full `retrieve()` pipeline for `corpus="code"`
+# and asserts zero non-code rows anywhere in the result.
+# ---------------------------------------------------------------------------
+
+
+class TestHybridSearchCorpusExclusivity:
+    def test_hybrid_search_code_corpus_excludes_brain_rows(self, pgvector_session):
+        """Seed a brain_documents row and a code_chunks row that both rank
+        highly for the same query, then confirm hybrid_search(corpus="code")
+        never lets the brain row leak into the result set.
+
+        Code review (see this ticket's `notes`) shows every stage of
+        `retrieval_engine.retrieve()` is `_CORPUS_CONFIG[corpus]`-scoped, so
+        this test is expected to pass cleanly -- confirming finding #13's
+        observed leak was fully explained by the non-hybrid path fixed in
+        task 1/2, not a residual bug in the hybrid pipeline itself. It is
+        kept as a permanent regression guard either way.
+        """
+        vector = _vec(0)
+        shared_text = "how the widget renders itself across the fleet"
+
+        brain_doc = BrainDocument(
+            file_path="docs/decisions/D99-example.md",
+            doc_type="decision",
+            section="",
+            content=f"Explaining {shared_text}.",
+            embedding=vector,
+            embedding_model="test-stub:v1",
+            indexed_at=datetime.now(),
+            title="D99 — Widget Rendering",
+            is_section_title=False,
+        )
+        pgvector_session.add(brain_doc)
+
+        code_chunk = CodeChunk(
+            repo="fixture-repo-a",
+            file_path="widget.py",
+            language="python",
+            symbol_name="render",
+            symbol_kind="function",
+            start_line=1,
+            end_line=5,
+            content=f"def render(self):\n    # {shared_text}\n    return self.widget",
+            embedding=vector,
+            embedding_model="test-stub:v1",
+            section="render (function, L1-5)",
+            indexed_at=datetime.now(),
+        )
+        pgvector_session.add(code_chunk)
+        pgvector_session.flush()
+
+        with patch(
+            "services.embedding_service.EmbeddingService.embed_text",
+            return_value=vector,
+        ):
+            results = hybrid_search(
+                shared_text,
+                limit=10,
+                corpus="code",
+                session=pgvector_session,
+            )
+
+        assert results, "expected at least one result from the seeded code_chunks row"
+        assert all(
+            r["file_path"] == "widget.py" for r in results
+        ), f"hybrid_search corpus='code' leaked a non-code row anywhere in the result: {results}"
