@@ -62,7 +62,15 @@ def handle_event(
     try:
         schema_cls.model_validate(payload.data)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        # exc.errors() includes a `ctx.error` key for custom @field_validator /
+        # @model_validator failures, and that value is the raw exception instance
+        # pydantic raised -- not JSON-serializable. include_context=False drops
+        # `ctx` entirely while leaving `msg`/`type`/`loc` (and the human-readable
+        # message text) untouched, so the 422 body stays fully serializable without
+        # changing shape for the plain-missing-field case, which never carries `ctx`.
+        raise HTTPException(
+            status_code=422, detail=exc.errors(include_context=False)
+        ) from exc
 
     event = Event(data=payload.data, workflow_type=payload.workflow_type)
 
