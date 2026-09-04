@@ -33,7 +33,12 @@ _MAX_CASES = 60
 # paths, verified absent from disk 2026-08-07) into abstain cases. That raised
 # the negative count from 6 to 8: archive-03-parallelnode, neg-01..03,
 # hijack-01..02 (all pre-existing), plus the two newly renamed neg-04/neg-05.
-_MIN_NEGATIVES = 8
+# 2026-09-04: archive-09-amistad became the 9th. Its two expect_docs lived under
+# side/amistad/, a repo retired fleet-wide by HQ commit 742ab180f, so the case
+# named paths that cannot exist and scored a permanent recall 0.0 — the same
+# condition OR.2.D converted the other two for. test_expect_docs_paths_exist_on_disk
+# is what caught it.
+_MIN_NEGATIVES = 9
 _MIN_HIJACK_CASES = 2
 
 # HQ brain root that `expect_docs` paths are relative to — matches how the
