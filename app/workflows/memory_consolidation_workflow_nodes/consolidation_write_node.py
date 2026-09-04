@@ -103,6 +103,14 @@ class ConsolidationWriteNode(Node, DbSeamMixin):
         )
         self._update_representation(peer_id, peer_result["representation"])
 
+        # upsert_facts() (task 2 of SY.ticket.consolidation-write-detached-instance)
+        # expunges every row from its session right after its own commit()+refresh(),
+        # inside upsert_memory_node.py's own _session_scope() block -- so each row's
+        # attributes (including .id) are already loaded, plain, expire-safe values by
+        # the time this line runs, even though the underlying db_session() generator
+        # issues its own redundant trailing commit() on resumption. This read is safe
+        # by construction; no live-ORM-attribute-after-session-close access happens
+        # here or anywhere else in this node.
         return {
             "peer_id": peer_id,
             "representation": peer_result["representation"],
@@ -119,6 +127,16 @@ class ConsolidationWriteNode(Node, DbSeamMixin):
 
         Writes: ``{"workspace_id": <str>, "peers": [{"peer_id",
         "representation", "upserted_fact_ids"}, ...]}``.
+
+        Raises: any exception a peer's write path raises (e.g. from
+        ``upsert_memory_node.upsert_facts`` or ``_update_representation``)
+        propagates out of this method rather than being caught and
+        swallowed here -- this node holds no try/except of its own. The
+        workflow-execution harness (``Workflow.node_context`` in
+        ``core/workflow.py``) marks the run ``FAILED`` with the error
+        recorded before re-raising, so a genuine write failure is never
+        silently reported as a successful run
+        (SY.ticket.consolidation-write-detached-instance task 3).
         """
         source = task_context.get_node_output(self.source_node_name)["result"]
         written = [self._write_one_peer(peer_result) for peer_result in source.get("peers", [])]

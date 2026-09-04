@@ -22,13 +22,14 @@ TaskContext seeds follow CLAUDE.md rule 9: upstream output is stored as
 writes.
 """
 
+import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
 from core.nodes.agent import ModelProvider
-from core.task import TaskContext
+from core.task import NodeStatus, TaskContext
 from core.validate import WorkflowValidator
 from database.agent_episode import AgentEpisode
 from database.peer import Peer, PeerType
@@ -518,6 +519,46 @@ def _write_node(session_factory, **kwargs) -> ConsolidationWriteNode:
     return node
 
 
+def _write_node_real_session_lifecycle(session_factory, **kwargs) -> ConsolidationWriteNode:
+    """A ``ConsolidationWriteNode`` whose ``upsert_memory_node._session_scope``
+    mirrors ``db_session()``'s *real* generator shape (task 1's
+    ``node_real_session_lifecycle`` fixture in
+    ``tests/memory/test_upsert_memory_node.py``, mirrored here): yield, then
+    an unconditional second ``commit()`` on resumption, then ``close()`` in
+    ``finally`` -- the exact sequence that re-expires-then-detaches rows if
+    ``upsert_facts()`` ever regresses off its task-2 expunge fix. Proves
+    ``_write_one_peer``'s ``upserted_fact_ids`` survives that real lifecycle,
+    not just the simplified ``_write_node`` seam above."""
+    node = ConsolidationWriteNode(**kwargs)
+
+    @contextmanager
+    def _plain_session_scope():
+        session = session_factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    def _real_lifecycle_session_scope():
+        def _gen():
+            session = session_factory()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+
+        return contextmanager(_gen)()
+
+    node._session_scope = _plain_session_scope  # noqa: SLF001 -- test seam injection
+    node.upsert_memory_node._session_scope = _real_lifecycle_session_scope  # noqa: SLF001
+    node.upsert_memory_node._embed = lambda text: _STUB_EMBEDDING  # noqa: SLF001
+    return node
+
+
 def _ctx_with_consolidation(peers: list[dict]) -> TaskContext:
     ctx = TaskContext(event=MemoryConsolidationEventSchema(workspace_id="acme-workspace"))
     ctx.nodes["ConsolidationNode"] = {
@@ -648,3 +689,95 @@ class TestConsolidationWriteNode:
         stored = ctx.get_node_output("ConsolidationWriteNode")["result"]
         assert stored["workspace_id"] == "acme-workspace"
         assert len(stored["peers"][0]["upserted_fact_ids"]) == 2
+
+    def test_upserted_fact_ids_correct_through_real_db_session_lifecycle(
+        self, session_factory
+    ):
+        """SY.ticket.consolidation-write-detached-instance task 3: with
+        ``upsert_memory_node``'s session scope shaped exactly like the real
+        ``db_session()`` generator (redundant post-yield commit, then
+        close), ``_write_one_peer``'s ``[str(row.id) for row in upserted]``
+        (consolidation_write_node.py:109) must still read real, non-empty
+        UUIDs -- not raise a detached-instance error, and not silently
+        produce an empty/placeholder id list."""
+        _seed_peer(session_factory)
+        node = _write_node_real_session_lifecycle(session_factory)
+
+        ctx = _ctx_with_consolidation(
+            [
+                {
+                    "peer_id": "client-acme",
+                    "representation": "Summary.",
+                    "facts": [{"fact": "Fact one."}, {"fact": "Fact two."}],
+                }
+            ]
+        )
+        node.process(ctx)  # must not raise a detached-instance error
+
+        stored = ctx.get_node_output("ConsolidationWriteNode")["result"]
+        fact_ids = stored["peers"][0]["upserted_fact_ids"]
+        assert len(fact_ids) == 2
+        for fact_id in fact_ids:
+            # A real, parseable UUID string -- not empty, not "None".
+            assert uuid.UUID(fact_id)
+
+        with session_factory() as session:
+            assert session.query(SemanticMemory).count() == 2
+
+    def test_write_path_failure_is_not_silently_swallowed(self, session_factory):
+        """A genuine failure in the write path (here, forced inside
+        ``upsert_memory_node.upsert_facts``) must propagate out of
+        ``ConsolidationWriteNode.process()`` rather than being caught and
+        discarded -- proven by asserting the raise, not by reading a log
+        line. ``process()`` carries no try/except of its own, and the
+        upstream node-execution harness (``core/workflow.py``'s
+        ``node_context``) re-raises after marking the run FAILED, so this
+        pins that neither layer swallows it."""
+        _seed_peer(session_factory)
+        node = _write_node(session_factory)
+
+        def _boom(**kwargs):
+            raise RuntimeError("forced upsert_facts failure")
+
+        node.upsert_memory_node.upsert_facts = _boom  # noqa: SLF001 -- force failure
+
+        ctx = _ctx_with_consolidation(
+            [
+                {
+                    "peer_id": "client-acme",
+                    "representation": "Summary.",
+                    "facts": [{"fact": "Fact one."}],
+                }
+            ]
+        )
+
+        with pytest.raises(RuntimeError, match="forced upsert_facts failure"):
+            node.process(ctx)
+
+        # The failure must not be recorded as a successful/partial result --
+        # process() raised before ever calling update_node for this node.
+        assert "ConsolidationWriteNode" not in ctx.nodes
+
+    def test_write_path_failure_surfaces_through_node_context_as_failed(self):
+        """The same forced failure, run through the real workflow-harness
+        ``node_context`` (not a bare direct ``process()`` call), must mark
+        the node's run FAILED with the error recorded -- not swallowed into
+        a SUCCESS status alongside an ERROR log line, matching the original
+        finding #12 symptom."""
+
+        class _BoomNode:
+            node_name = "ConsolidationWriteNode"
+
+            def process(self, task_context):
+                raise RuntimeError("forced upsert_facts failure")
+
+        workflow = MemoryConsolidationWorkflow.__new__(MemoryConsolidationWorkflow)
+        ctx = TaskContext(event=MemoryConsolidationEventSchema(workspace_id="acme-workspace"))
+
+        with pytest.raises(RuntimeError, match="forced upsert_facts failure"):
+            with workflow.node_context("ConsolidationWriteNode", ctx):
+                _BoomNode().process(ctx)
+
+        run = ctx.node_runs["ConsolidationWriteNode"]
+        assert run.status == NodeStatus.FAILED
+        assert "forced upsert_facts failure" in run.error
