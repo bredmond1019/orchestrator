@@ -133,6 +133,55 @@ def semantic_search(
     return q.order_by(distance).limit(limit).all()
 
 
+def _semantic_search_corpus(
+    query: str,
+    session,
+    embedding_service,
+    corpus: str,
+    limit: int = 5,
+    *,
+    filters: dict | None = None,
+) -> list[dict]:
+    """Non-hybrid semantic search scoped to a non-``"brain"`` corpus.
+
+    ``semantic_search()`` above queries `BrainDocument` unconditionally, so
+    it cannot serve `corpus="code"`/`corpus="content"` — that was the
+    corpus-exclusivity bug (finding #13,
+    `SY.ticket.recall-corpus-exclusivity`). This reuses
+    `retrieval_engine._semantic_search`, the same `_CORPUS_CONFIG`-scoped
+    Stage-1 query the `hybrid` path already threads `corpus` through, so a
+    `--corpus code` request without `--hybrid` actually queries
+    `code_chunks` instead of silently falling back to brain/content rows.
+
+    Args:
+        query: Natural-language question to embed and search for.
+        session: An open SQLAlchemy session.
+        embedding_service: An `EmbeddingService` instance.
+        corpus: The corpus to query — any key in
+            `retrieval_engine._CORPUS_CONFIG` other than `"brain"` (the
+            caller routes `"brain"` through `semantic_search()` instead).
+        limit: Maximum number of results to return.
+        filters: Optional metadata WHERE clauses scoped to `corpus`'s own
+            `filter_fields` (e.g. `{"repo": ...}` for `"code"`).
+
+    Returns:
+        A list of normalized result dicts in `recall()`'s standard shape
+        (`_normalize_engine_chunk`'s output), corpus-exclusive by
+        construction — `_semantic_search` only ever queries `corpus`'s own
+        table.
+    """
+    vector = embedding_service.embed_text(query)
+    candidates = retrieval_engine._semantic_search(  # pylint: disable=protected-access
+        vector, corpus, limit, filters=filters, session=session
+    )
+    normalized = []
+    for candidate in candidates:
+        chunk = dict(candidate)
+        chunk["score"] = 1.0 - chunk.pop("distance")
+        normalized.append(_normalize_engine_chunk(chunk, corpus=corpus))
+    return normalized
+
+
 def _normalize_engine_chunk(chunk: dict, *, corpus: str = "brain") -> dict:
     """Normalize a `retrieval_engine.retrieve()` chunk dict into `recall()`'s shape.
 
@@ -250,11 +299,13 @@ def _log_recall(  # pylint: disable=too-many-arguments
     (the single choke point) — this covers the other half: the two paths
     that never call `retrieve()`.
 
-    Both paths this function serves (`exact_id_lookup` and `semantic_search`)
-    query `BrainDocument` exclusively (OR.2.E) regardless of the caller's
-    requested `corpus` — the log tag is threaded through as-is so a caller
-    passing `corpus="code"` down the non-hybrid path is still visible in the
-    query log, even though the dispatch itself is unaffected.
+    Covers three non-hybrid dispatch branches: `exact_id_lookup` and
+    `semantic_search` (both `"brain"`-only — exact-id lookup is a
+    brain-corpus concept and `semantic_search` hardcodes `BrainDocument`),
+    and `_semantic_search_corpus` (any other corpus, scoped via
+    `retrieval_engine._CORPUS_CONFIG`). The `corpus` tag passed through here
+    always matches the table the results actually came from as of the
+    `SY.ticket.recall-corpus-exclusivity` fix.
     """
     log_retrieval(
         query,
@@ -309,10 +360,13 @@ def recall(
             `"unknown"`; has no effect on retrieval behavior.
         corpus: Corpus to query — `"brain"` (default), `"content"`, or
             `"code"` (OR.P). Keyword-only with default `"brain"` so every
-            existing caller is unchanged. The exact-id/semantic dispatch
-            below queries `BrainDocument` directly regardless of this value
-            (that path predates multi-corpus support); only the `hybrid`
-            path and the OR.K1 log tag actually vary by corpus today.
+            existing caller is unchanged. Every path is now corpus-exclusive
+            (`SY.ticket.recall-corpus-exclusivity`): exact-id lookup stays
+            `"brain"`-only (structured IDs like `D20`/`OR.V` are a
+            brain-corpus concept), and non-hybrid semantic search for any
+            other corpus is scoped to that corpus's own table via
+            `retrieval_engine._CORPUS_CONFIG` (`_semantic_search_corpus`)
+            instead of falling back to `BrainDocument`.
 
     Returns:
         A list of normalized result dicts, one shape on every path:
@@ -341,7 +395,12 @@ def recall(
 
     filters = _workspace_filters(workspace)
 
-    exact_id = find_exact_id(query)
+    # Exact-id lookup is a brain-corpus concept — structured IDs like "D20"
+    # or "OR.V" identify brain_documents rows, not code/content chunks — so
+    # it is scoped to corpus="brain" only. A non-brain corpus always goes
+    # through the corpus-scoped semantic path below, even for a query that
+    # happens to contain an ID-shaped token.
+    exact_id = find_exact_id(query) if corpus == "brain" else None
     if exact_id is not None:
         id_results = exact_id_lookup(exact_id, session, limit=limit, filters=filters)
         results = [_normalize_doc_row(doc, 1.0, via="exact-id") for doc in id_results]
@@ -364,10 +423,15 @@ def recall(
 
         embedding_service = EmbeddingService()
 
-    results = semantic_search(query, session, embedding_service, limit=limit, filters=filters)
-    normalized = [
-        _normalize_doc_row(doc, 1.0 - distance, via="semantic") for doc, distance in results
-    ]
+    if corpus == "brain":
+        results = semantic_search(query, session, embedding_service, limit=limit, filters=filters)
+        normalized = [
+            _normalize_doc_row(doc, 1.0 - distance, via="semantic") for doc, distance in results
+        ]
+    else:
+        normalized = _semantic_search_corpus(
+            query, session, embedding_service, corpus, limit=limit, filters=filters
+        )
     _log_recall(
         query,
         normalized,
