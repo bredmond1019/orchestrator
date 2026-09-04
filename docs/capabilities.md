@@ -103,7 +103,7 @@ machine-parseable output. Full flag reference: [scripts.md](scripts.md) § `syn`
 
 | Command | What it does |
 |---|---|
-| `syn recall QUERY` | Search the corpus. `--corpus brain\|code\|content` picks which one; `--hybrid` adds keyword+semantic fusion; `--workspace NAME` scopes to one repo. |
+| `syn recall QUERY` | Search the corpus. `--corpus brain\|code\|content` is an exclusive selector — results come only from that corpus, with or without `--hybrid`; `--hybrid` adds keyword+semantic fusion within the selected corpus; `--workspace NAME` scopes to one repo. |
 | `syn walk DOC_ID` | Follow the structural graph out from one document — `--depth N` hops through `brain_edges`. |
 | `syn pulse` | One-shot health report on the corpus and its substrate: row counts, index freshness. |
 | `syn queries` | Read the real retrieval traffic logged in `retrieval_queries`. `--since 7d`, `--abstained`. |

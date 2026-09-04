@@ -53,7 +53,8 @@ def _build_parser() -> argparse.ArgumentParser:  # pylint: disable=too-many-stat
         "--corpus",
         default="brain",
         choices=["brain", "code", "content"],
-        help="Corpus to search (default: brain).",
+        help="Corpus to search (default: brain). Exclusive selector -- "
+        "results come only from this corpus, with or without --hybrid.",
     )
     recall_parser.add_argument("--json", action="store_true", help="Emit machine-parseable JSON.")
 
