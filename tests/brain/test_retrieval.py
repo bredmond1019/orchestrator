@@ -7,6 +7,7 @@ the exact same list `hybrid_search` returns, proving there is one
 implementation behind both callers.
 """
 
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -17,6 +18,7 @@ from brain.retrieval import (
     recall,
     semantic_search,
 )
+from database.brain_document import EMBEDDING_DIM
 
 
 def _fake_doc(**overrides) -> SimpleNamespace:
@@ -346,3 +348,87 @@ def test_recall_workspace_threads_into_hybrid_path():
         recall("q", hybrid=True, workspace="acme")
 
     assert mock_retrieve.call_args.kwargs["filters"] == {"project": "acme"}
+
+
+# ---------------------------------------------------------------------------
+# SY.ticket.recall-corpus-exclusivity task 1: non-hybrid corpus leak
+#
+# `recall()`'s non-hybrid (default) dispatch — exact_id_lookup/semantic_search
+# — hardcodes `BrainDocument` regardless of the requested `corpus` (see the
+# module's own docstring caveat on `recall()`). This is a real-DB regression
+# test (Docker-gated `pgvector_session`, per tests/database/conftest.py):
+# it seeds a matching row in BOTH `brain_documents` and `code_chunks` for the
+# same query, then asserts `recall(corpus="code", hybrid=False)` returns only
+# code-corpus rows. Before the task-2 fix this fails, because the non-hybrid
+# path ignores `corpus` and returns the brain_documents row instead.
+# ---------------------------------------------------------------------------
+
+
+def _seed_matching_brain_and_code_rows(session, vector):
+    """Insert one `BrainDocument` row and one `CodeChunk` row sharing `vector`
+    as their embedding, so a semantic search for that vector matches both
+    corpora equally — proving corpus scoping, not merely ranking.
+    """
+    # local imports: app/ only on sys.path at test-run time
+    from database.brain_document import BrainDocument  # pylint: disable=import-outside-toplevel
+    from database.code_chunk import CodeChunk  # pylint: disable=import-outside-toplevel
+
+    brain_doc = BrainDocument(
+        file_path="docs/decisions/D99-example.md",
+        doc_type="decision",
+        section="",
+        content="Explaining how the widget renders itself.",
+        embedding=vector,
+        embedding_model="test-stub:v1",
+        indexed_at=datetime.now(),
+        title="D99 — Widget Rendering",
+        is_section_title=False,
+    )
+    code_chunk = CodeChunk(
+        repo="fixture-repo-a",
+        file_path="widget.py",
+        language="python",
+        symbol_name="render",
+        symbol_kind="function",
+        start_line=1,
+        end_line=5,
+        content="def render(self):\n    return self.widget",
+        embedding=vector,
+        embedding_model="test-stub:v1",
+        section="render (function, L1-5)",
+        indexed_at=datetime.now(),
+    )
+    session.add(brain_doc)
+    session.add(code_chunk)
+    session.flush()
+    return brain_doc, code_chunk
+
+
+def test_recall_non_hybrid_corpus_code_excludes_brain_rows(pgvector_session):
+    """Regression guard for the corpus-exclusivity bug (finding #13).
+
+    Before the fix this SHOULD fail: recall()'s non-hybrid semantic path
+    queries BrainDocument unconditionally, so it returns the brain_documents
+    row even though corpus="code" was requested and a matching code_chunks
+    row exists.
+    """
+    vector = [0.0] * EMBEDDING_DIM
+    vector[0] = 1.0
+    _seed_matching_brain_and_code_rows(pgvector_session, vector)
+
+    fake_embedding_service = MagicMock()
+    fake_embedding_service.embed_text.return_value = vector
+
+    results = recall(
+        "how does the widget render",
+        corpus="code",
+        hybrid=False,
+        session=pgvector_session,
+        embedding_service=fake_embedding_service,
+        limit=5,
+    )
+
+    assert results, "expected at least one result from the seeded code_chunks row"
+    assert all(
+        r["file_path"] == "widget.py" for r in results
+    ), f"non-hybrid corpus='code' recall() leaked non-code rows: {results}"
